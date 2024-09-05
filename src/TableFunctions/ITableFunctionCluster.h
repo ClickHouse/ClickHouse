@@ -1,10 +1,13 @@
 #pragma once
 
+#include "config.h"
+
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/ITableFunction.h>
-#include <TableFunctions/TableFunctionObjectStorage.h>
+#include <TableFunctions/TableFunctionAzureBlobStorage.h>
+#include <TableFunctions/TableFunctionS3.h>
 
 
 namespace DB

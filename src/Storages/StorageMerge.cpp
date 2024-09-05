@@ -12,7 +12,6 @@
 #include <Analyzer/Utils.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -416,7 +415,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     output_stream->header = FilterTransform::transformHeader(
             output_stream->header,
-            &filter.actions,
+            filter.actions.get(),
             filter.column_name,
             filter.do_remove_column);
     pushed_down_filters.push_back(std::move(filter));
@@ -602,7 +601,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
                 ASTPtr column_expr;
 
-                auto sample_block = merge_storage_snapshot->metadata->getSampleBlock();
+                auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
 
                 for (const auto & column : real_column_names)
                 {
@@ -637,7 +636,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, context).getActionsDAG(true);
 
-                column_names_as_aliases = alias_actions.getRequiredColumns().getNames();
+                column_names_as_aliases = alias_actions->getRequiredColumns().getNames();
                 if (column_names_as_aliases.empty())
                     column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
             }
@@ -668,7 +667,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 auto filter_step = std::make_unique<FilterStep>(
                     child.plan.getCurrentDataStream(),
-                    filter_info.actions.clone(),
+                    filter_info.actions->clone(),
                     filter_info.column_name,
                     filter_info.do_remove_column);
 
@@ -895,8 +894,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
     SelectQueryInfo modified_query_info = query_info;
 
-    modified_query_info.merge_storage_snapshot = merge_storage_snapshot;
-
     if (modified_query_info.planner_context)
         modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
 
@@ -985,7 +982,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 }
 
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
-                actions_visitor.visit(*filter_actions_dag, column_node);
+                actions_visitor.visit(filter_actions_dag, column_node);
             }
             column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
             if (column_names_as_aliases.empty())
@@ -1069,7 +1066,7 @@ void ReadFromMerge::addVirtualColumns(
             column.column = column.type->createColumnConst(0, Field(database_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
+            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), adding_column_dag);
             child.plan.addStep(std::move(expression_step));
             plan_header = child.plan.getCurrentDataStream().header;
         }
@@ -1083,7 +1080,7 @@ void ReadFromMerge::addVirtualColumns(
             column.column = column.type->createColumnConst(0, Field(table_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
+            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), adding_column_dag);
             child.plan.addStep(std::move(expression_step));
             plan_header = child.plan.getCurrentDataStream().header;
         }
@@ -1098,7 +1095,7 @@ void ReadFromMerge::addVirtualColumns(
             column.column = column.type->createColumnConst(0, Field(database_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
+            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), adding_column_dag);
             child.plan.addStep(std::move(expression_step));
             plan_header = child.plan.getCurrentDataStream().header;
         }
@@ -1111,7 +1108,7 @@ void ReadFromMerge::addVirtualColumns(
             column.column = column.type->createColumnConst(0, Field(table_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
+            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), adding_column_dag);
             child.plan.addStep(std::move(expression_step));
             plan_header = child.plan.getCurrentDataStream().header;
         }
@@ -1209,10 +1206,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         if (allow_experimental_analyzer)
         {
-            /// Converting query to AST because types might be different in the source table.
-            /// Need to resolve types again.
-            auto ast = modified_query_info.query_tree->toAST();
-            InterpreterSelectQueryAnalyzer interpreter(ast,
+            InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
                 modified_context,
                 SelectQueryOptions(processed_stage));
 
@@ -1249,7 +1243,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
-    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(),
+    filter_actions = std::make_shared<ExpressionActions>(actions_dag,
         ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
     const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
     const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
@@ -1287,12 +1281,12 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
 
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const
 {
-    step->addFilter(actions_dag.clone(), filter_column_name);
+    step->addFilter(actions_dag, filter_column_name);
 }
 
 void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan) const
 {
-    auto filter_step = std::make_unique<FilterStep>(plan.getCurrentDataStream(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
+    auto filter_step = std::make_unique<FilterStep>(plan.getCurrentDataStream(), actions_dag, filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
 }
 
@@ -1485,7 +1479,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
 
-            ActionsDAG actions_dag(pipe_columns);
+            auto actions_dag = std::make_shared<ActionsDAG>(pipe_columns);
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
             query_tree->setAlias(alias.name);
@@ -1499,8 +1493,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
             if (nodes.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
 
-            actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(actions_dag));
+            actions_dag->addOrReplaceInOutputs(actions_dag->addAlias(*nodes.front(), alias.name));
+            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), actions_dag);
             child.plan.addStep(std::move(expression_step));
         }
     }
@@ -1515,7 +1509,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             auto dag = std::make_shared<ActionsDAG>(pipe_columns);
             auto actions_dag = expression_analyzer.getActionsDAG(true, false);
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(actions_dag));
+            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), actions_dag);
             child.plan.addStep(std::move(expression_step));
         }
     }
@@ -1533,7 +1527,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
                                                                 header.getColumnsWithTypeAndName(),
                                                                 convert_actions_match_columns_mode);
 
-    auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(convert_actions_dag));
+    auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), convert_actions_dag);
     child.plan.addStep(std::move(expression_step));
 }
 
@@ -1574,7 +1568,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     for (const auto & filter_info : pushed_down_filters)
-        added_filter_nodes.nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
+        added_filter_nodes.nodes.push_back(&filter_info.actions->findInOutputs(filter_info.column_name));
 
     SourceStepWithFilter::applyFilters(added_filter_nodes);
 

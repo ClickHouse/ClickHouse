@@ -5,7 +5,6 @@
 #include <fstream>
 #include <string>
 
-namespace fs = std::filesystem;
 
 bool cgroupsV2Enabled()
 {
@@ -14,11 +13,11 @@ bool cgroupsV2Enabled()
     {
         /// This file exists iff the host has cgroups v2 enabled.
         auto controllers_file = default_cgroups_mount / "cgroup.controllers";
-        if (!fs::exists(controllers_file))
+        if (!std::filesystem::exists(controllers_file))
             return false;
         return true;
     }
-    catch (const fs::filesystem_error &) /// all "underlying OS API errors", typically: permission denied
+    catch (const std::filesystem::filesystem_error &) /// all "underlying OS API errors", typically: permission denied
     {
         return false; /// not logging the exception as most callers fall back to cgroups v1
     }
@@ -27,7 +26,28 @@ bool cgroupsV2Enabled()
 #endif
 }
 
-fs::path cgroupV2PathOfProcess()
+bool cgroupsV2MemoryControllerEnabled()
+{
+#if defined(OS_LINUX)
+    chassert(cgroupsV2Enabled());
+    /// According to https://docs.kernel.org/admin-guide/cgroup-v2.html, file "cgroup.controllers" defines which controllers are available
+    /// for the current + child cgroups. The set of available controllers can be restricted from level to level using file
+    /// "cgroups.subtree_control". It is therefore sufficient to check the bottom-most nested "cgroup.controllers" file.
+    std::filesystem::path cgroup_dir = cgroupV2PathOfProcess();
+    if (cgroup_dir.empty())
+        return false;
+    std::ifstream controllers_file(cgroup_dir / "cgroup.controllers");
+    if (!controllers_file.is_open())
+        return false;
+    std::string controllers;
+    std::getline(controllers_file, controllers);
+    return controllers.find("memory") != std::string::npos;
+#else
+    return false;
+#endif
+}
+
+std::filesystem::path cgroupV2PathOfProcess()
 {
 #if defined(OS_LINUX)
     chassert(cgroupsV2Enabled());
@@ -46,31 +66,6 @@ fs::path cgroupV2PathOfProcess()
     cgroup = cgroup.substr(v2_prefix.length());
     /// Note: The 'root' cgroup can have an empty cgroup name, this is valid
     return default_cgroups_mount / cgroup;
-#else
-    return {};
-#endif
-}
-
-std::optional<std::string> getCgroupsV2PathContainingFile([[maybe_unused]] std::string_view file_name)
-{
-#if defined(OS_LINUX)
-    if (!cgroupsV2Enabled())
-        return {};
-
-    fs::path current_cgroup = cgroupV2PathOfProcess();
-    if (current_cgroup.empty())
-        return {};
-
-    /// Return the bottom-most nested file. If there is no such file at the current
-    /// level, try again at the parent level as settings are inherited.
-    while (current_cgroup != default_cgroups_mount.parent_path())
-    {
-        const auto path = current_cgroup / file_name;
-        if (fs::exists(path))
-            return {current_cgroup};
-        current_cgroup = current_cgroup.parent_path();
-    }
-    return {};
 #else
     return {};
 #endif

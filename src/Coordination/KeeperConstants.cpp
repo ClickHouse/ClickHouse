@@ -150,18 +150,12 @@
     M(S3PutObject) \
     M(S3GetObject) \
 \
-    M(AzureUpload) \
-    M(DiskAzureUpload) \
-    M(AzureStageBlock) \
-    M(DiskAzureStageBlock) \
-    M(AzureCommitBlockList) \
-    M(DiskAzureCommitBlockList) \
+    M(AzureUploadPart) \
+    M(DiskAzureUploadPart) \
     M(AzureCopyObject) \
     M(DiskAzureCopyObject) \
     M(AzureDeleteObjects) \
-    M(DiskAzureDeleteObjects) \
     M(AzureListObjects) \
-    M(DiskAzureListObjects) \
 \
     M(DiskS3DeleteObjects) \
     M(DiskS3CopyObject) \
@@ -183,6 +177,8 @@
     M(ReadBufferFromS3InitMicroseconds) \
     M(ReadBufferFromS3Bytes) \
     M(ReadBufferFromS3RequestsErrors) \
+    M(ReadBufferFromS3ResetSessions) \
+    M(ReadBufferFromS3PreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \
@@ -242,13 +238,6 @@
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
     M(KeeperLatency) \
-    M(KeeperTotalElapsedMicroseconds) \
-    M(KeeperProcessElapsedMicroseconds) \
-    M(KeeperPreprocessElapsedMicroseconds) \
-    M(KeeperStorageLockWaitMicroseconds) \
-    M(KeeperCommitWaitElapsedMicroseconds) \
-    M(KeeperBatchMaxCount) \
-    M(KeeperBatchMaxTotalSize) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -269,8 +258,7 @@
     M(KeeperExistsRequest) \
 \
     M(IOUringSQEsSubmitted) \
-    M(IOUringSQEsResubmitsAsync) \
-    M(IOUringSQEsResubmitsSync) \
+    M(IOUringSQEsResubmits) \
     M(IOUringCQEsCompleted) \
     M(IOUringCQEsFailed) \
 \
@@ -370,7 +358,7 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
-    M(KeeperOutstandingRequests) \
+    M(KeeperOutstandingRequets) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \

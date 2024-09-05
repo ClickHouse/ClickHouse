@@ -2,20 +2,18 @@
 #include "IServer.h"
 
 #include "HTTPHandlerFactory.h"
-#include "HTTPResponseHeaderWriter.h"
+#include "HTTPHandlerRequestFilter.h"
 
-#include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
 
-#include <unordered_map>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
@@ -35,9 +33,10 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-static inline std::unique_ptr<WriteBuffer> responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response)
+static inline std::unique_ptr<WriteBuffer>
+responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, UInt64 keep_alive_timeout)
 {
-    auto buf = std::unique_ptr<WriteBuffer>(new WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD));
+    auto buf = std::unique_ptr<WriteBuffer>(new WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -90,11 +89,12 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
-    auto out = responseWriteBuffer(request, response);
+    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
+    auto out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try
     {
-        applyHTTPResponseHeaders(response, http_response_headers_override);
+        response.setContentType(content_type);
 
         if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
@@ -105,7 +105,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
                             "The Transfer-Encoding is not chunked and there "
                             "is no Content-Length header for POST request");
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
         writeResponse(*out);
     }
@@ -155,9 +155,8 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         writeString(response_expression, out);
 }
 
-StaticRequestHandler::StaticRequestHandler(
-    IServer & server_, const String & expression, const std::unordered_map<String, String> & http_response_headers_override_, int status_)
-    : server(server_), status(status_), http_response_headers_override(http_response_headers_override_), response_expression(expression)
+StaticRequestHandler::StaticRequestHandler(IServer & server_, const String & expression, int status_, const String & content_type_)
+    : server(server_), status(status_), content_type(content_type_), response_expression(expression)
 {
 }
 
@@ -167,12 +166,12 @@ HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
 {
     int status = config.getInt(config_prefix + ".handler.status", 200);
     std::string response_content = config.getRawString(config_prefix + ".handler.response_content", "Ok.\n");
+    std::string response_content_type = config.getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
 
-    std::unordered_map<String, String> http_response_headers_override
-        = parseHTTPResponseHeaders(config, config_prefix, "text/plain; charset=UTF-8");
-
-    auto creator = [&server, http_response_headers_override, response_content, status]() -> std::unique_ptr<StaticRequestHandler>
-    { return std::make_unique<StaticRequestHandler>(server, response_content, http_response_headers_override, status); };
+    auto creator = [&server, response_content, status, response_content_type]() -> std::unique_ptr<StaticRequestHandler>
+    {
+        return std::make_unique<StaticRequestHandler>(server, response_content, status, response_content_type);
+    };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
 

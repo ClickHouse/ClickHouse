@@ -11,11 +11,8 @@
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
 #include <base/sleep.h>
-#include <fmt/ranges.h>
 
-#include <cstdint>
 #include <filesystem>
-#include <memory>
 #include <optional>
 
 #include "config.h"
@@ -25,164 +22,24 @@
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
 #endif
 
-using namespace DB;
-namespace fs = std::filesystem;
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int FILE_DOESNT_EXIST;
-extern const int INCORRECT_DATA;
+    extern const int CANNOT_CLOSE_FILE;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int INCORRECT_DATA;
 }
-
-}
-
-namespace
-{
-
-/// Format is
-///   kernel 5
-///   rss 15
-///   [...]
-using Metrics = std::map<std::string, uint64_t>;
-
-Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
-{
-    Metrics metrics;
-    while (!buf.eof())
-    {
-        std::string current_key;
-        readStringUntilWhitespace(current_key, buf);
-
-        assertChar(' ', buf);
-
-        uint64_t value = 0;
-        readIntText(value, buf);
-        assertChar('\n', buf);
-
-        auto [_, inserted] = metrics.emplace(std::move(current_key), value);
-        chassert(inserted, "Duplicate keys in stat file");
-    }
-    return metrics;
-}
-
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
-{
-    const auto all_metrics = readAllMetricsFromStatFile(buf);
-    if (const auto it = all_metrics.find(key); it != all_metrics.end())
-        return it->second;
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find '{}' in '{}'", key, buf.getFileName());
-}
-
-struct CgroupsV1Reader : ICgroupsReader
-{
-    explicit CgroupsV1Reader(const fs::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
-
-    uint64_t readMemoryUsage() override
-    {
-        std::lock_guard lock(mutex);
-        buf.rewind();
-        return readMetricFromStatFile(buf, "rss");
-    }
-
-    std::string dumpAllStats() override
-    {
-        std::lock_guard lock(mutex);
-        buf.rewind();
-        return fmt::format("{}", readAllMetricsFromStatFile(buf));
-    }
-
-private:
-    std::mutex mutex;
-    ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
-};
-
-struct CgroupsV2Reader : ICgroupsReader
-{
-    explicit CgroupsV2Reader(const fs::path & stat_file_dir)
-        : current_buf(stat_file_dir / "memory.current"), stat_buf(stat_file_dir / "memory.stat")
-    {
-    }
-
-    uint64_t readMemoryUsage() override
-    {
-        std::lock_guard lock(mutex);
-        current_buf.rewind();
-        stat_buf.rewind();
-
-        int64_t mem_usage = 0;
-        /// memory.current contains a single number
-        /// the reason why we subtract it described here: https://github.com/ClickHouse/ClickHouse/issues/64652#issuecomment-2149630667
-        readIntText(mem_usage, current_buf);
-        mem_usage -= readMetricFromStatFile(stat_buf, "inactive_file");
-        chassert(mem_usage >= 0, "Negative memory usage");
-        return mem_usage;
-    }
-
-    std::string dumpAllStats() override
-    {
-        std::lock_guard lock(mutex);
-        stat_buf.rewind();
-        return fmt::format("{}", readAllMetricsFromStatFile(stat_buf));
-    }
-
-private:
-    std::mutex mutex;
-    ReadBufferFromFile current_buf TSA_GUARDED_BY(mutex);
-    ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
-};
-
-/// Caveats:
-/// - All of the logic in this file assumes that the current process is the only process in the
-///   containing cgroup (or more precisely: the only process with significant memory consumption).
-///   If this is not the case, then other processe's memory consumption may affect the internal
-///   memory tracker ...
-/// - Cgroups v1 and v2 allow nested cgroup hierarchies. As v1 is deprecated for over half a
-///   decade and will go away at some point, hierarchical detection is only implemented for v2.
-/// - I did not test what happens if a host has v1 and v2 simultaneously enabled. I believe such
-///   systems existed only for a short transition period.
-
-std::optional<std::string> getCgroupsV1Path()
-{
-    auto path = default_cgroups_mount / "memory/memory.stat";
-    if (!fs::exists(path))
-        return {};
-    return {default_cgroups_mount / "memory"};
-}
-
-std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPath()
-{
-    auto v2_path = getCgroupsV2PathContainingFile("memory.current");
-    if (v2_path.has_value())
-        return {*v2_path, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
-
-    auto v1_path = getCgroupsV1Path();
-    if (v1_path.has_value())
-        return {*v1_path, CgroupsMemoryUsageObserver::CgroupsVersion::V1};
-
-    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
-}
-
-}
-
-namespace DB
-{
 
 CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_)
-    : log(getLogger("CgroupsMemoryUsageObserver")), wait_time(wait_time_)
+    : log(getLogger("CgroupsMemoryUsageObserver"))
+    , wait_time(wait_time_)
+    , memory_usage_file(log)
 {
-    const auto [cgroup_path, version] = getCgroupsPath();
-
-    cgroup_reader = createCgroupsReader(version, cgroup_path);
-
-    LOG_INFO(
-        log,
-        "Will read the current memory usage from '{}' (cgroups version: {}), wait time is {} sec",
-        cgroup_path,
-        (version == CgroupsVersion::V1) ? "v1" : "v2",
-        wait_time.count());
+    LOG_INFO(log, "Initialized cgroups memory limit observer, wait time is {} sec", wait_time.count());
 }
 
 CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
@@ -222,18 +79,12 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
         {
             LOG_WARNING(log, "Exceeded soft memory limit ({})", ReadableSize(soft_limit_));
 
-#    if USE_JEMALLOC
+#if USE_JEMALLOC
             LOG_INFO(log, "Purging jemalloc arenas");
             mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
-#    endif
+#endif
             /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
-            uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-            LOG_TRACE(
-                log,
-                "Read current memory usage {} bytes ({}) from cgroups, full available stats: {}",
-                memory_usage,
-                ReadableSize(memory_usage),
-                cgroup_reader->dumpAllStats());
+            uint64_t memory_usage = memory_usage_file.readMemoryUsage();
             MemoryTracker::setRSS(memory_usage, 0);
 
             LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
@@ -251,6 +102,153 @@ void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChangedFn(OnMemoryAmo
 {
     std::lock_guard<std::mutex> memory_amount_available_changed_lock(memory_amount_available_changed_mutex);
     on_memory_amount_available_changed = on_memory_amount_available_changed_;
+}
+
+namespace
+{
+
+/// Caveats:
+/// - All of the logic in this file assumes that the current process is the only process in the
+///   containing cgroup (or more precisely: the only process with significant memory consumption).
+///   If this is not the case, then other processe's memory consumption may affect the internal
+///   memory tracker ...
+/// - Cgroups v1 and v2 allow nested cgroup hierarchies. As v1 is deprecated for over half a
+///   decade and will go away at some point, hierarchical detection is only implemented for v2.
+/// - I did not test what happens if a host has v1 and v2 simultaneously enabled. I believe such
+///   systems existed only for a short transition period.
+
+std::optional<std::string> getCgroupsV2FileName()
+{
+    if (!cgroupsV2Enabled())
+        return {};
+
+    if (!cgroupsV2MemoryControllerEnabled())
+        return {};
+
+    std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
+        return {};
+
+    /// Return the bottom-most nested current memory file. If there is no such file at the current
+    /// level, try again at the parent level as memory settings are inherited.
+    while (current_cgroup != default_cgroups_mount.parent_path())
+    {
+        auto path = current_cgroup / "memory.current";
+        if (std::filesystem::exists(path))
+            return {path};
+        current_cgroup = current_cgroup.parent_path();
+    }
+    return {};
+}
+
+std::optional<std::string> getCgroupsV1FileName()
+{
+    auto path = default_cgroups_mount / "memory/memory.stat";
+    if (!std::filesystem::exists(path))
+        return {};
+    return {path};
+}
+
+std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsFileName()
+{
+    auto v2_file_name = getCgroupsV2FileName();
+    if (v2_file_name.has_value())
+        return {*v2_file_name, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
+
+    auto v1_file_name = getCgroupsV1FileName();
+    if (v1_file_name.has_value())
+        return {*v1_file_name, CgroupsMemoryUsageObserver::CgroupsVersion::V1};
+
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
+}
+
+}
+
+CgroupsMemoryUsageObserver::MemoryUsageFile::MemoryUsageFile(LoggerPtr log_)
+    : log(log_)
+{
+    std::tie(file_name, version) = getCgroupsFileName();
+
+    LOG_INFO(log, "Will read the current memory usage from '{}' (cgroups version: {})", file_name, (version == CgroupsVersion::V1) ? "v1" : "v2");
+
+    fd = ::open(file_name.data(), O_RDONLY);
+    if (fd == -1)
+        ErrnoException::throwFromPath(
+            (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
+            file_name, "Cannot open file '{}'", file_name);
+}
+
+CgroupsMemoryUsageObserver::MemoryUsageFile::~MemoryUsageFile()
+{
+    assert(fd != -1);
+    if (::close(fd) != 0)
+    {
+        try
+        {
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_CLOSE_FILE,
+                file_name, "Cannot close file '{}'", file_name);
+        }
+        catch (const ErrnoException &)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        }
+    }
+}
+
+uint64_t CgroupsMemoryUsageObserver::MemoryUsageFile::readMemoryUsage() const
+{
+    /// File read is probably not read is thread-safe, just to be sure
+    std::lock_guard lock(mutex);
+
+    ReadBufferFromFileDescriptor buf(fd);
+    buf.rewind();
+
+    uint64_t mem_usage = 0;
+
+    switch (version)
+    {
+        case CgroupsVersion::V1:
+        {
+            /// Format is
+            ///   kernel 5
+            ///   rss 15
+            ///   [...]
+            std::string key;
+            bool found_rss = false;
+
+            while (!buf.eof())
+            {
+                readStringUntilWhitespace(key, buf);
+                if (key != "rss")
+                {
+                    std::string dummy;
+                    readStringUntilNewlineInto(dummy, buf);
+                    buf.ignore();
+                    continue;
+                }
+
+                assertChar(' ', buf);
+                readIntText(mem_usage, buf);
+                found_rss = true;
+                break;
+            }
+
+            if (!found_rss)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find 'rss' in '{}'", file_name);
+
+            break;
+        }
+        case CgroupsVersion::V2:
+        {
+            readIntText(mem_usage, buf);
+            break;
+        }
+    }
+
+    LOG_TRACE(log, "Read current memory usage {} from cgroups", ReadableSize(mem_usage));
+
+    return mem_usage;
 }
 
 void CgroupsMemoryUsageObserver::startThread()
@@ -304,8 +302,7 @@ void CgroupsMemoryUsageObserver::runThread()
             std::lock_guard<std::mutex> limit_lock(limit_mutex);
             if (soft_limit > 0 && hard_limit > 0)
             {
-                uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-                LOG_TRACE(log, "Read current memory usage {} bytes ({}) from cgroups", memory_usage, ReadableSize(memory_usage));
+                uint64_t memory_usage = memory_usage_file.readMemoryUsage();
                 if (memory_usage > hard_limit)
                 {
                     if (last_memory_usage <= hard_limit)
@@ -337,13 +334,6 @@ void CgroupsMemoryUsageObserver::runThread()
     }
 }
 
-std::unique_ptr<ICgroupsReader> createCgroupsReader(CgroupsMemoryUsageObserver::CgroupsVersion version, const fs::path & cgroup_path)
-{
-    if (version == CgroupsMemoryUsageObserver::CgroupsVersion::V2)
-        return std::make_unique<CgroupsV2Reader>(cgroup_path);
-    else
-        return std::make_unique<CgroupsV1Reader>(cgroup_path);
-}
 }
 
 #endif

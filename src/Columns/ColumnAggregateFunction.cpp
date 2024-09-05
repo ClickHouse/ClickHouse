@@ -267,11 +267,7 @@ bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
 }
 
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
-#else
-void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t start, size_t length)
-#endif
 {
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
@@ -457,9 +453,9 @@ MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = AggregateFunctionStateData();
-    field.safeGet<AggregateFunctionStateData &>().name = type_string;
+    field.get<AggregateFunctionStateData &>().name = type_string;
     {
-        WriteBufferFromString buffer(field.safeGet<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer, version);
     }
     return field;
@@ -467,7 +463,12 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
-    res = operator[](n);
+    res = AggregateFunctionStateData();
+    res.get<AggregateFunctionStateData &>().name = type_string;
+    {
+        WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
+        func->serialize(data[n], buffer, version);
+    }
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
@@ -491,11 +492,7 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     insertMergeFrom(from, n);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
-#else
-void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
-#endif
 {
     insertRangeFrom(from, n, 1);
 }
@@ -547,7 +544,7 @@ void ColumnAggregateFunction::insert(const Field & x)
             "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
-    const auto & field_name = x.safeGet<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
                 field_name, type_string);
@@ -555,7 +552,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.safeGet<const AggregateFunctionStateData &>().data);
+    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
 }
 
@@ -564,14 +561,14 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
     if (x.getType() != Field::Types::AggregateFunctionState)
         return false;
 
-    const auto & field_name = x.safeGet<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         return false;
 
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.safeGet<const AggregateFunctionStateData &>().data);
+    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
     return true;
 }

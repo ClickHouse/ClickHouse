@@ -253,15 +253,16 @@ void ReadBufferFromAzureBlobStorage::initialize()
     initialized = true;
 }
 
-std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
+size_t ReadBufferFromAzureBlobStorage::getFileSize()
 {
     if (!blob_client)
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
-    if (!file_size)
-        file_size = blob_client->GetProperties().Value.BlobSize;
+    if (file_size.has_value())
+        return *file_size;
 
-    return file_size;
+    file_size = blob_client->GetProperties().Value.BlobSize;
+    return *file_size;
 }
 
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const

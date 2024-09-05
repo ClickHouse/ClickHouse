@@ -107,7 +107,7 @@ struct RUsageCounters
     }
 
 private:
-    static UInt64 getClockMonotonic()
+    static inline UInt64 getClockMonotonic()
     {
         struct timespec ts;
         if (0 != clock_gettime(CLOCK_MONOTONIC, &ts))

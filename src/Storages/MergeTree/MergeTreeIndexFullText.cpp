@@ -74,7 +74,7 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
     for (auto & gin_filter : gin_filters)
     {
         size_serialization->deserializeBinary(field_rows, istr, {});
-        size_t filter_size = field_rows.safeGet<size_t>();
+        size_t filter_size = field_rows.get<size_t>();
         gin_filter.getFilter().resize(filter_size);
 
         if (filter_size == 0)
@@ -128,14 +128,14 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
                 "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
-    auto start_row_id = store->getNextRowIDRange(rows_read);
+    auto row_id = store->getNextRowIDRange(rows_read);
+    auto start_row_id = row_id;
 
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
         const auto & column_with_type = block.getByName(index_columns[col]);
         const auto & column = column_with_type.column;
         size_t current_position = *pos;
-        auto row_id = start_row_id;
 
         bool need_to_write = false;
         if (isArray(column_with_type.type))
@@ -186,7 +186,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 }
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAGPtr & filter_actions_dag,
     ContextPtr context_,
     const Block & index_sample_block,
     const GinFilterParameters & params_,
@@ -379,19 +379,19 @@ bool MergeTreeConditionFullText::traverseAtomAST(const RPNBuilderTreeNode & node
             /// Check constant like in KeyCondition
             if (const_value.getType() == Field::Types::UInt64)
             {
-                out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
 
             if (const_value.getType() == Field::Types::Int64)
             {
-                out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
 
             if (const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.safeGet<Float64>() != 0.00 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Float64>() != 0.00 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -530,7 +530,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        auto & value = const_value.safeGet<String>();
+        auto & value = const_value.get<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
@@ -539,7 +539,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        auto & value = const_value.safeGet<String>();
+        auto & value = const_value.get<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
@@ -549,7 +549,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        const auto & value = const_value.safeGet<String>();
+        const auto & value = const_value.get<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
@@ -558,7 +558,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        const auto & value = const_value.safeGet<String>();
+        const auto & value = const_value.get<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
@@ -567,7 +567,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        const auto & value = const_value.safeGet<String>();
+        const auto & value = const_value.get<String>();
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
@@ -576,7 +576,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        const auto & value = const_value.safeGet<String>();
+        const auto & value = const_value.get<String>();
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
@@ -585,7 +585,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        const auto & value = const_value.safeGet<String>();
+        const auto & value = const_value.get<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
@@ -594,8 +594,8 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, true, false);
+        const auto & value = const_value.get<String>();
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
     else if (function_name == "endsWith")
@@ -603,8 +603,8 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, false, true);
+        const auto & value = const_value.get<String>();
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
     else if (function_name == "multiSearchAny")
@@ -615,14 +615,14 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<GinFilters> gin_filters;
         gin_filters.emplace_back();
-        for (const auto & element : const_value.safeGet<Array>())
+        for (const auto & element : const_value.get<Array>())
         {
             if (element.getType() != Field::Types::String)
                 return false;
 
             gin_filters.back().emplace_back(params);
-            const auto & value = element.safeGet<String>();
-            token_extractor->substringToGinFilter(value.data(), value.size(), gin_filters.back().back(), false, false);
+            const auto & value = element.get<String>();
+            token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back().back());
         }
         out.set_gin_filters = std::move(gin_filters);
         return true;
@@ -632,7 +632,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_MATCH;
 
-        auto & value = const_value.safeGet<String>();
+        auto & value = const_value.get<String>();
         String required_substring;
         bool dummy_is_trivial, dummy_required_substring_is_prefix;
         std::vector<String> alternatives;
@@ -650,14 +650,14 @@ bool MergeTreeConditionFullText::traverseASTEquals(
             for (const auto & alternative : alternatives)
             {
                gin_filters.back().emplace_back(params);
-               token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
+               token_extractor->stringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back());
             }
             out.set_gin_filters = std::move(gin_filters);
         }
         else
         {
             out.gin_filter = std::make_unique<GinFilter>(params);
-            token_extractor->substringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter, false, false);
+            token_extractor->stringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter);
         }
 
         return true;
@@ -742,7 +742,6 @@ bool MergeTreeConditionFullText::tryPrepareSetGinFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
 {
-    /// ------
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
     /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
     /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
@@ -750,7 +749,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     /// TODO: remove this at the end of 2024.
     if (index.type == INVERTED_INDEX_NAME)
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' are no longer supported. Please drop and recreate the index as type 'full-text'");
-    /// ------
 
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }
@@ -768,7 +766,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregatorForPart
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const ActionsDAG * filter_actions_dag, ContextPtr context) const
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
 };
@@ -776,8 +774,8 @@ MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
 MergeTreeIndexPtr fullTextIndexCreator(
     const IndexDescription & index)
 {
-    size_t n = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
-    UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].safeGet<UInt64>();
+    size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
+    UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].get<UInt64>();
     GinFilterParameters params(n, max_rows);
 
     /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
@@ -826,12 +824,12 @@ void fullTextIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         if (index.arguments[1].getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "The second full text index argument must be UInt64");
-        if (index.arguments[1].safeGet<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].safeGet<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
+        if (index.arguments[1].get<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].get<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows per postings list must be no less than {}", MIN_ROWS_PER_POSTINGS_LIST);
     }
     /// Just validate
-    size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].safeGet<size_t>();
-    UInt64 max_rows_per_postings_list = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].safeGet<UInt64>();
+    size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
+    UInt64 max_rows_per_postings_list = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].get<UInt64>();
     GinFilterParameters params(ngrams, max_rows_per_postings_list);
 }
 }

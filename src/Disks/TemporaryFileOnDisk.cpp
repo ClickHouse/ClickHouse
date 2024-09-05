@@ -58,8 +58,7 @@ TemporaryFileOnDisk::~TemporaryFileOnDisk()
 
         if (!disk->exists(relative_path))
         {
-            if (show_warning_if_removed)
-                LOG_WARNING(getLogger("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
+            LOG_WARNING(getLogger("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
             return;
         }
 

@@ -39,9 +39,6 @@ public:
     /// Releases currently accumulated columns.
     MutableColumns getResultColumns();
 
-    /// Sets query parameters for input format if applicable.
-    void setQueryParameters(const NameToNameMap & parameters);
-
 private:
     const Block header;
     const InputFormatPtr format;

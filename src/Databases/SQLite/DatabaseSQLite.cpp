@@ -3,7 +3,6 @@
 #if USE_SQLITE
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
@@ -154,7 +153,6 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
-        /* comment = */ "",
         local_context);
 
     return storage;

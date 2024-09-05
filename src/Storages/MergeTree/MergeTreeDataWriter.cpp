@@ -12,14 +12,11 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <Parsers/queryToString.h>
 
@@ -240,14 +237,6 @@ std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfo
             ++offset_idx;
         }
     }
-    if (offset_idx != async_insert_info->offsets.size())
-    {
-        LOG_ERROR(
-            getLogger("MergeTreeDataWriter"),
-            "ChunkInfo of async insert offsets doesn't match the selector size {}. Offsets content is ({})",
-            selector.size(), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
-    }
     return result;
 }
 
@@ -323,14 +312,6 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
     {
-        if (async_insert_info_with_partition[i] == nullptr)
-        {
-            LOG_ERROR(
-                getLogger("MergeTreeDataWriter"),
-                "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is ({}). Offsets content is ({})",
-                i, partitions_count, fmt::join(selector.begin(), selector.end(), ","), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
-        }
         result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
         result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
     }
@@ -379,6 +360,8 @@ Block MergeTreeDataWriter::mergeBlock(
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
                     block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
         }
+
+        UNREACHABLE();
     };
 
     auto merging_algorithm = get_merging_algorithm();
@@ -451,8 +434,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum min_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>());
-        DayNum max_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>());
+        DayNum min_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.get<UInt64>());
+        DayNum max_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
         const auto & date_lut = DateLUT::serverTimezoneInstance();
 
@@ -483,13 +466,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
-    MergeTreeIndices indices;
-    if (context->getSettingsRef().materialize_skip_indexes_on_insert)
-        indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-
-    ColumnsStatistics statistics;
-    if (context->getSettingsRef().materialize_statistics_on_insert)
-        statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
+    auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -521,13 +498,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->optimize_row_order
-            && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
-    {
-        RowOrderOptimizer::optimize(block, sort_description, perm);
-        perm_ptr = &perm;
-    }
-
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef().optimize_on_insert)
     {
@@ -538,10 +508,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
-    /// If optimize_on_insert is true, block may become empty after merge. There
-    /// is no need to create empty part. Since expected_size could be zero when
-    /// part only contains empty tuples. As a result, check rows instead.
-    if (block.rows() == 0)
+    /// If optimize_on_insert is true, block may become empty after merge.
+    /// There is no need to create empty part.
+    if (expected_size == 0)
         return temp_part;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
@@ -629,9 +598,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         metadata_snapshot,
         columns,
         indices,
-        statistics,
+        MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns()),
         compression_codec,
-        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        context->getCurrentTransaction(),
         false,
         false,
         context->getWriteSettings());
@@ -749,13 +718,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->optimize_row_order
-            && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
-    {
-        RowOrderOptimizer::optimize(block, sort_description, perm);
-        perm_ptr = &perm;
-    }
-
     if (projection.type == ProjectionDescription::Type::Aggregate && merge_is_needed)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterMergingBlocksMicroseconds);
@@ -774,10 +736,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
-        /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        ColumnsStatistics{},
+        Statistics{}, /// TODO(hanfei): It should be helpful to write statistics for projection result.
         compression_codec,
-        Tx::PrehistoricTID,
+        NO_TRANSACTION_PTR,
         false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);

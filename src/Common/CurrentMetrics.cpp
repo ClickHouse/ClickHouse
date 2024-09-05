@@ -1,7 +1,6 @@
 #include <Common/CurrentMetrics.h>
 
 
-// clang-format off
 /// Available metrics. Add something here as you wish.
 /// If the metric is generic (i.e. not server specific)
 /// it should be also added to src/Coordination/KeeperConstant.cpp
@@ -128,9 +127,6 @@
     M(DestroyAggregatesThreads, "Number of threads in the thread pool for destroy aggregate states.") \
     M(DestroyAggregatesThreadsActive, "Number of threads in the thread pool for destroy aggregate states running a task.") \
     M(DestroyAggregatesThreadsScheduled, "Number of queued or active jobs in the thread pool for destroy aggregate states.") \
-    M(ConcurrentHashJoinPoolThreads, "Number of threads in the thread pool for concurrent hash join.") \
-    M(ConcurrentHashJoinPoolThreadsActive, "Number of threads in the thread pool for concurrent hash join running a task.") \
-    M(ConcurrentHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool for concurrent hash join.") \
     M(HashedDictionaryThreads, "Number of threads in the HashedDictionary thread pool.") \
     M(HashedDictionaryThreadsActive, "Number of threads in the HashedDictionary thread pool running a task.") \
     M(HashedDictionaryThreadsScheduled, "Number of queued or active jobs in the HashedDictionary thread pool.") \
@@ -172,17 +168,9 @@
     M(ObjectStorageS3Threads, "Number of threads in the S3ObjectStorage thread pool.") \
     M(ObjectStorageS3ThreadsActive, "Number of threads in the S3ObjectStorage thread pool running a task.") \
     M(ObjectStorageS3ThreadsScheduled, "Number of queued or active jobs in the S3ObjectStorage thread pool.") \
-    M(StorageObjectStorageThreads, "Number of threads in the remote table engines thread pools.") \
-    M(StorageObjectStorageThreadsActive, "Number of threads in the remote table engines thread pool running a task.") \
-    M(StorageObjectStorageThreadsScheduled, "Number of queued or active jobs in remote table engines thread pool.") \
     M(ObjectStorageAzureThreads, "Number of threads in the AzureObjectStorage thread pool.") \
     M(ObjectStorageAzureThreadsActive, "Number of threads in the AzureObjectStorage thread pool running a task.") \
     M(ObjectStorageAzureThreadsScheduled, "Number of queued or active jobs in the AzureObjectStorage thread pool.") \
-    \
-    M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
-    M(DiskPlainRewritableLocalDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
-    M(DiskPlainRewritableS3DirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
-    \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
     M(MergeTreePartsLoaderThreadsScheduled, "Number of queued or active jobs in the MergeTree parts loader thread pool.") \
@@ -234,10 +222,10 @@
     M(PartsCommitted, "Deprecated. See PartsActive.") \
     M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
-    M(AttachedDatabase, "Active databases.") \
-    M(AttachedTable, "Active tables.") \
-    M(AttachedView, "Active views.") \
-    M(AttachedDictionary, "Active dictionaries.") \
+    M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
+    M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
+    M(AttachedView, "Active view, used by current and upcoming SELECTs.") \
+    M(AttachedDictionary, "Active dictionary, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -267,7 +255,7 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
-    M(KeeperOutstandingRequests, "Number of outstanding requests") \
+    M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
@@ -306,8 +294,6 @@
     \
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
-    \
-    M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

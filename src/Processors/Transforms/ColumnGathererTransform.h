@@ -60,8 +60,7 @@ public:
         size_t num_inputs,
         ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_rows_,
-        size_t block_preferred_size_bytes_,
-        bool is_result_sparse_);
+        size_t block_preferred_size_bytes_);
 
     const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
@@ -72,11 +71,10 @@ public:
     template <typename Column>
     void gather(Column & column_res);
 
-    MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
+    UInt64 getMergedRows() const { return merged_rows; }
+    UInt64 getMergedBytes() const { return merged_bytes; }
 
 private:
-    void updateStats(const IColumn & column);
-
     /// Cache required fields
     struct Source
     {
@@ -99,14 +97,12 @@ private:
 
     const size_t block_preferred_size_rows;
     const size_t block_preferred_size_bytes;
-    const bool is_result_sparse;
 
     Source * source_to_fully_copy = nullptr;
 
     ssize_t next_required_source = -1;
     UInt64 merged_rows = 0;
     UInt64 merged_bytes = 0;
-    UInt64 merged_blocks = 0;
 };
 
 class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStream>
@@ -117,13 +113,16 @@ public:
         size_t num_inputs,
         ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_rows_,
-        size_t block_preferred_size_bytes_,
-        bool is_result_sparse_);
+        size_t block_preferred_size_bytes_);
 
     String getName() const override { return "ColumnGathererTransform"; }
 
+    void work() override;
+
 protected:
     void onFinish() override;
+    UInt64 elapsed_ns = 0;
+
     LoggerPtr log;
 };
 
@@ -145,6 +144,7 @@ void ColumnGathererStream::gather(Column & column_res)
     }
 
     next_required_source = -1;
+
 
     /// We use do ... while here to ensure there will be at least one iteration of this loop.
     /// Because the column_res.byteSize() could be bigger than block_preferred_size_bytes already at this point.

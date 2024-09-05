@@ -292,13 +292,13 @@ private:
     }
 
     template <typename T>
-    T & getContainer()
+    inline T & getContainer()
     {
         return *reinterpret_cast<T *>(address & mask);
     }
 
     template <typename T>
-    const T & getContainer() const
+    inline const T & getContainer() const
     {
         return *reinterpret_cast<T *>(address & mask);
     }
@@ -309,7 +309,7 @@ private:
         address |= static_cast<UInt8>(t);
     }
 
-    details::ContainerType getContainerType() const
+    inline details::ContainerType getContainerType() const
     {
         return static_cast<details::ContainerType>(address & ~mask);
     }
