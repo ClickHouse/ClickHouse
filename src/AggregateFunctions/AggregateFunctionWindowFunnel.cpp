@@ -171,14 +171,28 @@ private:
 
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
         std::vector<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
-        bool first_event = false;
-        for (size_t i = 0; i < data.events_list.size(); ++i)
+        bool has_first_event = false;
+        size_t deduplicate_up_to = 0;
+        size_t i = 0;
+        for (; i < data.events_list.size(); ++i)
         {
-            const T & timestamp = data.events_list[i].first;
-            const auto & event_idx = data.events_list[i].second - 1;
+            const auto & current_event = data.events_list[i];
+            while (deduplicate_up_to && i + 1 < data.events_list.size())
+            {
+                const auto & next_event = data.events_list[i + 1];
+                if (next_event.second <= deduplicate_up_to && next_event.first == current_event.first && next_event.second == current_event.second + 1)
+                    ++i;
+                else
+                    break;
+            }
+            deduplicate_up_to = 0;
+
+            auto timestamp = data.events_list[i].first;
+            Int64 event_idx = data.events_list[i].second - 1;
+
             if (strict_order && event_idx == -1)
             {
-                if (first_event)
+                if (has_first_event)
                     break;
                 else
                     continue;
@@ -186,13 +200,13 @@ private:
             else if (event_idx == 0)
             {
                 events_timestamp[0] = std::make_pair(timestamp, timestamp);
-                first_event = true;
+                has_first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
             {
                 return data.events_list[i - 1].second;
             }
-            else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
+            else if (strict_order && has_first_event && !events_timestamp[event_idx - 1].has_value())
             {
                 for (size_t event = 0; event < events_timestamp.size(); ++event)
                 {
@@ -202,13 +216,18 @@ private:
             }
             else if (events_timestamp[event_idx - 1].has_value())
             {
-                auto first_timestamp = events_timestamp[event_idx - 1]->first;
-                bool time_matched = timestamp <= first_timestamp + window;
-                if (strict_increase)
-                    time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
+                auto prev_timestamp = events_timestamp[event_idx - 1]->first;
+                bool time_matched = timestamp <= prev_timestamp + window;
+                if (time_matched && strict_increase)
+                {
+                    time_matched = events_timestamp[event_idx - 1]->second < timestamp;
+                    if (events_timestamp[event_idx - 1]->second == timestamp)
+                        deduplicate_up_to = event_idx + 1;
+                }
+
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
+                    events_timestamp[event_idx] = std::make_pair(prev_timestamp, timestamp);
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }
@@ -261,9 +280,9 @@ public:
         bool has_event = false;
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
         /// reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
-        for (auto i = events_size; i > 0; --i)
+        for (size_t i = events_size; i > 0; --i)
         {
-            auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
+            UInt8 event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
             {
                 this->data(place).add(timestamp, i);
@@ -313,13 +332,13 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     if (arguments.size() > max_events + 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many event arguments for aggregate function {}", name);
 
-    for (const auto i : collections::range(1, arguments.size()))
+    for (size_t i = 1; i < arguments.size(); ++i)
     {
         const auto * cond_arg = arguments[i].get();
         if (!isUInt8(cond_arg))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type {} of argument {} of aggregate function {}, must be UInt8",
-                            cond_arg->getName(), toString(i + 1), name);
+                            "Illegal type {} of argument {} of aggregate function '{}', must be UInt8",
+                            cond_arg->getName(), i + 1, name);
     }
 
     AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionWindowFunnel, Data>(*arguments[0], arguments, params));
