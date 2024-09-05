@@ -591,12 +591,14 @@ static void deserializeTextImpl(
                 return;
         }
 
+        /// We cannot insert value with incomplete type, insert it as String.
         variant_type = std::make_shared<DataTypeString>();
         /// To be able to deserialize field as String with Quoted escaping rule, it should be quoted.
         if (escaping_rule == FormatSettings::EscapingRule::Quoted && (field.size() < 2 || field.front() != '\'' || field.back() != '\''))
             field = "'" + field + "'";
     }
-    else if (dynamic_column.addNewVariant(variant_type, variant_type->getName()))
+
+    if (dynamic_column.addNewVariant(variant_type, variant_type->getName()))
     {
         auto discr = variant_info.variant_name_to_discriminator.at(variant_type->getName());
         deserializeVariant(dynamic_column.getVariantColumn(), dynamic_column.getVariantSerialization(variant_type), discr, *field_buf, deserialize_variant);
