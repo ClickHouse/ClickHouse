@@ -384,7 +384,11 @@ void DiskObjectStorage::removeSharedRecursiveWithLimit(
     const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     if (remove_shared_recursive_file_limit == 0)
-        return removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+    {
+        removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+        return;
+    }
+
 
     RemoveBatchRequest local_paths;
     std::vector<std::string> directories;
