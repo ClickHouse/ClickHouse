@@ -6205,7 +6205,7 @@ void StorageReplicatedMergeTree::alter(
         size_t mutation_path_idx = std::numeric_limits<size_t>::max();
 
         String new_metadata_str = future_metadata_in_zk.toString();
-        Int32 metadata_version = fixMetadataVersionInZooKeeper();
+        Int32 metadata_version = tryFixMetadataVersionInZooKeeper();
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "metadata", new_metadata_str, metadata_version));
 
         String new_columns_str = future_metadata.columns.toString();
