@@ -211,7 +211,7 @@ function setup_logs_replication
             /*num_layers*/ 1,
             /*min_time*/   60,    /*max_time*/  300,
             /*min_rows*/   10000, /*max_rows*/  20000,
-            /*min_bytes*/  50240, /*max_bytes*/ 2000000
+            /*min_bytes*/  500000, /*max_bytes*/ 2000000
             )
         " || continue
 
