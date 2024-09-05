@@ -21,13 +21,18 @@ public:
     const NameSet & getColumns() const { return columns; }
     bool isLeft() const { return is_left; }
 
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(WriteBuffer & out) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings);
+
 private:
     void updateOutputStream() override;
 
     NameSet columns;
-    bool is_left = false;
-    bool is_unaligned = false;
-    size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    bool is_left;
+    bool is_unaligned;
+    size_t max_block_size;
 };
 
 }
