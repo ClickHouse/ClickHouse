@@ -50,7 +50,7 @@ class ExtractKeyValuePairs : public IFunction
 
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row[]);
+            builder.withMaxNumberOfPairs(context->getSettingsRef()[extract_key_value_pairs_max_pairs_per_row]);
         }
 
         return builder.build();

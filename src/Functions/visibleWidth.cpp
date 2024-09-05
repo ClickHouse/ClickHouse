@@ -12,6 +12,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 function_visible_width_behavior;
 
 namespace ErrorCodes
 {
@@ -34,10 +35,7 @@ public:
         return std::make_shared<FunctionVisibleWidth>(context);
     }
 
-    explicit FunctionVisibleWidth(ContextPtr context)
-    {
-        behavior = context->getSettingsRef().function_visible_width_behavior;
-    }
+    explicit FunctionVisibleWidth(ContextPtr context) { behavior = context->getSettingsRef()[function_visible_width_behavior]; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }

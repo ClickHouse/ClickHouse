@@ -10,6 +10,7 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+extern const SettingsUInt64 database_replicated_initial_query_timeout_sec;
 
 namespace ErrorCodes
 {
@@ -309,7 +310,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->is_initial_query = true;
 
     LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
-    UInt64 timeout = query_context->getSettingsRef().database_replicated_initial_query_timeout_sec;
+    UInt64 timeout = query_context->getSettingsRef()[database_replicated_initial_query_timeout_sec];
     {
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
