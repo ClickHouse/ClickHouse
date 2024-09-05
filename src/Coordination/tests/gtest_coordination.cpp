@@ -3113,6 +3113,8 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ));
     ASSERT_FALSE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS));
+    ASSERT_FALSE(feature_flags.isEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS));
+    ASSERT_FALSE(feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE));
 }
 
 TYPED_TEST(CoordinationTest, TestSystemNodeModify)
@@ -3372,6 +3374,171 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
     std::unordered_set<std::string> children2_set(children2.begin(), children2.end());
 
     ASSERT_TRUE(children1_set == children2_set);
+}
+
+TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+
+    int32_t zxid = 0;
+
+    const auto create = [&](const String & path, int create_mode)
+    {
+        int new_zxid = ++zxid;
+
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = path;
+        create_request->is_ephemeral = create_mode == zkutil::CreateMode::Ephemeral || create_mode == zkutil::CreateMode::EphemeralSequential;
+        create_request->is_sequential = create_mode == zkutil::CreateMode::PersistentSequential || create_mode == zkutil::CreateMode::EphemeralSequential;
+
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto remove = [&](const String & path, int32_t version = -1, std::optional<uint32_t> remove_nodes_limit = std::nullopt)
+    {
+        int new_zxid = ++zxid;
+
+        std::shared_ptr<ZooKeeperRemoveRequest> remove_request;
+
+        if (remove_nodes_limit.has_value())
+            remove_request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+        else
+            remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+
+        remove_request->path = path;
+        remove_request->version = version;
+        remove_request->remove_nodes_limit = remove_nodes_limit.value_or(1);
+
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid);
+        return storage.processRequest(remove_request, 1, new_zxid);
+    };
+
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
+    {
+        SCOPED_TRACE("Single Remove Single Node");
+        create("/T1", zkutil::CreateMode::Persistent);
+
+        auto responses = remove("/T1");
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_FALSE(exists("/T1"));
+    }
+
+    {
+        SCOPED_TRACE("Single Remove Tree");
+        create("/T2", zkutil::CreateMode::Persistent);
+        create("/T2/A", zkutil::CreateMode::Persistent);
+
+        auto responses = remove("/T2");
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/T2"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Single Node");
+        create("/T3", zkutil::CreateMode::Persistent);
+
+        auto responses = remove("/T3", 0, 100);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_FALSE(exists("/T3"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Tree");
+        create("/T4", zkutil::CreateMode::Persistent);
+        create("/T4/A", zkutil::CreateMode::Persistent);
+
+        auto responses = remove("/T4", 0, 100);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_FALSE(exists("/T4"));
+        ASSERT_FALSE(exists("/T4/A"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Tree Small Limit");
+        create("/T5", zkutil::CreateMode::Persistent);
+        create("/T5/A", zkutil::CreateMode::Persistent);
+        create("/T5/B", zkutil::CreateMode::Persistent);
+        create("/T5/A/C", zkutil::CreateMode::Persistent);
+
+        auto responses = remove("/T5", 0, 2);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/T5"));
+        ASSERT_TRUE(exists("/T5/A"));
+        ASSERT_TRUE(exists("/T5/B"));
+        ASSERT_TRUE(exists("/T5/A/C"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Tree Small Limit");
+        create("/T6", zkutil::CreateMode::Persistent);
+        create("/T6/A", zkutil::CreateMode::Persistent);
+        create("/T6/B", zkutil::CreateMode::Persistent);
+        create("/T6/A/C", zkutil::CreateMode::Persistent);
+
+        auto responses = remove("/T6", 0, 2);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/T6"));
+        ASSERT_TRUE(exists("/T6/A"));
+        ASSERT_TRUE(exists("/T6/B"));
+        ASSERT_TRUE(exists("/T6/A/C"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Ephemeral");
+        create("/T7", zkutil::CreateMode::Ephemeral);
+
+        auto responses = remove("/T7", 0, 100);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_TRUE(!exists("/T7"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Tree With Ephemeral");
+        create("/T8", zkutil::CreateMode::Persistent);
+        create("/T8/A", zkutil::CreateMode::Persistent);
+        create("/T8/B", zkutil::CreateMode::Ephemeral);
+        create("/T8/A/C", zkutil::CreateMode::Ephemeral);
+
+        auto responses = remove("/T8", 0, 4);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_TRUE(!exists("/T8"));
+        ASSERT_TRUE(!exists("/T8/A"));
+        ASSERT_TRUE(!exists("/T8/B"));
+        ASSERT_TRUE(!exists("/T8/A/C"));
+    }
 }
 
 /// INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
