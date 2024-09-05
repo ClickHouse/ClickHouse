@@ -7156,11 +7156,16 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
-    const auto & parts = snapshot_data.parts;
 
     MergeTreeDataSelectExecutor reader(*this);
     auto result_ptr = reader.estimateNumMarksToRead(
-        parts, {}, storage_snapshot->metadata, query_info, query_context, query_context->getSettingsRef().max_threads);
+        snapshot_data.parts,
+        snapshot_data.mutations_snapshot,
+        storage_snapshot->metadata->getColumns().getAll().getNames(),
+        storage_snapshot->metadata,
+        query_info,
+        query_context,
+        query_context->getSettingsRef().max_threads);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -8174,11 +8179,15 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
-AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartPtr part) const
+AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
+    const MergeTreeDataPartPtr & part,
+    const MutationsSnapshotPtr & mutations,
+    const StorageMetadataPtr & metadata,
+    const ContextPtr & query_context)
 {
-    auto commands = getAlterMutationCommandsForPart(part);
+    auto commands = mutations->getAlterMutationCommandsForPart(part);
+    auto result = std::make_shared<AlterConversions>(metadata, query_context);
 
-    auto result = std::make_shared<AlterConversions>();
     for (const auto & command : commands | std::views::reverse)
         result->addMutationCommand(command);
 
@@ -8470,9 +8479,28 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
 }
 
-bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const
+bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    return !hasLightweightDeletedMask();
+    if (hasLightweightDeletedMask())
+        return false;
+
+    if (!storage_snapshot)
+        return !query_context->getSettingsRef().apply_mutations_on_fly;
+
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    return !snapshot_data.mutations_snapshot->hasDataMutations();
+}
+
+Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
+{
+    Int64 version = -1;
+    for (const auto & part : parts)
+    {
+        Int64 part_version = part->getMetadataVersion();
+        if (version == -1 || part_version < version)
+            version = part_version;
+    }
+    return version;
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
@@ -8486,10 +8514,14 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
         object_columns_copy = object_columns;
     }
 
-    snapshot_data->alter_conversions.reserve(snapshot_data->parts.size());
-    for (const auto & part : snapshot_data->parts)
-        snapshot_data->alter_conversions.push_back(getAlterConversionsForPart(part));
+    IMutationsSnapshot::Params params
+    {
+        .metadata_version = metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = getMinMetadataVersion(snapshot_data->parts),
+        .need_data_mutations = query_context->getSettingsRef().apply_mutations_on_fly,
+    };
 
+    snapshot_data->mutations_snapshot = getMutationsSnapshot(params);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data));
 }
 
@@ -8707,28 +8739,57 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
     }
 }
 
-bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove)
+static void updateMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    Int64 increment)
 {
+    if (num_data_mutations_to_apply < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
+
+    if (num_metadata_mutations_to_apply < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
+
+    bool has_data_mutation = false;
+    bool has_metadata_mutation = false;
+
     for (const auto & command : commands)
     {
-        if (AlterConversions::supportsMutationCommandType(command.type))
+        if (!has_data_mutation && AlterConversions::isSupportedDataMutation(command.type))
         {
-            if (remove)
-            {
-                --alter_conversions_mutations;
-                if (alter_conversions_mutations < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly mutations counter is negative ({})", alter_conversions_mutations);
-            }
-            else
-            {
-                if (alter_conversions_mutations < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly mutations counter is negative ({})", alter_conversions_mutations);
-                ++alter_conversions_mutations;
-            }
-            return true;
+            num_data_mutations_to_apply += increment;
+            has_data_mutation = true;
+
+            if (num_data_mutations_to_apply < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
+        }
+
+        if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
+        {
+            num_metadata_mutations_to_apply += increment;
+            has_metadata_mutation = true;
+
+            if (num_metadata_mutations_to_apply < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
         }
     }
-    return false;
+}
+
+void incrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands)
+{
+    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, 1);
+}
+
+void decrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands)
+{
+    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, -1);
 }
 
 }
