@@ -1026,8 +1026,6 @@ private:
         const bool & zero_copy_enabled,
         const bool & always_use_copy_instead_of_hardlinks,
         const ContextPtr & query_context);
-
-    Int32 tryFixMetadataVersionInZooKeeper();
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
