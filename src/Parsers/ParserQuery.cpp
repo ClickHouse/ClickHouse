@@ -36,6 +36,7 @@
 #include <Parsers/Access/ParserCheckGrantQuery.h>
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
+#include <Parsers/Access/ParserExecuteAsQuery.h>
 
 
 namespace DB
@@ -75,6 +76,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
     ParserCopyQuery copy_p;
+    ParserExecuteAsQuery execute_as_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -105,7 +107,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
         || update_p.parse(pos, node, expected)
-        || copy_p.parse(pos, node, expected);
+        || copy_p.parse(pos, node, expected)
+        || execute_as_p.parse(pos, node, expected);
 
     if (res && allow_in_parallel_with)
     {
