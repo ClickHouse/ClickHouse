@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
