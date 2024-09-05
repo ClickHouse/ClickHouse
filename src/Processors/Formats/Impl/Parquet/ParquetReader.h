@@ -1,3 +1,4 @@
+
 #pragma once
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
@@ -9,15 +10,38 @@
 #include <arrow/io/interfaces.h>
 #include <parquet/file_reader.h>
 #include <parquet/properties.h>
+#include <Common/threadPoolCallbackRunner.h>
+
 
 namespace DB
 {
+
+struct ColumnChunkData
+{
+    PaddedPODArray<UInt8> data;
+};
+
+using ColumnChunkDataPtr = std::shared_ptr<ColumnChunkData>;
+
+class FileAsyncDownloader
+{
+public:
+    FileAsyncDownloader(SeekableReadBuffer & file_, std::mutex & mutex);
+    void downloadColumnChunkData(int row_group_idx, const String & column_name, size_t offset, size_t size);
+    std::shared_ptr<ColumnChunkData> readColumnChunkData(int row_group_idx, const String & column_name);
+private:
+    ThreadPoolCallbackRunnerUnsafe<ColumnChunkDataPtr> callback_runner;
+    SeekableReadBuffer& file;
+    std::mutex& file_mutex;
+    std::unordered_map<int, std::unordered_map<String, std::future<std::shared_ptr<ColumnChunkData>>>> column_chunks;
+    std::mutex chunks_mutex;
+};
 
 class SubRowGroupRangeReader
 {
 public:
     using RowGroupReaderCreator = std::function<std::unique_ptr<RowGroupChunkReader>(size_t)>;
-    explicit SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, RowGroupReaderCreator&& creator);
+    SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, RowGroupReaderCreator&& creator);
     DB::Chunk read(size_t rows);
 
 private:
@@ -66,6 +90,8 @@ private:
     std::vector<int> row_groups_indices;
     size_t next_row_group_idx = 0;
     std::shared_ptr<parquet::FileMetaData> meta_data;
+    std::unordered_map<String, parquet::schema::NodePtr> parquet_columns;
+    std::unique_ptr<FileAsyncDownloader> async_downloader;
 };
 
 }

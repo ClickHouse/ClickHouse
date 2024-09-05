@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
+#include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -21,57 +22,78 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
 {
     if (!remain_rows) return {};
     rows = std::min(rows, remain_rows);
-
-    OptionalRowSet row_set = std::nullopt;
-    if (!filter_columns.empty())
-        row_set = RowSet(rows);
-    if (row_set.has_value())
-        for (auto & column : filter_columns)
-        {
-            reader_columns_mapping[column]->computeRowSet(row_set, rows);
-            if (row_set.value().none())
-                break;
-        }
-    bool skip_all = false;
-    if (row_set.has_value())  skip_all = row_set.value().none();
-    if (skip_all)
-    {
-        metrics.skipped_rows += rows;
-    }
-
-    if (row_set.has_value() && row_set.value().all()) row_set = std::nullopt;
-    size_t rows_read = 0;
-    if (!skip_all) rows_read = row_set.has_value() ? row_set.value().count() : rows;
     MutableColumns columns;
     for (auto & reader : column_readers)
     {
         columns.push_back(reader->createColumn());
-        columns.back()->reserve(rows_read);
+        columns.back()->reserve(rows);
     }
-    for (size_t i = 0; i < column_readers.size(); i++)
+
+    size_t rows_read = 0;
+    while (rows_read < rows)
     {
+        size_t rows_to_read = std::min(rows - rows_read, remain_rows);
+        if (!rows_to_read)
+            break;
+        for (auto & reader : column_readers)
+        {
+            if (!reader->availableRows())
+            {
+                reader->readPageIfNeeded();
+            }
+            rows_to_read = std::min(reader->availableRows(), rows_to_read);
+        }
+        if (!rows_to_read)
+            break;
+
+        OptionalRowSet row_set = std::nullopt;
+        if (!filter_columns.empty())
+            row_set = std::optional(RowSet(rows_to_read));
+        if (row_set.has_value())
+            for (auto & column : filter_columns)
+            {
+                reader_columns_mapping[column]->computeRowSet(row_set, rows_to_read);
+                if (row_set.value().none())
+                    break;
+            }
+        bool skip_all = false;
+        if (row_set.has_value())  skip_all = row_set.value().none();
         if (skip_all)
-            column_readers[i]->skip(rows);
-        else
-            column_readers[i]->read(columns[i], row_set, rows);
+        {
+            metrics.skipped_rows += rows_to_read;
+        }
+
+        bool all = true;
+        if (row_set.has_value())  all = row_set.value().all();
+        if (all) row_set = std::nullopt;
+
+        for (size_t i = 0; i < column_readers.size(); i++)
+        {
+            if (skip_all)
+                column_readers[i]->skip(rows_to_read);
+            else
+                column_readers[i]->read(columns[i], row_set, rows_to_read);
+        }
+        remain_rows -= rows_to_read;
+        metrics.filtered_rows += (rows_to_read - (columns[0]->size() - rows_read));
+        rows_read = columns[0]->size();
     }
-    remain_rows -= rows;
-    metrics.filtered_rows += (rows - columns[0]->size() );
-//    if (parquet_reader->remain_filter.has_value())
-//    {
-//        std::cerr<<"has filter\n"<<std::endl;
-//        auto input = parquet_reader->header.cloneWithColumns(std::move(columns));
-//        auto output = input.getColumns();
-//        parquet_reader->remain_filter.value().execute(input);
-//        const auto& filter = checkAndGetColumn<ColumnUInt8>(*input.getByPosition(0).column).getData();
-//        size_t resize_hint = 0;
-//        for (size_t i = 0; i < columns.size(); i++)
-//        {
-//            output[i] = output[i]->assumeMutable()->filter(filter, resize_hint);
-//            resize_hint = output[i]->size();
-//        }
-//        return Chunk(std::move(output), resize_hint);
-//    }
+
+    //    if (parquet_reader->remain_filter.has_value())
+    //    {
+    //        std::cerr<<"has filter\n"<<std::endl;
+    //        auto input = parquet_reader->header.cloneWithColumns(std::move(columns));
+    //        auto output = input.getColumns();
+    //        parquet_reader->remain_filter.value().execute(input);
+    //        const auto& filter = checkAndGetColumn<ColumnUInt8>(*input.getByPosition(0).column).getData();
+    //        size_t resize_hint = 0;
+    //        for (size_t i = 0; i < columns.size(); i++)
+    //        {
+    //            output[i] = output[i]->assumeMutable()->filter(filter, resize_hint);
+    //            resize_hint = output[i]->size();
+    //        }
+    //        return Chunk(std::move(output), resize_hint);
+    //    }
     metrics.output_rows += rows_read;
     return Chunk(std::move(columns), rows_read);
 }
@@ -90,63 +112,62 @@ std::pair<size_t, size_t> getColumnRange(const parquet::ColumnChunkMetaData & co
 
 RowGroupChunkReader::RowGroupChunkReader(
     ParquetReader * parquetReader,
-    std::shared_ptr<parquet::RowGroupMetaData> row_group_meta_,
+    size_t row_group_idx,
     std::unordered_map<String, ColumnFilterPtr> filters)
-    : parquet_reader(parquetReader), row_group_meta(row_group_meta_)
+    : parquet_reader(parquetReader), row_group_meta(parquetReader->meta_data->RowGroup(static_cast<int>(row_group_idx)))
 {
-    std::unordered_map<String, parquet::schema::NodePtr> parquet_columns;
-    const auto * root = parquet_reader->meta_data->schema()->group_node();
-    for (int i = 0; i < root->field_count(); ++i)
-    {
-        const auto & node = root->field(i);
-        parquet_columns.emplace(node->name(), node);
-    }
-
     column_readers.reserve(parquet_reader->header.columns());
     column_buffers.resize(parquet_reader->header.columns());
     int reader_idx = 0;
     for (const auto & col_with_name : parquet_reader->header)
     {
-        if (!parquet_columns.contains(col_with_name.name))
+        if (!parquetReader->parquet_columns.contains(col_with_name.name))
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", col_with_name.name);
 
-        const auto & node = parquet_columns.at(col_with_name.name);
+        const auto & node = parquetReader->parquet_columns.at(col_with_name.name);
         if (!node->is_primitive())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "arrays and maps are not implemented in native parquet reader");
 
         auto idx = parquet_reader->meta_data->schema()->ColumnIndex(*node);
         auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
-        auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
-        size_t compress_size = range.second;
-        size_t offset = range.first;
-        column_buffers[reader_idx].resize(compress_size, 0);
+//        auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
+//        size_t compress_size = range.second;
+//        size_t offset = range.first;
+//        column_buffers[reader_idx].resize(compress_size, 0);
         remain_rows = row_group_meta->ColumnChunk(idx)->num_values();
-        if (!parquet_reader->file.supportsReadAt())
-        {
-            std::lock_guard lock(parquet_reader->file_mutex);
-            parquet_reader->file.seek(offset, SEEK_SET);
-            size_t count = parquet_reader->file.readBig(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size);
-            if (count != compress_size)
-                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column data");
-        }
-        else
-        {
-            auto pb = [](size_t ) {return true;};
-            size_t count = parquet_reader->file.readBigAt(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size, offset, pb);
-            if (count != compress_size)
-                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column data");
-        }
+//        if (!parquet_reader->file.supportsReadAt())
+//        {
+//            std::lock_guard lock(parquet_reader->file_mutex);
+//            parquet_reader->file.seek(offset, SEEK_SET);
+//            size_t count = parquet_reader->file.readBig(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size);
+//            if (count != compress_size)
+//                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column data");
+//        }
+//        else
+//        {
+//            auto pb = [](size_t ) {return true;};
+//            size_t count = parquet_reader->file.readBigAt(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size, offset, pb);
+//            if (count != compress_size)
+//                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column data");
+//        }
+
+        auto data = parquetReader->async_downloader->readColumnChunkData(static_cast<int>(row_group_idx), col_with_name.name);
+        column_buffers[reader_idx] = std::move(data->data);
         auto page_reader = std::make_unique<LazyPageReader>(
-            std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size),
+            std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(column_buffers[reader_idx].data()), column_buffers[reader_idx].size()),
             parquet_reader->properties,
             remain_rows,
             row_group_meta->ColumnChunk(idx)->compression());
-        auto column_reader = SelectiveColumnReaderFactory::createLeafColumnReader(
-            *row_group_meta->ColumnChunk(idx), parquet_reader->meta_data->schema()->Column(idx), std::move(page_reader), filter);
-        if (node->is_optional())
-        {
-            column_reader = SelectiveColumnReaderFactory::createOptionalColumnReader(column_reader, nullptr);
-        }
+        const auto* column_desc = parquet_reader->meta_data->schema()->Column(idx);
+        auto column_reader = ParquetColumnReaderFactory::builder().nullable(node->is_optional())
+                             .dictionary(row_group_meta->ColumnChunk(idx)->has_dictionary_page())
+                             .columnDescriptor(column_desc)
+                             .pageReader(std::move(page_reader))
+                             .targetType(col_with_name.type)
+                             .filter(filter)
+                             .build();
+//            auto column_reader = SelectiveColumnReaderFactory::createLeafColumnReader(
+//            *row_group_meta->ColumnChunk(idx), parquet_reader->meta_data->schema()->Column(idx), std::move(page_reader), filter);
         column_readers.push_back(column_reader);
         reader_columns_mapping[col_with_name.name] = column_reader;
         chassert(idx >= 0);
@@ -523,9 +544,6 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
         batch_buffer.resize(0);
         state.remain_rows -= rows_to_read;
     }
-    for (size_t i = 0; i < data.size(); i++)
-        if (data[i] < 0)
-            std::cerr << fmt::format("data value {}\n", data[i]);
 }
 
 template <typename DataType, typename SerializedType>
@@ -716,7 +734,7 @@ static bool isLogicalTypeDate(parquet::LogicalType::Type::type type)
 
 static bool isLogicalTypeDateTime(parquet::LogicalType::Type::type type)
 {
-    return type == parquet::LogicalType::Type::TIMESTAMP;
+    return type == parquet::LogicalType::Type::TIMESTAMP || type == parquet::LogicalType::Type::TIME;
 }
 
 static UInt32 getScaleFromLogicalTimestamp(parquet::LogicalType::TimeUnit::unit tm_unit)
@@ -824,6 +842,7 @@ template class NumberColumnDirectReader<DataTypeFloat32, Float32>;
 template class NumberColumnDirectReader<DataTypeFloat64, Float64>;
 template class NumberColumnDirectReader<DataTypeDate32, Int32>;
 template class NumberColumnDirectReader<DataTypeDateTime64, Int64>;
+template class NumberColumnDirectReader<DataTypeDateTime, Int64>;
 
 template class NumberDictionaryReader<DataTypeInt16, Int32>;
 template class NumberDictionaryReader<DataTypeInt32, Int32>;
@@ -832,6 +851,7 @@ template class NumberDictionaryReader<DataTypeFloat32, Float32>;
 template class NumberDictionaryReader<DataTypeFloat64, Float64>;
 template class NumberDictionaryReader<DataTypeDate32, Int32>;
 template class NumberDictionaryReader<DataTypeDateTime64, Int64>;
+template class NumberDictionaryReader<DataTypeDateTime, Int64>;
 
 Int32 loadLength(const uint8_t * data)
 {
