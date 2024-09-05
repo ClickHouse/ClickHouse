@@ -95,4 +95,34 @@ select 2 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1000, event
 select 3 = windowFunnel(10000)(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 select 1 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 
+
+
+DROP TABLE IF EXISTS funnel_test2;
+create table funnel_test2 (event_ts UInt32, result String, uid UInt32) engine=Memory;
+insert into funnel_test2 SELECT data.1, data.2, data.3  FROM (
+        SELECT arrayJoin([
+            (100, 'failure', 234),
+            (200, 'success', 345),
+            (210, 'failure', 345),
+            (230, 'success', 345),
+            (250, 'failure', 234),
+            (180, 'failure', 123),
+            (220, 'failure', 123),
+            (250, 'success', 123)
+        ]) data);
+
+SELECT '-';
+SELECT uid, windowFunnel(200, 'strict_increase')( toUInt32(event_ts), result='failure', result='failure', result='success' )
+FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
+SELECT '-';
+SELECT uid, windowFunnel(200)( toUInt32(event_ts), result='failure', result='failure', result='success' )
+FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
+SELECT '-';
+SELECT uid, windowFunnel(200, 'strict_deduplication')( toUInt32(event_ts), result='failure', result='failure', result='success' )
+FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
+SELECT '-';
+
+DROP TABLE IF EXISTS funnel_test2;
+
+
 drop table funnel_test_strict_increase;
