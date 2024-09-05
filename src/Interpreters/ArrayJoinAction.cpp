@@ -67,8 +67,6 @@ ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool is_
     , is_left(is_left_)
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
-    // , is_unaligned(context->getSettingsRef().enable_unaligned_array_join)
-    // , max_block_size(context->getSettingsRef().max_block_size)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");

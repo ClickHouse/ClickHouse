@@ -33,7 +33,6 @@ public:
 
     /// For unaligned [LEFT] ARRAY JOIN
     FunctionOverloadResolverPtr function_length;
-    //FunctionOverloadResolverPtr function_greatest;
     FunctionOverloadResolverPtr function_array_resize;
 
     /// For LEFT ARRAY JOIN.
