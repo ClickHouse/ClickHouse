@@ -58,8 +58,8 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
-    : stats_desc(stats_desc_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
+    : stats_desc(stats_desc_), column_name(column_name_)
 {
 }
 
@@ -176,7 +176,7 @@ String ColumnStatistics::getFileName() const
 
 const String & ColumnStatistics::columnName() const
 {
-    return stats_desc.column_name;
+    return column_name;
 }
 
 UInt64 ColumnStatistics::rowCount() const
@@ -227,15 +227,15 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
     }
 }
 
-ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats) const
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(stats);
-    for (const auto & [type, desc] : stats.types_to_desc)
+    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
+    for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
     {
         auto it = creators.find(type);
         if (it == creators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq' and 'count_min'", type);
-        auto stat_ptr = (it->second)(desc, stats.data_type);
+        auto stat_ptr = (it->second)(desc, column_desc.type);
         column_stat->stats[type] = stat_ptr;
     }
     return column_stat;
@@ -246,7 +246,7 @@ ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription &
     ColumnsStatistics result;
     for (const auto & col : columns)
         if (!col.statistics.empty())
-            result.push_back(get(col.statistics));
+            result.push_back(get(col));
     return result;
 }
 

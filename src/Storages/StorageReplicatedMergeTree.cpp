@@ -221,14 +221,17 @@ void StorageReplicatedMergeTree::setZooKeeper()
     /// strange effects. So we always use only one session for all tables.
     /// (excluding auxiliary zookeepers)
 
-    std::lock_guard lock(current_zookeeper_mutex);
     if (zookeeper_name == default_zookeeper_name)
     {
-        current_zookeeper = getContext()->getZooKeeper();
+        auto new_keeper = getContext()->getZooKeeper();
+        std::lock_guard lock(current_zookeeper_mutex);
+        current_zookeeper = new_keeper;
     }
     else
     {
-        current_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+        auto new_keeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+        std::lock_guard lock(current_zookeeper_mutex);
+        current_zookeeper = new_keeper;
     }
 }
 
@@ -365,7 +368,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool has_zookeeper = getContext()->hasZooKeeper() || getContext()->hasAuxiliaryZooKeeper(zookeeper_name);
     if (has_zookeeper)
     {
-        /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
+        /// It's possible for getZooKeeper() to timeout if zookeeper host(s) can't
         /// be reached. In such cases Poco::Exception is thrown after a connection
         /// timeout - refer to src/Common/ZooKeeper/ZooKeeperImpl.cpp:866 for more info.
         ///
@@ -6340,7 +6343,7 @@ void StorageReplicatedMergeTree::alter(
                                 "Metadata on replica is not up to date with common metadata in Zookeeper. "
                                 "It means that this replica still not applied some of previous alters."
                                 " Probably too many alters executing concurrently (highly not recommended). "
-                                "You can retry the query");
+                                "You can retry this error");
 
             /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
             if (query_context->getZooKeeperMetadataTransaction())
@@ -9205,12 +9208,10 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
             (!has_non_adaptive_index_granularity_parts && !other_replicas_fixed_granularity));
 }
 
-
-MutationCommands StorageReplicatedMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
+MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
-    return queue.getAlterMutationCommandsForPart(part);
+    return queue.getMutationsSnapshot(params);
 }
-
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
