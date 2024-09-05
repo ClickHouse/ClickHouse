@@ -522,7 +522,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
-                        && lit_right->value.get<Int64>() >= 0)
+                        && lit_right->value.safeGet<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';

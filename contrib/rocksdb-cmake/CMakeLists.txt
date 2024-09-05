@@ -11,7 +11,7 @@ option(WITH_LZ4 "build with lz4" ON)
 option(WITH_ZLIB "build with zlib" ON)
 option(WITH_ZSTD "build with zstd" ON)
 
-if (ENABLE_JEMALLOC)
+if (ENABLE_JEMALLOC AND OS_LINUX) # gives compile errors with jemalloc enabled for rocksdb on non-Linux
   add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
   list (APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
 endif ()

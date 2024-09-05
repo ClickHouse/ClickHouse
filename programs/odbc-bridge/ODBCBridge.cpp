@@ -27,7 +27,7 @@ std::string ODBCBridge::bridgeName() const
 
 ODBCBridge::HandlerFactoryPtr ODBCBridge::getHandlerFactoryPtr(ContextPtr context) const
 {
-    return std::make_shared<ODBCBridgeHandlerFactory>("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context);
+    return std::make_shared<ODBCBridgeHandlerFactory>("ODBCRequestHandlerFactory-factory", context);
 }
 
 }

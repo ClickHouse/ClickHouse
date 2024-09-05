@@ -3,7 +3,9 @@ import os
 import pytest
 import uuid
 import time
+import re
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.client import QueryRuntimeException
 from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
 
@@ -64,6 +66,17 @@ def test_read_write_storage_with_globs(started_cluster):
         hdfs_api.write_data("/storage" + i, i + "\tMark\t72.53\n")
         assert hdfs_api.read_data("/storage" + i) == i + "\tMark\t72.53\n"
 
+    node1.query(
+        "create table HDFSStorageWithDoubleAsterisk (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/**.doublestar.tsv', 'TSV')"
+    )
+
+    for i in ["1", "2", "3"]:
+        hdfs_api.write_data(f"/subdir{i}/file{i}.doublestar.tsv", f"{i}\tMark\t72.53\n")
+    assert (
+        hdfs_api.read_data(f"/subdir{i}/file{i}.doublestar.tsv")
+        == f"{i}\tMark\t72.53\n"
+    )
+
     assert (
         node1.query(
             "select count(*) from HDFSStorageWithRange settings s3_throw_on_zero_files_match=1"
@@ -73,6 +86,7 @@ def test_read_write_storage_with_globs(started_cluster):
     assert node1.query("select count(*) from HDFSStorageWithEnum") == "3\n"
     assert node1.query("select count(*) from HDFSStorageWithQuestionMark") == "3\n"
     assert node1.query("select count(*) from HDFSStorageWithAsterisk") == "3\n"
+    assert node1.query("select count(*) from HDFSStorageWithDoubleAsterisk") == "3\n"
 
     try:
         node1.query("insert into HDFSStorageWithEnum values (1, 'NEW', 4.2)")
@@ -95,10 +109,18 @@ def test_read_write_storage_with_globs(started_cluster):
         print(ex)
         assert "in readonly mode" in str(ex)
 
+    try:
+        node1.query("insert into HDFSStorageWithDoubleAsterisk values (1, 'NEW', 4.2)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        print(ex)
+        assert "in readonly mode" in str(ex)
+
     node1.query("drop table HDFSStorageWithRange")
     node1.query("drop table HDFSStorageWithEnum")
     node1.query("drop table HDFSStorageWithQuestionMark")
     node1.query("drop table HDFSStorageWithAsterisk")
+    node1.query("drop table HDFSStorageWithDoubleAsterisk")
 
 
 def test_storage_with_multidirectory_glob(started_cluster):
@@ -1233,6 +1255,43 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     )
 
     assert int(result) == 44
+
+
+def test_hive_partitioning_with_one_parameter(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/file_1", f"column0,column1\nElizabeth,Gordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/file_1")
+        == f"column0,column1\nElizabeth,Gordon\n"
+    )
+
+    r = node1.query(
+        "SELECT column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/file_1', 'CSVWithNames')",
+        settings={"use_hive_partitioning": 1},
+    )
+    assert r == f"Elizabeth\n"
+
+
+def test_hive_partitioning_without_setting(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/column1=Gordon/parquet_2", f"Elizabeth\tGordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/column1=Gordon/parquet_2")
+        == f"Elizabeth\tGordon\n"
+    )
+    pattern = re.compile(
+        r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
+    )
+
+    with pytest.raises(QueryRuntimeException, match=pattern):
+        node1.query(
+            f"SELECT column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+            settings={"use_hive_partitioning": 0},
+        )
 
 
 if __name__ == "__main__":

@@ -99,9 +99,6 @@ protected:
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
 
-    std::atomic_flag directories_created = ATOMIC_FLAG_INIT;
-    void createDirectories();
-
     const String metadata_path;
     const String data_path;
 };

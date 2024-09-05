@@ -80,5 +80,3 @@ EOF""",
         instance.query(f"SHOW GRANTS FOR `{user_id}`")
         == f"GRANT SELECT ON mydb.* TO `{user_id}`\n"
     )
-    instance.stop_clickhouse()
-    instance.start_clickhouse()
