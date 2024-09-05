@@ -5,12 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-
 $CLICKHOUSE_CLIENT -n --query="
-    set allow_deprecated_database_ordinary=1;
     DROP DATABASE IF EXISTS 01280_db;
-    CREATE DATABASE 01280_db Engine = Ordinary;
+    CREATE DATABASE 01280_db;
     DROP TABLE IF EXISTS 01280_db.table_for_dict;
     CREATE TABLE 01280_db.table_for_dict
     (

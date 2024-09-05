@@ -173,10 +173,10 @@ protected:
     std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
     bool compress_primary_key;
 
-    DataTypes index_types;
-    /// Index columns from the last block
-    /// It's written to index file in the `writeSuffixAndFinalizePart` method
-    Columns last_block_index_columns;
+    /// Last block with index columns.
+    /// It's written to index file in the `writeSuffixAndFinalizePart` method.
+    Block last_index_block;
+    Serializations index_serializations;
 
     bool data_written = false;
 
@@ -193,6 +193,7 @@ private:
     void initStatistics();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
+    void calculateAndSerializePrimaryIndexRow(const Block & index_block, size_t row);
 
     struct ExecutionStatistics
     {

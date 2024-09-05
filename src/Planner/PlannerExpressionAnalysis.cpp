@@ -23,6 +23,8 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 
@@ -85,14 +87,14 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         else if (function_node)
         {
             /// Do not allow removing constants like `hostName()`
-            if (!function_node->getFunctionOrThrow()->isDeterministic())
+            if (function_node->getFunctionOrThrow()->isServerConstant())
                 return false;
 
             for (const auto & child : function_node->getArguments())
                 nodes.push(child.get());
         }
-        else
-            return false;
+        // else
+        //     return false;
     }
 
     return true;
@@ -460,6 +462,9 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
             auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+            if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
+               continue;
+
             interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
         }
 

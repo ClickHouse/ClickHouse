@@ -437,7 +437,13 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
     auto insert_context = materialized_storage->getNestedTableContext();
 
-    InterpreterInsertQuery interpreter(insert, insert_context);
+    InterpreterInsertQuery interpreter(
+        insert,
+        insert_context,
+        /* allow_materialized */ false,
+        /* no_squash */ false,
+        /* no_destination */ false,
+        /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
@@ -653,7 +659,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
 
 void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
+    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", doubleQuoteString(publication_name));
     tx.exec(query_str);
     LOG_DEBUG(log, "Dropped publication: {}", publication_name);
 }
@@ -661,7 +667,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", publication_name, doubleQuoteWithSchema(table_name));
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
 }

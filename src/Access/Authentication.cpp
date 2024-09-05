@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 
 #include "config.h"
 
@@ -238,7 +239,15 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
             case AuthenticationType::SSL_CERTIFICATE:
-                return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
+                for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+                {
+                    for (const auto & subject : auth_data.getSSLCertificateSubjects().at(type))
+                    {
+                        if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
+                            return true;
+                    }
+                }
+                return false;
 
             case AuthenticationType::SSH_KEY:
 #if USE_SSH

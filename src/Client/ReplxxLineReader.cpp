@@ -294,17 +294,19 @@ ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
     bool multiline_,
+    bool ignore_shell_suspend,
     Patterns extenders_,
     Patterns delimiters_,
     const char word_break_characters_[],
     replxx::Replxx::highlighter_callback_t highlighter_,
-    [[ maybe_unused ]] std::istream & input_stream_,
-    [[ maybe_unused ]] std::ostream & output_stream_,
-    [[ maybe_unused ]] int in_fd_,
-    [[ maybe_unused ]] int out_fd_,
-    [[ maybe_unused ]] int err_fd_
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    int in_fd_,
+    int out_fd_,
+    int err_fd_
 )
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_), input_stream_, output_stream_, in_fd_)
+    , rx(input_stream_, output_stream_, in_fd_, out_fd_, err_fd_)
     , highlighter(std::move(highlighter_))
     , word_break_characters(word_break_characters_)
     , editor(getEditor())
@@ -361,6 +363,10 @@ ReplxxLineReader::ReplxxLineReader(
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+
+    /// We don't want the default, "suspend" behavior, it confuses people.
+    if (ignore_shell_suspend)
+        rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
     {
@@ -511,7 +517,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     rx.history_add(line);
 
     // flush changes to the disk
-    if (!rx.history_save(history_file_path))
+    if (history_file_fd >= 0 && !rx.history_save(history_file_path))
         rx.print("Saving history failed: %s\n", errnoToString().c_str());
 
     if (history_file_fd >= 0 && locked && 0 != flock(history_file_fd, LOCK_UN))

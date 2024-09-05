@@ -14,6 +14,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;

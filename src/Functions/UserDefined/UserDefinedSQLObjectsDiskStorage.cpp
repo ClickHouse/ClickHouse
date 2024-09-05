@@ -1,13 +1,15 @@
 #include "Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h"
 
-#include "Functions/UserDefined/UserDefinedSQLFunctionFactory.h"
-#include "Functions/UserDefined/UserDefinedSQLObjectType.h"
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+
+#include <Core/Settings.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -52,7 +54,7 @@ namespace
 }
 
 UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
-    : global_context(global_context_)
+    : UserDefinedSQLObjectsStorageBase(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
     , log{getLogger("UserDefinedSQLObjectsLoaderFromDisk")}
 {

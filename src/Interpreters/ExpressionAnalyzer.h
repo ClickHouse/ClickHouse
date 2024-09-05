@@ -38,9 +38,6 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
@@ -117,12 +114,12 @@ public:
     /// If add_aliases, only the calculated values in the desired order and add aliases.
     ///     If also remove_unused_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ActionsDAGPtr getActionsDAG(bool add_aliases, bool remove_unused_result = true);
+    ActionsDAG getActionsDAG(bool add_aliases, bool remove_unused_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool remove_unused_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.
-    ActionsDAGPtr getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
+    ActionsDAG getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
@@ -138,7 +135,12 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
-    void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
+    void makeWindowDescriptionFromAST(
+        const Context & context,
+        const WindowDescriptions & existing_descriptions,
+        AggregateFunctionPtr aggregate_function,
+        WindowDescription & desc,
+        const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
 
     /** Checks if subquery is not a plain StorageSet.
@@ -367,7 +369,7 @@ private:
     JoinPtr makeJoin(
         const ASTTablesInSelectQueryElement & join_element,
         const ColumnsWithTypeAndName & left_columns,
-        ActionsDAGPtr & left_convert_actions);
+        std::optional<ActionsDAG> & left_convert_actions);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 

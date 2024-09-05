@@ -22,7 +22,8 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         const String & index_name_,
         const Block & index_sample_block_,
         size_t max_rows_,
-        MutableColumns && columns_);
+        MutableColumns && columns_,
+        std::vector<Range> && set_hyperrectangle_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -36,6 +37,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
     const size_t max_rows;
 
     Block block;
+    std::vector<Range> set_hyperrectangle;
 };
 
 
@@ -73,6 +75,7 @@ private:
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
+    std::vector<Range> set_hyperrectangle;
 };
 
 
@@ -80,11 +83,10 @@ class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionSet(
-        const String & index_name_,
-        const Block & index_sample_block,
         size_t max_rows_,
-        const ActionsDAGPtr & filter_dag,
-        ContextPtr context);
+        const ActionsDAG * filter_dag,
+        ContextPtr context,
+        const IndexDescription & index_description);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -93,16 +95,16 @@ public:
     ~MergeTreeIndexConditionSet() override = default;
 private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
@@ -119,6 +121,9 @@ private:
     std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
+
+    DataTypes index_data_types;
+    KeyCondition condition;
 };
 
 
@@ -138,7 +143,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
+            const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
 
     size_t max_rows = 0;
 };

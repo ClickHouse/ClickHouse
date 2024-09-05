@@ -17,7 +17,7 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: g, result_type: String, source_id: 3
           CONSTANT id: 7, constant_value: Tuple_(\'5\', \'6\'), constant_value_type: Tuple(String, String)
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 2
 2
 QUERY id: 0
@@ -42,4 +42,4 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: g, result_type: String, source_id: 3
                 CONSTANT id: 12, constant_value: \'6\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

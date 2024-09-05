@@ -49,6 +49,7 @@ StorageNATS::StorageNATS(
     const StorageID & table_id_,
     ContextPtr context_,
     const ColumnsDescription & columns_,
+    const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
@@ -87,6 +88,7 @@ StorageNATS::StorageNATS(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals(nats_settings->nats_handle_error_mode));
 
@@ -644,7 +646,13 @@ bool StorageNATS::streamToViews()
     insert->table_id = table_id;
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, nats_context, false, true, true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        nats_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -754,7 +762,7 @@ void registerStorageNATS(StorageFactory & factory)
         if (!nats_settings->nats_subjects.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
-        return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.mode);
+        return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, args.comment, std::move(nats_settings), args.mode);
     };
 
     factory.registerStorage("NATS", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
