@@ -53,7 +53,6 @@ private:
     void detachBuffer();
     void reallocateFirstBuffer();
     void allocateBuffer();
-    void allocateFirstBuffer();
     void hidePartialData();
     void setFakeBufferWhenPreFinalized();
 

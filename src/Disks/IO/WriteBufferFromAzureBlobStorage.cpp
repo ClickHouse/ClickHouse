@@ -59,7 +59,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     const WriteSettings & write_settings_,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
@@ -248,30 +248,14 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
-    auto size = buffer_allocation_policy->getBufferSize();
-
-    if (buffer_allocation_policy->getBufferNumber() == 1)
-    {
-        allocateFirstBuffer();
-        return;
-    }
-
-    memory = Memory(size);
-    WriteBuffer::set(memory.data(), memory.size());
-}
-
-void WriteBufferFromAzureBlobStorage::allocateFirstBuffer()
-{
     /// First buffer was already allocated in BufferWithOwnMemory constructor with buffer size provided in constructor.
     /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
-    /// But it may happen that buffer size provided in constructor is larger then desired buffer size from buffer_allocation_policy.
-    /// Resize memory in this case to the desired size.
-    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
-    if (memory.size() > max_first_buffer)
-    {
-        memory.resize(max_first_buffer);
-        WriteBuffer::set(memory.data(), memory.size());
-    }
+    if (buffer_allocation_policy->getBufferNumber() == 1)
+        return;
+
+    auto size = buffer_allocation_policy->getBufferSize();
+    memory = Memory(size);
+    WriteBuffer::set(memory.data(), memory.size());
 }
 
 void WriteBufferFromAzureBlobStorage::detachBuffer()
