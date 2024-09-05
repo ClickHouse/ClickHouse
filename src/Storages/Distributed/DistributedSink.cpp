@@ -347,7 +347,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings & settings = context->getSettingsRef();
+        const Settings settings = context->getSettingsCopy();
 
         size_t rows = shard_block.rows();
 
