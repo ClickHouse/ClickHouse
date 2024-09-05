@@ -235,12 +235,29 @@ class _NetworkManager:
             cls._instance = cls(**kwargs)
         return cls._instance
 
+    def setup_ip6tables_docker_user_chain(self):
+        _rules = subprocess.check_output(
+            f"ip6tables-save", shell=True
+        )
+        if "DOCKER-USER" in _rules.decode("utf-8"):
+            return
+
+        setup_cmds = [
+            ["ip6tables", "--wait", "-N", "DOCKER-USER"],
+            ["ip6tables", "--wait", "-I", "FORWARD", "-j", "DOCKER-USER"],
+            ["ip6tables", "--wait", "-A", "DOCKER-USER", "-j", "RETURN"],
+        ]
+        for cmd in setup_cmds:
+            self._exec_run(cmd, privileged=True)
+
     def add_iptables_rule(self, **kwargs):
         cmd = ["iptables", "--wait", "-I", "DOCKER-USER", "1"]
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
     def add_ip6tables_rule(self, **kwargs):
+        self.setup_ip6tables_docker_user_chain()
+
         cmd = ["ip6tables", "--wait", "-I", "DOCKER-USER", "1"]
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
