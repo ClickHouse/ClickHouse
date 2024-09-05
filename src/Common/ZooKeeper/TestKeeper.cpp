@@ -759,7 +759,6 @@ void TestKeeper::create(
 void TestKeeper::remove(
         const String & path,
         int32_t version,
-        [[maybe_unused]] uint32_t remove_nodes_limit, // TODO(michicosun): enable
         RemoveCallback callback)
 {
     TestKeeperRemoveRequest request;
@@ -770,6 +769,14 @@ void TestKeeper::remove(
     request_info.request = std::make_shared<TestKeeperRemoveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveResponse &>(response)); };
     pushRequest(std::move(request_info));
+}
+
+void TestKeeper::removeRecursive(
+    [[maybe_unused]] const String & path,
+    [[maybe_unused]] uint32_t remove_nodes_limit,
+    [[maybe_unused]] RemoveRecursiveCallback callback)
+{
+    /// TODO(michicosun) implement
 }
 
 void TestKeeper::exists(

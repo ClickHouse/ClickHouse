@@ -1333,33 +1333,39 @@ void ZooKeeper::create(
 void ZooKeeper::remove(
     const String & path,
     int32_t version,
-    uint32_t remove_nodes_limit,
     RemoveCallback callback)
 {
-    std::shared_ptr<ZooKeeperRemoveRequest> request = nullptr;
-
-    if (!isFeatureEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE))
-    {
-        if (remove_nodes_limit > 1)
-            throw Exception::fromMessage(Error::ZBADARGUMENTS, "RemoveRecursive request type cannot be used because it's not supported by the server");
-
-        request = std::make_shared<ZooKeeperRemoveRequest>();
-    }
-    else
-        request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
-
-    request->path = path;
-    request->version = version;
-    request->remove_nodes_limit = remove_nodes_limit;
+    ZooKeeperRemoveRequest request;
+    request.path = path;
+    request.version = version;
 
     RequestInfo request_info;
-    request_info.request = std::move(request);
+    request_info.request = std::make_shared<ZooKeeperRemoveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveResponse &>(response)); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
 
+void ZooKeeper::removeRecursive(
+    const String &path,
+    uint32_t remove_nodes_limit,
+    RemoveRecursiveCallback callback)
+{
+    if (!isFeatureEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "RemoveRecursive request type cannot be used because it's not supported by the server");
+
+    ZooKeeperRemoveRecursiveRequest request;
+    request.path = path;
+    request.remove_nodes_limit = remove_nodes_limit;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperRemoveRecursiveRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+}
 
 void ZooKeeper::exists(
     const String & path,

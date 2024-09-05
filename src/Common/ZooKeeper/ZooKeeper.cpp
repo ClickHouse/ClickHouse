@@ -981,16 +981,16 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
 
 void ZooKeeper::removeRecursive(const std::string & path) // TODO(michicosun) rewrite
 {
-    auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
+    auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const Coordination::RemoveResponse & response) mutable
+    auto callback = [promise](const Coordination::RemoveRecursiveResponse & response) mutable
     {
         promise->set_value(response);
     };
 
-    impl->remove(path, -1, /*remove_nodes_limit=*/ 100, std::move(callback));
-    
+    impl->removeRecursive(path, 100, std::move(callback));
+
     if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::RemoveRecursive, path));
@@ -1385,7 +1385,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncRemove(const std::stri
             promise->set_value(response);
     };
 
-    impl->remove(path, version, /*remove_nodes_limit=*/ 1, std::move(callback));
+    impl->remove(path, version, std::move(callback));
     return future;
 }
 
@@ -1408,7 +1408,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemove(const std::s
             promise->set_value(response);
     };
 
-    impl->remove(path, version, /*remove_nodes_limit=*/ 1, std::move(callback));
+    impl->remove(path, version, std::move(callback));
     return future;
 }
 
@@ -1422,7 +1422,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemoveNoThrow(const
         promise->set_value(response);
     };
 
-    impl->remove(path, version, /*remove_nodes_limit=*/ 1, std::move(callback));
+    impl->remove(path, version, std::move(callback));
     return future;
 }
 

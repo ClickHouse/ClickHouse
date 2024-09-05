@@ -232,24 +232,24 @@ void ZooKeeperRemoveRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
-void ZooKeeperRemoveRecursiveRequest::writeImpl(WriteBuffer & out) const 
+void ZooKeeperRemoveRecursiveRequest::writeImpl(WriteBuffer & out) const
 {
-    ZooKeeperRemoveRequest::writeImpl(out);
+    Coordination::write(path, out);
     Coordination::write(remove_nodes_limit, out);
 }
 
-void ZooKeeperRemoveRecursiveRequest::readImpl(ReadBuffer & in) 
+void ZooKeeperRemoveRecursiveRequest::readImpl(ReadBuffer & in)
 {
-    ZooKeeperRemoveRequest::readImpl(in);
+    Coordination::read(path, in);
     Coordination::read(remove_nodes_limit, in);
 }
 
-std::string ZooKeeperRemoveRecursiveRequest::toStringImpl(bool short_format) const
+std::string ZooKeeperRemoveRecursiveRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format(
-        "{}\n"
+        "path = {}\n"
         "remove_nodes_limit = {}",
-        ZooKeeperRemoveRequest::toStringImpl(short_format),
+        path,
         remove_nodes_limit);
 }
 
@@ -531,7 +531,7 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::Reque
             checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
         }
-        else if (const auto * concrete_request_remove_recursive = dynamic_cast<const ZooKeeperRemoveRecursiveRequest *>(generic_request.get()))
+        else if (const auto * concrete_request_remove_recursive = dynamic_cast<const RemoveRecursiveRequest *>(generic_request.get()))
         {
             checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperRemoveRecursiveRequest>(*concrete_request_remove_recursive));

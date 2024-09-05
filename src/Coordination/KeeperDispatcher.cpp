@@ -86,9 +86,14 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                     break;
                 }
                 case Coordination::OpNum::Remove:
-                case Coordination::OpNum::RemoveRecursive:
                 {
                     Coordination::ZooKeeperRemoveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
+                    memory_delta -= remove_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::RemoveRecursive:
+                {
+                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();
                     break;
                 }
