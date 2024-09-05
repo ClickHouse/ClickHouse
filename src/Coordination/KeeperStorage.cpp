@@ -481,12 +481,13 @@ void KeeperStorage<Container>::initializeSystemNodes()
             addDigest(system_node, keeper_system_path);
 
         // update root and the digest based on it
-        auto current_root_it = container.find(getEncodedKey<use_rocksdb>(String("/")));
+        String encoded_key = getEncodedKey<use_rocksdb>(String("/"));
+        auto current_root_it = container.find(encoded_key);
         chassert(current_root_it != container.end());
         if constexpr (!use_rocksdb)
             removeDigest(current_root_it->value, "/");
         auto updated_root_it = container.updateValue(
-            getEncodedKey<use_rocksdb>(String("/")),
+            encoded_key,
             [](KeeperStorage::Node & node)
             {
                 node.increaseNumChildren();
@@ -1745,11 +1746,6 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                 },
                 request.version});
 
-        node->setResponseStat(response_stat);
-        response_stat.version++;
-        response_stat.mzxid = zxid;
-        response_stat.mtime = time;
-
         String encoded_parent_path;
 
         StringRef parent_path = parentNodePath(request.path);
@@ -1777,8 +1773,11 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
     Coordination::ZooKeeperResponsePtr process(Storage & storage, int64_t zxid) const override
     {
+        auto & container = storage.container;
+
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
+        Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*this->zk_request);
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
@@ -1786,7 +1785,18 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
             return response_ptr;
         }
 
-        response.stat = response_stat;
+        StringRef request_path = request.path;
+        String encoded_path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(request_path.toView());
+            request_path = encoded_path;
+        }
+        auto node_it = container.find(request_path);
+        if (node_it == container.end())
+            onStorageInconsistency();
+
+        node_it->value.setResponseStat(response.stat);
         response.error = Coordination::Error::ZOK;
 
         return response_ptr;
@@ -1798,8 +1808,6 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
 
-private:
-    mutable Coordination::Stat response_stat;
 };
 
 template<typename Storage>

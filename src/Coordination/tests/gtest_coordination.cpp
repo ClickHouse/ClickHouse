@@ -1542,7 +1542,8 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
     node.setData(data);
     node.setEphemeralOwner(ephemeral_owner);
     storage.container.insertOrReplace(DB::getEncodedKey<Storage::use_rocksdb>(path), node);
-    auto child_it = storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(path));
+    String encoded_key = DB::getEncodedKey<Storage::use_rocksdb>(path);
+    auto child_it = storage.container.find(StringRef(encoded_key));
     auto child_path = DB::getBaseNodeName(child_it->key);
     storage.container.updateValue(
         DB::getEncodedKey<Storage::use_rocksdb>(DB::parentNodePath(StringRef{path}).toString()),

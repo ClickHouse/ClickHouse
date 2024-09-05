@@ -6,6 +6,7 @@
 #include <Disks/DiskLocal.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <type_traits>
 
 #include "config.h"
 #if USE_ROCKSDB
@@ -32,8 +33,14 @@ inline UInt16 getKeyDepth(const S & key)
 }
 
 template<bool throw_exception = true, typename S>
-bool checkKeyEncoded(const S &key)
+bool checkKeyEncoded(const S &key_)
 {
+    std::string_view key;
+    if constexpr (std::is_same_v<S, StringRef>)
+        key = key_.toView();
+    else
+        key = key_;
+
     if (key.length() <= 2)
     {
         if constexpr (throw_exception)
@@ -78,9 +85,12 @@ static S getDecodedKey(const S & key)
 {
     if constexpr (!use_rocksdb)
         return key;
-    if (!checkKeyEncoded<false>(key))
-        return key;
-    return {key.begin() + 2, key.end()};
+     if (!checkKeyEncoded<false>(key))
+         return key;
+    if constexpr (std::is_same_v<S, StringRef>)
+        return {key.data + 2, key.size - 2};
+    else
+        return {key.begin() + 2, key.end()};
 }
 
 #if USE_ROCKSDB
@@ -306,7 +316,7 @@ public:
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during executing find. The error message is {}.", status.ToString());
         ReadBufferFromOwnString buffer(buffer_str);
         auto kv = std::make_shared<KVPair>();
-        kv->key = key_;
+        kv->key = getDecodedKey(key_);
         typename Node::Meta & meta = kv->value;
         readPODBinary(meta, buffer);
         /// TODO: Sometimes we don't need to load data.
@@ -338,7 +348,7 @@ public:
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during find. The error message is {}.", status.ToString());
         auto kv = std::make_shared<KVPair>();
-        kv->key = key_;
+        kv->key = getDecodedKey(key_);
         kv->value.decodeFromString(buffer_str);
         updater(kv->value);
         insertOrReplace<false>(key, kv->value);
