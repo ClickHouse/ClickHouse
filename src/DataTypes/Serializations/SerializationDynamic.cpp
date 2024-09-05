@@ -605,7 +605,7 @@ static void deserializeTextImpl(
         return;
     }
 
-    /// We couldn't infer type or add new variant. Insert it into shared variant.
+    /// We couldn't add new variant. Insert it into shared variant.
     auto tmp_variant_column = variant_type->createColumn();
     field_buf = std::make_unique<ReadBufferFromString>(field);
     auto variant_type_name = variant_type->getName();
