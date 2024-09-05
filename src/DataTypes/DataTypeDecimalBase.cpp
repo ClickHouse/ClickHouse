@@ -5,6 +5,7 @@
 
 namespace DB
 {
+extern const SettingsBool decimal_check_overflow;
 
 namespace ErrorCodes
 {
@@ -12,11 +13,11 @@ namespace ErrorCodes
 
 bool decimalCheckComparisonOverflow(ContextPtr context)
 {
-    return context->getSettingsRef().decimal_check_overflow;
+    return context->getSettingsRef()[decimal_check_overflow];
 }
 bool decimalCheckArithmeticOverflow(ContextPtr context)
 {
-    return context->getSettingsRef().decimal_check_overflow;
+    return context->getSettingsRef()[decimal_check_overflow];
 }
 
 template <is_decimal T>

@@ -84,6 +84,13 @@ struct Settings
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
 
+    /// TODO: Maybe create a pure virtual class as an interface for other setting classes (once adapted)
+    static Field castValueUtil(std::string_view name, const Field & value);
+    static String valueToStringUtil(std::string_view name, const Field & value);
+    static Field stringToValueUtil(std::string_view name, const String & str);
+    static bool hasBuiltin(std::string_view name);
+    static std::string_view resolveName(std::string_view name);
+
 private:
     std::unique_ptr<SettingsImpl> impl;
 };
