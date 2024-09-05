@@ -1387,6 +1387,8 @@ void Context::setUser(const UUID & user_id_)
     std::lock_guard lock(mutex);
 
     setUserIDWithLock(user_id_, lock);
+    setCurrentUserName(user->getName());  /// TODO
+    setInitialUserName(user->getName());  /// TODO
 
     /// A profile can specify a value and a readonly constraint for same setting at the same time,
     /// so we shouldn't check constraints here.
@@ -1487,6 +1489,12 @@ void Context::setCurrentRolesDefault()
 {
     auto user = getUser();
     setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
+}
+
+void Context::switchImpersonateUser(const RolesOrUsersSet & users )
+{
+	auto new_user_uuid = *(users.ids.begin());
+	setUser(new_user_uuid);
 }
 
 std::vector<UUID> Context::getCurrentRoles() const

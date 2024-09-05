@@ -629,6 +629,7 @@ public:
     void setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants = true);
     void setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants = true);
     void setCurrentRolesDefault();
+    void switchImpersonateUser(const RolesOrUsersSet & new_user);
     std::vector<UUID> getCurrentRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
