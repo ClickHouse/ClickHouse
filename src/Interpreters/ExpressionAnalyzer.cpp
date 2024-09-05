@@ -215,7 +215,7 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAG & acti
 
     auto array_join = addMultipleArrayJoinAction(actions, is_array_join_left);
     auto sample_columns = actions.getResultColumns();
-    array_join->prepare(sample_columns);
+    ArrayJoinAction::prepare(array_join->columns, sample_columns);
     actions = ActionsDAG(sample_columns);
 
     NamesAndTypesList new_columns_after_array_join;
@@ -905,7 +905,8 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAG & a
         result_columns.insert(result_source.first);
     }
 
-    return std::make_shared<ArrayJoinAction>(result_columns, array_join_is_left, getContext());
+    const auto & query_settings = getContext()->getSettingsRef();
+    return std::make_shared<ArrayJoinAction>(result_columns, array_join_is_left, query_settings.enable_unaligned_array_join, query_settings.max_block_size);
 }
 
 ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types)
