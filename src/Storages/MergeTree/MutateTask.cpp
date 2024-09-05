@@ -115,6 +115,7 @@ static UInt64 getExistingRowsCount(const Block & block)
 static void splitAndModifyMutationCommands(
     MergeTreeData::DataPartPtr part,
     StorageMetadataPtr metadata_snapshot,
+    AlterConversionsPtr alter_conversions,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
@@ -190,8 +191,6 @@ static void splitAndModifyMutationCommands(
             }
 
         }
-
-        auto alter_conversions = part->storage.getAlterConversionsForPart(part);
 
         /// We don't add renames from commands, instead we take them from rename_map.
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
@@ -308,7 +307,6 @@ static void splitAndModifyMutationCommands(
             }
         }
 
-        auto alter_conversions = part->storage.getAlterConversionsForPart(part);
         /// We don't add renames from commands, instead we take them from rename_map.
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
         /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
@@ -2129,6 +2127,15 @@ bool MutateTask::prepare()
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = ctx->source_part->getMetadataVersion(),
+    };
+
+    auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->context);
+
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
@@ -2143,7 +2150,7 @@ bool MutateTask::prepare()
             ctx->commands_for_part.emplace_back(command);
 
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+        ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -2206,6 +2213,7 @@ bool MutateTask::prepare()
     MutationHelpers::splitAndModifyMutationCommands(
         ctx->source_part,
         ctx->metadata_snapshot,
+        alter_conversions,
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
@@ -2224,7 +2232,8 @@ bool MutateTask::prepare()
         settings.apply_deleted_mask = false;
 
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->for_interpreter,
+            *ctx->data, ctx->source_part, alter_conversions,
+            ctx->metadata_snapshot, ctx->for_interpreter,
             ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
