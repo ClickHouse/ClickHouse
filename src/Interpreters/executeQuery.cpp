@@ -478,6 +478,8 @@ void logQueryFinish(
                     processor_elem.parent_ids = std::move(parents);
 
                     processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                    processor_elem.plan_step_name = processor->getPlanStepName();
+                    processor_elem.plan_step_description = processor->getPlanStepDescription();
                     processor_elem.plan_group = processor->getQueryPlanStepGroup();
 
                     processor_elem.processor_name = processor->getName();
@@ -793,7 +795,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -818,7 +820,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
