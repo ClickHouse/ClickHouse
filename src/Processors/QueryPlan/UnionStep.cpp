@@ -59,7 +59,7 @@ void UnionStep::updateOutputStream()
     }
 }
 
-QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
@@ -70,6 +70,8 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         processors = collector.detachProcessors();
         return pipeline;
     }
+
+    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
 
     for (auto & cur_pipeline : pipelines)
     {
@@ -97,7 +99,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         }
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
     return pipeline;
 }
 
@@ -105,11 +107,6 @@ void UnionStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
 }
-
-// void UnionStep::serializeSettings(QueryPlanSerializationSettings & settings) const
-// {
-//     // settings.max_threads = max_threads;
-// }
 
 void UnionStep::serialize(WriteBuffer & out) const
 {

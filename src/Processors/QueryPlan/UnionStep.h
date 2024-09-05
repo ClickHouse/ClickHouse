@@ -13,7 +13,7 @@ public:
 
     String getName() const override { return "Union"; }
 
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -21,7 +21,6 @@ public:
 
     bool canUpdateInputStream() const override { return true; }
 
-    // void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(WriteBuffer & out) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &);
 
