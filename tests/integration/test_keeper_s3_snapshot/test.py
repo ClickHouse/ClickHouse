@@ -83,7 +83,7 @@ def delete_keeper_snapshots_logs(nodex):
         [
             "bash",
             "-c",
-            "rm -rf /var/lib/clickhouse/coordination/log /var/lib/clickhouse/coordination/snapshots"
+            "rm -rf /var/lib/clickhouse/coordination/log /var/lib/clickhouse/coordination/snapshots",
         ]
     )
 
@@ -106,9 +106,7 @@ def test_s3_upload(started_cluster):
     def delete_s3_snapshots():
         snapshots = cluster.minio_client.list_objects("snapshots")
         for s in snapshots:
-            cluster.minio_client.remove_object(
-                "snapshots",
-                s.object_name)
+            cluster.minio_client.remove_object("snapshots", s.object_name)
 
     # Keeper sends snapshots asynchornously, hence we need to retry.
     @retry(AssertionError, tries=10, delay=2)
@@ -153,6 +151,7 @@ def test_s3_upload(started_cluster):
     delete_keeper_snapshots_logs(node1)
     p = Pool(3)
     waiters = []
+
     def start_clickhouse(node):
         node.start_clickhouse()
 
