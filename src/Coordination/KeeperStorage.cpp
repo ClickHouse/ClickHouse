@@ -1292,8 +1292,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             return {typename Storage::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
 
         std::string path_created = request.path;
-        if constexpr (Storage::use_rocksdb)
-            path_created = getEncodedKey(request.path);
         if (request.is_sequential)
         {
             if (request.not_exists)
@@ -1315,6 +1313,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             handleSystemNodeModification(keeper_context, error_msg);
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
+
+        if constexpr (Storage::use_rocksdb)
+            path_created = getEncodedKey(path_created);
 
         if (storage.uncommitted_state.getNode(path_created))
         {
