@@ -1585,8 +1585,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     std::vector<QueryPlanPtr> plans;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
     {
-        if (part->getMarksCount() == 0)
-            LOG_TRACE(ctx->log, "Part {} is empty", part->name);
+        if (global_ctx->future_part->parts[i]->getMarksCount() == 0)
+            LOG_TRACE(ctx->log, "Part {} is empty", global_ctx->future_part->parts[i]->name);
 
         auto plan_for_part = std::make_unique<QueryPlan>();
         createReadFromPartStep(
