@@ -1611,11 +1611,16 @@ private:
         {
             if constexpr (Storage::use_rocksdb)
             {
+                std::filesystem::path root_fs_path(root_path.toString());
                 auto children = storage.container.getChildren(root_path.toString());
 
-                for (auto && [child_path, node] : children)
+                for (auto && [child_name, node] : children)
+                {
+                    auto child_path = (root_fs_path / child_name).generic_string();
+
                     if (collect(child_path, node))
                         return true;
+                }
             }
 
             return false;
@@ -1657,12 +1662,13 @@ private:
             for (; it != nodes.end() && parentNodePath(it->first) == root_path; ++it)
             {
                 chassert(it->second.node);
+                const String & path = it->first;
                 const typename Storage::Node & node = *it->second.node;
 
                 if (updateStats(node))
                     return true;
 
-                if (visitRootAndUncommitted(it->first, node)) /// if child is uncommitted then all subtree is also uncommitted
+                if (visitRootAndUncommitted(path, node)) /// if child is uncommitted then all subtree is also uncommitted
                     return true;
             }
 
@@ -1684,9 +1690,9 @@ private:
 
         bool updateStats(const typename Storage::Node & root_node)
         {
-            nodes_observed += 1 + root_node.numChildren(); /// root + all known children
+            nodes_observed += 1;
 
-            if (nodes_observed > limit)
+            if (nodes_observed + root_node.numChildren() > limit)
                 return true;
 
             return false;
