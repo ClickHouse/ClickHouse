@@ -70,7 +70,7 @@ std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const uc
 #if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
         (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
 #else
-        "";
+        "<not available on ARM>";
 #endif
 
     std::string_view message;
