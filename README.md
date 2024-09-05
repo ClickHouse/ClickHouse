@@ -62,6 +62,7 @@ Other upcoming meetups
 * [Oslo Meetup](https://www.meetup.com/open-source-real-time-data-warehouse-real-time-analytics/events/302938622) - October 31
 * [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - November 21
+* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26
 
 
 

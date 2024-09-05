@@ -1296,6 +1296,9 @@ class IColumn;
     M(Bool, precise_float_parsing, false, "Prefer more precise (but slower) float parsing algorithm", 0) \
     M(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", "Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.", 0) \
     M(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, "Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple", 0) \
+    \
+    M(Bool, output_format_always_quote_identifiers, false, "Always quote identifiers", 0) \
+    M(IdentifierQuotingStyle, output_format_identifier_quoting_style, IdentifierQuotingStyle::Backticks, "Set the quoting style for identifiers", 0) \
 
 
 // End of FORMAT_FACTORY_SETTINGS
