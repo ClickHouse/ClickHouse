@@ -29,6 +29,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 glob_expansion_max_elements;
 
 namespace ErrorCodes
 {
@@ -91,7 +92,8 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, predicate, getVirtualsList(), context);
+    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
+        uri, context->getSettingsRef()[glob_expansion_max_elements], predicate, getVirtualsList(), context);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }

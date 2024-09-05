@@ -32,6 +32,8 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+extern const SettingsUInt64 hdfs_replication;
+
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -300,8 +302,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
-                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-                context->getSettingsRef().hdfs_replication);
+                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[hdfs_replication]);
 
             return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
         });

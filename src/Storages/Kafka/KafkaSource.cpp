@@ -19,6 +19,8 @@ namespace ProfileEvents
 
 namespace DB
 {
+extern const SettingsMilliseconds kafka_max_wait_ms;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -78,7 +80,7 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[kafka_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)

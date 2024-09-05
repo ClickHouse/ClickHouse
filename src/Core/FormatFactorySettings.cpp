@@ -4,11 +4,6 @@
 
 namespace DB
 {
-
-#define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
-    FORMAT_FACTORY_SETTINGS(M, ALIAS) \
-    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
-
 /*
  * User-specified file format settings for File and URL engines.
  */

@@ -18,6 +18,9 @@
 namespace DB
 {
 
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+
 namespace ErrorCodes
 {
     extern const int SQLITE_ENGINE_ERROR;
@@ -198,8 +201,13 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-        static_cast<uint32_t>(settings.max_parser_depth), static_cast<uint32_t>(settings.max_parser_backtracks), throw_on_error);
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        table_storage_define,
+        true,
+        static_cast<uint32_t>(settings[max_parser_depth]),
+        static_cast<uint32_t>(settings[max_parser_backtracks]),
+        throw_on_error);
 
     return create_table_query;
 }

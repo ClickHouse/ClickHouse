@@ -27,6 +27,14 @@
 namespace DB
 {
 
+extern const SettingsBool async_query_sending_for_remote;
+extern const SettingsBool async_socket_for_remote;
+extern const SettingsString cluster_for_parallel_replicas;
+extern const SettingsBool extremes;
+extern const SettingsSeconds max_execution_time;
+extern const SettingsNonZeroUInt64 max_parallel_replicas;
+extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
@@ -144,13 +152,13 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    const bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[async_socket_for_remote];
+    const bool async_query_sending = context->getSettingsRef()[async_query_sending_for_remote];
 
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[extremes];
     }
 
     auto lazily_create_stream = [
@@ -163,8 +171,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
-                            .getSaturated(current_settings.max_execution_time);
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[max_execution_time]);
 
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
         try
@@ -231,12 +238,12 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[async_socket_for_remote];
+    bool async_query_sending = context->getSettingsRef()[async_query_sending_for_remote];
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[extremes];
     }
 
     scalars["_shard_num"]
@@ -244,15 +251,15 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     if (context->canUseTaskBasedParallelReplicas())
     {
-        if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+        if (context->getSettingsRef()[cluster_for_parallel_replicas].changed)
         {
-            const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
-            if (cluster_for_parallel_replicas != cluster_name)
+            const String & cluster = context->getSettingsRef()[cluster_for_parallel_replicas];
+            if (cluster != cluster_name)
                 LOG_INFO(
                     log,
                     "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
                     "used: {}",
-                    cluster_for_parallel_replicas,
+                    cluster,
                     cluster_name);
         }
 
@@ -410,14 +417,14 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
     const auto & shard = cluster->getShardsInfo().at(0);
-    size_t max_replicas_to_use = current_settings.max_parallel_replicas;
+    size_t max_replicas_to_use = current_settings[max_parallel_replicas];
     if (max_replicas_to_use > shard.getAllNodeCount())
     {
         LOG_INFO(
             getLogger("ReadFromParallelRemoteReplicasStep"),
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
-            current_settings.max_parallel_replicas,
+            current_settings[max_parallel_replicas],
             shard.getAllNodeCount());
         max_replicas_to_use = shard.getAllNodeCount();
     }
@@ -437,7 +444,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     }
 
     coordinator
-        = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use, current_settings.parallel_replicas_mark_segment_size);
+        = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use, current_settings[parallel_replicas_mark_segment_size]);
 
     for (size_t i=0; i < max_replicas_to_use; ++i)
     {
@@ -465,13 +472,13 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[async_socket_for_remote];
+    bool async_query_sending = context->getSettingsRef()[async_query_sending_for_remote];
 
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[extremes];
     }
 
     String query_string = formattedAST(query_ast);

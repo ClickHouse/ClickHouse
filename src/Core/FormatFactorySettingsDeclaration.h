@@ -2,7 +2,7 @@
 
 #include <Core/SettingsObsoleteMacros.h>
 
-/// This header exists so we can share it between Settings.cpp and FormatFactorySettings.cpp
+/// This header exists so we can share it between Settings.cpp, FormatFactorySettings.cpp and other storage settings
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -267,3 +267,7 @@
     MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false)                                                                          \
 
 #endif // __CLION_IDE__
+
+#define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS) \
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)

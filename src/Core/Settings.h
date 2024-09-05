@@ -5,6 +5,8 @@
 #include <Core/SettingsFields.h>
 #include <base/types.h>
 
+#include <string_view>
+
 namespace DB
 {
 struct SettingsImpl;
@@ -68,12 +70,19 @@ struct SettingsImpl;
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
 struct Settings
 {
+    Settings();
+    Settings(const Settings & settings);
+    ~Settings();
+
     COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     /// General API as needed
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
     void set(std::string_view name, const Field & value);
+    String toString() const;
+    bool has(std::string_view name) const;
+    bool isChanged(std::string_view name) const;
 
 private:
     std::unique_ptr<SettingsImpl> impl;

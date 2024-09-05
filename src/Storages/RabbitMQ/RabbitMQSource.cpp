@@ -10,6 +10,7 @@
 
 namespace DB
 {
+extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot, const Names & column_names)
 {
@@ -138,7 +139,7 @@ Chunk RabbitMQSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
     }
 

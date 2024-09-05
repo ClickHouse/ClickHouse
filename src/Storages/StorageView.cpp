@@ -33,6 +33,9 @@
 
 namespace DB
 {
+extern const SettingsBool extremes;
+extern const SettingsUInt64 max_result_rows;
+extern const SettingsUInt64 max_result_bytes;
 
 namespace ErrorCodes
 {

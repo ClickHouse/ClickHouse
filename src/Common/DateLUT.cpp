@@ -13,6 +13,10 @@
 #include <filesystem>
 #include <fstream>
 
+namespace DB
+{
+extern const SettingsTimezone session_timezone;
+}
 
 namespace
 {
@@ -203,5 +207,5 @@ DateLUT & DateLUT::getInstance()
 
 std::string DateLUT::extractTimezoneFromContext(DB::ContextPtr query_context)
 {
-    return query_context->getSettingsRef().session_timezone.value;
+    return query_context->getSettingsRef()[DB::session_timezone].value;
 }

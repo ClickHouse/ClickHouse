@@ -8,6 +8,7 @@
 
 namespace DB
 {
+extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
@@ -86,7 +87,7 @@ Chunk NATSSource::generate()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
         consumer->subscribe();
     }

@@ -26,6 +26,11 @@
 
 namespace DB
 {
+extern const SettingsDistributedProductMode distributed_product_mode;
+extern const SettingsUInt64 min_external_table_block_size_rows;
+extern const SettingsUInt64 min_external_table_block_size_bytes;
+extern const SettingsBool parallel_replicas_prefer_local_join;
+extern const SettingsBool prefer_global_in_and_join;
 
 namespace ErrorCodes
 {

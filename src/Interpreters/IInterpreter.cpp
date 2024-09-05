@@ -6,6 +6,7 @@
 
 namespace DB
 {
+extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 
 namespace ErrorCodes
 {
@@ -25,7 +26,7 @@ void IInterpreter::extendQueryLogElem(
         auto quoted_database = query_database.empty() ? backQuoteIfNeed(context->getCurrentDatabase())
                                                       : backQuoteIfNeed(query_database);
         elem.query_databases.insert(quoted_database);
-        elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(query_table));
+        elem.query_tables.insert(quoted_database + "." + backQçuoteIfNeed(query_table));
     }
 
     extendQueryLogElemImpl(elem, ast, context);
@@ -39,7 +40,7 @@ void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & s
     if (storage->supportsTransactions())
         return;
 
-    if (context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    if (context->getSettingsRef()[throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage {} (table {}) does not support transactions",
                         storage->getName(), storage->getStorageID().getNameForLogs());
 
