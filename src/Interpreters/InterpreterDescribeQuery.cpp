@@ -183,7 +183,8 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
                 auto query = storage_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
                 NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
                 StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
-                return fillColumnsFromSubqueryImpl(query, current_context);
+                fillColumnsFromSubqueryImpl(query, current_context);
+                return;
             }
         }
 
