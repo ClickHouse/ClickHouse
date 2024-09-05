@@ -2090,9 +2090,22 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
+    DataPartsVector src_parts;
+    String partition_id;
+    bool is_all = partition->as<ASTPartition>()->all;
+    if (is_all)
+    {
+        if (replace)
+            throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
 
-    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+        src_parts = src_data.getVisibleDataPartsVector(local_context);
+    }
+    else
+    {
+        partition_id = getPartitionIDFromQuery(partition, local_context);
+        src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    }
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
@@ -2100,6 +2113,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     for (const DataPartPtr & src_part : src_parts)
     {
+        if (is_all)
+            partition_id = src_part->partition.getID(src_data);
+
         if (!canReplacePartition(src_part))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot replace partition '{}' because part '{}' has inconsistent granularity with table",
