@@ -21,6 +21,7 @@
   "test_disabled_mysql_server/test.py::test_disabled_mysql_server",
   "test_distributed_respect_user_timeouts/test.py::test_reconnect",
   "test_https_replication/test.py::test_replication_after_partition",
+  "test_https_replication/test_change_ip.py::test_replication_when_node_ip_changed",
   "test_insert_into_distributed/test.py::test_reconnect",
   "test_insert_into_distributed/test.py::test_inserts_batching",
   "test_insert_into_distributed_through_materialized_view/test.py::test_reconnect",
