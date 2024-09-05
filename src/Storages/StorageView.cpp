@@ -33,6 +33,7 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_analyze;
 extern const SettingsBool extremes;
 extern const SettingsUInt64 max_result_rows;
 extern const SettingsUInt64 max_result_bytes;
@@ -101,9 +102,9 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
-    view_settings.max_result_rows = 0;
-    view_settings.max_result_bytes = 0;
-    view_settings.extremes = false;
+    view_settings[max_result_rows] = 0;
+    view_settings[max_result_bytes] = 0;
+    view_settings[extremes] = false;
     view_context->setSettings(view_settings);
     return view_context;
 }
@@ -167,7 +168,7 @@ void StorageView::read(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);

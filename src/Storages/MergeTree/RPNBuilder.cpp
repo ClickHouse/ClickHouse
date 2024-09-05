@@ -24,6 +24,7 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_analyzer;
 
 namespace ErrorCodes
 {
@@ -131,7 +132,7 @@ std::string RPNBuilderTreeNode::getColumnName() const
     if (ast_node)
         return ast_node->getColumnNameWithoutAlias();
     else
-        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer);
+        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[allow_experimental_analyzer]);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -144,7 +145,7 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
     }
     else
     {
-        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer, true /*legacy*/);
+        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[allow_experimental_analyzer], true /*legacy*/);
     }
 }
 

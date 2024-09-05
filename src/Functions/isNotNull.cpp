@@ -12,6 +12,8 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_analyzer;
+
 namespace
 {
 
@@ -22,7 +24,10 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIsNotNull>(context->getSettingsRef().allow_experimental_analyzer); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[allow_experimental_analyzer]);
+    }
 
     explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 

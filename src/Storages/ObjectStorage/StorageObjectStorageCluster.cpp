@@ -15,6 +15,7 @@
 
 namespace DB
 {
+extern const SettingsBool use_hive_partitioning;
 
 namespace ErrorCodes
 {
@@ -65,7 +66,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef().use_hive_partitioning)
+    if (sample_path.empty() && context_->getSettingsRef()[use_hive_partitioning])
         sample_path = getPathSample(metadata, context_);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));

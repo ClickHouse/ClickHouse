@@ -35,6 +35,9 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_variant_type;
+extern const SettingsBool use_variant_as_common_type;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -261,7 +264,8 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+        return std::make_shared<FunctionIf>(
+            context->getSettingsRef()[allow_experimental_variant_type] && context->getSettingsRef()[use_variant_as_common_type]);
     }
 
     explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
@@ -1318,9 +1322,11 @@ REGISTER_FUNCTION(If)
     factory.registerFunction<FunctionIf>({}, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr
+createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type_v, bool use_variant_as_common_type_v)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(
+        std::make_shared<FunctionIf>(allow_experimental_variant_type_v && use_variant_as_common_type_v));
 }
 
 }

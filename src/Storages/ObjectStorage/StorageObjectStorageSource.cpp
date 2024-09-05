@@ -31,6 +31,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+extern const SettingsUInt64 max_download_buffer_size;
+extern const SettingsUInt64 max_threads;
+extern const SettingsBool use_cache_for_count_from_files;
 
 namespace ErrorCodes
 {
@@ -109,9 +112,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     std::function<void(FileProgress)> file_progress_callback)
 {
     if (distributed_processing)
-        return std::make_shared<ReadTaskIterator>(
-            local_context->getReadTaskCallback(),
-            local_context->getSettingsRef().max_threads);
+        return std::make_shared<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[max_threads]);
 
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -238,7 +239,7 @@ Chunk StorageObjectStorageSource::generate()
             return chunk;
         }
 
-        if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
+        if (reader.getInputFormat() && getContext()->getSettingsRef()[use_cache_for_count_from_files])
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -332,10 +333,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
-    std::optional<size_t> num_rows_from_cache = need_only_count
-        && context_->getSettingsRef().use_cache_for_count_from_files
-        ? try_get_num_rows_from_cache()
-        : std::nullopt;
+    std::optional<size_t> num_rows_from_cache
+        = need_only_count && context_->getSettingsRef()[use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
     {

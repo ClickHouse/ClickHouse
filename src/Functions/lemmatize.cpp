@@ -13,6 +13,8 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_nlp_functions;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;

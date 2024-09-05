@@ -1,12 +1,12 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Storages/RabbitMQ/RabbitMQConsumer.h>
-#include <Common/logger_useful.h>
-#include <IO/EmptyReadBuffer.h>
 #include <base/sleep.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

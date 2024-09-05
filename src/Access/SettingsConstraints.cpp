@@ -14,6 +14,9 @@
 
 namespace DB
 {
+extern const SettingsBool allow_ddl;
+extern const SettingsBool readonly;
+
 namespace ErrorCodes
 {
     extern const int READONLY;
@@ -164,7 +167,7 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (element.writability)
             new_value = *element.writability;
 
-        auto setting_name = Settings::Traits::resolveName(element.setting_name);
+        auto setting_name = Settings::resolveName(element.setting_name);
         auto it = constraints.find(setting_name);
         if (it != constraints.end())
             old_value = it->second.writability;
@@ -255,7 +258,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     ReactionOnViolation reaction,
                                     SettingSource source) const
 {
-    std::string_view setting_name = Settings::Traits::resolveName(change.name);
+    std::string_view setting_name = Settings::resolveName(change.name);
 
     if (setting_name == "profile")
         return true;
@@ -416,9 +419,9 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     else // For both readonly=0 and readonly=2
     {
         if (it == constraints.end())
-            return Checker(Settings::Traits::resolveName); // Allowed
+            return Checker(Settings::resolveName); // Allowed
     }
-    return Checker(it->second, Settings::Traits::resolveName);
+    return Checker(it->second, Settings::resolveName);
 }
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const

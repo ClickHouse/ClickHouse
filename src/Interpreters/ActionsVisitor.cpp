@@ -63,6 +63,12 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsBool allow_experimental_variant_type;
+extern const SettingsBool force_grouping_standard_compatibility;
+extern const SettingsUInt64 max_ast_elements;
+extern const SettingsBool transform_null_in;
+extern const SettingsBool use_variant_as_common_type;
 
 namespace ErrorCodes
 {
@@ -197,7 +203,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
     DataTypePtr tuple_type;
     Row tuple_values;
     const auto & list = node->as<ASTExpressionList &>();
-    bool transform_null_in = context->getSettingsRef().transform_null_in;
+    bool transform_null_in_v = context->getSettingsRef()[transform_null_in];
     for (const auto & elem : list.children)
     {
         if (num_columns == 1)
@@ -205,7 +211,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             /// One column at the left of IN.
 
             Field value = extractValueFromNode(elem, *types[0], context);
-            bool need_insert_null = transform_null_in && types[0]->isNullable();
+            bool need_insert_null = transform_null_in_v && types[0]->isNullable();
 
             if (!value.isNull() || need_insert_null)
                 columns[0]->insert(value);
@@ -266,7 +272,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                 Field value = tuple ? convertFieldToType((*tuple)[i], *types[i])
                                     : extractValueFromNode(func->arguments->children[i], *types[i], context);
 
-                bool need_insert_null = transform_null_in && types[i]->isNullable();
+                bool need_insert_null = transform_null_in_v && types[i]->isNullable();
 
                 /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value,
                 ///  then the entire tuple too.
@@ -782,7 +788,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto tuple_ast = function->arguments->children[0];
 
         /// This transformation can lead to exponential growth of AST size, let's check it.
-        tuple_ast->checkSize(data.getContext()->getSettingsRef().max_ast_elements);
+        tuple_ast->checkSize(data.getContext()->getSettingsRef()[max_ast_elements]);
 
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
@@ -926,20 +932,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             case GroupByKind::GROUPING_SETS:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef()[force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ROLLUP:
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef()[force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
                 break;
             case GroupByKind::CUBE:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef()[force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ORDINARY:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), {}, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef()[force_grouping_standard_compatibility])), {}, column_name);
                 break;
             }
             default:
@@ -1338,7 +1344,9 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     DataTypePtr type;
     if (literal.custom_type)
         type = literal.custom_type;
-    else if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
+    else if (
+        data.getContext()->getSettingsRef()[allow_experimental_variant_type]
+        && data.getContext()->getSettingsRef()[use_variant_as_common_type])
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);
@@ -1411,7 +1419,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
+        if (data.getContext()->getSettingsRef()[allow_experimental_analyzer] && !identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.

@@ -4,8 +4,17 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <base/types.h>
+#include <Common/SettingsChanges.h>
 
 #include <string_view>
+
+namespace Poco
+{
+namespace Util
+{
+class AbstractConfiguration;
+}
+}
 
 namespace DB
 {
@@ -83,13 +92,17 @@ struct Settings
     String toString() const;
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
+    std::vector<String> getHints(const String & name) const;
+    SettingsChanges changes() const;
 
     /// TODO: Maybe create a pure virtual class as an interface for other setting classes (once adapted)
+    /// Or maybe move them to normal functions
     static Field castValueUtil(std::string_view name, const Field & value);
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
+    static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
 private:
     std::unique_ptr<SettingsImpl> impl;

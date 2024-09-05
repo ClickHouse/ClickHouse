@@ -18,6 +18,9 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_variant_type;
+extern const SettingsBool use_variant_as_common_type;
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -36,11 +39,12 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    explicit FunctionMap(bool use_variant_as_common_type_) : use_variant_as_common_type(use_variant_as_common_type_) {}
+    explicit FunctionMap(bool use_variant_as_common_type_) : use_variant_as_common_type_v(use_variant_as_common_type_) { }
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionMap>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+        return std::make_shared<FunctionMap>(
+            context->getSettingsRef()[allow_experimental_variant_type] && context->getSettingsRef()[use_variant_as_common_type]);
     }
 
     String getName() const override
@@ -85,7 +89,7 @@ public:
         }
 
         DataTypes tmp;
-        if (use_variant_as_common_type)
+        if (use_variant_as_common_type_v)
         {
             tmp.emplace_back(getLeastSupertypeOrVariant(keys));
             tmp.emplace_back(getLeastSupertypeOrVariant(values));
@@ -156,7 +160,7 @@ public:
     }
 
 private:
-    bool use_variant_as_common_type = false;
+    bool use_variant_as_common_type_v = false;
 };
 
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps

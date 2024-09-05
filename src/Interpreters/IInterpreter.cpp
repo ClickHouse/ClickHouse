@@ -26,7 +26,7 @@ void IInterpreter::extendQueryLogElem(
         auto quoted_database = query_database.empty() ? backQuoteIfNeed(context->getCurrentDatabase())
                                                       : backQuoteIfNeed(query_database);
         elem.query_databases.insert(quoted_database);
-        elem.query_tables.insert(quoted_database + "." + backQçuoteIfNeed(query_table));
+        elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(query_table));
     }
 
     extendQueryLogElemImpl(elem, ast, context);

@@ -28,6 +28,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 max_sessions_for_user;
 
 namespace ErrorCodes
 {
@@ -525,10 +526,8 @@ ContextMutablePtr Session::makeSessionContext()
     session_context = new_session_context;
     user = session_context->getUser();
 
-    session_tracker_handle = session_context->getSessionTracker().trackSession(
-        *user_id,
-        {},
-        session_context->getSettingsRef().max_sessions_for_user);
+    session_tracker_handle
+        = session_context->getSessionTracker().trackSession(*user_id, {}, session_context->getSettingsRef()[max_sessions_for_user]);
 
     // Use QUERY source as for SET query for a session
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
@@ -570,12 +569,12 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     prepared_client_info.reset();
 
     auto access = new_session_context->getAccess();
-    UInt64 max_sessions_for_user = 0;
+    UInt64 max_sessions_for_user_v = 0;
     /// Set user information for the new context: current profiles, roles, access rights.
     if (!access->tryGetUser())
     {
         new_session_context->setUser(*user_id);
-        max_sessions_for_user = new_session_context->getSettingsRef().max_sessions_for_user;
+        max_sessions_for_user_v = new_session_context->getSettingsRef()[max_sessions_for_user];
     }
     else
     {
@@ -584,7 +583,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         auto settings = access->getDefaultSettings();
         const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
         if (max_session_for_user_field)
-            max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+            max_sessions_for_user_v = max_session_for_user_field->safeGet<UInt64>();
     }
 
     /// Session context is ready.
@@ -593,10 +592,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     named_session_created = new_named_session_created;
     user = session_context->getUser();
 
-    session_tracker_handle = session_context->getSessionTracker().trackSession(
-        *user_id,
-        { session_name_ },
-        max_sessions_for_user);
+    session_tracker_handle = session_context->getSessionTracker().trackSession(*user_id, {session_name_}, max_sessions_for_user_v);
 
     recordLoginSuccess(session_context);
 

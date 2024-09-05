@@ -27,6 +27,7 @@
 
 namespace DB
 {
+extern const SettingsBool group_by_use_nulls;
 
 namespace ErrorCodes
 {
@@ -132,8 +133,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     PlannerActionsVisitor actions_visitor(planner_context);
 
     /// Add expressions from GROUP BY
-    bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef().group_by_use_nulls &&
-        (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
+    bool group_by_use_nulls_v = planner_context->getQueryContext()->getSettingsRef()[group_by_use_nulls]
+        && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
     bool is_secondary_query = planner_context->getQueryContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     bool is_distributed_query = planner_context->getQueryContext()->isDistributed();
@@ -166,8 +167,11 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                         if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                             continue;
 
-                        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        auto expression_type_after_aggregation
+                            = group_by_use_nulls_v ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                        auto column_after_aggregation = group_by_use_nulls_v && expression_dag_node->column != nullptr
+                            ? makeNullableSafe(expression_dag_node->column)
+                            : expression_dag_node->column;
                         available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
@@ -217,8 +221,11 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                     if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                         continue;
 
-                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                    auto expression_type_after_aggregation
+                        = group_by_use_nulls_v ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                    auto column_after_aggregation = group_by_use_nulls_v && expression_dag_node->column != nullptr
+                        ? makeNullableSafe(expression_dag_node->column)
+                        : expression_dag_node->column;
                     available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
                     before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
