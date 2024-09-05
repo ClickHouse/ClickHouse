@@ -1501,6 +1501,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
     }
 
+    if (database && database->getEngineName() == "Replicated" && create.is_clone_as)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "CREATE CLONE AS is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
+    }
+
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);

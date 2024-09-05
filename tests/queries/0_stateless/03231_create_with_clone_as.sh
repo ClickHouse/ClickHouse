@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -64,3 +65,20 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree"
+
+# CLONE AS with a Replicated database
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS imdb_03231"
+
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE imdb_03231 ENGINE = Replicated('/test/databases/imdb_03231', 's1', 'r1')"
+
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "CREATE TABLE imdb_03231.foo_merge_tree (x Int8, y String) ENGINE=MergeTree PRIMARY KEY x"
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SHOW CREATE TABLE imdb_03231.foo_merge_tree"
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "INSERT INTO imdb_03231.foo_merge_tree VALUES (1, 'a'), (2, 'b')"
+echo "from imdb_03231.foo_merge_tree"
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM imdb_03231.foo_merge_tree"
+echo "$(${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --server_logs_file=/dev/null -q "CREATE TABLE imdb_03231.clone_as_foo_merge_tree CLONE AS imdb_03231.foo_merge_tree" 2>&1)" \
+  | grep -c 'Code: 344. DB::Exception: .* CREATE CLONE AS is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.'
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS imdb_03231.clone_as_foo_merge_tree"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS imdb_03231.foo_merge_tree"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS imdb_03231"
