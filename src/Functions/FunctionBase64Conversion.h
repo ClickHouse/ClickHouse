@@ -134,17 +134,17 @@ struct Base64Decode
         static constexpr std::array<char, 256> lut = [] {
             std::array<char, 256> temp{};
             const char indices[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            for (char c : indices) {
+            for (char c : indices)
                 temp[static_cast<std::size_t>(c)] = 1;
-            }
+
             temp[static_cast<std::size_t>('"')] = 1;
+
             return temp;
         }();
 
-        for (size_t len = 0; len < avail; len++) {
+        for (size_t len = 0; len < avail; len++)
             if (lut[static_cast<unsigned char>(p[len])] == 0)
                 return len;
-        }
 
         return avail;
     }
@@ -161,15 +161,15 @@ struct Base64Decode
         }
         else
         {
-	        size_t ototal = 0;
-            size_t outlen =0;
-
             const char * start = src.data();
             size_t avail = src.size();
             char * outbuf = reinterpret_cast<char *>(dst);
 
-	        struct base64_state state;
+            struct base64_state state{};
             base64_stream_decode_init(&state, 0);
+
+            size_t ototal{};
+            size_t outlen{};
             while (avail > 0)
             {
                 size_t len = find_garbage(start, avail);
