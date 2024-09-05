@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/LimitTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -74,6 +75,50 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Offset", offset);
     map.add("With Ties", with_ties);
     map.add("Reads All Data", always_read_till_end);
+}
+
+void LimitStep::serialize(WriteBuffer & out) const
+{
+    UInt8 flags = 0;
+    if (always_read_till_end)
+        flags |= 1;
+    if (with_ties)
+        flags |= 2;
+
+    writeIntBinary(flags, out);
+
+    writeVarUInt(limit, out);
+    writeVarUInt(offset, out);
+
+    if (with_ties)
+        serializeSortDescription(description, out);
+}
+
+std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(
+    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &)
+{
+    UInt8 flags;
+    readIntBinary(flags, in);
+
+    bool always_read_till_end = bool(flags & 1);
+    bool with_ties = bool(flags & 2);
+
+    UInt64 limit;
+    UInt64 offset;
+
+    readVarUInt(limit, in);
+    readVarUInt(offset, in);
+
+    SortDescription description;
+    if (with_ties)
+        deserializeSortDescription(description, in);
+
+    return std::make_unique<LimitStep>(input_streams_.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
+}
+
+void registerLimitStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Limit", LimitStep::deserialize);
 }
 
 }

@@ -46,6 +46,8 @@ void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry);
+void registerLimitStep(QueryPlanStepRegistry & registry);
+void registerOffsetStep(QueryPlanStepRegistry & registry);
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 
@@ -60,6 +62,8 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerAggregatingStep(registry);
     registerArrayJoinStep(registry);
     registerLimitByStep(registry);
+    registerLimitStep(registry);
+    registerOffsetStep(registry);
 
     registerReadFromTableStep(registry);
 }

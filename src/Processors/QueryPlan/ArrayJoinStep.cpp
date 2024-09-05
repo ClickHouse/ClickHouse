@@ -109,8 +109,8 @@ std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(
     UInt8 flags;
     readIntBinary(flags, in);
 
-    bool is_left = flags & 1;
-    bool is_unaligned = flags & 2;
+    bool is_left = bool(flags & 1);
+    bool is_unaligned = bool(flags & 2);
 
     UInt64 num_columns;
     readVarUInt(num_columns, in);
