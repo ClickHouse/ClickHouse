@@ -6,6 +6,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -222,3 +223,26 @@ def test_drop_table(cluster):
         "select count(n), sum(n) from test_drop_table"
     )
     node.query("drop table test_drop_table sync")
+
+
+def test_s3_check_restore(cluster):
+    create_table(cluster)
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query(
+        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-02", 2)),
+    )
+
+    node1.query("DETACH TABLE s3_test;")
+    node2.query("SYSTEM DROP REPLICA '1' FROM TABLE s3_test;")
+    node2.query(
+        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-02", 2)),
+    )
+    node1.query("ATTACH TABLE s3_test;")
+    node1.query("SYSTEM RESTORE REPLICA s3_test;")
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM system.replication_queue WHERE table='s3_test' and type='ATTACH_PART'",
+        "0\n",
+    )
