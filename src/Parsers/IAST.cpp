@@ -165,12 +165,11 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets, bool print_pretty_type_names) const
+String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
 {
     WriteBufferFromOwnString buf;
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
-    settings.print_pretty_type_names = print_pretty_type_names;
     format(settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }

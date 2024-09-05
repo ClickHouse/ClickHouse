@@ -2,92 +2,30 @@ from minio import Minio
 import glob
 import os
 import json
-import shutil
 
 
-from enum import Enum
-
-
-class CloudUploader:
-
-    def upload_directory(self, local_path, remote_blob_path, **kwargs):
-        print(kwargs)
-        result_files = []
-        # print(f"Arguments: {local_path}, {s3_path}")
-        # for local_file in glob.glob(local_path + "/**"):
-        #     print("Local file: {}", local_file)
-        for local_file in glob.glob(local_path + "/**"):
+def upload_directory(minio_client, bucket_name, local_path, s3_path):
+    result_files = []
+    for local_file in glob.glob(local_path + "/**"):
+        if os.path.isfile(local_file):
             result_local_path = os.path.join(local_path, local_file)
-            result_remote_blob_path = os.path.join(remote_blob_path, local_file)
-            if os.path.isfile(local_file):
-                self.upload_file(result_local_path, result_remote_blob_path, **kwargs)
-                result_files.append(result_remote_blob_path)
-            else:
-                files = self.upload_directory(
-                    result_local_path, result_remote_blob_path, **kwargs
-                )
-                result_files.extend(files)
-        return result_files
-
-
-class S3Uploader(CloudUploader):
-    def __init__(self, minio_client, bucket_name):
-        self.minio_client = minio_client
-        self.bucket_name = bucket_name
-
-    def upload_file(self, local_path, remote_blob_path, bucket=None):
-        print(f"Upload to bucket: {bucket}")
-        if bucket is None:
-            bucket = self.bucket_name
-        self.minio_client.fput_object(
-            bucket_name=bucket,
-            object_name=remote_blob_path,
-            file_path=local_path,
-        )
-
-
-class LocalUploader(CloudUploader):
-
-    def __init__(self, clickhouse_node):
-        self.clickhouse_node = clickhouse_node
-
-    def upload_file(self, local_path, remote_blob_path):
-        dir_path = os.path.dirname(remote_blob_path)
-        if dir_path != "":
-            self.clickhouse_node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "mkdir -p {}".format(dir_path),
-                ]
+            result_s3_path = os.path.join(s3_path, local_file)
+            print(f"Putting file {result_local_path} to {result_s3_path}")
+            minio_client.fput_object(
+                bucket_name=bucket_name,
+                object_name=result_s3_path,
+                file_path=result_local_path,
             )
-        self.clickhouse_node.copy_file_to_container(local_path, remote_blob_path)
-
-
-class AzureUploader(CloudUploader):
-
-    def __init__(self, blob_service_client, container_name):
-        self.blob_service_client = blob_service_client
-        self.container_client = self.blob_service_client.get_container_client(
-            container_name
-        )
-
-    def upload_file(self, local_path, remote_blob_path, container_name=None):
-        if container_name is None:
-            container_client = self.container_client
+            result_files.append(result_s3_path)
         else:
-            container_client = self.blob_service_client.get_container_client(
-                container_name
+            files = upload_directory(
+                minio_client,
+                bucket_name,
+                os.path.join(local_path, local_file),
+                os.path.join(s3_path, local_file),
             )
-        blob_client = container_client.get_blob_client(remote_blob_path)
-        with open(local_path, "rb") as data:
-            blob_client.upload_blob(data, overwrite=True)
-
-
-def upload_directory(minio_client, bucket, local_path, remote_path):
-    return S3Uploader(minio_client=minio_client, bucket_name=bucket).upload_directory(
-        local_path, remote_path
-    )
+            result_files.extend(files)
+    return result_files
 
 
 def get_file_contents(minio_client, bucket, s3_path):

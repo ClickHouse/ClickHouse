@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -89,7 +88,6 @@ public:
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
-        need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
     }
 
     String getName() const override { return "Columns"; }
@@ -103,10 +101,12 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
         size_t rows_count = 0;
 
+        const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
+
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
-            const std::string database_name = (*databases)[db_table_num].safeGet<std::string>();
-            const std::string table_name = (*tables)[db_table_num].safeGet<std::string>();
+            const std::string database_name = (*databases)[db_table_num].get<std::string>();
+            const std::string table_name = (*tables)[db_table_num].get<std::string>();
             ++db_table_num;
 
             ColumnsDescription columns;
@@ -138,17 +138,13 @@ protected:
                 column_sizes = storage->getColumnSizes();
             }
 
-            /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
-            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
-                continue;
-
-            bool need_to_check_access_for_columns = need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+            bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
             size_t position = 0;
             for (const auto & column : columns)
             {
                 ++position;
-                if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+                if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
                 size_t src_index = 0;
@@ -299,8 +295,7 @@ private:
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
-    std::shared_ptr<const ContextAccessWrapper> access;
-    bool need_to_check_access_for_tables;
+    std::shared_ptr<const ContextAccess> access;
     String query_id;
     std::chrono::milliseconds lock_acquire_timeout;
 };
@@ -338,25 +333,14 @@ private:
     std::shared_ptr<StorageSystemColumns> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    std::optional<ActionsDAG> virtual_columns_filter;
+    const ActionsDAG::Node * predicate = nullptr;
 };
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
-    {
-        Block block_to_filter;
-        block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
-        block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
-
-        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
-
-        /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
-        if (virtual_columns_filter)
-            VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, context);
-    }
+        predicate = filter_actions_dag->getOutputs().at(0);
 }
 
 void StorageSystemColumns::read(
@@ -373,6 +357,7 @@ void StorageSystemColumns::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+
 
     auto this_ptr = std::static_pointer_cast<StorageSystemColumns>(shared_from_this());
 
@@ -418,8 +403,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
-        if (virtual_columns_filter)
-            VirtualColumnUtils::filterBlockWithPredicate(virtual_columns_filter->getOutputs().at(0), block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
 
         if (!block_to_filter.rows())
         {
@@ -432,12 +416,11 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         /// Add `table` column.
         MutableColumnPtr table_column_mut = ColumnString::create();
-        const auto num_databases = database_column->size();
-        IColumn::Offsets offsets(num_databases);
+        IColumn::Offsets offsets(database_column->size());
 
-        for (size_t i = 0; i < num_databases; ++i)
+        for (size_t i = 0; i < database_column->size(); ++i)
         {
-            const std::string database_name = (*database_column)[i].safeGet<std::string>();
+            const std::string database_name = (*database_column)[i].get<std::string>();
             if (database_name.empty())
             {
                 for (auto & [table_name, table] : external_tables)
@@ -467,8 +450,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
     }
 
     /// Filter block with `database` and `table` columns.
-    if (virtual_columns_filter)
-        VirtualColumnUtils::filterBlockWithPredicate(virtual_columns_filter->getOutputs().at(0), block_to_filter, context);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
 
     if (!block_to_filter.rows())
     {

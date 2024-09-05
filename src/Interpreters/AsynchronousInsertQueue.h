@@ -48,7 +48,7 @@ public:
         Block insert_block{};
     };
 
-    enum class DataKind : uint8_t
+    enum class DataKind
     {
         Parsed = 0,
         Preprocessed = 1,
@@ -147,7 +147,6 @@ private:
             const String format;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
-            NameToNameMap query_parameters;
 
             Entry(
                 DataChunk && chunk_,

@@ -37,7 +37,11 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-add_contrib (openssl-cmake openssl)
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
+    add_contrib (openssl-cmake openssl)
+else ()
+    add_contrib (boringssl-cmake boringssl)
+endif ()
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (pocketfft-cmake pocketfft)
@@ -71,6 +75,7 @@ add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
+add_contrib (rocksdb-cmake rocksdb)
 add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
@@ -147,7 +152,6 @@ add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arro
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
 add_contrib (libpq-cmake libpq)
-add_contrib (rocksdb-cmake rocksdb) # requires: jemalloc, snappy, zlib, lz4, zstd, liburing
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
@@ -179,7 +183,7 @@ else()
     message(STATUS "Not using QPL")
 endif ()
 
-if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
+if (OS_LINUX AND ARCH_AMD64)
     option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QATLIB)
     message (${RECONFIGURE_MESSAGE_LEVEL} "QATLib is only supported on x86_64")
@@ -205,19 +209,19 @@ add_contrib (morton-nd-cmake morton-nd)
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
+add_contrib (annoy-cmake annoy)
 
-option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
+option(ENABLE_USEARCH "Enable USearch (Approximate Neighborhood Search, HNSW) support" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
+    add_contrib (robin-map-cmake robin-map)
     add_contrib (SimSIMD-cmake SimSIMD)
-    add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
+    add_contrib (usearch-cmake usearch) # requires: FP16, robin-map, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
 endif ()
 
 add_contrib (xxHash-cmake xxHash)
-
-add_contrib (expected-cmake expected)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 
@@ -225,10 +229,6 @@ add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
-
-add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
-
-add_contrib(numactl-cmake numactl)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

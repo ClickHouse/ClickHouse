@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -15,7 +15,6 @@
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
 
@@ -75,7 +74,6 @@ StorageJoin::StorageJoin(
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
     restore();
-    optimizeUnlocked();
 }
 
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
@@ -98,47 +96,6 @@ SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataP
 {
     std::lock_guard mutate_lock(mutate_mutex);
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
-}
-
-bool StorageJoin::optimize(
-    const ASTPtr & /*query*/,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
-    const ASTPtr & partition,
-    bool final,
-    bool deduplicate,
-    const Names & /* deduplicate_by_columns */,
-    bool cleanup,
-    ContextPtr context)
-{
-
-    if (partition)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition cannot be specified when optimizing table of type Join");
-
-    if (final)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FINAL cannot be specified when optimizing table of type Join");
-
-    if (deduplicate)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type Join");
-
-    if (cleanup)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Join");
-
-    std::lock_guard mutate_lock(mutate_mutex);
-    TableLockHolder lock_holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
-
-    optimizeUnlocked();
-    return true;
-}
-
-void StorageJoin::optimizeUnlocked()
-{
-    size_t current_bytes = join->getTotalByteCount();
-    size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
-
-    size_t optimized_bytes = join->getTotalByteCount();
-    if (current_bytes > optimized_bytes)
-        LOG_INFO(getLogger("StorageJoin"), "Optimized Join storage from {} to {} bytes", current_bytes, optimized_bytes);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -383,10 +340,10 @@ void registerStorageJoin(StorageFactory & factory)
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
                 else if (setting.name == "disk")
-                    disk_name = setting.value.safeGet<String>();
+                    disk_name = setting.value.get<String>();
                 else if (setting.name == "persistent")
                 {
-                    persistent = setting.value.safeGet<bool>();
+                    persistent = setting.value.get<bool>();
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting {} for storage {}", setting.name, args.engine_name);
@@ -438,13 +395,10 @@ void registerStorageJoin(StorageFactory & factory)
             else if (kind_str == "full")
             {
                 if (strictness == JoinStrictness::Any)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
+                    strictness = JoinStrictness::RightAny;
                 kind = JoinKind::Full;
             }
         }
-
-        if ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti) && (kind != JoinKind::Left && kind != JoinKind::Right))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, " SEMI|ANTI JOIN should be LEFT or RIGHT");
 
         if (kind == JoinKind::Comma)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");
@@ -546,11 +500,7 @@ protected:
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(
-                join->kind,
-                join->strictness,
-                join->data->maps.front(),
-                join->table_join->getMixedJoinExpression() != nullptr,
+        if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;

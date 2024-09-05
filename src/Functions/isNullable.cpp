@@ -2,9 +2,6 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -16,29 +13,14 @@ class FunctionIsNullable : public IFunction
 {
 public:
     static constexpr auto name = "isNullable";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionIsNullable>(context->getSettingsRef().allow_experimental_analyzer);
+        return std::make_shared<FunctionIsNullable>();
     }
-
-    explicit FunctionIsNullable(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     String getName() const override
     {
         return name;
-    }
-
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
-    {
-        /// isNullable(column) triggers a bug in old analyzer when it is replaced to constant.
-        if (!use_analyzer)
-            return nullptr;
-
-        const ColumnWithTypeAndName & elem = arguments[0];
-        if (elem.type->onlyNull() || canContainNull(*elem.type))
-            return result_type->createColumnConst(1, UInt8(1));
-
-        return result_type->createColumnConst(1, UInt8(0));
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -68,9 +50,6 @@ public:
         const auto & elem = arguments[0];
         return ColumnUInt8::create(input_rows_count, isColumnNullable(*elem.column) || elem.type->isLowCardinalityNullable());
     }
-
-private:
-    bool use_analyzer;
 };
 
 }

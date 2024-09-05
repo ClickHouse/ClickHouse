@@ -53,8 +53,8 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
-    unsigned update_period_seconds,
-    unsigned heavy_metrics_update_period_seconds,
+    int update_period_seconds,
+    int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
@@ -210,47 +210,27 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             auto total = disk->getTotalSpace();
 
             /// Some disks don't support information about the space.
-            if (total)
+            if (!total)
+                continue;
+
+            auto available = disk->getAvailableSpace();
+            auto unreserved = disk->getUnreservedSpace();
+
+            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+            if (available)
             {
-                auto available = disk->getAvailableSpace();
-                auto unreserved = disk->getUnreservedSpace();
+                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
 
-                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
-
-                if (available)
-                {
-                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
-
-                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
-                }
-
-                if (unreserved)
-                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
+                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
             }
 
-#if USE_AWS_S3
-            if (auto s3_client = disk->tryGetS3StorageClient())
-            {
-                if (auto put_throttler = s3_client->getPutRequestThrottler())
-                {
-                    new_values[fmt::format("DiskPutObjectThrottlerRPS_{}", name)] = { put_throttler->getMaxSpeed(),
-                        "PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
-                    new_values[fmt::format("DiskPutObjectThrottlerAvailable_{}", name)] = { put_throttler->getAvailable(),
-                        "Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
-                }
-                if (auto get_throttler = s3_client->getGetRequestThrottler())
-                {
-                    new_values[fmt::format("DiskGetObjectThrottlerRPS_{}", name)] = { get_throttler->getMaxSpeed(),
-                        "GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
-                    new_values[fmt::format("DiskGetObjectThrottlerAvailable_{}", name)] = { get_throttler->getAvailable(),
-                        "Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
-                }
-            }
-#endif
+            if (unreserved)
+                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
         }
     }
 
@@ -271,7 +251,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t max_part_count_for_partition = 0;
 
         size_t number_of_databases = 0;
-        for (const auto & [db_name, _] : databases)
+        for (auto [db_name, _] : databases)
             if (db_name != DatabaseCatalog::TEMPORARY_DATABASE)
                 ++number_of_databases; /// filter out the internal database for temporary tables, system table "system.databases" behaves the same way
 
@@ -298,8 +278,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
 
-            // Note that we skip not yet loaded tables, so metrics could possibly be lower than expected on fully loaded database just after server start if `async_load_databases = true`.
-            for (auto iterator = db.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/true); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 if (is_system)
@@ -429,7 +408,7 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
         if (!db.second->canContainMergeTreeTables())
             continue;
 
-        for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
             if (!table)

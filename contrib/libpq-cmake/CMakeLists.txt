@@ -54,13 +54,16 @@ set(SRCS
         "${LIBPQ_SOURCE_DIR}/port/pgstrcasecmp.c"
         "${LIBPQ_SOURCE_DIR}/port/thread.c"
         "${LIBPQ_SOURCE_DIR}/port/path.c"
+        "${LIBPQ_SOURCE_DIR}/port/explicit_bzero.c"
         )
 
 add_library(_libpq ${SRCS})
 
-add_definitions(-DHAVE_BIO_METH_NEW)
-add_definitions(-DHAVE_HMAC_CTX_NEW)
-add_definitions(-DHAVE_HMAC_CTX_FREE)
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
+    add_definitions(-DHAVE_BIO_METH_NEW)
+    add_definitions(-DHAVE_HMAC_CTX_NEW)
+    add_definitions(-DHAVE_HMAC_CTX_FREE)
+endif ()
 
 target_include_directories (_libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
 target_include_directories (_libpq SYSTEM PUBLIC "${LIBPQ_SOURCE_DIR}/include")

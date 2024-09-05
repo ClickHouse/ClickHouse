@@ -6,7 +6,6 @@
 #include "ExternalDictionaryLibraryHandlerFactory.h"
 
 #include <Formats/FormatFactory.h>
-#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/BridgeProtocolVersion.h>
@@ -87,8 +86,10 @@ static void writeData(Block data, OutputFormatPtr format)
 }
 
 
-ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler"))
+ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler"))
 {
 }
 
@@ -135,7 +136,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
     const String & dictionary_id = params.get("dictionary_id");
 
     LOG_TRACE(log, "Library method: '{}', dictionary id: {}", method, dictionary_id);
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
@@ -283,6 +284,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
         else if (method == "extDict_loadIds")
         {
             LOG_DEBUG(log, "Getting diciontary ids for dictionary with id: {}", dictionary_id);
+            String ids_string;
             std::vector<uint64_t> ids = parseIdsFromBinary(request.getStream());
 
             auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
@@ -372,8 +374,10 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
 }
 
 
-ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("ExternalDictionaryLibraryBridgeExistsHandler"))
+ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(getLogger("ExternalDictionaryLibraryBridgeExistsHandler"))
 {
 }
 
@@ -397,7 +401,7 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
 
         String res = library_handler ? "1" : "0";
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
         LOG_TRACE(log, "Sending ping response: {} (dictionary id: {})", res, dictionary_id);
         response.sendBuffer(res.data(), res.size());
     }
@@ -408,8 +412,11 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
 }
 
 
-CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("CatBoostLibraryBridgeRequestHandler"))
+CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(
+    size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(getLogger("CatBoostLibraryBridgeRequestHandler"))
 {
 }
 
@@ -448,7 +455,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
     const String & method = params.get("method");
 
     LOG_TRACE(log, "Library method: '{}'", method);
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
@@ -610,8 +617,10 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 }
 
 
-CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("CatBoostLibraryBridgeExistsHandler"))
+CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(getLogger("CatBoostLibraryBridgeExistsHandler"))
 {
 }
 
@@ -625,7 +634,7 @@ void CatBoostLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & reque
 
         String res = "1";
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
         LOG_TRACE(log, "Sending ping response: {}", res);
         response.sendBuffer(res.data(), res.size());
     }

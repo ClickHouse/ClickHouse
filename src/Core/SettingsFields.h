@@ -1,12 +1,13 @@
 #pragma once
 
-#include <chrono>
-#include <string_view>
-#include <Core/Field.h>
-#include <Core/MultiEnum.h>
-#include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
+#include <base/types.h>
+#include <Core/Field.h>
+#include <Core/MultiEnum.h>
+#include <boost/range/adaptor/map.hpp>
+#include <chrono>
+#include <string_view>
 
 
 namespace DB
@@ -153,7 +154,7 @@ struct SettingFieldMaxThreads
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto == true`.
+    /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto==true`.
     String toString() const;
     void parseFromString(const String & str);
 
@@ -165,11 +166,7 @@ private:
 };
 
 
-enum class SettingFieldTimespanUnit : uint8_t
-{
-    Millisecond,
-    Second
-};
+enum class SettingFieldTimespanUnit { Millisecond, Second };
 
 template <SettingFieldTimespanUnit unit_>
 struct SettingFieldTimespan
@@ -247,6 +244,12 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
+#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+#define NORETURN [[noreturn]]
+#else
+#define NORETURN
+#endif
+
 struct SettingFieldMap
 {
 public:
@@ -263,11 +266,11 @@ public:
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const;
-    void parseFromString(const String & str);
+    NORETURN String toString() const;
+    NORETURN void parseFromString(const String & str);
 
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
+    NORETURN void writeBinary(WriteBuffer & out) const;
+    NORETURN void readBinary(ReadBuffer & in);
 };
 
 #undef NORETURN
@@ -511,21 +514,6 @@ struct SettingFieldCustom
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
-};
-
-struct SettingFieldNonZeroUInt64 : public SettingFieldUInt64
-{
-public:
-    explicit SettingFieldNonZeroUInt64(UInt64 x = 1);
-    explicit SettingFieldNonZeroUInt64(const Field & f);
-
-    SettingFieldNonZeroUInt64 & operator=(UInt64 x);
-    SettingFieldNonZeroUInt64 & operator=(const Field & f);
-
-    void parseFromString(const String & str);
-
-private:
-    void checkValueNonZero() const;
 };
 
 }
