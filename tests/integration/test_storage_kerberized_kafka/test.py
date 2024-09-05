@@ -171,7 +171,7 @@ def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster)
 """
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log(
-        "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
+        "Parsing of message (topic: kafka_json_as_string_after_expiration, partition: 0, offset: 1) return no rows"
     )
 
 
@@ -294,7 +294,7 @@ def test_kafka_config_from_sql_named_collection(kafka_cluster):
 """
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log(
-        "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
+        "Parsing of message (topic: kafka_json_as_string_named_collection, partition: 0, offset: 1) return no rows"
     )
 
 
