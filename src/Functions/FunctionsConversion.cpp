@@ -2147,7 +2147,7 @@ public:
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
             return {};
         else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-            return {2};
+            return {1, 2};
         return {1};
     }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
