@@ -108,18 +108,6 @@ void WriteBufferFromPocoSocketChunked::finishChunk()
     last_finish_chunk = chunk_size_ptr;
 }
 
-WriteBufferFromPocoSocketChunked::~WriteBufferFromPocoSocketChunked()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 void WriteBufferFromPocoSocketChunked::nextImpl()
 {
     if (!chunked)

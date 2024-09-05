@@ -3,6 +3,8 @@
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #include <memory>
 #include <sstream>
 #include <string>
@@ -166,18 +168,18 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int exception_code_)
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code_));
 }
 
-WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
-{
-    try
-    {
-        if (!canceled)
-            finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
+// WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
+// {
+//     try
+//     {
+//         if (!canceled)
+//             finalize();
+//     }
+//     catch (...)
+//     {
+//         tryLogCurrentException(__PRETTY_FUNCTION__);
+//     }
+// }
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
@@ -199,6 +201,12 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
 
     if (!is_http_method_head)
         HTTPWriteBuffer::finalizeImpl();
+}
+
+void WriteBufferFromHTTPServerResponse::cancelImpl() noexcept
+{
+    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "cancel Stack: {}", StackTrace().toString());
+    HTTPWriteBuffer::cancelImpl();
 }
 
 

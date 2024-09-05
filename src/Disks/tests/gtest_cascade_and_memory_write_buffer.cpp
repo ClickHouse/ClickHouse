@@ -55,9 +55,8 @@ static void testCascadeBufferRedability(
     cascade.write(data.data(), data.size());
     EXPECT_EQ(cascade.count(), data.size());
 
-    std::vector<WriteBufferPtr> write_buffers;
     ConcatReadBuffer concat;
-    cascade.getResultBuffers(write_buffers);
+    auto write_buffers = cascade.getResultBuffers();
 
     for (WriteBufferPtr & wbuf : write_buffers)
     {

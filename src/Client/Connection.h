@@ -134,7 +134,6 @@ public:
 
     void disconnect() override;
 
-
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
@@ -274,6 +273,9 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+
+    void cancel() noexcept;
+    void reset() noexcept;
 
 #if USE_SSH
     void performHandshakeForSSHAuth();

@@ -272,6 +272,18 @@ void GinIndexStore::finalize()
         postings_file_stream->finalize();
 }
 
+void GinIndexStore::cancel() noexcept
+{
+    if (metadata_file_stream)
+        metadata_file_stream->cancel();
+
+    if (dict_file_stream)
+        dict_file_stream->cancel();
+
+    if (postings_file_stream)
+        postings_file_stream->cancel();
+}
+
 void GinIndexStore::initFileStreams()
 {
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;

@@ -10,6 +10,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 
+#include "Common/StackTrace.h"
 #include <Common/logger_useful.h>
 
 
@@ -59,6 +60,19 @@ void CompressedWriteBuffer::nextImpl()
     }
 }
 
+void CompressedWriteBuffer::finalizeImpl()
+{
+    LOG_DEBUG(getLogger("CompressedWriteBuffer"), "finalizeImpl, stack {}", StackTrace().toString());
+    BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
+}
+
+void CompressedWriteBuffer::cancelImpl() noexcept
+{
+    LOG_DEBUG(getLogger("CompressedWriteBuffer"), "cancelImpl, stack {}", StackTrace().toString());
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+    out.cancel();
+}
+
 CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size)
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
@@ -67,8 +81,6 @@ CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCode
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
     LOG_DEBUG(getLogger("CompressedWriteBuffer"), "dtor");
-    if (!canceled)
-        finalize();
 }
 
 

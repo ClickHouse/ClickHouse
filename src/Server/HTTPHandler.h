@@ -94,10 +94,14 @@ private:
                 return;
             finalized = true;
 
+            if (out_delayed_and_compressed_holder)
+                out_delayed_and_compressed_holder->finalize();
             if (out_compressed_holder)
                 out_compressed_holder->finalize();
-            if (out)
-                out->finalize();
+            if (wrap_compressed_holder)
+                wrap_compressed_holder->finalize();
+            if (out_holder)
+                out_holder->finalize();
         }
 
         void cancel()
@@ -106,10 +110,14 @@ private:
                 return;
             canceled = true;
 
+            if (out_delayed_and_compressed_holder)
+                out_delayed_and_compressed_holder->cancel();
             if (out_compressed_holder)
                 out_compressed_holder->cancel();
-            if (out)
-                out->cancel();
+            if (wrap_compressed_holder)
+                wrap_compressed_holder->cancel();
+            if (out_holder)
+                out_holder->cancel();
         }
 
 

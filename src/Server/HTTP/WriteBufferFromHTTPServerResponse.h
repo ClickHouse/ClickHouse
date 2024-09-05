@@ -31,7 +31,7 @@ public:
         bool is_http_method_head_,
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
-    ~WriteBufferFromHTTPServerResponse() override;
+    // ~WriteBufferFromHTTPServerResponse() override;
 
     /// Writes progress in repeating HTTP headers.
     void onProgress(const Progress & progress);
@@ -66,6 +66,8 @@ private:
     /// to change response HTTP code.
     /// This method is idempotent.
     void finalizeImpl() override;
+
+    void cancelImpl() noexcept override;
 
     /// Must be called under locked mutex.
     /// This method send headers, if this was not done already,

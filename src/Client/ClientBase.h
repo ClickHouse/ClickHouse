@@ -8,6 +8,7 @@
 #include <Common/ProgressIndication.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include "IO/WriteBuffer.h"
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
 #include <Poco/ConsoleChannel.h>
@@ -305,7 +306,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    WriteBufferFromFileDescriptor std_out;
+    AutoCancelWriteBuffer<WriteBufferFromFileDescriptor> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.

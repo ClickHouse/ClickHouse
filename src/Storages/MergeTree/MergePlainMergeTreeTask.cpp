@@ -4,9 +4,11 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionLog.h>
+#include "Common/Logger.h"
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
+#include "base/defines.h"
 
 
 namespace DB
@@ -62,6 +64,7 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Exception is in merge_task.");
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
@@ -95,7 +98,6 @@ void MergePlainMergeTreeTask::prepare()
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-        merge_task.reset();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
             execution_status,
@@ -149,6 +151,7 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
     write_part_log({});
+
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
 
@@ -159,7 +162,15 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
+}
 
+void MergePlainMergeTreeTask::cancel() noexcept
+{
+    if (merge_task)
+    {
+        LOG_DEBUG(getLogger("MergePlainMergeTreeTask::cancel"), "merge_task addr {}", size_t(merge_task.get()));
+        merge_task->cancel();
+    }
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const

@@ -45,16 +45,26 @@ void ForkWriteBuffer::nextImpl()
 
 void ForkWriteBuffer::finalizeImpl()
 {
+    WriteBuffer::finalizeImpl();
     for (const WriteBufferPtr & buffer : sources)
     {
         buffer->finalize();
     }
 }
 
-ForkWriteBuffer::~ForkWriteBuffer()
+void ForkWriteBuffer::cancelImpl() noexcept
 {
-    finalize();
+    WriteBuffer::cancelImpl();
+    for (const WriteBufferPtr & buffer : sources)
+    {
+        buffer->cancel();
+    }
 }
+
+// ForkWriteBuffer::~ForkWriteBuffer()
+// {
+//     finalize();
+// }
 
 
 }

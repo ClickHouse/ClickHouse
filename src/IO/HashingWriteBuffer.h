@@ -78,11 +78,6 @@ public:
         state = uint128(0, 0);
     }
 
-    ~HashingWriteBuffer() override
-    {
-        LOG_DEBUG(getLogger("HashingWriteBuffer"), "dtor");
-    }
-
     void sync() override
     {
         out.sync();

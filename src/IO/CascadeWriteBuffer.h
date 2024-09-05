@@ -36,7 +36,9 @@ public:
     void nextImpl() override;
 
     /// Should be called once
-    void getResultBuffers(WriteBufferPtrs & res);
+    WriteBufferPtrs getResultBuffers();
+
+    void releaseInnerBuffers();
 
     const WriteBuffer * getCurrentBuffer() const
     {

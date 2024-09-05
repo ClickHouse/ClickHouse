@@ -64,6 +64,7 @@ void BlockIO::onException()
     if (exception_callback)
         exception_callback(/* log_error */ true);
 
+    pipeline.cancel();
     pipeline.reset();
 }
 
@@ -83,6 +84,7 @@ void BlockIO::onCancelOrConnectionLoss()
         }
 
         /// destroy pipeline and write buffers with an exception context
+        pipeline.cancel();
         pipeline.reset();
     }
 

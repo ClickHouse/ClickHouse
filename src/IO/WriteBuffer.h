@@ -1,6 +1,8 @@
 #pragma once
 
 #include <algorithm>
+#include <concepts>
+#include <exception>
 #include <memory>
 #include <cassert>
 #include <cstring>
@@ -9,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include "Disks/IStoragePolicy.h"
+#include "base/types.h"
 #include <IO/BufferBase.h>
 
 
@@ -168,6 +171,7 @@ protected:
 
     bool finalized = false;
     bool canceled = false;
+    int exception_level = std::uncaught_exceptions();
 
     /// The number of bytes to preserve from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
@@ -204,6 +208,25 @@ private:
     void sync() override
     {
         /// no on
+    }
+};
+
+// AutoCancelWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
+// AutoCancelWriteBuffer could not be inherited.
+// Otherwise cancel method could not call proper cancelImpl because inheritor is destroyed already.
+// But the ussage of final inheritance is avoided in faivor to keep the possibility to use std::make_shared.
+template<class Base>
+class AutoCancelWriteBuffer final : public Base
+{
+    static_assert(std::derived_from<Base, WriteBuffer>);
+
+public:
+    using Base::Base;
+
+    ~AutoCancelWriteBuffer() override
+    {
+        if (!this->finalized && !this->canceled)
+            this->cancel();
     }
 };
 

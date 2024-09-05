@@ -36,6 +36,8 @@ WriteBufferFromNuraftBuffer::WriteBufferFromNuraftBuffer()
 
 void WriteBufferFromNuraftBuffer::finalizeImpl()
 {
+    WriteBuffer::finalizeImpl();
+
     size_t real_size = pos - reinterpret_cast<Position>(buffer->data_begin());
     nuraft::ptr<nuraft::buffer> new_buffer = nuraft::buffer::alloc(real_size);
     memcpy(new_buffer->data_begin(), buffer->data_begin(), real_size);

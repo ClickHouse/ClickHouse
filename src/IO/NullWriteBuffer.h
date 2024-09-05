@@ -9,16 +9,13 @@ namespace DB
 class NullWriteBuffer : public WriteBufferFromPointer
 {
 public:
-    NullWriteBuffer()
-    : WriteBufferFromPointer(nullptr, 0)
-    {
-        finalize();
-    }
+    NullWriteBuffer();
+    ~NullWriteBuffer() override;
 
-    void nextImpl() override
-    {
-        // no op
-    }
+    void nextImpl() override;
+
+private:
+    char data[128];
 };
 
 }

@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 
+#include "Common/Exception.h"
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 
@@ -133,6 +134,8 @@ public:
 
     bool execute();
 
+    void cancel() noexcept;
+
 private:
     struct IStage;
     using StagePtr = std::shared_ptr<IStage>;
@@ -146,6 +149,7 @@ private:
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
         virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
+        virtual void cancel() noexcept = 0;
         virtual ~IStage() = default;
     };
 
@@ -269,6 +273,8 @@ private:
     {
         bool execute() override;
 
+        void cancel() noexcept override;
+
         bool prepare();
         bool executeImpl();
         void finalize() const;
@@ -351,6 +357,8 @@ private:
     struct VerticalMergeStage : public IStage
     {
         bool execute() override;
+        void cancel() noexcept override;
+
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<VerticalMergeRuntimeContext>(local);
@@ -406,6 +414,8 @@ private:
     struct MergeProjectionsStage : public IStage
     {
         bool execute() override;
+
+        void cancel() noexcept override;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {

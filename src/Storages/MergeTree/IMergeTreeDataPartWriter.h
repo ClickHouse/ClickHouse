@@ -43,6 +43,7 @@ public:
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 
     virtual void finish(bool sync) = 0;
+    virtual void cancel() noexcept = 0;
 
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }

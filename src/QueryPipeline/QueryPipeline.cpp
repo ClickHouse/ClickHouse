@@ -697,6 +697,13 @@ void QueryPipeline::reset()
     *this = QueryPipeline();
 }
 
+void QueryPipeline::cancel() noexcept
+{
+    for (auto & processor : *processors)
+        processor->cancel();
+}
+
+
 static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Processors & processors)
 {
     if (port)

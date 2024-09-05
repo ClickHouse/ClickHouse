@@ -132,18 +132,17 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
 
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
-    std::vector<WriteBufferPtr> write_buffers;
-    ConcatReadBuffer::Buffers read_buffers;
-
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed);
     if (!cascade_buffer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
 
-    cascade_buffer->getResultBuffers(write_buffers);
+    cascade_buffer->finalize();
+    auto write_buffers = cascade_buffer->getResultBuffers();
 
     if (write_buffers.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
 
+    ConcatReadBuffer::Buffers read_buffers;
     for (auto & write_buf : write_buffers)
     {
         if (!write_buf)
@@ -284,7 +283,7 @@ void HTTPHandler::processQuery(
 
     if (internal_compression)
     {
-        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+        used_output.out_compressed_holder = std::make_shared<AutoCancelWriteBuffer<CompressedWriteBuffer>>(*used_output.out);
         used_output.out_maybe_compressed = used_output.out_compressed_holder;
     }
     else
@@ -566,7 +565,11 @@ try
         {
             /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
             /// exception is written into used_output.out_maybe_compressed later
-            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
+            auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
+            /// cancel the rest unused buffers
+            for (auto & wb : write_buffers)
+                if (wb.unique())
+                    wb->cancel();
             used_output.out_delayed_and_compressed_holder.reset();
             used_output.out_maybe_delayed_and_compressed = nullptr;
         }

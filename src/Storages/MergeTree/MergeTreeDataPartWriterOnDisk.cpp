@@ -66,6 +66,25 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::finalize()
 }
 
 template<bool only_plain_file>
+void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::cancel() noexcept
+{
+
+    compressed_hashing.cancel();
+    compressor.cancel();
+    plain_hashing.cancel();
+
+    if constexpr (!only_plain_file)
+    {
+        marks_compressed_hashing.cancel();
+        marks_compressor.cancel();
+        marks_hashing.cancel();
+    }
+
+    plain_file->cancel();
+    marks_file->cancel();
+}
+
+template<bool only_plain_file>
 void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::sync() const
 {
     plain_file->sync();
@@ -192,6 +211,31 @@ MergeTreeDataPartWriterOnDisk::~MergeTreeDataPartWriterOnDisk()
 {
     LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"), "dtor");
 
+}
+
+void MergeTreeDataPartWriterOnDisk::cancel() noexcept
+{
+    if (index_file_stream)
+        index_file_stream->cancel();
+    if (index_file_hashing_stream)
+        index_file_hashing_stream->cancel();
+    if (index_compressor_stream)
+        index_compressor_stream->cancel();
+    if (index_source_hashing_stream)
+        index_source_hashing_stream->cancel();
+
+    for (auto & stream : stats_streams)
+    {
+        stream->cancel();
+    }
+
+    for (auto & stream : skip_indices_streams)
+    {
+        stream->cancel();
+    }
+
+    for (auto & store: gin_index_stores)
+        store.second->cancel();
 }
 
 // Implementation is split into static functions for ability

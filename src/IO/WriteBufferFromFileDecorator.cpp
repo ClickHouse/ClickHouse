@@ -26,12 +26,16 @@ void WriteBufferFromFileDecorator::finalizeImpl()
         SwapHelper swap(*this, *impl);
         impl->finalize();
     }
+    WriteBufferFromFileBase::finalizeImpl();
 }
 
 void WriteBufferFromFileDecorator::cancelImpl() noexcept
 {
-    SwapHelper swap(*this, *impl);
-    impl->cancel();
+    {
+        SwapHelper swap(*this, *impl);
+        impl->cancel();
+    }
+    WriteBufferFromFileBase::cancelImpl();
 }
 
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()

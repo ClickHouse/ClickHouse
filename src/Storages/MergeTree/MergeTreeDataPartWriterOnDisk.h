@@ -104,6 +104,7 @@ public:
         void preFinalize();
 
         void finalize();
+        void cancel() noexcept;
 
         void sync() const;
 
@@ -136,6 +137,8 @@ public:
     {
         written_offset_columns = written_offset_columns_;
     }
+
+    void cancel() noexcept override;
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`

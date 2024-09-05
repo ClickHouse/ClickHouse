@@ -104,4 +104,9 @@ void MergedColumnOnlyOutputStream::finish(bool sync)
     writer->finish(sync);
 }
 
+void MergedColumnOnlyOutputStream::cancel() noexcept
+{
+    writer->cancel();
+}
+
 }

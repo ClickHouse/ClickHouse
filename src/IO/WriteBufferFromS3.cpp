@@ -221,11 +221,14 @@ void WriteBufferFromS3::finalizeImpl()
                     "Object {} from bucket {} has unexpected size {} after upload, expected size {}, it's a bug in S3 or S3 API.",
                     key, bucket, actual_size, total_size);
     }
+
+    WriteBufferFromFileBase::finalizeImpl();
 }
 
 void WriteBufferFromS3::cancelImpl() noexcept
 {
     tryToAbortMultipartUpload();
+    WriteBufferFromFileBase::cancelImpl();
 }
 
 String WriteBufferFromS3::getVerboseLogDetails() const

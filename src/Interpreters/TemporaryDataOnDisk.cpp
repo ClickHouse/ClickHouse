@@ -149,6 +149,13 @@ std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams() const
     return res;
 }
 
+void TemporaryDataOnDisk::cancel() noexcept
+{
+    std::lock_guard lock(mutex);
+    for (const auto & stream : streams)
+        stream->cancel();
+}
+
 bool TemporaryDataOnDisk::empty() const
 {
     std::lock_guard lock(mutex);
@@ -205,16 +212,16 @@ struct TemporaryFileStream::OutputWriter
         out_buf->finalize();
     }
 
+    void cancel() noexcept
+    {
+        out_compressed_buf.cancel();
+        out_buf->cancel();
+    }
+
     ~OutputWriter()
     {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        if (!finalized)
+            cancel();
     }
 
     std::unique_ptr<WriteBuffer> out_buf;
@@ -297,6 +304,11 @@ void TemporaryFileStream::flush()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been finished");
 
     out_writer->flush();
+}
+
+void TemporaryFileStream::cancel() noexcept
+{
+    release();
 }
 
 TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
@@ -393,7 +405,7 @@ void TemporaryFileStream::release()
 
     if (out_writer)
     {
-        out_writer->finalize();
+        out_writer->cancel();
         out_writer.reset();
     }
 

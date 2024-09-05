@@ -54,23 +54,27 @@ void CascadeWriteBuffer::nextImpl()
 }
 
 
-void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
+CascadeWriteBuffer::WriteBufferPtrs CascadeWriteBuffer::getResultBuffers()
 {
-    finalize();
-
     /// Sync position with underlying buffer before invalidating
     curr_buffer->position() = position();
 
-    res = std::move(prepared_sources);
+    auto result = std::move(prepared_sources);
 
     curr_buffer = nullptr;
     curr_buffer_num = num_sources = 0;
     prepared_sources.clear();
     lazy_sources.clear();
+
+    cancel();
+
+    return result;
 }
 
 void CascadeWriteBuffer::finalizeImpl()
 {
+    WriteBuffer::finalizeImpl();
+
     if (curr_buffer)
         curr_buffer->position() = position();
 
@@ -81,10 +85,13 @@ void CascadeWriteBuffer::finalizeImpl()
             buf->finalize();
         }
     }
+
 }
 
 void CascadeWriteBuffer::cancelImpl() noexcept
 {
+    WriteBuffer::cancelImpl();
+
     if (curr_buffer)
         curr_buffer->position() = position();
 

@@ -28,6 +28,7 @@ public:
     using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
+    virtual void cancel() noexcept = 0;
 
     const MergeTreeIndexGranularity & getIndexGranularity() const
     {

@@ -760,6 +760,22 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
     finishStatisticsSerialization(sync);
 }
 
+void MergeTreeDataPartWriterWide::cancel() noexcept
+{
+     for (auto & stream : column_streams)
+    {
+        LOG_DEBUG(getLogger("MergeTreeDataPartWriterWide"), "cancel {}", stream.first);
+        stream.second->cancel();
+    }
+
+    LOG_DEBUG(getLogger("MergeTreeDataPartWriterWide"), "clear column_streams");
+    column_streams.clear();
+    LOG_DEBUG(getLogger("MergeTreeDataPartWriterWide"), "clear serialization_states");
+    serialization_states.clear();
+
+    Base::cancel();
+}
+
 void MergeTreeDataPartWriterWide::writeFinalMark(
     const NameAndTypePair & name_and_type,
     WrittenOffsetColumns & offset_columns)

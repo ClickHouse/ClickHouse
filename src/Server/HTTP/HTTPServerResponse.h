@@ -34,8 +34,8 @@ protected:
 
     void finalizeImpl() override
     {
-        WriteBufferFromPocoSocket::finalizeImpl();
         socketSendBytes("0\r\n\r\n", 5);
+        WriteBufferFromPocoSocket::finalizeImpl();
     }
 };
 

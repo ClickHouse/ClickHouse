@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class CompressedWriteBuffer final : public BufferWithOwnMemory<WriteBuffer>
+class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit CompressedWriteBuffer(
@@ -45,6 +45,11 @@ public:
 
 private:
     void nextImpl() override;
+    /// finalize call does not affect the out buffer.
+    /// That is made in order to handle the usecase when several CompressedWriteBuffer's write to the one file
+    void finalizeImpl() override;
+    /// cancel call canecels the out buffer
+    void cancelImpl() noexcept override;
 
     WriteBuffer & out;
     CompressionCodecPtr codec;

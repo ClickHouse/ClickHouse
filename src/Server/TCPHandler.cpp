@@ -2191,7 +2191,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             {
                 CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec, query_settings.enable_zstd_qat_codec);
 
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+                state.maybe_compressed_out = std::make_shared<AutoCancelWriteBuffer<CompressedWriteBuffer>>(
                     *out, CompressionCodecFactory::instance().get(method, level));
             }
             else

@@ -52,6 +52,7 @@ void writeSignalIDtoSignalPipe(int sig)
     WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     writeBinary(sig, out);
     out.next();
+    out.finalize();
 
     errno = saved_errno;
 }
