@@ -291,6 +291,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (enabledBlockOffsetColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+    };
+
+    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+
     SerializationInfo::Settings info_settings =
     {
         .ratio_of_defaults_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
@@ -298,10 +306,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
+    global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
     {
         global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
             LOG_INFO(ctx->log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
@@ -322,6 +332,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
             infos.add(part_infos);
         }
+
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
     }
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
@@ -879,7 +891,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
 {
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
-    for (const auto & part : global_ctx->future_part->parts)
+    for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
         createReadFromPartStep(
@@ -887,7 +899,8 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            part,
+            global_ctx->future_part->parts[part_num],
+            global_ctx->alter_conversions[part_num],
             Names{column_name},
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
@@ -1570,7 +1583,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
-    for (const auto & part : global_ctx->future_part->parts)
+    for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
     {
         if (part->getMarksCount() == 0)
             LOG_TRACE(ctx->log, "Part {} is empty", part->name);
@@ -1581,7 +1594,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            part,
+            global_ctx->future_part->parts[i],
+            global_ctx->alter_conversions[i],
             global_ctx->merging_columns.getNames(),
             global_ctx->input_rows_filtered,
             /*apply_deleted_mask=*/ true,
