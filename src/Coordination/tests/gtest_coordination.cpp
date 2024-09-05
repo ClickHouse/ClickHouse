@@ -3517,10 +3517,12 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
     {
         SCOPED_TRACE("Recursive Remove Ephemeral");
         create("/T7", zkutil::CreateMode::Ephemeral);
+        ASSERT_EQ(storage.ephemerals.size(), 1);
 
         auto responses = remove("/T7", 0, 100);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_EQ(storage.ephemerals.size(), 0);
         ASSERT_TRUE(!exists("/T7"));
     }
 
@@ -3530,10 +3532,12 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
         create("/T8/A", zkutil::CreateMode::Persistent);
         create("/T8/B", zkutil::CreateMode::Ephemeral);
         create("/T8/A/C", zkutil::CreateMode::Ephemeral);
+        ASSERT_EQ(storage.ephemerals.size(), 1);
 
         auto responses = remove("/T8", 0, 4);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_EQ(storage.ephemerals.size(), 0);
         ASSERT_TRUE(!exists("/T8"));
         ASSERT_TRUE(!exists("/T8/A"));
         ASSERT_TRUE(!exists("/T8/B"));
