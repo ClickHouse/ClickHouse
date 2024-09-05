@@ -236,9 +236,7 @@ class _NetworkManager:
         return cls._instance
 
     def setup_ip6tables_docker_user_chain(self):
-        _rules = subprocess.check_output(
-            f"ip6tables-save", shell=True
-        )
+        _rules = subprocess.check_output(f"ip6tables-save", shell=True)
         if "DOCKER-USER" in _rules.decode("utf-8"):
             return
 
