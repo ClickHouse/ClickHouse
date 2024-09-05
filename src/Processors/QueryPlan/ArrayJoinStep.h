@@ -10,7 +10,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ArrayJoinStep : public ITransformingStep
 {
 public:
-    explicit ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPtr array_join_);
+    ArrayJoinStep(const DataStream & input_stream_, NameSet columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_);
     String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -18,12 +18,16 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const ArrayJoinActionPtr & arrayJoin() const { return array_join; }
+    const NameSet & getColumns() const { return columns; }
+    bool isLeft() const { return is_left; }
 
 private:
     void updateOutputStream() override;
 
-    ArrayJoinActionPtr array_join;
+    NameSet columns;
+    bool is_left = false;
+    bool is_unaligned = false;
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
 }

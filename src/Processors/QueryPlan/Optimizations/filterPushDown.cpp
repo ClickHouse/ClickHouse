@@ -520,8 +520,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * array_join = typeid_cast<ArrayJoinStep *>(child.get()))
     {
-        const auto & array_join_actions = array_join->arrayJoin();
-        const auto & keys = array_join_actions->columns;
+        const auto & keys = array_join->getColumns();
         const auto & array_join_header = array_join->getInputStreams().front().header;
 
         Names allowed_inputs;

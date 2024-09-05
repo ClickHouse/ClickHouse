@@ -1720,8 +1720,14 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     drop_unused_columns_before_array_join_transform_step->setStepDescription("DROP unused columns before ARRAY JOIN");
     plan.addStep(std::move(drop_unused_columns_before_array_join_transform_step));
 
-    auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_column_names, array_join_node.isLeft(), planner_context->getQueryContext());
-    auto array_join_step = std::make_unique<ArrayJoinStep>(plan.getCurrentDataStream(), std::move(array_join_action));
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto array_join_step = std::make_unique<ArrayJoinStep>(
+        plan.getCurrentDataStream(),
+        std::move(array_join_column_names),
+        array_join_node.isLeft(),
+        settings.enable_unaligned_array_join,
+        settings.max_block_size);
+
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
 

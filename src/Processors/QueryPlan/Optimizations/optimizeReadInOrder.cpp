@@ -230,10 +230,10 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
-        if (!array_join->arrayJoin()->is_left)
+        if (!array_join->isLeft())
             limit = 0;
 
-        const auto & array_joined_columns = array_join->arrayJoin()->columns;
+        const auto & array_joined_columns = array_join->getColumns();
 
         if (dag)
         {
