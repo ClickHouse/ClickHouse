@@ -63,6 +63,7 @@ public:
     std::shared_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControl & access_control) const;
 
     std::vector<UUID> findDependencies() const;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
 
     void merge(const SettingsProfileElements & other);

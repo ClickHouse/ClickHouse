@@ -66,6 +66,7 @@ public:
 
     /// Returns true if this storage is replicated.
     virtual bool isReplicated() const { return false; }
+    virtual String getReplicationID() const { return ""; }
 
     /// Starts periodic reloading and updating of entities in this storage.
     virtual void startPeriodicReloading() {}
@@ -214,7 +215,7 @@ public:
 
     /// Makes a backup of this access storage.
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
-    virtual void restoreFromBackup(RestorerFromBackup & restorer);
+    virtual void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;

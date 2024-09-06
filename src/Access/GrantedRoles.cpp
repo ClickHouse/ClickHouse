@@ -176,6 +176,16 @@ std::vector<UUID> GrantedRoles::findDependencies() const
     return res;
 }
 
+bool GrantedRoles::hasDependencies(const std::unordered_set<UUID> & ids) const
+{
+    for (const auto & role_id : roles)
+    {
+        if (ids.contains(role_id))
+            return true;
+    }
+    return false;
+}
+
 void GrantedRoles::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     std::vector<UUID> new_ids;

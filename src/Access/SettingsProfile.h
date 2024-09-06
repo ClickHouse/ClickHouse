@@ -22,7 +22,9 @@ struct SettingsProfile : public IAccessEntity
     AccessEntityType getType() const override { return TYPE; }
 
     std::vector<UUID> findDependencies() const override;
-    void doReplaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+
     bool isBackupAllowed() const override { return elements.isBackupAllowed(); }
 };
 

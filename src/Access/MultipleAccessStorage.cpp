@@ -508,7 +508,7 @@ void MultipleAccessStorage::backup(BackupEntriesCollector & backup_entries_colle
         throwBackupNotAllowed();
 }
 
-void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
     auto storages = getStoragesInternal();
 
@@ -516,7 +516,7 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     {
         if (storage->isRestoreAllowed())
         {
-            storage->restoreFromBackup(restorer);
+            storage->restoreFromBackup(restorer, data_path_in_backup);
             return;
         }
     }

@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int LOGICAL_ERROR;
 }
 
@@ -175,147 +176,6 @@ namespace
         }
         return res;
     }
-
-    /// Checks if new entities (which we're going to restore) already exist,
-    /// and either skips them or throws an exception depending on the restore settings.
-    void checkExistingEntities(std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
-                               std::unordered_map<UUID, UUID> & old_to_new_id,
-                               const AccessControl & access_control,
-                               RestoreAccessCreationMode creation_mode)
-    {
-        if (creation_mode == RestoreAccessCreationMode::kReplace)
-            return;
-
-        auto should_skip = [&](const std::pair<UUID, AccessEntityPtr> & id_and_entity)
-        {
-            const auto & id = id_and_entity.first;
-            const auto & entity = *id_and_entity.second;
-            auto existing_id = access_control.find(entity.getType(), entity.getName());
-            if (!existing_id)
-            {
-                return false;
-            }
-            else if (creation_mode == RestoreAccessCreationMode::kCreateIfNotExists)
-            {
-                old_to_new_id[id] = *existing_id;
-                return true;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Cannot restore {} because it already exists", entity.formatTypeWithName());
-            }
-        };
-
-        std::erase_if(entities, should_skip);
-    }
-
-    /// If new entities (which we're going to restore) depend on other entities which are not going to be restored or not present in the backup
-    /// then we should try to replace those dependencies with already existing entities.
-    void resolveDependencies(const std::unordered_map<UUID, std::pair<String, AccessEntityType>> & dependencies,
-                             std::unordered_map<UUID, UUID> & old_to_new_ids,
-                             const AccessControl & access_control,
-                             bool allow_unresolved_dependencies)
-    {
-        for (const auto & [id, name_and_type] : dependencies)
-        {
-            std::optional<UUID> new_id;
-            if (allow_unresolved_dependencies)
-                new_id = access_control.find(name_and_type.second, name_and_type.first);
-            else
-                new_id = access_control.getID(name_and_type.second, name_and_type.first);
-            if (new_id)
-                old_to_new_ids.emplace(id, *new_id);
-        }
-    }
-
-    /// Generates random IDs for the new entities.
-    void generateRandomIDs(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, std::unordered_map<UUID, UUID> & old_to_new_ids)
-    {
-        Poco::UUIDGenerator generator;
-        for (auto & [id, entity] : entities)
-        {
-            UUID new_id;
-            generator.createRandom().copyTo(reinterpret_cast<char *>(&new_id));
-            old_to_new_ids.emplace(id, new_id);
-            id = new_id;
-        }
-    }
-
-    /// Updates dependencies of the new entities using a specified map.
-    void replaceDependencies(std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
-                             const std::unordered_map<UUID, UUID> & old_to_new_ids)
-    {
-        for (auto & entity : entities | boost::adaptors::map_values)
-            IAccessEntity::replaceDependencies(entity, old_to_new_ids);
-    }
-
-    AccessRightsElements getRequiredAccessToRestore(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities)
-    {
-        AccessRightsElements res;
-        for (const auto & entity : entities | boost::adaptors::map_values)
-        {
-            auto entity_type = entity->getType();
-            switch (entity_type)
-            {
-                case User::TYPE:
-                {
-                    const auto & user = typeid_cast<const User &>(*entity);
-                    res.emplace_back(AccessType::CREATE_USER);
-                    auto elements = user.access.getElements();
-                    for (auto & element : elements)
-                    {
-                        if (element.is_partial_revoke)
-                            continue;
-                        element.grant_option = true;
-                        res.emplace_back(element);
-                    }
-                    if (!user.granted_roles.isEmpty())
-                        res.emplace_back(AccessType::ROLE_ADMIN);
-                    break;
-                }
-
-                case Role::TYPE:
-                {
-                    const auto & role = typeid_cast<const Role &>(*entity);
-                    res.emplace_back(AccessType::CREATE_ROLE);
-                    auto elements = role.access.getElements();
-                    for (auto & element : elements)
-                    {
-                        if (element.is_partial_revoke)
-                            continue;
-                        element.grant_option = true;
-                        res.emplace_back(element);
-                    }
-                    if (!role.granted_roles.isEmpty())
-                        res.emplace_back(AccessType::ROLE_ADMIN);
-                    break;
-                }
-
-                case SettingsProfile::TYPE:
-                {
-                    res.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
-                    break;
-                }
-
-                case RowPolicy::TYPE:
-                {
-                    const auto & policy = typeid_cast<const RowPolicy &>(*entity);
-                    res.emplace_back(AccessType::CREATE_ROW_POLICY, policy.getDatabase(), policy.getTableName());
-                    break;
-                }
-
-                case Quota::TYPE:
-                {
-                    res.emplace_back(AccessType::CREATE_QUOTA);
-                    break;
-                }
-
-                default:
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", toString(entity_type));
-            }
-        }
-        return res;
-    }
 }
 
 
@@ -339,61 +199,309 @@ AccessRestorerFromBackup::AccessRestorerFromBackup(
     const BackupPtr & backup_, const RestoreSettings & restore_settings_)
     : backup(backup_)
     , creation_mode(restore_settings_.create_access)
-    , allow_unresolved_dependencies(restore_settings_.allow_unresolved_access_dependencies)
+    , skip_unresolved_dependencies(restore_settings_.allow_unresolved_access_dependencies)
 {
 }
 
 AccessRestorerFromBackup::~AccessRestorerFromBackup() = default;
 
-void AccessRestorerFromBackup::addDataPath(const String & data_path)
+
+void AccessRestorerFromBackup::addDataPath(const String & data_path_in_backup)
 {
-    if (!data_paths.emplace(data_path).second)
-        return;
+    if (loaded)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities already loaded");
 
-    fs::path data_path_in_backup_fs = data_path;
-    Strings filenames = backup->listFiles(data_path, /*recursive*/ false);
-    if (filenames.empty())
-        return;
-
-    for (const String & filename : filenames)
-    {
-        if (!filename.starts_with("access") || !filename.ends_with(".txt"))
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} doesn't match the wildcard \"access*.txt\"",
-                            String{data_path_in_backup_fs / filename});
-    }
-
-    ::sort(filenames.begin(), filenames.end());
-
-    for (const String & filename : filenames)
-    {
-        String filepath_in_backup = data_path_in_backup_fs / filename;
-        auto read_buffer_from_backup = backup->readFile(filepath_in_backup);
-        auto ab = AccessEntitiesInBackup::fromBackupEntry(std::move(read_buffer_from_backup), filepath_in_backup);
-
-        boost::range::copy(ab.entities, std::back_inserter(entities));
-        boost::range::copy(ab.dependencies, std::inserter(dependencies, dependencies.end()));
-    }
-
-    for (const auto & id : entities | boost::adaptors::map_keys)
-        dependencies.erase(id);
+    if (std::find(data_paths_in_backup.begin(), data_paths_in_backup.end(), data_path_in_backup) == data_paths_in_backup.end())
+        data_paths_in_backup.emplace_back(data_path_in_backup);
 }
+
+
+void AccessRestorerFromBackup::loadFromBackup()
+{
+    if (loaded)
+        return;
+
+    /// Parse files "access*.txt" found in the added data paths in the backup.
+    for (size_t data_path_index = 0; data_path_index != data_paths_in_backup.size(); ++data_path_index)
+    {
+        const String & data_path_in_backup = data_paths_in_backup[data_path_index];
+
+        fs::path data_path_in_backup_fs = data_path_in_backup;
+        Strings filenames = backup->listFiles(data_path_in_backup_fs, /*recursive*/ false);
+        if (filenames.empty())
+            continue;
+
+        for (const String & filename : filenames)
+        {
+            if (!filename.starts_with("access") || !filename.ends_with(".txt"))
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} doesn't match the wildcard \"access*.txt\"",
+                                String{data_path_in_backup_fs / filename});
+        }
+
+        for (const String & filename : filenames)
+        {
+            String filepath_in_backup = data_path_in_backup_fs / filename;
+            AccessEntitiesInBackup ab;
+
+            try
+            {
+                auto read_buffer_from_backup = backup->readFile(filepath_in_backup);
+                ab = AccessEntitiesInBackup::fromBackupEntry(std::move(read_buffer_from_backup), filepath_in_backup);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("While reading access entities from {} in backup", filepath_in_backup);
+                throw;
+            }
+
+            for (const auto & [id, entity] : ab.entities)
+            {
+                auto it = entity_infos.find(id);
+                if (it == entity_infos.end())
+                {
+                    it = entity_infos.emplace(id, EntityInfo{.id = id, .name = entity->getName(), .type = entity->getType()}).first;
+                }
+                EntityInfo & entity_info = it->second;
+                entity_info.entity = entity;
+                entity_info.restore = true;
+                entity_info.data_path_index = data_path_index;
+            }
+
+            for (const auto & [id, name_and_type] : ab.dependencies)
+            {
+                auto it = entity_infos.find(id);
+                if (it == entity_infos.end())
+                {
+                    it = entity_infos.emplace(id, EntityInfo{.id = id, .name = name_and_type.first, .type = name_and_type.second}).first;
+                }
+                EntityInfo & entity_info = it->second;
+                entity_info.is_dependency = true;
+            }
+        }
+    }
+
+    loaded = true;
+}
+
 
 AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
 {
-    return getRequiredAccessToRestore(entities);
+    if (!loaded)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities not loaded");
+
+    AccessRightsElements res;
+    for (const auto & [id, entity_info] : entity_infos)
+    {
+        if (!entity_info.restore)
+            continue;
+        const auto & entity = entity_info.entity;
+        auto entity_type = entity->getType();
+        switch (entity_type)
+        {
+            case User::TYPE:
+            {
+                const auto & user = typeid_cast<const User &>(*entity);
+                res.emplace_back(AccessType::CREATE_USER);
+                auto elements = user.access.getElements();
+                for (auto & element : elements)
+                {
+                    if (element.is_partial_revoke)
+                        continue;
+                    element.grant_option = true;
+                    res.emplace_back(element);
+                }
+                if (!user.granted_roles.isEmpty())
+                    res.emplace_back(AccessType::ROLE_ADMIN);
+                break;
+            }
+
+            case Role::TYPE:
+            {
+                const auto & role = typeid_cast<const Role &>(*entity);
+                res.emplace_back(AccessType::CREATE_ROLE);
+                auto elements = role.access.getElements();
+                for (auto & element : elements)
+                {
+                    if (element.is_partial_revoke)
+                        continue;
+                    element.grant_option = true;
+                    res.emplace_back(element);
+                }
+                if (!role.granted_roles.isEmpty())
+                    res.emplace_back(AccessType::ROLE_ADMIN);
+                break;
+            }
+
+            case SettingsProfile::TYPE:
+            {
+                res.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
+                break;
+            }
+
+            case RowPolicy::TYPE:
+            {
+                const auto & policy = typeid_cast<const RowPolicy &>(*entity);
+                res.emplace_back(AccessType::CREATE_ROW_POLICY, policy.getDatabase(), policy.getTableName());
+                break;
+            }
+
+            case Quota::TYPE:
+            {
+                res.emplace_back(AccessType::CREATE_QUOTA);
+                break;
+            }
+
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", toString(entity_type));
+        }
+    }
+    return res;
 }
 
-std::vector<std::pair<UUID, AccessEntityPtr>> AccessRestorerFromBackup::getAccessEntities(const AccessControl & access_control) const
+
+void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const AccessControl & access_control)
 {
-    auto new_entities = entities;
+    if (ids_assigned)
+        return;
 
+    if (!loaded)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities not loaded");
+
+    /// Calculate `new_id` for each entity info.
+    /// Check which ones of the loaded access entities already exist.
+    /// Generate random UUIDs for access entities which we're going to restore if they don't exist.
+    for (auto & [id, entity_info] : entity_infos)
+    {
+        const String & name = entity_info.name;
+        auto type = entity_info.type;
+
+        if (entity_info.restore && (creation_mode == RestoreAccessCreationMode::kReplace))
+        {
+            entity_info.new_id = UUIDHelpers::generateV4();
+            continue;
+        }
+
+        if (auto existing_id = access_control.find(type, name))
+        {
+            if (entity_info.restore && (creation_mode == RestoreAccessCreationMode::kCreate))
+            {
+                throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Cannot restore {} because it already exists",
+                                AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
+            }
+            entity_info.new_id = *existing_id;
+            entity_info.restore = false;
+        }
+        else
+        {
+            if (entity_info.is_dependency && !entity_info.restore && !skip_unresolved_dependencies)
+            {
+                throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "Cannot resolve {} while restoring from backup",
+                                AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
+            }
+            if (entity_info.restore)
+                entity_info.new_id = UUIDHelpers::generateV4();
+        }
+    }
+
+    /// Prepare map from old UUIDs to new UUIDs.
     std::unordered_map<UUID, UUID> old_to_new_ids;
-    checkExistingEntities(new_entities, old_to_new_ids, access_control, creation_mode);
-    resolveDependencies(dependencies, old_to_new_ids, access_control, allow_unresolved_dependencies);
-    generateRandomIDs(new_entities, old_to_new_ids);
-    replaceDependencies(new_entities, old_to_new_ids);
 
-    return new_entities;
+    for (const auto & [id, entity_info] : entity_infos)
+    {
+        if (entity_info.new_id)
+            old_to_new_ids[id] = *entity_info.new_id;
+    }
+
+    /// Remap the UUIDs of dependencies in the access entities we're going to restore.
+    for (auto & [id, entity_info] : entity_infos)
+    {
+        if (entity_info.restore)
+        {
+            auto new_entity = entity_info.entity->clone();
+            new_entity->replaceDependencies(old_to_new_ids);
+            entity_info.entity = new_entity;
+        }
+
+        if (entity_info.restore && data_path_with_entities_to_restore.empty())
+            data_path_with_entities_to_restore = data_paths_in_backup[entity_info.data_path_index];
+    }
+
+    ids_assigned = true;
+}
+
+
+std::vector<std::pair<UUID, AccessEntityPtr>> AccessRestorerFromBackup::getEntities(const String & data_path_in_backup) const
+{
+    if (!ids_assigned)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IDs not assigned");
+
+    if (data_path_in_backup != data_path_with_entities_to_restore)
+        return {};
+
+    std::vector<std::pair<UUID, AccessEntityPtr>> res;
+    res.reserve(entity_infos.size());
+
+    for (const auto & [id, entity_info] : entity_infos)
+    {
+        if (entity_info.restore)
+            res.emplace_back(*entity_info.new_id, entity_info.entity);
+    }
+
+    return res;
+}
+
+
+void restoreAccessEntitiesFromBackup(
+    IAccessStorage & destination_access_storage,
+    const std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
+    const RestoreSettings & restore_settings)
+{
+    if (entities.empty())
+        return; /// Nothing to restore.
+
+    bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
+
+    std::unordered_set<UUID> restored_ids;
+    std::unordered_map<UUID, UUID> new_to_existing_ids;
+
+    for (const auto & [id, entity] : entities)
+    {
+        UUID existing_id;
+        if (destination_access_storage.insert(id, entity, replace_if_exists, throw_if_exists, &existing_id))
+        {
+            restored_ids.emplace(id);
+        }
+        else
+        {
+            /// Couldn't insert `entity` because there is an existing entity with the same name.
+            new_to_existing_ids[id] = existing_id;
+        }
+    }
+
+    if (!new_to_existing_ids.empty())
+    {
+        std::vector<UUID> ids_to_update;
+        ids_to_update.reserve(restored_ids.size());
+        boost::copy(restored_ids, std::inserter(ids_to_update, ids_to_update.end()));
+
+        std::unordered_set<UUID> new_ids;
+        boost::copy(new_to_existing_ids | boost::adaptors::map_keys, std::inserter(new_ids, new_ids.end()));
+
+        /// If new entities restored from backup have dependencies on other entities from backup which were not restored because they existed,
+        /// then we should correct those dependencies.
+        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        {
+            if (!entity->hasDependencies(new_ids))
+                return entity;
+            auto res = entity->clone();
+            res->replaceDependencies(new_to_existing_ids);
+            return res;
+        };
+
+        /// It's totally ok if some UUIDs from `ids_to_update` don't exist anymore, that's why we use tryUpdate() here.
+        destination_access_storage.tryUpdate(ids_to_update, update_func);
+    }
 }
 
 }

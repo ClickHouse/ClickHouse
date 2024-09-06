@@ -4,10 +4,6 @@
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/IBackupCoordination.h>
-#include <Backups/IRestoreCoordination.h>
-#include <Backups/RestorerFromBackup.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -682,46 +678,6 @@ AccessEntityPtr ReplicatedAccessStorage::readImpl(const UUID & id, bool throw_if
 {
     std::lock_guard lock{mutex};
     return memory_storage.read(id, throw_if_not_exists);
-}
-
-
-void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const
-{
-    if (!isBackupAllowed())
-        throwBackupNotAllowed();
-
-    auto entities = readAllWithIDs(type);
-    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
-
-    if (entities.empty())
-        return;
-
-    auto backup_entry_with_path = makeBackupEntryForAccess(
-        entities,
-        data_path_in_backup,
-        backup_entries_collector.getAccessCounter(type),
-        backup_entries_collector.getContext()->getAccessControl());
-
-    auto backup_coordination = backup_entries_collector.getBackupCoordination();
-    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, backup_entry_with_path.first);
-
-    backup_entries_collector.addPostTask(
-        [backup_entry = backup_entry_with_path.second,
-         my_zookeeper_path = zookeeper_path,
-         type,
-         &backup_entries_collector,
-         backup_coordination]
-        {
-            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(my_zookeeper_path, type))
-                backup_entries_collector.addBackupEntry(path, backup_entry);
-        });
-}
-
-
-bool ReplicatedAccessStorage::acquireReplicatedRestore(RestorerFromBackup & restorer) const
-{
-    auto restore_coordination = restorer.getRestoreCoordination();
-    return restore_coordination->acquireReplicatedAccessStorage(zookeeper_path);
 }
 
 }

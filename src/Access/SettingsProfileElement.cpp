@@ -158,6 +158,18 @@ std::vector<UUID> SettingsProfileElements::findDependencies() const
 }
 
 
+bool SettingsProfileElements::hasDependencies(const std::unordered_set<UUID> & ids) const
+{
+    std::vector<UUID> res;
+    for (const auto & element : *this)
+    {
+        if (element.parent_profile && ids.contains(*element.parent_profile))
+            return true;
+    }
+    return false;
+}
+
+
 void SettingsProfileElements::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     for (auto & element : *this)

@@ -295,6 +295,23 @@ std::vector<UUID> RolesOrUsersSet::findDependencies() const
     return res;
 }
 
+bool RolesOrUsersSet::hasDependencies(const std::unordered_set<UUID> & dependencies_ids) const
+{
+    for (const auto & id : ids)
+    {
+        if (dependencies_ids.contains(id))
+            return true;
+    }
+
+    for (const auto & id : except_ids)
+    {
+        if (dependencies_ids.contains(id))
+            return true;
+    }
+
+    return false;
+}
+
 void RolesOrUsersSet::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     std::vector<UUID> new_ids;

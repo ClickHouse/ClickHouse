@@ -2,7 +2,6 @@
 
 #include <Core/UUID.h>
 #include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -12,6 +11,7 @@ enum class AccessEntityType : uint8_t;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class AccessRightsElements;
+class IAccessStorage;
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
@@ -27,8 +27,14 @@ std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
     size_t counter,
     const AccessControl & access_control);
 
-
 /// Restores access entities from a backup.
+void restoreAccessEntitiesFromBackup(
+    IAccessStorage & access_storage,
+    const std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
+    const RestoreSettings & restore_settings);
+
+
+/// Loads access entities from a backup and prepares them for insertion into an access storage.
 class AccessRestorerFromBackup
 {
 public:
@@ -36,21 +42,67 @@ public:
     ~AccessRestorerFromBackup();
 
     /// Adds a data path to loads access entities from.
-    void addDataPath(const String & data_path);
+    void addDataPath(const String & data_path_in_backup);
+
+    /// Loads access entities from the backup.
+    void loadFromBackup();
 
     /// Checks that the current user can do restoring.
+    /// Function loadFromBackup() must be called before that.
     AccessRightsElements getRequiredAccess() const;
 
-    /// Inserts all access entities loaded from all the paths added by addDataPath().
-    std::vector<std::pair<UUID, AccessEntityPtr>> getAccessEntities(const AccessControl & access_control) const;
+    /// Generates random IDs for access entities we're restoring to insert them into an access storage;
+    /// and finds IDs of existing access entities which are used as dependencies.
+    void generateRandomIDsAndResolveDependencies(const AccessControl & access_control);
+
+    /// Returns access entities prepared for insertion into an access storage and new random UUIDs generated for those access entities.
+    /// Both functions loadFromBackup() and generateRandomIDsAndResolveDependencies() must be called before that.
+    std::vector<std::pair<UUID, AccessEntityPtr>> getEntities(const String & data_path_in_backup) const;
 
 private:
-    BackupPtr backup;
-    RestoreAccessCreationMode creation_mode;
-    bool allow_unresolved_dependencies = false;
-    std::vector<std::pair<UUID, AccessEntityPtr>> entities;
-    std::unordered_map<UUID, std::pair<String, AccessEntityType>> dependencies;
-    std::unordered_set<String> data_paths;
+    const BackupPtr backup;
+    const RestoreAccessCreationMode creation_mode;
+    const bool skip_unresolved_dependencies;
+
+    /// Whether loadFromBackup() finished.
+    bool loaded = false;
+
+    /// Whether generateRandomIDsAndResolveDependencies() finished.
+    bool ids_assigned = false;
+
+    Strings data_paths_in_backup;
+    String data_path_with_entities_to_restore;
+
+    /// Information about an access entity loaded from the backup.
+    struct EntityInfo
+    {
+        UUID id;
+        String name;
+        AccessEntityType type;
+
+        AccessEntityPtr entity = nullptr; /// Can be nullptr if `restore=false`.
+
+        /// Index in `data_paths_in_backup`.
+        size_t data_path_index = 0;
+
+        /// Whether we're going to restore this entity.
+        /// For example,
+        /// in case of `RESTORE TABLE system.roles` this flag is true for all the roles loaded from the backup, and
+        /// in case of `RESTORE ALL` this flag is always true.
+        bool restore = false;
+
+        /// Whether this entity info was added as a dependency of another entity which we're going to restore.
+        /// For example, if we're going to restore the following user: `CREATE USER user1 DEFAULT ROLE role1, role2 SETTINGS PROFILE profile1, profile2`
+        /// then `restore=true` for `user1` and `is_dependency=true` for `role1`, `role2`, `profile1`, `profile2`.
+        /// Flags `restore` and `is_dependency` both can be set at the same time.
+        bool is_dependency = false;
+
+        /// New UUID for this entity - either randomly generated or copied from an existing entity.
+        /// This UUID is assigned by generateRandomIDsAndResolveDependencies().
+        std::optional<UUID> new_id = std::nullopt;
+    };
+
+    std::unordered_map<UUID, EntityInfo> entity_infos;
 };
 
 }
