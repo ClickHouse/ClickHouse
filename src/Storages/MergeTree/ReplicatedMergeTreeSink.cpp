@@ -582,6 +582,8 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         if (deduplicate && deduplicated)
         {
             error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
+            if (!startsWith(part->getDataPartStorage().getRelativePath(), "detached/attaching_"))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected relative path for a part: {}", part->getDataPartStorage().getRelativePath());
             fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
             part->renameTo(new_relative_path, false);
         }
