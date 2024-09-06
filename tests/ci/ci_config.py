@@ -397,7 +397,9 @@ class CI:
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=6
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_TSAN],
+            num_batches=6,
+            timeout=9000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
