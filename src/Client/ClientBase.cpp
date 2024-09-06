@@ -642,7 +642,7 @@ void ClientBase::initLogsOutputStream()
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                out_logs_buf = std::make_unique<AutoCancelWriteBuffer<WriteBufferFromFileDescriptor>>(STDERR_FILENO);
+                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(STDERR_FILENO);
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -655,7 +655,7 @@ void ClientBase::initLogsOutputStream()
             else
             {
                 out_logs_buf
-                    = std::make_unique<AutoCancelWriteBuffer<WriteBufferFromFile>>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                 wb = out_logs_buf.get();
             }
         }
@@ -810,7 +810,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress)
         {
             try
             {
-                tty_buf = std::make_unique<AutoCancelWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
+                tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
 
                 /// It is possible that the terminal file has writeable permissions
                 /// but we cannot write anything there. Check it with invisible character.
@@ -834,7 +834,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress)
 
     if (stderr_is_a_tty || progress == ProgressOption::ERR)
     {
-        tty_buf = std::make_unique<AutoCancelWriteBuffer<WriteBufferFromFileDescriptor>>(STDERR_FILENO, buf_size);
+        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(STDERR_FILENO, buf_size);
     }
     else
         need_render_progress = false;

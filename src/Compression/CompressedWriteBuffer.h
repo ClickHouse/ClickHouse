@@ -21,8 +21,6 @@ public:
         CompressionCodecPtr codec_ = CompressionCodecFactory::instance().getDefaultCodec(),
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    ~CompressedWriteBuffer() override;
-
     /// The amount of compressed data
     size_t getCompressedBytes()
     {
@@ -47,7 +45,6 @@ private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.
     /// That is made in order to handle the usecase when several CompressedWriteBuffer's write to the one file
-    void finalizeImpl() override;
     /// cancel call canecels the out buffer
     void cancelImpl() noexcept override;
 

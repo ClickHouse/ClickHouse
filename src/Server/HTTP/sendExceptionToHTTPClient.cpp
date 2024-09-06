@@ -4,6 +4,8 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -50,6 +52,8 @@ void sendExceptionToHTTPClient(
 void setHTTPResponseStatusAndHeadersForException(
     int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, WriteBufferFromHTTPServerResponse * out, LoggerPtr log)
 {
+    LOG_DEBUG(getLogger("setHTTPResponseStatusAndHeadersForException"), "begin has out {}", bool(out));
+
     if (out)
         out->setExceptionCode(exception_code);
     else

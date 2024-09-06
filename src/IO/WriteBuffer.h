@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include "Disks/IStoragePolicy.h"
@@ -34,6 +35,13 @@ namespace ErrorCodes
 class WriteBuffer : public BufferBase
 {
 public:
+    /// Special exception to throw when the current MemoryWriteBuffer cannot receive data
+    class CurrentBufferExhausted : public std::exception
+    {
+    public:
+        const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
+    };
+
     using BufferBase::set;
     using BufferBase::position;
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
@@ -57,6 +65,12 @@ public:
         {
             nextImpl();
         }
+        catch (CurrentBufferExhausted &)
+        {
+            pos = working_buffer.begin();
+            bytes += bytes_in_buffer;
+            throw;
+        }
         catch (...)
         {
             /** If the nextImpl() call was unsuccessful, move the cursor to the beginning,
@@ -64,6 +78,8 @@ public:
               */
             pos = working_buffer.begin();
             bytes += bytes_in_buffer;
+
+            cancel();
 
             throw;
         }
@@ -147,6 +163,7 @@ public:
     }
 
     bool isFinalized() const { return finalized; }
+    bool isCanceled() const { return canceled; }
 
     void cancel() noexcept;
 
@@ -211,22 +228,46 @@ private:
     }
 };
 
+
 // AutoCancelWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
 // AutoCancelWriteBuffer could not be inherited.
 // Otherwise cancel method could not call proper cancelImpl because inheritor is destroyed already.
 // But the ussage of final inheritance is avoided in faivor to keep the possibility to use std::make_shared.
 template<class Base>
-class AutoCancelWriteBuffer final : public Base
+class AutoCanceledWriteBuffer final : public Base
 {
     static_assert(std::derived_from<Base, WriteBuffer>);
 
 public:
     using Base::Base;
 
-    ~AutoCancelWriteBuffer() override
+    ~AutoCanceledWriteBuffer() override
     {
+        LOG_DEBUG(getLogger("AutoCanceledWriteBuffer"), "d-tor");
         if (!this->finalized && !this->canceled)
             this->cancel();
+    }
+};
+
+
+template<class Base>
+class AutoFinalizedWriteBuffer final : public Base
+{
+    static_assert(std::derived_from<Base, WriteBuffer>);
+
+public:
+    using Base::Base;
+
+    ~AutoFinalizedWriteBuffer() override
+    try
+    {
+        LOG_DEBUG(getLogger("AutoFinalizedWriteBuffer"), "d-tor");
+        if (!this->finalized && !this->canceled)
+            this->finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 };
 

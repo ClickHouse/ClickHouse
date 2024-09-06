@@ -584,19 +584,25 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
     }
     catch (...)
     {
-        auto message = getCurrentExceptionMessage(true);
-        LOG_ERROR(log, "Failed to process request. Error: {}", message);
+        tryLogCurrentException(log, "Failed to process request");
 
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, message); // can't call process_error, because of too soon response sending
+        auto message = getCurrentExceptionMessage(true);
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, getCurrentExceptionMessage(true)); // can't call process_error, because of too soon response sending
+
         try
         {
-            writeStringBinary(message, out);
-            out.finalize();
+            if (!out.isCanceled())
+            {
+                writeStringBinary(message, out);
+                out.finalize();
+            }
         }
         catch (...)
         {
             tryLogCurrentException(log);
         }
+
+        return;
     }
 
     try
@@ -605,6 +611,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
     }
     catch (...)
     {
+        out.cancel();
         tryLogCurrentException(log);
     }
 }

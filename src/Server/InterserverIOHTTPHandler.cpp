@@ -49,7 +49,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
@@ -68,12 +68,13 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 
     if (compress)
     {
-        CompressedWriteBuffer compressed_out(*used_output.out);
+        CompressedWriteBuffer compressed_out(*output);
         endpoint->processQuery(params, body, compressed_out, response);
+        compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, body, *used_output.out, response);
+        endpoint->processQuery(params, body, *output, response);
     }
 }
 
@@ -86,15 +87,14 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    Output used_output;
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+    auto output = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
 
     auto finalize_output = [&]
     {
         try
         {
-            used_output.out->finalize();
+            output->finalize();
         }
         catch (...)
         {
@@ -112,13 +112,13 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         try
         {
-            writeString(message, *used_output.out);
+            writeString(message, *output);
             finalize_output();
         }
         catch (...)
         {
             tryLogCurrentException(log);
-            finalize_output();
+            output->cancel();
         }
     };
 
@@ -126,7 +126,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     {
         if (auto [message, success] = checkAuthentication(request); success)
         {
-            processQuery(request, response, used_output);
+            processQuery(request, response, output);
             finalize_output();
             LOG_DEBUG(log, "Done processing query");
         }
@@ -141,7 +141,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     {
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
         {
-            used_output.out->finalize();
+            finalize_output();
             return;
         }
 

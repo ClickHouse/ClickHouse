@@ -1,6 +1,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <Common/Exception.h>
+#include "IO/WriteBuffer.h"
 
 namespace DB
 {
@@ -36,7 +37,7 @@ void CascadeWriteBuffer::nextImpl()
         curr_buffer->position() = position();
         curr_buffer->next();
     }
-    catch (const MemoryWriteBuffer::CurrentBufferExhausted &)
+    catch (const WriteBuffer::CurrentBufferExhausted &)
     {
         if (curr_buffer_num < num_sources)
         {

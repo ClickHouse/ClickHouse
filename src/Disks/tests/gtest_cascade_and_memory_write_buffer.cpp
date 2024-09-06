@@ -7,6 +7,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
 #include <Common/typeid_cast.h>
+#include "IO/WriteBuffer.h"
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -221,7 +222,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
         if (s > 1)
         {
             MemoryWriteBuffer buf(s - 1);
-            EXPECT_THROW(buf.write(data.data(), data.size()), MemoryWriteBuffer::CurrentBufferExhausted);
+            EXPECT_THROW(buf.write(data.data(), data.size()), WriteBuffer::CurrentBufferExhausted);
             buf.finalize();
         }
     }

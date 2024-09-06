@@ -60,12 +60,6 @@ void CompressedWriteBuffer::nextImpl()
     }
 }
 
-void CompressedWriteBuffer::finalizeImpl()
-{
-    LOG_DEBUG(getLogger("CompressedWriteBuffer"), "finalizeImpl, stack {}", StackTrace().toString());
-    BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
-}
-
 void CompressedWriteBuffer::cancelImpl() noexcept
 {
     LOG_DEBUG(getLogger("CompressedWriteBuffer"), "cancelImpl, stack {}", StackTrace().toString());
@@ -77,11 +71,5 @@ CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCode
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
 }
-
-CompressedWriteBuffer::~CompressedWriteBuffer()
-{
-    LOG_DEBUG(getLogger("CompressedWriteBuffer"), "dtor");
-}
-
 
 }

@@ -71,7 +71,7 @@ namespace ErrorCodes
 Connection::~Connection()
 {
     if (connected)
-            Connection::cancel();
+        Connection::cancel();
 }
 
 Connection::Connection(const String & host_, UInt16 port_,

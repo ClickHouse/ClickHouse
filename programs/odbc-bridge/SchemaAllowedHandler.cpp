@@ -89,15 +89,8 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         bool result = isSchemaAllowed(std::move(connection));
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
-        try
-        {
-            writeBoolText(result, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            out.finalize();
-        }
+        writeBoolText(result, out);
+        out.finalize();
     }
     catch (...)
     {

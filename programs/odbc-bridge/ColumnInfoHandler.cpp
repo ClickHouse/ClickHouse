@@ -203,15 +203,8 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Columns definition was not returned");
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
-        try
-        {
-            writeStringBinary(columns.toString(), out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            out.finalize();
-        }
+        writeStringBinary(columns.toString(), out);
+        out.finalize();
     }
     catch (...)
     {

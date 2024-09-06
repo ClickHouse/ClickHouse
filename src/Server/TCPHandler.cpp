@@ -43,6 +43,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include "IO/WriteBuffer.h"
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -231,19 +232,21 @@ TCPHandler::TCPHandler(
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
 }
 
-TCPHandler::~TCPHandler()
-{
-    try
-    {
-        state.reset();
-        if (out)
-            out->next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
+TCPHandler::~TCPHandler() = default;
+
+// TCPHandler::~TCPHandler()
+// {
+//     try
+//     {
+//         state.reset();
+//         if (out && out->isCanceled())
+//             out->finalize();
+//     }
+//     catch (...)
+//     {
+//         tryLogCurrentException(__PRETTY_FUNCTION__);
+//     }
+// }
 
 void TCPHandler::runImpl()
 {
@@ -256,7 +259,8 @@ void TCPHandler::runImpl()
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocketChunked>(socket(), write_event);
+    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
+    LOG_DEBUG(getLogger("TCPHandler"), "runImpl create out: {}", size_t(out.get()));
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -2191,7 +2195,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             {
                 CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec, query_settings.enable_zstd_qat_codec);
 
-                state.maybe_compressed_out = std::make_shared<AutoCancelWriteBuffer<CompressedWriteBuffer>>(
+                state.maybe_compressed_out = std::make_shared<AutoCanceledWriteBuffer<CompressedWriteBuffer>>(
                     *out, CompressionCodecFactory::instance().get(method, level));
             }
             else
@@ -2483,7 +2487,7 @@ void TCPHandler::run()
     {
         runImpl();
 
-        LOG_DEBUG(log, "Done processing connection.");
+        LOG_DEBUG(log, "Done processing connection out {} finalized {}.", bool(out), bool(out && (out->isFinalized() && out->isCanceled())));
     }
     catch (Poco::Exception & e)
     {

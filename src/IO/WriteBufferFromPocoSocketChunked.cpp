@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromPocoSocketChunked.h>
+#include "Common/StackTrace.h"
 #include <Common/logger_useful.h>
 #include <IO/NetUtils.h>
 
@@ -26,7 +27,9 @@ WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked(Poco::Net::So
         socket_, write_event_,
         std::clamp(buf_size, sizeof(*chunk_size_ptr) + 1, static_cast<size_t>(std::numeric_limits<std::remove_reference_t<decltype(*chunk_size_ptr)>>::max()))),
         log(getLogger("Protocol"))
-{}
+{
+    LOG_DEBUG(getLogger("WriteBufferFromPocoSocketChunked"), "c-tor inst: {}", size_t(this));
+}
 
 void WriteBufferFromPocoSocketChunked::enableChunked()
 {
@@ -40,6 +43,8 @@ void WriteBufferFromPocoSocketChunked::enableChunked()
 
 void WriteBufferFromPocoSocketChunked::finishChunk()
 {
+    LOG_DEBUG(getLogger("WriteBufferFromPocoSocketChunked"), "finishChunk inst: {}", size_t(this));
+
     if (!chunked)
         return;
 
@@ -110,6 +115,8 @@ void WriteBufferFromPocoSocketChunked::finishChunk()
 
 void WriteBufferFromPocoSocketChunked::nextImpl()
 {
+    LOG_DEBUG(getLogger("WriteBufferFromPocoSocketChunked"), "nextImpl inst: {}", size_t(this));
+
     if (!chunked)
     {
         WriteBufferFromPocoSocket::nextImpl();
@@ -190,6 +197,8 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
 
 void WriteBufferFromPocoSocketChunked::finalizeImpl()
 {
+    LOG_DEBUG(getLogger("WriteBufferFromPocoSocketChunked"), "finalizeImpl inst: {}, stack {}", size_t(this), StackTrace().toString());
+
     if (chunked && offset() == sizeof(*chunk_size_ptr))
         pos -= sizeof(*chunk_size_ptr);
     WriteBufferFromPocoSocket::finalizeImpl();

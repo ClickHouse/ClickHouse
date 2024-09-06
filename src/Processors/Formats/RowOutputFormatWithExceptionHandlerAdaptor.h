@@ -19,7 +19,7 @@ public:
     {
         if (handle_exceptions)
         {
-            peekable_out = std::make_unique<AutoCancelWriteBuffer<PeekableWriteBuffer>>(*Base::getWriteBufferPtr());
+            peekable_out = std::make_unique<AutoCanceledWriteBuffer<PeekableWriteBuffer>>(*Base::getWriteBufferPtr());
         }
     }
 

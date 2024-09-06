@@ -306,7 +306,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    AutoCancelWriteBuffer<WriteBufferFromFileDescriptor> std_out;
+    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.

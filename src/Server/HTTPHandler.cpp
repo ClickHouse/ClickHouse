@@ -283,7 +283,7 @@ void HTTPHandler::processQuery(
 
     if (internal_compression)
     {
-        used_output.out_compressed_holder = std::make_shared<AutoCancelWriteBuffer<CompressedWriteBuffer>>(*used_output.out);
+        used_output.out_compressed_holder = std::make_shared<AutoCanceledWriteBuffer<CompressedWriteBuffer>>(*used_output.out);
         used_output.out_maybe_compressed = used_output.out_compressed_holder;
     }
     else
@@ -551,18 +551,28 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
+
+    LOG_DEBUG(getLogger("trySendExceptionToClient"), "begin : if {}, else if {}",
+        bool(!used_output.out_holder && !used_output.exception_is_written),
+        bool(used_output.out_maybe_compressed));
+
     setHTTPResponseStatusAndHeadersForException(exception_code, request, response, used_output.out_holder.get(), log);
 
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
+        LOG_DEBUG(getLogger("trySendExceptionToClient"), "1");
         /// If nothing was sent yet and we don't even know if we must compress the response.
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD).writeln(s);
+        auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
+        wb.writeln(s);
+        wb.finalize();
     }
     else if (used_output.out_maybe_compressed)
     {
+        LOG_DEBUG(getLogger("trySendExceptionToClient"), "2");
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
         {
+            LOG_DEBUG(getLogger("trySendExceptionToClient"), "3");
             /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
             /// exception is written into used_output.out_maybe_compressed later
             auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
@@ -576,6 +586,7 @@ try
 
         if (!used_output.exception_is_written)
         {
+            LOG_DEBUG(getLogger("trySendExceptionToClient"), "4");
             /// Send the error message into already used (and possibly compressed) stream.
             /// Note that the error message will possibly be sent after some data.
             /// Also HTTP code 200 could have already been sent.
@@ -592,22 +603,27 @@ try
             /// We might have special formatter for exception message.
             if (used_output.exception_writer)
             {
+                LOG_DEBUG(getLogger("trySendExceptionToClient"), "5");
                 used_output.exception_writer(*used_output.out_maybe_compressed, s);
             }
             else
             {
+                LOG_DEBUG(getLogger("trySendExceptionToClient"), "6");
                 writeString(s, *used_output.out_maybe_compressed);
                 writeChar('\n', *used_output.out_maybe_compressed);
             }
         }
 
+        LOG_DEBUG(getLogger("trySendExceptionToClient"), "7");
         used_output.out_maybe_compressed->next();
     }
     else
     {
+        LOG_DEBUG(getLogger("trySendExceptionToClient"), "UNREACH");
         UNREACHABLE();
     }
 
+    LOG_DEBUG(getLogger("trySendExceptionToClient"), "8");
     used_output.finalize();
 }
 catch (...)
