@@ -27,6 +27,9 @@ def test_settings_randomization(started_cluster):
             ).strip()
         )
 
+    # setting set in test config is not overriden
     assert q("value", "max_block_size") == 59999
+
+    # some setting is randomized
     assert q("changed", "max_joined_block_size_rows") == 1
     assert 8000 <= q("value", "max_joined_block_size_rows") <= 100000
