@@ -2583,6 +2583,7 @@ sqlinsert
 sqlite
 sqrt
 src
+dest
 srcReplicas
 sshkey
 stackoverflow
