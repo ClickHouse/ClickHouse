@@ -212,7 +212,7 @@ public:
         size_t getAllNodeCount() const { return per_replica_pools.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-        const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
+        const std::string & insertPathForInternalReplication(bool prefer_localhost_replica_v, bool use_compact_format) const;
 
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1

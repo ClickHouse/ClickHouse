@@ -14,6 +14,7 @@
 
 namespace DB
 {
+extern const SettingsBool optimize_rewrite_sum_if_to_count_if;
 
 namespace
 {
@@ -26,7 +27,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_rewrite_sum_if_to_count_if)
+        if (!getSettings()[optimize_rewrite_sum_if_to_count_if])
             return;
 
         auto * function_node = node->as<FunctionNode>();

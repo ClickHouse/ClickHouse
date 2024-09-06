@@ -7,6 +7,9 @@
 
 namespace DB
 {
+extern const SettingsBool group_by_use_nulls;
+extern const SettingsBool join_use_nulls;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -32,14 +35,14 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
         context = query_node->getContext();
-        group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
-            (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        group_by_use_nulls_v = context->getSettingsRef()[group_by_use_nulls]
+            && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
     }
 
     if (context)
-        join_use_nulls = context->getSettingsRef().join_use_nulls;
+        join_use_nulls_v = context->getSettingsRef()[join_use_nulls];
     else if (parent_scope)
-        join_use_nulls = parent_scope->join_use_nulls;
+        join_use_nulls_v = parent_scope->join_use_nulls_v;
 
     aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
@@ -104,7 +107,7 @@ void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
 {
     bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.push(node);
-    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (group_by_use_nulls_v && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
         aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
 
@@ -112,7 +115,7 @@ void IdentifierResolveScope::popExpressionNode()
 {
     bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.pop();
-    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (group_by_use_nulls_v && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
         aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_after_group_by;
 }
 

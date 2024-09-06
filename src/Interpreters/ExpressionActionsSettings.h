@@ -19,17 +19,17 @@ enum class CompileExpressions: uint8_t
 struct ExpressionActionsSettings
 {
     bool can_compile_expressions = false;
-    size_t min_count_to_compile_expression = 0;
+    size_t min_count_to_compile_expression_v = 0;
 
-    size_t max_temporary_columns = 0;
-    size_t max_temporary_non_const_columns = 0;
+    size_t max_temporary_columns_v = 0;
+    size_t max_temporary_non_const_columns_v = 0;
 
-    CompileExpressions compile_expressions = CompileExpressions::no;
+    CompileExpressions compile_expressions_v = CompileExpressions::no;
 
-    ShortCircuitFunctionEvaluation short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
+    ShortCircuitFunctionEvaluation short_circuit_function_evaluation_v = ShortCircuitFunctionEvaluation::DISABLE;
 
-    static ExpressionActionsSettings fromSettings(const Settings & from, CompileExpressions compile_expressions = CompileExpressions::no);
-    static ExpressionActionsSettings fromContext(ContextPtr from, CompileExpressions compile_expressions = CompileExpressions::no);
+    static ExpressionActionsSettings fromSettings(const Settings & from, CompileExpressions compile_expressions_v = CompileExpressions::no);
+    static ExpressionActionsSettings fromContext(ContextPtr from, CompileExpressions compile_expressions_v = CompileExpressions::no);
 };
 
 }

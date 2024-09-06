@@ -14,6 +14,7 @@
 
 namespace DB
 {
+extern const SettingsBool optimize_injective_functions_inside_uniq;
 
 namespace
 {
@@ -36,7 +37,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_injective_functions_inside_uniq)
+        if (!getSettings()[optimize_injective_functions_inside_uniq])
             return;
 
         auto * function_node = node->as<FunctionNode>();

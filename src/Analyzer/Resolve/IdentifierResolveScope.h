@@ -184,9 +184,9 @@ struct IdentifierResolveScope
     bool use_identifier_lookup_to_result_cache = true;
 
     /// Apply nullability to aggregation keys
-    bool group_by_use_nulls = false;
+    bool group_by_use_nulls_v = false;
     /// Join retutns NULLs instead of default values
-    bool join_use_nulls = false;
+    bool join_use_nulls_v = false;
 
     /// JOINs count
     size_t joins_count = 0;

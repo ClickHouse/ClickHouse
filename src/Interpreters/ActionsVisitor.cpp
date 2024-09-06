@@ -1,10 +1,9 @@
 #include <memory>
 
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/checkStackSize.h>
-#include <Common/assert_cast.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -42,18 +41,17 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/misc.h>
-#include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/misc.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <Analyzer/QueryNode.h>
@@ -109,8 +107,9 @@ static size_t getTypeDepth(const DataTypePtr & type)
 /// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
 /// We can not include values that don't represent any possible value from the type of filtered column to the set.
-template<typename Collection>
-static Block createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, bool transform_null_in)
+template <typename Collection>
+static Block
+createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, bool transform_null_in_v)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -127,7 +126,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
         if (columns_num == 1)
         {
             auto field = convertFieldToTypeStrict(value, *value_types[collection_index], *types[0]);
-            bool need_insert_null = transform_null_in && types[0]->isNullable();
+            bool need_insert_null = transform_null_in_v && types[0]->isNullable();
             if (field && (!field->isNull() || need_insert_null))
                 columns[0]->insert(*field);
         }
@@ -157,7 +156,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
                     break;
                 tuple_values[i] = std::move(*converted_field);
 
-                bool need_insert_null = transform_null_in && types[i]->isNullable();
+                bool need_insert_null = transform_null_in_v && types[i]->isNullable();
                 if (tuple_values[i].isNull() && !need_insert_null)
                     break;
             }
@@ -322,7 +321,7 @@ Block createBlockForSet(
     };
 
     Block block;
-    bool tranform_null_in = context->getSettingsRef().transform_null_in;
+    bool tranform_null_in = context->getSettingsRef()[transform_null_in];
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_type_depth == right_type_depth)
@@ -432,7 +431,7 @@ FutureSetPtr makeExplicitSet(
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
-    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
+    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef()[transform_null_in]);
 
     auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))

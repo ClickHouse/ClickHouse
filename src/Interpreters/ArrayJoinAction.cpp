@@ -11,6 +11,8 @@
 
 namespace DB
 {
+extern const SettingsBool enable_unaligned_array_join;
+extern const SettingsUInt64 max_block_size;
 
 namespace ErrorCodes
 {
@@ -62,8 +64,8 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
 ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, ContextPtr context)
     : columns(array_joined_columns_)
     , is_left(array_join_is_left)
-    , is_unaligned(context->getSettingsRef().enable_unaligned_array_join)
-    , max_block_size(context->getSettingsRef().max_block_size)
+    , is_unaligned(context->getSettingsRef()[enable_unaligned_array_join])
+    , max_block_size_v(context->getSettingsRef()[max_block_size])
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
@@ -187,14 +189,14 @@ Block ArrayJoinResultIterator::next()
     if (!hasNext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more elements in ArrayJoinResultIterator.");
 
-    size_t max_block_size = array_join->max_block_size;
+    size_t max_block_size_v = array_join->max_block_size_v;
     const auto & offsets = any_array->getOffsets();
 
     /// Make sure output block rows do not exceed max_block_size.
     size_t next_row = current_row;
     for (; next_row < total_rows; ++next_row)
     {
-        if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
+        if (offsets[next_row] - offsets[current_row - 1] >= max_block_size_v)
             break;
     }
     if (next_row == current_row)

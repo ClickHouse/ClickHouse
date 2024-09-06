@@ -32,6 +32,9 @@ extern const Event ScalarSubqueriesCacheMiss;
 
 namespace DB
 {
+extern const SettingsBool enable_scalar_subquery_optimization;
+extern const SettingsBool extremes;
+extern const SettingsUInt64 max_result_rows;
 
 namespace ErrorCodes
 {

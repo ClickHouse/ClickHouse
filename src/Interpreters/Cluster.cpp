@@ -1,26 +1,30 @@
-#include <Interpreters/Cluster.h>
-#include <Common/DNSResolver.h>
-#include <Common/escapeForFileName.h>
-#include <Common/isLocalAddress.h>
-#include <Common/StringUtils.h>
-#include <Common/parseAddress.h>
-#include <Common/randomSeed.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/Application.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cluster.h>
 #include <base/range.h>
 #include <base/sort.h>
-#include <boost/range/algorithm_ext/erase.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Application.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Config/ConfigHelper.h>
+#include <Common/DNSResolver.h>
+#include <Common/StringUtils.h>
+#include <Common/escapeForFileName.h>
+#include <Common/isLocalAddress.h>
+#include <Common/parseAddress.h>
+#include <Common/randomSeed.h>
 
 #include <span>
 #include <pcg_random.hpp>
 
 namespace DB
 {
+extern const SettingsUInt64 distributed_connections_pool_size;
+extern const SettingsUInt64 distributed_replica_error_cap;
+extern const SettingsSeconds distributed_replica_error_half_life;
+extern const SettingsLoadBalancing load_balancing;
+extern const SettingsBool prefer_localhost_replica;
 
 namespace ErrorCodes
 {
@@ -446,17 +450,23 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 info.local_addresses.push_back(address);
 
             auto pool = ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings.distributed_connections_pool_size),
-                address.host_name, address.port,
-                address.default_database, address.user, address.password,
-                address.proto_send_chunked, address.proto_recv_chunked,
+                static_cast<unsigned>(settings[distributed_connections_pool_size]),
+                address.host_name,
+                address.port,
+                address.default_database,
+                address.user,
+                address.password,
+                address.proto_send_chunked,
+                address.proto_recv_chunked,
                 address.quota_key,
-                address.cluster, address.cluster_secret,
-                "server", address.compression,
-                address.secure, address.priority);
+                address.cluster,
+                address.cluster_secret,
+                "server",
+                address.compression,
+                address.secure,
+                address.priority);
 
-            info.pool = std::make_shared<ConnectionPoolWithFailover>(
-                ConnectionPoolPtrs{pool}, settings.load_balancing);
+            info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[load_balancing]);
             info.per_replica_pools = {std::move(pool)};
 
             if (weight)
@@ -608,7 +618,7 @@ void Cluster::addShard(
     for (const auto & replica : addresses)
     {
         auto replica_pool = ConnectionPoolFactory::instance().get(
-            static_cast<unsigned>(settings.distributed_connections_pool_size),
+            static_cast<unsigned>(settings[distributed_connections_pool_size]),
             replica.host_name,
             replica.port,
             replica.default_database,
@@ -630,9 +640,9 @@ void Cluster::addShard(
     }
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
         all_replicas_pools,
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+        settings[load_balancing],
+        settings[distributed_replica_error_half_life].totalSeconds(),
+        settings[distributed_replica_error_cap]);
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -712,7 +722,7 @@ void shuffleReplicas(std::vector<Cluster::Address> & replicas, const Settings & 
 {
     pcg64_fast gen{randomSeed()};
 
-    if (settings.prefer_localhost_replica)
+    if (settings[prefer_localhost_replica])
     {
         // force for local replica to always be included
         auto first_non_local_replica = std::partition(replicas.begin(), replicas.end(), [](const auto & replica) { return replica.is_local; });
@@ -765,7 +775,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     info.local_addresses.push_back(address);
 
                 auto pool = ConnectionPoolFactory::instance().get(
-                    static_cast<unsigned>(settings.distributed_connections_pool_size),
+                    static_cast<unsigned>(settings[distributed_connections_pool_size]),
                     address.host_name,
                     address.port,
                     address.default_database,
@@ -781,7 +791,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     address.secure,
                     address.priority);
 
-                info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
+                info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[load_balancing]);
                 info.per_replica_pools = {std::move(pool)};
 
                 addresses_with_failover.emplace_back(Addresses{address});
@@ -881,7 +891,7 @@ std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(s
     return res;
 }
 
-const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
+const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica_v, bool use_compact_format) const
 {
     if (!has_internal_replication)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "internal_replication is not set");
@@ -889,7 +899,7 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
     {
-        const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
+        const auto & path = prefer_localhost_replica_v ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
         if (path.size() > NAME_MAX)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,

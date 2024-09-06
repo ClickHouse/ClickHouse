@@ -55,19 +55,22 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     , settings(settings_)
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes
+        = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation_v);
 
 #if USE_EMBEDDED_COMPILER
-    if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+    if (settings.can_compile_expressions && settings.compile_expressions_v == CompileExpressions::yes)
+        actions_dag.compileExpressions(settings.min_count_to_compile_expression_v, lazy_executed_nodes);
 #endif
 
     linearizeActions(lazy_executed_nodes);
 
-    if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
-        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
-                        "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag.dumpNames(), settings.max_temporary_columns);
+    if (settings.max_temporary_columns_v && num_columns > settings.max_temporary_columns_v)
+        throw Exception(
+            ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
+            "Too many temporary columns: {}. Maximum: {}",
+            actions_dag.dumpNames(),
+            settings.max_temporary_columns_v);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
@@ -545,23 +548,25 @@ JSONBuilder::ItemPtr ExpressionActions::Action::toTree() const
 
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
 {
-    if (settings.max_temporary_non_const_columns)
+    if (settings.max_temporary_non_const_columns_v)
     {
         size_t non_const_columns = 0;
         for (const auto & column : columns)
             if (column.column && !isColumnConst(*column.column))
                 ++non_const_columns;
 
-        if (non_const_columns > settings.max_temporary_non_const_columns)
+        if (non_const_columns > settings.max_temporary_non_const_columns_v)
         {
             WriteBufferFromOwnString list_of_non_const_columns;
             for (const auto & column : columns)
                 if (column.column && !isColumnConst(*column.column))
                     list_of_non_const_columns << "\n" << column.name;
 
-            throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS,
+            throw Exception(
+                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS,
                 "Too many temporary non-const columns:{}. Maximum: {}",
-                list_of_non_const_columns.str(), settings.max_temporary_non_const_columns);
+                list_of_non_const_columns.str(),
+                settings.max_temporary_non_const_columns_v);
         }
     }
 }

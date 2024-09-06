@@ -29,7 +29,7 @@ public:
     NameSet columns;
     bool is_left = false;
     bool is_unaligned = false;
-    size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    size_t max_block_size_v = DEFAULT_BLOCK_SIZE;
 
     /// For unaligned [LEFT] ARRAY JOIN
     FunctionOverloadResolverPtr function_length;

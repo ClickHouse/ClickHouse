@@ -30,6 +30,9 @@
 
 namespace DB
 {
+extern const SettingsSeconds lock_acquire_timeout;
+extern const SettingsBool single_join_prefer_left_table;
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
@@ -420,7 +423,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     if (!storage)
         return {};
 
-    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[lock_acquire_timeout]);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
@@ -1155,7 +1158,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
                 resolved_identifier = left_resolved_identifier;
             }
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
+        else if (scope.joins_count == 1 && scope.context->getSettingsRef()[single_join_prefer_left_table])
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
@@ -1222,7 +1225,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
-    if (scope.join_use_nulls)
+    if (scope.join_use_nulls_v)
     {
         auto projection_name_it = node_to_projection_name.find(resolved_identifier);
         auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);

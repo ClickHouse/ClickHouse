@@ -56,6 +56,13 @@ namespace CurrentMetrics
 
 namespace DB
 {
+extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
+extern const SettingsBool input_format_orc_case_insensitive_column_matching;
+extern const SettingsUInt64 max_block_size;
+extern const SettingsInt64 max_partitions_to_read;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsBool use_local_cache_for_remote_storage;
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -137,7 +144,7 @@ public:
         , hdfs_namenode_url(std::move(hdfs_namenode_url_))
         , format(std::move(format_))
         , compression_method(std::move(compression_method_))
-        , max_block_size(max_block_size_)
+        , max_block_size_v(max_block_size_)
         , sample_block(std::move(sample_block_))
         , columns_description(getColumnsDescription(sample_block, source_info))
         , storage(storage_)
@@ -267,7 +274,7 @@ public:
                 /// Use local cache for remote storage if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
                 if (ExternalDataSourceCache::instance().isInitialized()
-                    && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
+                    && getContext()->getSettingsRef()[use_local_cache_for_remote_storage])
                 {
                     size_t buff_size = raw_read_buf->internalBuffer().size();
                     if (buff_size == 0)
@@ -289,7 +296,13 @@ public:
                     read_buf = std::move(remote_read_buf);
 
                 auto input_format = FormatFactory::instance().getInput(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file), /* max_parsing_threads */ 1);
+                    format,
+                    *read_buf,
+                    to_read_block,
+                    getContext(),
+                    max_block_size_v,
+                    updateFormatSettings(current_file),
+                    /* max_parsing_threads */ 1);
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -321,7 +334,7 @@ public:
 
     Chunk generateChunkFromMetadata()
     {
-        size_t num_rows = std::min(current_file_remained_rows, UInt64(getContext()->getSettingsRef().max_block_size));
+        size_t num_rows = std::min(current_file_remained_rows, UInt64(getContext()->getSettingsRef()[max_block_size]));
         current_file_remained_rows -= num_rows;
 
         Block source_block;
@@ -396,7 +409,7 @@ private:
     String hdfs_namenode_url;
     String format;
     String compression_method;
-    UInt64 max_block_size;
+    UInt64 max_block_size_v;
     Block sample_block;
     Block to_read_block;
     ColumnsDescription columns_description;
@@ -626,7 +639,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         buffer,
         partition_key_expr->getSampleBlock(),
         getContext(),
-        getContext()->getSettingsRef().max_block_size,
+        getContext()->getSettingsRef()[max_block_size],
         std::nullopt,
         /* max_parsing_threads */ 1);
     auto pipeline = QueryPipeline(std::move(format));
@@ -788,12 +801,7 @@ public:
         LoggerPtr log_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(
-            DataStream{.header = std::move(header)},
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(header)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , sources_info(std::move(sources_info_))
         , builder(std::move(builder_))
@@ -801,7 +809,7 @@ public:
         , hive_table_metadata(std::move(hive_table_metadata_))
         , sample_block(std::move(sample_block_))
         , log(log_)
-        , max_block_size(max_block_size_)
+        , max_block_size_v(max_block_size_)
         , num_streams(num_streams_)
     {
     }
@@ -815,7 +823,7 @@ private:
     Block sample_block;
     LoggerPtr log;
 
-    size_t max_block_size;
+    size_t max_block_size_v;
     size_t num_streams;
 
     std::optional<HiveFiles> hive_files;
@@ -839,7 +847,7 @@ void StorageHive::read(
     SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
-    size_t max_block_size,
+    size_t max_block_size_v,
     size_t num_streams)
 {
     lazyInitialize();
@@ -861,9 +869,9 @@ void StorageHive::read(
     auto case_insensitive_matching = [&]() -> bool
     {
         if (format_name == "Parquet")
-            return settings.input_format_parquet_case_insensitive_column_matching;
+            return settings[input_format_parquet_case_insensitive_column_matching];
         else if (format_name == "ORC")
-            return settings.input_format_orc_case_insensitive_column_matching;
+            return settings[input_format_orc_case_insensitive_column_matching];
         return false;
     };
     Block sample_block;
@@ -904,7 +912,7 @@ void StorageHive::read(
         std::move(hive_table_metadata),
         std::move(sample_block),
         log,
-        max_block_size,
+        max_block_size_v,
         num_streams);
 
     query_plan.addStep(std::move(reading));
@@ -933,7 +941,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             storage->compression_method,
             sample_block,
             context,
-            max_block_size,
+            max_block_size_v,
             *storage,
             storage->text_input_field_names));
     }
@@ -949,7 +957,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 }
 
 HiveFiles StorageHive::collectHiveFiles(
-    size_t max_threads,
+    size_t max_threads_v,
     const ActionsDAG * filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
@@ -964,10 +972,14 @@ HiveFiles StorageHive::collectHiveFiles(
     /// Hive files to collect
     HiveFiles hive_files;
     Int64 hit_parttions_num = 0;
-    Int64 hive_max_query_partitions = context_->getSettingsRef().max_partitions_to_read;
+    Int64 hive_max_query_partitions = context_->getSettingsRef()[max_partitions_to_read];
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
-    ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, CurrentMetrics::StorageHiveThreadsScheduled, max_threads};
+    ThreadPool pool{
+        CurrentMetrics::StorageHiveThreads,
+        CurrentMetrics::StorageHiveThreadsActive,
+        CurrentMetrics::StorageHiveThreadsScheduled,
+        max_threads_v};
     if (!partitions.empty())
     {
         for (const auto & partition : partitions)
@@ -1053,13 +1065,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAG * filter_
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    HiveFiles hive_files = collectHiveFiles(
-        settings.max_threads,
-        filter_actions_dag,
-        hive_table_metadata,
-        fs,
-        context_,
-        prune_level);
+    HiveFiles hive_files = collectHiveFiles(settings[max_threads], filter_actions_dag, hive_table_metadata, fs, context_, prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)
