@@ -28,7 +28,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & qu
     /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
     /// of the underlying storage when all other parts of infrastructure are not ready for it
     /// (built with old analyzer).
-    context->setSetting("allow_experimental_analyzer", false);
+    // context->setSetting("allow_experimental_analyzer", false);
 
     if (options.shard_num)
         context->addSpecialScalar(
