@@ -127,6 +127,9 @@
 /* Define to 1 if you have the getnameinfo function. */
 #define HAVE_GETNAMEINFO 1
 
+/* Define to 1 if you have the getrandom function. */
+/* #undef HAVE_GETRANDOM */
+
 /* Define to 1 if you have the getservbyport_r function. */
 #define HAVE_GETSERVBYPORT_R 1
 
@@ -384,7 +387,7 @@
 #define PACKAGE_VERSION "1.18.1"
 
 /* Define to the type qualifier pointed by arg 5 for recvfrom. */
-#define RECVFROM_QUAL_ARG5 
+#define RECVFROM_QUAL_ARG5
 
 /* Define to the type of arg 1 for recvfrom. */
 #define RECVFROM_TYPE_ARG1 int

@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) The c-ares project and its contributors
+ * SPDX-License-Identifier: MIT
+ */
+
 /* Generated from ares_config.h.cmake */
 
 /* Define if building universal (internal helper macro) */
@@ -28,7 +33,7 @@
 #define GETHOSTNAME_TYPE_ARG2 size_t
 
 /* Define to the type qualifier of arg 1 for getnameinfo. */
-#define GETNAMEINFO_QUAL_ARG1 
+#define GETNAMEINFO_QUAL_ARG1
 
 /* Define to the type of arg 1 for getnameinfo. */
 #define GETNAMEINFO_TYPE_ARG1 struct sockaddr *
@@ -122,6 +127,9 @@
 
 /* Define to 1 if you have the getnameinfo function. */
 #define HAVE_GETNAMEINFO
+
+/* Define to 1 if you have the getrandom function. */
+/* #undef HAVE_GETRANDOM */
 
 /* Define to 1 if you have the getservbyport_r function. */
 #define HAVE_GETSERVBYPORT_R
@@ -350,7 +358,7 @@
 #define CARES_RANDOM_FILE "/dev/urandom"
 
 /* Define to the type qualifier pointed by arg 5 for recvfrom. */
-#define RECVFROM_QUAL_ARG5 
+#define RECVFROM_QUAL_ARG5
 
 /* Define to the type of arg 1 for recvfrom. */
 #define RECVFROM_TYPE_ARG1 int
@@ -398,10 +406,10 @@
 #define RECV_TYPE_RETV ssize_t
 
 /* Define as the return type of signal handlers (`int' or `void'). */
-#define RETSIGTYPE 
+#define RETSIGTYPE
 
 /* Define to the type qualifier of arg 2 for send. */
-#define SEND_QUAL_ARG2 
+#define SEND_QUAL_ARG2
 
 /* Define to the type of arg 1 for send. */
 #define SEND_TYPE_ARG1 int

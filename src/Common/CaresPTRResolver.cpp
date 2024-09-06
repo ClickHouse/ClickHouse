@@ -3,6 +3,7 @@
 #include <sys/select.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+
 #include "ares.h"
 #include "netdb.h"
 
@@ -45,10 +46,13 @@ namespace DB
     {
         AresChannelRAII()
         {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             if (ares_init(&channel) != ARES_SUCCESS)
             {
                 throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to initialize c-ares channel");
             }
+#pragma clang diagnostic pop
         }
 
         ~AresChannelRAII()
@@ -175,7 +179,10 @@ namespace DB
 
     std::span<pollfd> CaresPTRResolver::get_readable_sockets(int * sockets, pollfd * pollfd, ares_channel channel)
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         int sockets_bitmask = ares_getsock(channel, sockets, ARES_GETSOCK_MAXNUM);
+#pragma clang diagnostic pop
 
         int number_of_sockets_to_poll = 0;
 
