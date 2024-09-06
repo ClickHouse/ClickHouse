@@ -8,7 +8,7 @@ namespace DB
 {
 extern const SettingsBool allow_ddl;
 extern const SettingsBool allow_introspection_functions;
-extern const SettingsBool readonly;
+extern const SettingsUInt64 readonly;
 
 ContextAccessParams::ContextAccessParams(
     std::optional<UUID> user_id_,

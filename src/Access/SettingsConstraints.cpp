@@ -15,7 +15,7 @@
 namespace DB
 {
 extern const SettingsBool allow_ddl;
-extern const SettingsBool readonly;
+extern const SettingsUInt64 readonly;
 
 namespace ErrorCodes
 {
@@ -396,7 +396,7 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
 SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
 {
     auto resolved_name = resolveSettingNameWithCache(setting_name);
-    if (!current_settings.allow_ddl && resolved_name == "allow_ddl")
+    if (!current_settings[allow_ddl] && resolved_name == "allow_ddl")
         return Checker(PreformattedMessage::create("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user"),
                        ErrorCodes::QUERY_IS_PROHIBITED);
 
@@ -406,11 +406,11 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
       * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
       */
 
-    if (current_settings.readonly > 1 && resolved_name == "readonly")
+    if (current_settings[readonly] > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
     auto it = constraints.find(resolved_name);
-    if (current_settings.readonly == 1)
+    if (current_settings[readonly] == 1)
     {
         if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),

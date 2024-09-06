@@ -8,6 +8,7 @@
 namespace DB
 {
 struct FormatFactorySettingsImpl;
+class SettingsChanges;
 
 
 #define FORMAT_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -40,6 +41,8 @@ struct FormatFactorySettings
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
     void set(std::string_view name, const Field & value);
+    bool has(std::string_view name) const;
+    void applyChanges(const SettingsChanges & changes);
 
 private:
     std::unique_ptr<FormatFactorySettingsImpl> impl;

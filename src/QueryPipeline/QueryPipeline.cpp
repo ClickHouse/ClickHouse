@@ -33,6 +33,7 @@
 
 namespace DB
 {
+extern const SettingsBool rows_before_aggregation;
 
 namespace ErrorCodes
 {
@@ -282,20 +283,20 @@ static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IO
 
     if (!processors->empty())
     {
-        RowsBeforeStepCounterPtr rows_before_aggregation = std::make_shared<RowsBeforeStepCounter>();
+        RowsBeforeStepCounterPtr rows_before_aggregation_v = std::make_shared<RowsBeforeStepCounter>();
         for (const auto & processor : *processors)
         {
             if (typeid_cast<AggregatingTransform *>(processor.get()) || typeid_cast<AggregatingInOrderTransform *>(processor.get()))
             {
-                processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
+                processor->setRowsBeforeAggregationCounter(rows_before_aggregation_v);
                 has_aggregation = true;
             }
             if (typeid_cast<RemoteSource *>(processor.get()) || typeid_cast<DelayedSource *>(processor.get()))
-                processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
+                processor->setRowsBeforeAggregationCounter(rows_before_aggregation_v);
         }
         if (has_aggregation)
-            rows_before_aggregation->add(0);
-        output_format->setRowsBeforeAggregationCounter(rows_before_aggregation);
+            rows_before_aggregation_v->add(0);
+        output_format->setRowsBeforeAggregationCounter(rows_before_aggregation_v);
     }
 }
 
@@ -547,7 +548,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     initRowsBeforeLimit(format.get());
     for (const auto & context : resources.interpreter_context)
     {
-        if (context->getSettingsRef().rows_before_aggregation)
+        if (context->getSettingsRef()[rows_before_aggregation])
         {
             initRowsBeforeAggregation(processors, format.get());
             break;
