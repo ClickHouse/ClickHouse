@@ -44,6 +44,11 @@ public:
     String getName() const override { return "JSONCompactColumnsBlockOutputFormat"; }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+        statistics.applied_aggregation = true;
+    }
     void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
 
 protected:

@@ -122,7 +122,7 @@ struct RowRefList : RowRef
     };
 
     RowRefList() {} /// NOLINT
-    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
+    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_), rows(1) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
 
@@ -135,8 +135,11 @@ struct RowRefList : RowRef
             *next = Batch(nullptr);
         }
         next = next->insert(std::move(row_ref), pool);
+        ++rows;
     }
 
+public:
+    SizeT rows = 0;
 private:
     Batch * next = nullptr;
 };
@@ -158,7 +161,7 @@ struct SortedLookupVectorBase
     virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
-    virtual RowRef findAsof(const IColumn &, size_t) = 0;
+    virtual RowRef * findAsof(const IColumn &, size_t) = 0;
 };
 
 
