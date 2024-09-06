@@ -13,6 +13,8 @@
 
 namespace DB
 {
+extern const SettingsBool allow_deprecated_error_prone_window_functions;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -40,7 +42,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_deprecated_error_prone_window_functions)
+        if (!context->getSettingsRef()[allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
                 "Function {} is deprecated since its usage is error-prone (see docs)."

@@ -75,6 +75,12 @@
 
 namespace DB
 {
+extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+extern const SettingsBool cast_string_to_dynamic_use_inference;
+extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+extern const SettingsBool input_format_ipv4_default_on_conversion_error;
+extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+extern const SettingsBool precise_float_parsing;
 
 namespace ErrorCodes
 {
@@ -641,11 +647,11 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
 template <typename DataType>
-void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
+void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing_v)
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
     {
-        if (precise_float_parsing)
+        if (precise_float_parsing_v)
             readFloatTextPrecise(x, rb);
         else
             readFloatTextFast(x, rb);
@@ -705,11 +711,11 @@ inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb
 }
 
 template <typename DataType>
-bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing_v)
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
     {
-        if (precise_float_parsing)
+        if (precise_float_parsing_v)
             return tryReadFloatTextPrecise(x, rb);
         else
             return tryReadFloatTextFast(x, rb);
@@ -960,14 +966,14 @@ struct ConvertThroughParsing
 
         size_t current_offset = 0;
 
-        bool precise_float_parsing = false;
+        bool precise_float_parsing_v = false;
 
         if (DB::CurrentThread::isInitialized())
         {
             const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
 
             if (query_context)
-                precise_float_parsing = query_context->getSettingsRef().precise_float_parsing;
+                precise_float_parsing_v = query_context->getSettingsRef()[precise_float_parsing];
         }
 
         for (size_t i = 0; i < size; ++i)
@@ -1037,11 +1043,11 @@ struct ConvertThroughParsing
                             }
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
-                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing))
+                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing_v))
                                     throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
                             }
                             else
-                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
+                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing_v);
                         } while (false);
                     }
                 }
@@ -1104,7 +1110,7 @@ struct ConvertThroughParsing
                     }
                     else
                     {
-                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
+                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing_v);
                     }
                 }
 
@@ -2214,10 +2220,10 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_v = default_date_time_overflow_behavior;
 
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
+            date_time_overflow_behavior_v = context->getSettingsRef()[date_time_overflow_behavior].value;
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
         {
@@ -2241,7 +2247,7 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                switch (date_time_overflow_behavior)
+                switch (date_time_overflow_behavior_v)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
                         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
@@ -2257,7 +2263,7 @@ private:
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                switch (date_time_overflow_behavior)
+                switch (date_time_overflow_behavior_v)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
                         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
@@ -2278,7 +2284,7 @@ private:
         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
             arguments, result_type, input_rows_count, from_string_tag); \
         break;
-                switch (date_time_overflow_behavior)
+                switch (date_time_overflow_behavior_v)
                 {
                     GENERATE_OVERFLOW_MODE_CASE(Throw)
                     GENERATE_OVERFLOW_MODE_CASE(Ignore)
@@ -2351,14 +2357,16 @@ private:
         }
         else
         {
-            bool cast_ipv4_ipv6_default_on_conversion_error = false;
+            bool cast_ipv4_ipv6_default_on_conversion_error_v = false;
             if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
             {
-                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
+                if (context
+                    && (cast_ipv4_ipv6_default_on_conversion_error_v
+                        = context->getSettingsRef()[cast_ipv4_ipv6_default_on_conversion_error]))
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag);
             }
 
-            if (!cast_ipv4_ipv6_default_on_conversion_error)
+            if (!cast_ipv4_ipv6_default_on_conversion_error_v)
             {
                 /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
                 /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
@@ -3224,9 +3232,9 @@ private:
             && (which.isInt() || which.isUInt() || which.isFloat());
         can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_v = default_date_time_overflow_behavior;
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior;
+            date_time_overflow_behavior_v = context->getSettingsRef()[date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -3241,8 +3249,11 @@ private:
             return createFunctionAdaptor(function, from_type);
         }
 
-        return [wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
+        return [wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior_v](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & result_type,
+                   const ColumnNullable * column_nullable,
+                   size_t input_rows_count)
         {
             ColumnPtr result_column;
             auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool
@@ -3263,7 +3274,7 @@ private:
         break;
                         if (wrapper_cast_type == CastType::accurate)
                         {
-                            switch (date_time_overflow_behavior)
+                            switch (date_time_overflow_behavior_v)
                             {
                                 GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateConvertStrategyAdditions)
                                 GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateConvertStrategyAdditions)
@@ -3272,7 +3283,7 @@ private:
                         }
                         else
                         {
-                            switch (date_time_overflow_behavior)
+                            switch (date_time_overflow_behavior_v)
                             {
                                 GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateOrNullConvertStrategyAdditions)
                                 GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateOrNullConvertStrategyAdditions)
@@ -4570,7 +4581,8 @@ private:
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from_type.get()))
             return createVariantToDynamicWrapper(*variant_type, dynamic_type);
 
-        if (context && context->getSettingsRef().cast_string_to_dynamic_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
+        if (context && context->getSettingsRef()[cast_string_to_dynamic_use_inference]
+            && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
             return createStringToDynamicThroughParsingWrapper();
 
         /// First, cast column to Variant with 2 variants - the type of the column we cast and shared variant type.
@@ -5069,9 +5081,12 @@ private:
             return false;
         };
 
-        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error;
-        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv4_default_on_conversion_error;
-        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv6_default_on_conversion_error;
+        bool cast_ipv4_ipv6_default_on_conversion_error_value
+            = context && context->getSettingsRef()[cast_ipv4_ipv6_default_on_conversion_error];
+        bool input_format_ipv4_default_on_conversion_error_value
+            = context && context->getSettingsRef()[input_format_ipv4_default_on_conversion_error];
+        bool input_format_ipv6_default_on_conversion_error_value
+            = context && context->getSettingsRef()[input_format_ipv6_default_on_conversion_error];
 
         auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value](const auto & types) -> bool
         {

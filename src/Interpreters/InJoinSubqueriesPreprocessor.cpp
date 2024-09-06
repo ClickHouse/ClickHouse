@@ -16,6 +16,8 @@
 
 namespace DB
 {
+extern const SettingsDistributedProductMode distributed_product_mode;
+extern const SettingsBool prefer_global_in_and_join;
 
 namespace ErrorCodes
 {
@@ -67,13 +69,13 @@ struct NonGlobalTableData : public WithContext
 private:
     void renameIfNeeded(ASTPtr & database_and_table)
     {
-        const DistributedProductMode distributed_product_mode = getContext()->getSettingsRef().distributed_product_mode;
+        const DistributedProductMode distributed_product_mode_v = getContext()->getSettingsRef()[distributed_product_mode];
 
         StoragePtr storage = tryGetTable(database_and_table, getContext());
         if (!storage || !checker.hasAtLeastTwoShards(*storage))
             return;
 
-        if (distributed_product_mode == DistributedProductMode::LOCAL)
+        if (distributed_product_mode_v == DistributedProductMode::LOCAL)
         {
             /// Convert distributed table to corresponding remote table.
 
@@ -90,7 +92,7 @@ private:
             renamed_tables.emplace_back(identifier.clone());
             identifier.resetTable(database, table);
         }
-        else if (getContext()->getSettingsRef().prefer_global_in_and_join || distributed_product_mode == DistributedProductMode::GLOBAL)
+        else if (getContext()->getSettingsRef()[prefer_global_in_and_join] || distributed_product_mode_v == DistributedProductMode::GLOBAL)
         {
             if (function)
             {
@@ -112,7 +114,7 @@ private:
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST node");
         }
-        else if (distributed_product_mode == DistributedProductMode::DENY)
+        else if (distributed_product_mode_v == DistributedProductMode::DENY)
         {
             throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
                             "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
@@ -234,7 +236,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
     if (!query || !query->tables())
         return;
 
-    if (getContext()->getSettingsRef().distributed_product_mode == DistributedProductMode::ALLOW)
+    if (getContext()->getSettingsRef()[distributed_product_mode] == DistributedProductMode::ALLOW)
         return;
 
     const auto & tables_in_select_query = query->tables()->as<ASTTablesInSelectQuery &>();

@@ -24,6 +24,7 @@
 
 namespace DB
 {
+extern const SettingsBool cast_keep_nullable;
 
 namespace ErrorCodes
 {
@@ -42,10 +43,7 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_)
-        : keep_nullable(context_->getSettingsRef().cast_keep_nullable)
-    {
-    }
+    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[cast_keep_nullable]) { }
 
     String getName() const override { return name; }
 

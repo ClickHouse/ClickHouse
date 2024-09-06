@@ -24,6 +24,10 @@
 
 namespace DB
 {
+extern const SettingsBool allow_execute_multiif_columnar;
+extern const SettingsBool allow_experimental_variant_type;
+extern const SettingsBool use_variant_as_common_type;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -52,13 +56,14 @@ public:
     static FunctionPtr create(ContextPtr context_)
     {
         const auto & settings = context_->getSettingsRef();
-        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+        return std::make_shared<FunctionMultiIf>(
+            settings[allow_execute_multiif_columnar], settings[allow_experimental_variant_type], settings[use_variant_as_common_type]);
     }
 
     explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
-        : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
-        , allow_experimental_variant_type(allow_experimental_variant_type_)
-        , use_variant_as_common_type(use_variant_as_common_type_)
+        : allow_execute_multiif_columnar_v(allow_execute_multiif_columnar_)
+        , allow_experimental_variant_type_v(allow_experimental_variant_type_)
+        , use_variant_as_common_type_v(use_variant_as_common_type_)
     {}
 
     String getName() const override { return name; }
@@ -135,7 +140,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        if (allow_experimental_variant_type && use_variant_as_common_type)
+        if (allow_experimental_variant_type_v && use_variant_as_common_type_v)
             return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
@@ -244,7 +249,7 @@ public:
         }
 
         const WhichDataType which(removeNullable(result_type));
-        bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()
+        bool execute_multiif_columnar = allow_execute_multiif_columnar_v && instructions.size() <= std::numeric_limits<UInt8>::max()
             && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
                 || which.isEnum() || which.isIPv4() || which.isIPv6());
 
@@ -517,9 +522,9 @@ private:
             executeColumnIfNeeded(arguments[i], true);
     }
 
-    const bool allow_execute_multiif_columnar;
-    const bool allow_experimental_variant_type;
-    const bool use_variant_as_common_type;
+    const bool allow_execute_multiif_columnar_v;
+    const bool allow_experimental_variant_type_v;
+    const bool use_variant_as_common_type_v;
 };
 
 }
@@ -533,9 +538,11 @@ REGISTER_FUNCTION(MultiIf)
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(
+    bool allow_execute_multiif_columnar_v, bool allow_experimental_variant_type_v, bool use_variant_as_common_type_v)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(
+        allow_execute_multiif_columnar_v, allow_experimental_variant_type_v, use_variant_as_common_type_v));
 }
 
 }

@@ -30,6 +30,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 odbc_bridge_connection_pool_size;
 
 namespace
 {
@@ -140,7 +141,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         nanodbc::ConnectionHolderPtr connection_handler;
         if (use_connection_pooling)
             connection_handler = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef()[odbc_bridge_connection_pool_size]);
         else
             connection_handler = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 

@@ -7,6 +7,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 readonly;
 
 void setReadOnlyIfHTTPMethodIdempotent(ContextMutablePtr context, const String & http_method)
 {
@@ -17,7 +18,7 @@ void setReadOnlyIfHTTPMethodIdempotent(ContextMutablePtr context, const String &
         /// readonly = 0 - any query is allowed, client can change any setting.
         /// readonly = 1 - only readonly queries are allowed, client can't change settings.
         /// readonly = 2 - only readonly queries are allowed, client can change any setting except 'readonly'.
-        if (context->getSettingsRef().readonly == 0)
+        if (context->getSettingsRef()[readonly] == 0)
             context->setSetting("readonly", 2);
     }
 }

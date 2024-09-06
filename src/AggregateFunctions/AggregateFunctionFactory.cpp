@@ -14,7 +14,7 @@ static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 namespace DB
 {
 struct Settings;
-extern const SettingsBool log_queries;
+extern const SettingsBool cast_keep_nullable;
 
 namespace ErrorCodes
 {

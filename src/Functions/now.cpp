@@ -10,6 +10,8 @@
 
 namespace DB
 {
+extern const SettingsBool allow_nonconst_timezone_arguments;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -91,7 +93,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments_v(context->getSettingsRef()[allow_nonconst_timezone_arguments])
     {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -107,7 +109,8 @@ public:
         }
         if (arguments.size() == 1)
         {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
+            return std::make_shared<DataTypeDateTime>(
+                extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments_v));
         }
         return std::make_shared<DataTypeDateTime>();
     }
@@ -125,13 +128,15 @@ public:
         }
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
-                time(nullptr), DataTypes{arguments.front().type},
-                std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments)));
+                time(nullptr),
+                DataTypes{arguments.front().type},
+                std::make_shared<DataTypeDateTime>(
+                    extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments_v)));
 
         return std::make_unique<FunctionBaseNow>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>());
     }
 private:
-    const bool allow_nonconst_timezone_arguments;
+    const bool allow_nonconst_timezone_arguments_v;
 };
 
 }

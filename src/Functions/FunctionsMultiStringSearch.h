@@ -17,6 +17,11 @@
 
 namespace DB
 {
+extern const SettingsBool allow_hyperscan;
+extern const SettingsUInt64 max_hyperscan_regexp_length;
+extern const SettingsUInt64 max_hyperscan_regexp_total_length;
+extern const SettingsBool reject_expensive_hyperscan_regexps;
+
 /**
   * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
@@ -54,14 +59,22 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionsMultiStringSearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
+        return std::make_shared<FunctionsMultiStringSearch>(
+            settings[allow_hyperscan],
+            settings[max_hyperscan_regexp_length],
+            settings[max_hyperscan_regexp_total_length],
+            settings[reject_expensive_hyperscan_regexps]);
     }
 
-    FunctionsMultiStringSearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_, bool reject_expensive_hyperscan_regexps_)
-        : allow_hyperscan(allow_hyperscan_)
-        , max_hyperscan_regexp_length(max_hyperscan_regexp_length_)
-        , max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
-        , reject_expensive_hyperscan_regexps(reject_expensive_hyperscan_regexps_)
+    FunctionsMultiStringSearch(
+        bool allow_hyperscan_,
+        size_t max_hyperscan_regexp_length_,
+        size_t max_hyperscan_regexp_total_length_,
+        bool reject_expensive_hyperscan_regexps_)
+        : allow_hyperscan_v(allow_hyperscan_)
+        , max_hyperscan_regexp_length_v(max_hyperscan_regexp_length_)
+        , max_hyperscan_regexp_total_length_v(max_hyperscan_regexp_total_length_)
+        , reject_expensive_hyperscan_regexps_v(reject_expensive_hyperscan_regexps_)
     {}
 
     String getName() const override { return name; }
@@ -107,17 +120,28 @@ public:
 
         if (col_needles_const)
             Impl::vectorConstant(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
+                col_haystack_vector->getChars(),
+                col_haystack_vector->getOffsets(),
                 col_needles_const->getValue<Array>(),
-                vec_res, offsets_res,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                vec_res,
+                offsets_res,
+                allow_hyperscan_v,
+                max_hyperscan_regexp_length_v,
+                max_hyperscan_regexp_total_length_v,
+                reject_expensive_hyperscan_regexps_v,
                 input_rows_count);
         else
             Impl::vectorVector(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
-                col_needles_vector->getData(), col_needles_vector->getOffsets(),
-                vec_res, offsets_res,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                col_haystack_vector->getChars(),
+                col_haystack_vector->getOffsets(),
+                col_needles_vector->getData(),
+                col_needles_vector->getOffsets(),
+                vec_res,
+                offsets_res,
+                allow_hyperscan_v,
+                max_hyperscan_regexp_length_v,
+                max_hyperscan_regexp_total_length_v,
+                reject_expensive_hyperscan_regexps_v,
                 input_rows_count);
 
         // the combination of const haystack + const needle is not implemented because
@@ -131,10 +155,10 @@ public:
     }
 
 private:
-    const bool allow_hyperscan;
-    const size_t max_hyperscan_regexp_length;
-    const size_t max_hyperscan_regexp_total_length;
-    const bool reject_expensive_hyperscan_regexps;
+    const bool allow_hyperscan_v;
+    const size_t max_hyperscan_regexp_length_v;
+    const size_t max_hyperscan_regexp_total_length_v;
+    const bool reject_expensive_hyperscan_regexps_v;
 };
 
 }
