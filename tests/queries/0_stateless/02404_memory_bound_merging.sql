@@ -63,7 +63,7 @@ drop table if exists pr_t;
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
 insert into pr_t select number % 1000, number % 1000 from numbers_mt(1e6);
 
-set use_parallel_replicas = 1;
+set enable_parallel_replicas = 1;
 set parallel_replicas_for_non_replicated_merge_tree = 1;
 set max_parallel_replicas = 3;
 set cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

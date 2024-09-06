@@ -1,6 +1,6 @@
 -- Tags: distributed
 
-SET use_parallel_replicas = 0;
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS test5346;
 

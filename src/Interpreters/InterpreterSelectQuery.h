@@ -195,7 +195,7 @@ private:
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
-    std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
+    std::optional<UInt64> getTrivialCount(UInt64 enable_parallel_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 

@@ -274,7 +274,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
     /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);
-    mutable_context->setSetting("use_parallel_replicas", Field(0));
+    mutable_context->setSetting("enable_parallel_replicas", Field(0));
 
     /// Here we replace tables to dummy, in order to build a temporary query plan for parallel replicas analysis.
     ResultReplacementMap replacement_map;

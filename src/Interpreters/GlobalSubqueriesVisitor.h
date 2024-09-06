@@ -228,7 +228,7 @@ private:
                     if (settings[Setting::enable_parallel_replicas] == 1)
                     {
                         LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "IN with subquery is not supported with parallel replicas");
-                        data.getContext()->getQueryContext()->setSetting("use_parallel_replicas", Field(0));
+                        data.getContext()->getQueryContext()->setSetting("enable_parallel_replicas", Field(0));
                         return;
                     }
                     else if (settings[Setting::enable_parallel_replicas] >= 2)
@@ -286,7 +286,7 @@ private:
                     if (settings[Setting::enable_parallel_replicas] == 1)
                     {
                         LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "JOIN with parallel replicas is only supported with subqueries");
-                        data.getContext()->getQueryContext()->setSetting("use_parallel_replicas", Field(0));
+                        data.getContext()->getQueryContext()->setSetting("enable_parallel_replicas", Field(0));
                         return;
                     }
                     else if (settings[Setting::enable_parallel_replicas] >= 2)

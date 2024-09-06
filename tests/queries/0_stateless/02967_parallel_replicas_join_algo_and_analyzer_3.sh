@@ -17,7 +17,7 @@ insert into num_1 select number * 2, toString(number * 2) from numbers(1e7);
 insert into num_2 select number * 3, -number from numbers(1.5e6);
 "
 
-PARALLEL_REPLICAS_SETTINGS="use_parallel_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan=1"
+PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan=1"
 
 ##############
 echo

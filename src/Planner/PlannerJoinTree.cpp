@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 
 #include <Common/scope_guard_safe.h>
+#include <Core/ParallelReplicasMode.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -322,14 +323,21 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    if (settings[Setting::max_parallel_replicas] > 1)
+    if (settings[Setting::enable_parallel_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
     {
-        if (!settings[Setting::parallel_replicas_custom_key].value.empty() || settings[Setting::enable_parallel_replicas] == 0)
+        /// Imagine the situation when we have a query with parallel replicas and
+        /// this code executed on the remote server.
+        /// If we will apply trivial count optimization, then each remote server will do the same
+        /// and we will have N times more rows as the result on the initiator.
+        /// TODO: This condition seems unneeded when we will make the parallel replicas with custom key
+        /// to work on top of MergeTree instead of Distributed.
+        if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY)
             return false;
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
-        query_context->setSetting("use_parallel_replicas", Field(0));
-        query_context->setSetting("max_parallel_replicas", UInt64{1});
+        query_context->setSetting("enable_parallel_replicas", Field(0));
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
@@ -537,7 +545,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         settings[Setting::parallel_replicas_count],
         settings[Setting::parallel_replica_offset],
         std::move(custom_key_ast),
-        {settings[Setting::parallel_replicas_custom_key_filter_type],
+        {settings[Setting::parallel_replicas_mode],
          settings[Setting::parallel_replicas_custom_key_range_lower],
          settings[Setting::parallel_replicas_custom_key_range_upper]},
         storage->getInMemoryMetadataPtr()->columns,
@@ -877,7 +885,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_context->canUseParallelReplicasCustomKey())
                 {
                     if (settings[Setting::parallel_replicas_count] > 1)
-                    {
                         if (auto parallel_replicas_custom_key_filter_info= buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context))
                             add_filter(*parallel_replicas_custom_key_filter_info, "Parallel replicas custom key filter");
                     }
@@ -907,7 +914,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     = planner_context->getGlobalPlannerContext()->parallel_replicas_table
                     && !table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas;
                 if (other_table_already_chosen_for_reading_with_parallel_replicas)
-                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                    planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field(0));
 
                 storage->read(
                     query_plan,
@@ -1008,7 +1015,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             if (number_of_replicas_to_use <= 1)
                             {
                                 planner_context->getMutableQueryContext()->setSetting(
-                                    "allow_experimental_parallel_reading_from_replicas", Field(0));
+                                    "enable_parallel_replicas", Field(0));
                                 planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
                                 LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                             }

@@ -243,7 +243,7 @@ function run_tests()
     )
     if [[ -n "$USE_PARALLEL_REPLICAS" ]] && [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
         TEST_ARGS+=(
-            --client="clickhouse-client --use_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --max_parallel_replicas=100 --cluster_for_parallel_replicas='parallel_replicas'"
+            --client="clickhouse-client --enable_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --max_parallel_replicas=100 --cluster_for_parallel_replicas='parallel_replicas'"
             --no-parallel-replicas
         )
     fi

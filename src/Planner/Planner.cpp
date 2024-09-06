@@ -1468,7 +1468,7 @@ void Planner::buildPlanForQueryNode()
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
-            mutable_context->setSetting("use_parallel_replicas", Field(0));
+            mutable_context->setSetting("enable_parallel_replicas", Field(0));
             LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
         }
     }
@@ -1511,7 +1511,7 @@ void Planner::buildPlanForQueryNode()
                         getLogger("Planner"),
                         "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                     auto & mutable_context = planner_context->getMutableQueryContext();
-                    mutable_context->setSetting("use_parallel_replicas", Field(0));
+                    mutable_context->setSetting("enable_parallel_replicas", Field(0));
                 }
             }
         }
@@ -1531,7 +1531,7 @@ void Planner::buildPlanForQueryNode()
                     "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
                 auto & mutable_context = planner_context->getMutableQueryContext();
-                mutable_context->setSetting("use_parallel_replicas", Field(0));
+                mutable_context->setSetting("enable_parallel_replicas", Field(0));
                 mutable_context->setSetting("parallel_replicas_custom_key", String{""});
             }
         }

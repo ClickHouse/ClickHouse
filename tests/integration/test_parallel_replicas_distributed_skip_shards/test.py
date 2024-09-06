@@ -85,7 +85,7 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "use_parallel_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "skip_unavailable_shards": 1,
@@ -119,7 +119,7 @@ def test_error_on_unavailable_shards(start_cluster, prefer_localhost_replica):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "use_parallel_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "skip_unavailable_shards": 0,
@@ -154,7 +154,7 @@ def test_no_unavailable_shards(start_cluster, skip_unavailable_shards):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "use_parallel_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": 0,
                 "skip_unavailable_shards": skip_unavailable_shards,

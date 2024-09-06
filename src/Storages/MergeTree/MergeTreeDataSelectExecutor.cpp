@@ -294,10 +294,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
         */
 
-    auto parallel_replicas_mode = context->getParallelReplicasMode();
+    const bool can_use_sampling_key_parallel_replicas =
+        settings[Setting::enable_parallel_replicas] > 0
+        && settings[Setting::max_parallel_replicas] > 1
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY;
+
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
-    if (settings[Setting::parallel_replicas_count] > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
+    if (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1
         && !data.supportsSampling() && settings[Setting::parallel_replica_offset] > 0)
     {
         LOG_DEBUG(
@@ -308,9 +312,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         return sampling;
     }
 
-    sampling.use_sampling = relative_sample_size > 0
-        || (settings[Setting::parallel_replicas_count] > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
-            && data.supportsSampling());
+    sampling.use_sampling = relative_sample_size > 0 || (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1 && data.supportsSampling());
     bool no_data = false; /// There is nothing left after sampling.
 
     if (sampling.use_sampling)
