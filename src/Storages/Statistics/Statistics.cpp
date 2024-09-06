@@ -127,7 +127,7 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
     if (stats.contains(StatisticsType::Uniq))
     {
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
-        if (cardinality == 0)
+        if (cardinality == 0 || rows == 0)
             return 0;
         return 1.0 / cardinality * rows; /// assume uniform distribution
     }

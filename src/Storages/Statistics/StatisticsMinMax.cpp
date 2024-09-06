@@ -51,6 +51,9 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf)
 
 Float64 StatisticsMinMax::estimateLess(const Field & val) const
 {
+    if (row_count == 0)
+        return 0;
+
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
     if (!val_as_float.has_value())
         return 0;
