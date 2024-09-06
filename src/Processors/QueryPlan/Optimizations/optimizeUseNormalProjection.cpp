@@ -193,15 +193,13 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
-    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
-    proj_snapshot->addProjection(best_candidate->projection);
-
+    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
     auto query_info_copy = query_info;
     query_info_copy.prewhere_info = nullptr;
 
     auto projection_reading = reader.readFromParts(
         /*parts=*/ {},
-        /*alter_conversions=*/ {},
+        reading->getMutationsSnapshot()->cloneEmpty(),
         required_columns,
         proj_snapshot,
         query_info_copy,

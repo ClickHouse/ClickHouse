@@ -11,6 +11,14 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
+namespace ProfileEvents
+{
+    extern const Event AzureGetProperties;
+    extern const Event DiskAzureGetProperties;
+    extern const Event AzureCreateContainer;
+    extern const Event DiskAzureCreateContainer;
+}
+
 namespace DB
 {
 
@@ -214,20 +222,53 @@ void processURL(const String & url, const String & container_name, Endpoint & en
     }
 }
 
+static bool containerExists(const ContainerClient & client)
+{
+    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
+    if (client.GetClickhouseOptions().IsClientForDisk)
+        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+
+    try
+    {
+        client.GetProperties();
+        return true;
+    }
+    catch (const Azure::Storage::StorageException & e)
+    {
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+            return false;
+        throw;
+    }
+}
+
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
     if (params.endpoint.container_already_exists.value_or(false) || readonly)
+    {
         return params.createForContainer();
+    }
+
+    if (!params.endpoint.container_already_exists.has_value())
+    {
+        auto container_client = params.createForContainer();
+        if (containerExists(*container_client))
+            return container_client;
+    }
 
     try
     {
         auto service_client = params.createForService();
+
+        ProfileEvents::increment(ProfileEvents::AzureCreateContainer);
+        if (params.client_options.ClickhouseOptions.IsClientForDisk)
+            ProfileEvents::increment(ProfileEvents::DiskAzureCreateContainer);
+
         return std::make_unique<ContainerClient>(service_client->CreateBlobContainer(params.endpoint.container_name).Value);
     }
     catch (const Azure::Storage::StorageException & e)
     {
-        /// If container_already_exists is not set (in config), ignore already exists error.
-        /// (Conflict - The specified container already exists)
+        /// If container_already_exists is not set (in config), ignore already exists error. Conflict - The specified container already exists.
+        /// To avoid race with creation of container, handle this error despite that we have already checked the existence of container.
         if (!params.endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
             return params.createForContainer();
         throw;

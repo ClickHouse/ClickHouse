@@ -347,7 +347,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings & settings = context->getSettingsRef();
+        const Settings settings = context->getSettingsCopy();
 
         size_t rows = shard_block.rows();
 
@@ -378,9 +378,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
                     auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
                     auto result = results.front();
-                    if (shard_info.pool->isTryResultInvalid(result, settings.distributed_insert_skip_read_only_replicas))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
-
+                    shard_info.pool->checkTryResultIsValid(result, settings.distributed_insert_skip_read_only_replicas);
                     job.connection_entry = std::move(result.entry);
                 }
                 else
@@ -607,7 +605,7 @@ void DistributedSink::onFinish()
     }
 }
 
-void DistributedSink::onCancel()
+void DistributedSink::onCancel() noexcept
 {
     std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
@@ -618,14 +616,26 @@ void DistributedSink::onCancel()
         }
         catch (...)
         {
-            tryLogCurrentException(storage.log);
+            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
         }
     }
 
     for (auto & shard_jobs : per_shard_jobs)
+    {
         for (JobReplica & job : shard_jobs.replicas_jobs)
-            if (job.executor)
-                job.executor->cancel();
+        {
+            try
+            {
+                if (job.executor)
+                    job.executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(storage.log, "Error occurs on cancellation.");
+            }
+        }
+    }
+
 }
 
 

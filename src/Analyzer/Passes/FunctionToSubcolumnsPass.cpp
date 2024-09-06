@@ -68,10 +68,10 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
 String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & data_type_tuple)
 {
     if (value.getType() == Field::Types::String)
-        return value.get<const String &>();
+        return value.safeGet<const String &>();
 
     if (value.getType() == Field::Types::UInt64)
-        return data_type_tuple.getNameByPosition(value.get<UInt64>());
+        return data_type_tuple.getNameByPosition(value.safeGet<UInt64>());
 
     return "";
 }
@@ -79,7 +79,7 @@ String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & dat
 String getSubcolumnNameForElement(const Field & value, const DataTypeVariant &)
 {
     if (value.getType() == Field::Types::String)
-        return value.get<const String &>();
+        return value.safeGet<const String &>();
 
     return "";
 }
@@ -209,7 +209,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
 };
 
-std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node)
+std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -231,6 +231,12 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     const auto & storage = table_node->getStorage();
     const auto & storage_snapshot = table_node->getStorageSnapshot();
     auto column = first_argument_column_node->getColumn();
+
+    /// If view source is set we cannot optimize because it doesn't support moving functions to subcolumns.
+    /// The storage is replaced to the view source but it happens only after building a query tree and applying passes.
+    auto view_source = context->getViewSource();
+    if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
+        return {};
 
     if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
         return {};
@@ -266,7 +272,7 @@ public:
             return;
         }
 
-        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node);
+        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node, getContext());
         if (function_node && first_argument_node && table_node)
         {
             enterImpl(*function_node, *first_argument_node, *table_node);
@@ -416,7 +422,7 @@ public:
         if (!getSettings().optimize_functions_to_subcolumns)
             return;
 
-        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node);
+        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());
         if (!function_node || !first_argument_column_node || !table_node)
             return;
 

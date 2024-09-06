@@ -1,5 +1,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <AggregateFunctions/WindowFunction.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/ConstantNode.h>
@@ -237,7 +238,7 @@ public:
                 if (function_node.isWindowFunction())
                 {
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(function_node.getWindowNode());
+                    buffer << calculateWindowNodeActionName(node, function_node.getWindowNode());
                     buffer << ')';
                 }
 
@@ -298,21 +299,22 @@ public:
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & node)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
     {
-        auto & window_node = node->as<WindowNode &>();
+        const auto & function_node = function_nodew_node_->as<const FunctionNode&>();
+        const auto & window_node = window_node_->as<const WindowNode &>();
         WriteBufferFromOwnString buffer;
 
         if (window_node.hasPartitionBy())
         {
             buffer << "PARTITION BY ";
 
-            auto & partition_by_nodes = window_node.getPartitionBy().getNodes();
+            const auto & partition_by_nodes = window_node.getPartitionBy().getNodes();
             size_t partition_by_nodes_size = partition_by_nodes.size();
 
             for (size_t i = 0; i < partition_by_nodes_size; ++i)
             {
-                auto & partition_by_node = partition_by_nodes[i];
+                const auto & partition_by_node = partition_by_nodes[i];
                 buffer << calculateActionNodeName(partition_by_node);
                 if (i + 1 != partition_by_nodes_size)
                     buffer << ", ";
@@ -326,7 +328,7 @@ public:
 
             buffer << "ORDER BY ";
 
-            auto & order_by_nodes = window_node.getOrderBy().getNodes();
+            const auto & order_by_nodes = window_node.getOrderBy().getNodes();
             size_t order_by_nodes_size = order_by_nodes.size();
 
             for (size_t i = 0; i < order_by_nodes_size; ++i)
@@ -364,44 +366,14 @@ public:
             }
         }
 
-        auto & window_frame = window_node.getWindowFrame();
-        if (!window_frame.is_default)
+        auto window_frame_opt = extractWindowFrame(function_node);
+        if (window_frame_opt)
         {
+            auto & window_frame = *window_frame_opt;
             if (window_node.hasPartitionBy() || window_node.hasOrderBy())
                 buffer << ' ';
 
-            buffer << window_frame.type << " BETWEEN ";
-            if (window_frame.begin_type == WindowFrame::BoundaryType::Current)
-            {
-                buffer << "CURRENT ROW";
-            }
-            else if (window_frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-            {
-                buffer << "UNBOUNDED";
-                buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-            else
-            {
-                buffer << calculateActionNodeName(window_node.getFrameBeginOffsetNode());
-                buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-
-            buffer << " AND ";
-
-            if (window_frame.end_type == WindowFrame::BoundaryType::Current)
-            {
-                buffer << "CURRENT ROW";
-            }
-            else if (window_frame.end_type == WindowFrame::BoundaryType::Unbounded)
-            {
-                buffer << "UNBOUNDED";
-                buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-            else
-            {
-                buffer << calculateActionNodeName(window_node.getFrameEndOffsetNode());
-                buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
-            }
+            window_frame.toString(buffer);
         }
 
         return buffer.str();
@@ -1056,20 +1028,11 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name)
-{
-    ActionNodeNameHelper helper(node_to_name, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(node);
-}
-
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(node);
+    return helper.calculateWindowNodeActionName(function_node, window_node);
 }
 
 }
