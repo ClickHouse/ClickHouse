@@ -50,6 +50,13 @@
 
 namespace DB
 {
+extern const SettingsBool allow_experimental_variant_type;
+extern const SettingsBool any_join_distinct_right_table_keys;
+extern const SettingsJoinStrictness join_default_strictness;
+extern const SettingsBool enable_order_by_all;
+extern const SettingsUInt64 limit;
+extern const SettingsUInt64 offset;
+extern const SettingsBool use_variant_as_common_type;
 
 namespace ErrorCodes
 {
@@ -231,17 +238,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     /// We are going to remove settings LIMIT and OFFSET and
     /// further replace them with corresponding expression nodes
-    UInt64 limit = 0;
-    UInt64 offset = 0;
+    UInt64 limit_v = 0;
+    UInt64 offset_v = 0;
 
     /// Remove global settings limit and offset
-    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
+    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref[limit] || settings_ref[offset])
     {
         Settings settings = updated_context->getSettingsCopy();
-        limit = settings.limit;
-        offset = settings.offset;
-        settings.limit = 0;
-        settings.offset = 0;
+        limit_v = settings[limit];
+        offset_v = settings[offset];
+        settings[limit] = 0;
+        settings[offset] = 0;
         updated_context->setSettings(settings);
     }
 
@@ -252,12 +259,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
         /// Remove expression settings limit and offset
         if (auto * limit_field = set_query.changes.tryGet("limit"))
         {
-            limit = limit_field->safeGet<UInt64>();
+            limit_v = limit_field->safeGet<UInt64>();
             set_query.changes.removeSetting("limit");
         }
         if (auto * offset_field = set_query.changes.tryGet("offset"))
         {
-            offset = offset_field->safeGet<UInt64>();
+            offset_v = offset_field->safeGet<UInt64>();
             set_query.changes.removeSetting("offset");
         }
 
@@ -268,7 +275,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
         }
     }
 
-    const auto enable_order_by_all = updated_context->getSettingsRef().enable_order_by_all;
+    const auto enable_order_by_all_v = updated_context->getSettingsRef()[enable_order_by_all];
 
     auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
 
@@ -285,7 +292,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
-    if (enable_order_by_all)
+    if (enable_order_by_all_v)
         current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
     current_query_tree->setOriginalAST(select_query);
 
@@ -399,7 +406,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit)
     {
         /// Shortcut
-        if (offset == 0 && limit == 0)
+        if (offset_v == 0 && limit_v == 0)
         {
             current_query_tree->getLimit() = buildExpression(select_limit, current_context);
         }
@@ -408,20 +415,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
             /// expr 3
             auto expr_3 = std::make_shared<FunctionNode>("minus");
             expr_3->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-            expr_3->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+            expr_3->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset_v));
 
             /// expr 2
             auto expr_2 = std::make_shared<FunctionNode>("least");
             expr_2->getArguments().getNodes().push_back(expr_3->clone());
-            expr_2->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
+            expr_2->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit_v));
 
             /// expr 0
             auto expr_0 = std::make_shared<FunctionNode>("greaterOrEquals");
-            expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+            expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset_v));
             expr_0->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
 
             /// expr 1
-            auto expr_1 = std::make_shared<ConstantNode>(limit > 0);
+            auto expr_1 = std::make_shared<ConstantNode>(limit_v > 0);
 
             auto function_node = std::make_shared<FunctionNode>("multiIf");
             function_node->getArguments().getNodes().push_back(expr_0);
@@ -433,20 +440,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
             current_query_tree->getLimit() = std::move(function_node);
         }
     }
-    else if (limit > 0)
-        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
+    else if (limit_v > 0)
+        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit_v);
 
     /// Combine offset expression with offset setting into final offset expression
     auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset)
+    if (select_offset && offset_v)
     {
         auto function_node = std::make_shared<FunctionNode>("plus");
         function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset_v));
         current_query_tree->getOffset() = std::move(function_node);
     }
-    else if (offset)
-        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
+    else if (offset_v)
+        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset_v);
     else if (select_offset)
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
@@ -577,7 +584,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
-        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+        if (context->getSettingsRef()[allow_experimental_variant_type] && context->getSettingsRef()[use_variant_as_common_type])
             result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
         else
             result = std::make_shared<ConstantNode>(ast_literal->value);
@@ -908,24 +915,24 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 join_expression = buildExpression(table_join.on_expression, context);
 
             const auto & settings = context->getSettingsRef();
-            auto join_default_strictness = settings.join_default_strictness;
-            auto any_join_distinct_right_table_keys = settings.any_join_distinct_right_table_keys;
+            auto join_default_strictness_v = settings[join_default_strictness];
+            auto any_join_distinct_right_table_keys_v = settings[any_join_distinct_right_table_keys];
 
             JoinStrictness result_join_strictness = table_join.strictness;
             JoinKind result_join_kind = table_join.kind;
 
             if (result_join_strictness == JoinStrictness::Unspecified && (result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma))
             {
-                if (join_default_strictness == JoinStrictness::Any)
+                if (join_default_strictness_v == JoinStrictness::Any)
                     result_join_strictness = JoinStrictness::Any;
-                else if (join_default_strictness == JoinStrictness::All)
+                else if (join_default_strictness_v == JoinStrictness::All)
                     result_join_strictness = JoinStrictness::All;
                 else
                     throw Exception(ErrorCodes::EXPECTED_ALL_OR_ANY,
                         "Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty");
             }
 
-            if (any_join_distinct_right_table_keys)
+            if (any_join_distinct_right_table_keys_v)
             {
                 if (result_join_strictness == JoinStrictness::Any && result_join_kind == JoinKind::Inner)
                 {

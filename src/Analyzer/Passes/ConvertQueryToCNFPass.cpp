@@ -19,6 +19,10 @@
 
 namespace DB
 {
+extern const SettingsBool convert_query_to_cnf;
+extern const SettingsBool optimize_append_index;
+extern const SettingsBool optimize_substitute_columns;
+extern const SettingsBool optimize_using_constraints;
 
 namespace
 {
@@ -681,7 +685,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
     cnf.pushNotIntoFunctions(context);
 
     const auto & settings = context->getSettingsRef();
-    if (settings.optimize_append_index)
+    if (settings[optimize_append_index])
         addIndexConstraint(cnf, table_expressions, context);
 }
 
@@ -693,7 +697,7 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
     if (!cnf)
         return;
 
-    if (settings.optimize_using_constraints)
+    if (settings[optimize_using_constraints])
         optimizeWithConstraints(*cnf, table_expressions, context);
 
     auto new_node = cnf->toQueryTree();
@@ -731,7 +735,7 @@ public:
         optimize_filter(query_node->getPrewhere());
         optimize_filter(query_node->getHaving());
 
-        if (has_filter && settings.optimize_substitute_columns)
+        if (has_filter && settings[optimize_substitute_columns])
             substituteColumns(*query_node, table_expressions, context);
     }
 };
@@ -741,7 +745,7 @@ public:
 void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings.convert_query_to_cnf)
+    if (!settings[convert_query_to_cnf])
         return;
 
     ConvertQueryToCNFVisitor visitor(std::move(context));

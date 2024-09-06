@@ -21,6 +21,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 cross_to_inner_join_rewrite;
 
 namespace ErrorCodes
 {
@@ -193,17 +194,14 @@ public:
     }
 
 private:
-    bool isEnabled() const
-    {
-        return getSettings().cross_to_inner_join_rewrite;
-    }
+    bool isEnabled() const { return getSettings()[cross_to_inner_join_rewrite]; }
 
     bool forceRewrite(JoinKind kind) const
     {
         if (kind == JoinKind::Cross)
             return false;
         /// Comma join can be forced to rewrite
-        return getSettings().cross_to_inner_join_rewrite >= 2;
+        return getSettings()[cross_to_inner_join_rewrite] >= 2;
     }
 
     QueryTreeNodePtr makeConjunction(const QueryTreeNodes & nodes)

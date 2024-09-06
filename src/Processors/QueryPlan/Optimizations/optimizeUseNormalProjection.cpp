@@ -16,7 +16,7 @@
 
 namespace DB
 {
-extern const SettingsBool preferred_optimize_projection_name;
+extern const SettingsString preferred_optimize_projection_name;
 }
 
 namespace DB::QueryPlanOptimizations

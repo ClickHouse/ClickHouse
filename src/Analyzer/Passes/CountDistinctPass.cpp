@@ -15,6 +15,7 @@
 
 namespace DB
 {
+extern const SettingsBool count_distinct_optimization;
 
 namespace
 {
@@ -27,7 +28,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().count_distinct_optimization)
+        if (!getSettings()[count_distinct_optimization])
             return;
 
         auto * query_node = node->as<QueryNode>();

@@ -52,6 +52,7 @@
 
 namespace DB
 {
+extern const SettingsBool optimize_trivial_approximate_count_query;
 
 namespace ErrorCodes
 {
@@ -812,7 +813,7 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & query_settings) const
 {
-    if (!query_settings.optimize_trivial_approximate_count_query)
+    if (!query_settings[optimize_trivial_approximate_count_query])
         return {};
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)

@@ -13,6 +13,7 @@
 
 namespace DB
 {
+extern const SettingsBool optimize_time_filter_with_preimage;
 
 namespace ErrorCodes
 {
@@ -58,7 +59,7 @@ public:
             {"greaterOrEquals", "lessOrEquals"},
         };
 
-        if (!getSettings().optimize_time_filter_with_preimage)
+        if (!getSettings()[optimize_time_filter_with_preimage])
             return;
 
         const auto * function = node->as<FunctionNode>();

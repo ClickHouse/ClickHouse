@@ -15,6 +15,7 @@
 
 namespace DB
 {
+extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
 
 namespace ErrorCodes
 {
@@ -56,7 +57,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
+        if (!getSettings()[optimize_arithmetic_operations_in_aggregate_functions])
             return;
 
         auto * aggregate_function_node = node->as<FunctionNode>();
