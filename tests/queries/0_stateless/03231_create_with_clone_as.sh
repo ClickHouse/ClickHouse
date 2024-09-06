@@ -13,6 +13,8 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_replicated_merge_tree"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_replicated_merge_tree"
 
 # CLONE AS with a table of Memory engine
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "CREATE TABLE foo_memory (x Int8, y String) ENGINE=Memory"
@@ -55,7 +57,15 @@ ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SHOW CREATE TABLE clone_as_f
 echo "from foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM foo_replacing_merge_tree"
 echo "from clone_as_foo_replacing_merge_tree"
-${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM clone_as_foo_replacing_merge_tree FINAL"
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM clone_as_foo_replacing_merge_tree"
+
+# CLONE AS with a table of ReplicatedMergeTree engine
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "CREATE TABLE foo_replicated_merge_tree (x Int8, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_DATABASE/test_foo_replicated_merge_tree', 'r1') PRIMARY KEY x"
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SHOW CREATE TABLE foo_replicated_merge_tree"
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "INSERT INTO foo_replicated_merge_tree VALUES (1, 'a'), (2, 'b')"
+${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM foo_replicated_merge_tree"
+echo "$(${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --server_logs_file=/dev/null -q "CREATE TABLE clone_as_foo_replicated_merge_tree CLONE AS foo_replicated_merge_tree" 2>&1)" \
+  | grep -c 'Code: 344. DB::Exception: .* CREATE CLONE AS is not supported with Replicated storages. Consider using separate CREATE and INSERT queries.'
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_memory"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_memory"
@@ -65,11 +75,13 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_replicated_merge_tree"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_replicated_merge_tree"
 
 # CLONE AS with a Replicated database
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS imdb_03231"
 
-${CLICKHOUSE_CLIENT} -q "CREATE DATABASE imdb_03231 ENGINE = Replicated('/test/databases/imdb_03231', 's1', 'r1')"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE imdb_03231 ENGINE = Replicated('/test/databases/$CLICKHOUSE_DATABASE/imdb_03231', 's1', 'r1')"
 
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "CREATE TABLE imdb_03231.foo_merge_tree (x Int8, y String) ENGINE=MergeTree PRIMARY KEY x"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SHOW CREATE TABLE imdb_03231.foo_merge_tree"

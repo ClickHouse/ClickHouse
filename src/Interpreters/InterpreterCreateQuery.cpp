@@ -1468,44 +1468,53 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
         validateMaterializedViewColumnsAndEngine(create, properties, database);
 
-    bool allow_heavy_populate = getContext()->getSettingsRef().database_replicated_allow_heavy_create && create.is_populate;
-    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool is_storage_replicated = false;
+
+    if (create.storage && isReplicated(*create.storage))
+        is_storage_replicated = true;
+
+    if (create.targets)
     {
-        bool is_storage_replicated = false;
-
-        if (create.storage && isReplicated(*create.storage))
-            is_storage_replicated = true;
-
-        if (create.targets)
+        for (const auto & inner_table_engine : create.targets->getInnerEngines())
         {
-            for (const auto & inner_table_engine : create.targets->getInnerEngines())
+            if (isReplicated(*inner_table_engine))
+                is_storage_replicated = true;
+        }
+        }
+
+        bool allow_heavy_populate = getContext()->getSettingsRef().database_replicated_allow_heavy_create && create.is_populate;
+        if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+        {
+            const bool allow_create_select_for_replicated
+                = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
+            if (!allow_create_select_for_replicated)
             {
-                if (isReplicated(*inner_table_engine))
-                    is_storage_replicated = true;
+                /// POPULATE can be enabled with setting, provide hint in error message
+                if (create.is_populate)
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT "
+                        "queries. "
+                        "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with "
+                        "caution");
+
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
             }
         }
 
-        const bool allow_create_select_for_replicated = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
-        if (!allow_create_select_for_replicated)
-        {
-            /// POPULATE can be enabled with setting, provide hint in error message
-            if (create.is_populate)
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
-                    "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
-
+    if (create.is_clone_as)
+    {
+        if (database && database->getEngineName() == "Replicated")
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
-        }
-    }
+                "CREATE CLONE AS is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
 
-    if (database && database->getEngineName() == "Replicated" && create.is_clone_as)
-    {
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "CREATE CLONE AS is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
+        if (is_storage_replicated)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE CLONE AS is not supported with Replicated storages. Consider using separate CREATE and INSERT queries.");
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
