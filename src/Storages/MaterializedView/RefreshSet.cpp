@@ -21,8 +21,10 @@ RefreshSet::Handle & RefreshSet::Handle::operator=(Handle && other) noexcept
     reset();
     parent_set = std::exchange(other.parent_set, nullptr);
     id = std::move(other.id);
+    inner_table_id = std::move(other.inner_table_id);
     dependencies = std::move(other.dependencies);
     iter = std::move(other.iter);
+    inner_table_iter = std::move(other.inner_table_iter);
     metric_increment = std::move(other.metric_increment);
     return *this;
 }
@@ -32,14 +34,19 @@ RefreshSet::Handle::~Handle()
     reset();
 }
 
-void RefreshSet::Handle::rename(StorageID new_id)
+void RefreshSet::Handle::rename(StorageID new_id, std::optional<StorageID> new_inner_table_id)
 {
     std::lock_guard lock(parent_set->mutex);
     RefreshTaskPtr task = *iter;
     parent_set->removeDependenciesLocked(task, dependencies);
     parent_set->removeTaskLocked(id, iter);
+    if (inner_table_id)
+        parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
     id = new_id;
+    inner_table_id = new_inner_table_id;
     iter = parent_set->addTaskLocked(id, task);
+    if (inner_table_id)
+        inner_table_iter = parent_set->addInnerTableLocked(*inner_table_id, task);
     parent_set->addDependenciesLocked(task, dependencies);
 }
 
@@ -61,6 +68,8 @@ void RefreshSet::Handle::reset()
         std::lock_guard lock(parent_set->mutex);
         parent_set->removeDependenciesLocked(*iter, dependencies);
         parent_set->removeTaskLocked(id, iter);
+        if (inner_table_id)
+            parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
     }
 
     parent_set = nullptr;
@@ -69,13 +78,16 @@ void RefreshSet::Handle::reset()
 
 RefreshSet::RefreshSet() = default;
 
-void RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
+void RefreshSet::emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
 {
     std::lock_guard guard(mutex);
     const auto iter = addTaskLocked(id, task);
+    RefreshTaskList::iterator inner_table_iter;
+    if (inner_table_id)
+        inner_table_iter = addInnerTableLocked(*inner_table_id, task);
     addDependenciesLocked(task, dependencies);
 
-    task->setRefreshSetHandleUnlock(Handle(this, id, iter, dependencies));
+    task->setRefreshSetHandleUnlock(Handle(this, id, inner_table_id, iter, inner_table_iter, dependencies));
 }
 
 RefreshTaskList::iterator RefreshSet::addTaskLocked(StorageID id, RefreshTaskPtr task)
@@ -91,6 +103,21 @@ void RefreshSet::removeTaskLocked(StorageID id, RefreshTaskList::iterator iter)
     it->second.erase(iter);
     if (it->second.empty())
         tasks.erase(it);
+}
+
+RefreshTaskList::iterator RefreshSet::addInnerTableLocked(StorageID inner_table_id, RefreshTaskPtr task)
+{
+    RefreshTaskList & list = inner_tables[inner_table_id];
+    list.push_back(task);
+    return std::prev(list.end());
+}
+
+void RefreshSet::removeInnerTableLocked(StorageID inner_table_id, RefreshTaskList::iterator inner_table_iter)
+{
+    const auto it = inner_tables.find(inner_table_id);
+    it->second.erase(inner_table_iter);
+    if (it->second.empty())
+        inner_tables.erase(it);
 }
 
 void RefreshSet::addDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies)
@@ -128,6 +155,15 @@ std::vector<RefreshTaskPtr> RefreshSet::getTasks() const
     return res;
 }
 
+RefreshTaskPtr RefreshSet::tryGetTaskForInnerTable(const StorageID & inner_table_id) const
+{
+    std::unique_lock lock(mutex);
+    auto it = inner_tables.find(inner_table_id);
+    if (it == inner_tables.end())
+        return nullptr;
+    return *it->second.begin();
+}
+
 void RefreshSet::notifyDependents(const StorageID & id) const
 {
     std::vector<RefreshTaskPtr> res;
@@ -143,8 +179,8 @@ void RefreshSet::notifyDependents(const StorageID & id) const
         t->notifyDependencyProgress();
 }
 
-RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, RefreshTaskList::iterator iter_, std::vector<StorageID> dependencies_)
-    : parent_set(parent_set_), id(std::move(id_)), dependencies(std::move(dependencies_))
-    , iter(iter_), metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
+RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::optional<StorageID> inner_table_id_, RefreshTaskList::iterator iter_, RefreshTaskList::iterator inner_table_iter_, std::vector<StorageID> dependencies_)
+    : parent_set(parent_set_), id(std::move(id_)), inner_table_id(std::move(inner_table_id_)), dependencies(std::move(dependencies_))
+    , iter(iter_), inner_table_iter(inner_table_iter_), metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
 
 }

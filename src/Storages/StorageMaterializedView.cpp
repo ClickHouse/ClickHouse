@@ -18,7 +18,6 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 
@@ -188,6 +187,9 @@ StorageMaterializedView::StorageMaterializedView(
             }
             else
             {
+                if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(to_table_id))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is already a target of another refreshable materialized view: {}", to_table_id.getFullTableName(), task->getInfo().view_id.getFullTableName());
+
                 StoragePtr inner_table = DatabaseCatalog::instance().tryGetTable(to_table_id, getContext());
                 if (inner_table)
                     inner_engine = inner_table->getName();
@@ -302,11 +304,19 @@ void StorageMaterializedView::read(
     const size_t num_streams)
 {
     auto context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context);
-    auto storage = getTargetTable();
+    StoragePtr storage;
+    TableLockHolder lock;
 
-    syncIfRefreshedByAnotherReplica(storage.get());
+    if (fixed_uuid)
+    {
+        storage = getTargetTable();
+        lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    }
+    else
+    {
+        std::tie(storage, lock) = refresher->getAndLockTargetTable(getTargetTableId(), context);
+    }
 
-    auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
@@ -574,23 +584,6 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     }
 }
 
-void StorageMaterializedView::syncIfRefreshedByAnotherReplica(IStorage * table)
-{
-    if (fixed_uuid || !refresh_coordinated)
-        return;
-    UUID uuid = table->getStorageID().uuid;
-
-    std::lock_guard lock(replica_sync_mutex);
-    if (uuid != last_seen_inner_uuid)
-    {
-        InterpreterSystemQuery::trySyncReplica(table, SyncReplicaMode::DEFAULT, {}, getContext());
-
-        /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
-        ///  anything, just causes an unnecessary sync. Should be rare.)
-        last_seen_inner_uuid = uuid;
-    }
- }
-
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     ContextPtr local_context,
@@ -713,7 +706,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 
     if (refresher)
-        refresher->rename(new_table_id);
+        refresher->rename(new_table_id, getTargetTableId());
 }
 
 void StorageMaterializedView::startup()

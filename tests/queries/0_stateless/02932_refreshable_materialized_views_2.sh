@@ -108,6 +108,7 @@ $CLICKHOUSE_CLIENT -nq "
     truncate src;
     insert into src values (1);
     create materialized view h refresh every 1 second to dest as select x*10 as x from src;
+    create materialized view hh refresh every 2 second to dest as select x from src; -- { serverError BAD_ARGUMENTS }
     show create h;
     system wait view h;
     select '<30: to existing table>', * from dest;

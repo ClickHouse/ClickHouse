@@ -59,7 +59,7 @@ public:
     /// Call when dropping the table, after shutdown(). Removes coordination znodes if needed.
     void drop(ContextPtr context);
     /// Call when renaming the materialized view.
-    void rename(StorageID new_id);
+    void rename(StorageID new_id, StorageID new_inner_table_id);
     /// Call when changing refresh params (ALTER MODIFY REFRESH).
     void checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strategy);
     void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
@@ -91,6 +91,12 @@ public:
 
     /// RefreshSet will set handle for refresh tasks, to avoid race condition.
     void setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_);
+
+    /// Looks up the table, does lockForShare() on it. Handles corner cases:
+    ///  * If the table was EXCHANGEd+dropped between the lookup and the lockForShare(), try again.
+    ///  * If the target table is replicated, and another replica did a refresh, do an equivalent of
+    ///    SYSTEM SYNC REPLICA before first read from this table, to make sure we see the data.
+    std::tuple<StoragePtr, TableLockHolder> getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context);
 
     struct CoordinationZnode
     {
@@ -235,6 +241,11 @@ private:
     /// Notified when `state` changes away from Running/Scheduling.
     std::condition_variable refresh_cv;
     std::chrono::system_clock::time_point next_refresh_time {}; // just for observability
+
+    /// If we're in a Replicated database, and another replica performed a refresh, we have to do an
+    /// equivalent of SYSTEM SYNC REPLICA on the new table to make sure we see the full data.
+    std::mutex replica_sync_mutex;
+    UUID last_synced_inner_uuid = UUIDHelpers::Nil;
 
     /// The main loop of the refresh task. It examines the state, sees what needs to be
     /// done and does it. If there's nothing to do at the moment, returns; it's then scheduled again,

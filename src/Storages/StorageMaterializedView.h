@@ -116,11 +116,6 @@ private:
     /// have UUID, and we do inner table lookup by name instead.
     bool fixed_uuid = true;
 
-    /// If we're in a Replicated database, and another replica performed a refresh, we have to do an
-    /// equivalent of SYSTEM SYNC REPLICA on the new table to make sure we see the full data.
-    std::mutex replica_sync_mutex;
-    UUID last_seen_inner_uuid = UUIDHelpers::Nil; // if !fixed_uuid
-
     friend class RefreshTask;
 
     void checkStatementCanBeForwarded() const;
@@ -134,8 +129,6 @@ private:
     prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
     std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
     void dropTempTable(StorageID table, ContextMutablePtr refresh_context);
-
-    void syncIfRefreshedByAnotherReplica(IStorage * table);
 
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };

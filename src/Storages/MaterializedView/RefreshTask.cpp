@@ -7,7 +7,9 @@
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -105,7 +107,8 @@ void RefreshTask::startup()
 {
     if (view->getContext()->getSettingsRef().stop_refreshable_materialized_views_on_startup)
         scheduling.stop_requested = true;
-    view->getContext()->getRefreshSet().emplace(view->getStorageID(), initial_dependencies, shared_from_this());
+    auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
+    view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
     refresh_task->schedule();
 }
 
@@ -160,11 +163,11 @@ void RefreshTask::drop(ContextPtr context)
     }
 }
 
-void RefreshTask::rename(StorageID new_id)
+void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
 {
     std::lock_guard guard(mutex);
     if (set_handle)
-        set_handle.rename(new_id);
+        set_handle.rename(new_id, refresh_append ? std::nullopt : std::make_optional(new_inner_table_id));
 }
 
 void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strategy)
@@ -266,9 +269,12 @@ void RefreshTask::wait()
         while (true)
         {
             UUID expected_table_uuid = coordination.root_znode.last_success_table_uuid;
+            StorageID storage_id = view->getTargetTableId();
+            ContextPtr context = view->getContext();
             lock.unlock();
 
-            auto storage = view->tryGetTargetTable();
+            /// (Can't use `view` here because shutdown() may unset it in parallel with us.)
+            StoragePtr storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
             if (storage && storage->getStorageID().uuid == expected_table_uuid)
                 return;
 
@@ -821,6 +827,45 @@ void RefreshTask::interruptExecution()
         execution.executor->cancel();
         LOG_DEBUG(log, "Cancelling refresh");
     }
+}
+
+std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context)
+{
+    StoragePtr storage;
+    TableLockHolder storage_lock;
+    for (int attempt = 0; attempt < 10; ++attempt)
+    {
+        StoragePtr prev_storage = std::move(storage);
+        storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        if (storage == prev_storage)
+        {
+            // Table was dropped but is still accessible in DatabaseCatalog.
+            // Either ABA problem or something's broken. Don't retry, just in case.
+            break;
+        }
+        storage_lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        if (storage_lock)
+            break;
+    }
+    if (!storage_lock)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage_id.getFullNameNotQuoted());
+
+    if (coordination.coordinated)
+    {
+        UUID uuid = storage->getStorageID().uuid;
+
+        std::lock_guard lock(replica_sync_mutex);
+        if (uuid != last_synced_inner_uuid)
+        {
+            InterpreterSystemQuery::trySyncReplica(storage.get(), SyncReplicaMode::DEFAULT, {}, context);
+
+            /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
+            ///  anything, just causes an unnecessary sync. Should be rare.)
+            last_synced_inner_uuid = uuid;
+        }
+    }
+
+    return {storage, storage_lock};
 }
 
 std::chrono::system_clock::time_point RefreshTask::currentTime() const

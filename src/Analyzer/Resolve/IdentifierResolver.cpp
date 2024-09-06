@@ -7,6 +7,8 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
@@ -411,16 +413,24 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
+    TableLockHolder storage_lock;
 
     if (is_temporary_table)
         storage = DatabaseCatalog::instance().getTable(storage_id, context);
+    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+    {
+        /// If table is the target of a refreshable materialized view, it needs additional
+        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
+        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+    }
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
     if (!storage)
         return {};
 
-    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    if (!storage_lock)
+        storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
