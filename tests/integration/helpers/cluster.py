@@ -19,6 +19,7 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
+from pathlib import Path
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -52,6 +53,7 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
+from .random_settings import write_random_settings_config
 from .retry_decorator import retry
 
 from .config_cluster import *
@@ -4601,6 +4603,8 @@ class ClickHouseInstance:
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
+
+        write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
         version = None
         version_parts = self.tag.split(".")
