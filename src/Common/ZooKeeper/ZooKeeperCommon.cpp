@@ -209,14 +209,7 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 
 size_t ZooKeeperCreateRequest::sizeImpl() const
 {
-    /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
-    if (path.starts_with("/clickhouse/tables/") && path.find("/parts/") != std::string::npos)
-    {
-        LOG_TRACE(getLogger(__PRETTY_FUNCTION__), "Creating part at path {}", path);
-    }
-
     int32_t flags = 0;
-
     return Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
 }
 
