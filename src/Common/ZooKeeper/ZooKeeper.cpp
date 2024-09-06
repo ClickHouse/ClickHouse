@@ -979,8 +979,26 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
     return removed_as_expected;
 }
 
-void ZooKeeper::removeRecursive(const std::string & path) // TODO(michicosun) rewrite
+void ZooKeeper::removeRecursive(const std::string & path, uint32_t remove_nodes_limit)
 {
+    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
+    {
+        removeChildrenRecursive(path);
+        remove(path);
+        return;
+    }
+
+    check(tryRemoveRecursive(path, remove_nodes_limit), path);
+}
+
+Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit)
+{
+    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
+    {
+        tryRemoveChildrenRecursive(path);
+        return tryRemove(path);
+    }
+
     auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
     auto future = promise->get_future();
 
@@ -989,26 +1007,19 @@ void ZooKeeper::removeRecursive(const std::string & path) // TODO(michicosun) re
         promise->set_value(response);
     };
 
-    impl->removeRecursive(path, 100, std::move(callback));
+    impl->removeRecursive(path, remove_nodes_limit, std::move(callback));
 
     if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::RemoveRecursive, path));
-        check(Coordination::Error::ZOPERATIONTIMEOUT, path);
+        return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
     {
         auto response = future.get();
-        check(response.error, path);
+        return response.error;
     }
 }
-
-Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path)
-{
-    tryRemoveChildrenRecursive(path);
-    return tryRemove(path);
-}
-
 
 namespace
 {
