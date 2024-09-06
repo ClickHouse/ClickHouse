@@ -146,9 +146,30 @@ def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_par
     ) == (3 * FILES_OVERHEAD) + (files_per_part * 3)
 
 
+def remove_leftovers_from_zk(node_data, node_for_query, replica_name):
+    replicas = node_data.query_with_retry(
+        "select name from system.zookeeper where path='/test/drop_table/replicas'"
+    )
+    if replica_name in replicas and "test_drop_table" not in node_data.query(
+        "show tables"
+    ):
+        node_for_query.query(
+            f"system drop replica '{replica_name}' from table test_drop_table"
+        )
+
+
 def test_drop_table(cluster):
     node = list(cluster.instances.values())[0]
     node2 = list(cluster.instances.values())[1]
+
+    # We are checking log entries in this test, so it should be empty before the execution.
+    node.rotate_logs()
+    node2.rotate_logs()
+
+    # drop table .. sync, doesn't removes replica from zk immediately. Prevent race contition by removing old nodes from zk.
+    remove_leftovers_from_zk(node, node2, "1")
+    remove_leftovers_from_zk(node2, node, "2")
+
     node.query(
         "create table test_drop_table (n int) engine=ReplicatedMergeTree('/test/drop_table', '1') order by n partition by n % 99 settings storage_policy='s3'"
     )
@@ -196,11 +217,7 @@ def test_drop_table(cluster):
     )
 
     # It could leave some leftovers, remove them
-    replicas = node.query_with_retry(
-        "select name from system.zookeeper where path='/test/drop_table/replicas'"
-    )
-    if "1" in replicas and "test_drop_table" not in node.query("show tables"):
-        node2.query("system drop replica '1' from table test_drop_table")
+    remove_leftovers_from_zk(node, node2, "1")
 
     # Just in case table was not created due to connection errors
     node.query(
