@@ -81,3 +81,7 @@ def test_deduplicated_attached_part_renamed_after_attach(started_cluster):
             f"SELECT name FROM system.detached_parts WHERE database='{database_name}' AND table = 'dedup'"
         ).strip()
     )
+
+    q("DROP TABLE dedup")
+    q("SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/dedup_attach/dedup/s1'")
+    ch1.query(f"DROP DATABASE {database_name}")
