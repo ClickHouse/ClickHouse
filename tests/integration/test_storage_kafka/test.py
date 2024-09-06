@@ -10,6 +10,8 @@ import string
 import ast
 import math
 
+from multiprocessing.dummy import Pool
+
 import avro.schema
 import avro.io
 import avro.datafile
@@ -4831,27 +4833,13 @@ def test_max_rows_per_message(kafka_cluster, create_query_generator):
 def test_row_based_formats(kafka_cluster, create_query_generator):
     admin_client = get_admin_client(kafka_cluster)
 
-    for format_name in [
-        "TSV",
-        "TSVWithNamesAndTypes",
-        "TSKV",
-        "CSV",
-        "CSVWithNamesAndTypes",
-        "CustomSeparatedWithNamesAndTypes",
-        "Values",
-        "JSON",
-        "JSONEachRow",
-        "JSONCompactEachRow",
-        "JSONCompactEachRowWithNamesAndTypes",
-        "JSONObjectEachRow",
-        "Avro",
-        "RowBinary",
-        "RowBinaryWithNamesAndTypes",
-        "MsgPack",
-    ]:
+    p = Pool(10)
+
+    def run_for_format_name(format_name):
         logging.debug("Checking {format_name}")
 
         topic_name = format_name + get_topic_postfix(create_query_generator)
+        view_name = f"kafka_view_{format_name}"
         table_name = f"kafka_{format_name}"
 
         with kafka_topic(admin_client, topic_name):
@@ -4870,12 +4858,12 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
 
             instance.query(
                 f"""
-                DROP TABLE IF EXISTS test.view;
+                DROP TABLE IF EXISTS test.{view_name};
                 DROP TABLE IF EXISTS test.{table_name};
 
                 {create_query};
 
-                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
+                CREATE MATERIALIZED VIEW test.{view_name} ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
 
                 INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
@@ -4886,18 +4874,44 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
                 kafka_cluster, topic_name, message_count, need_decode=False
             )
 
-            assert len(messages) == message_count
+            assert (
+                len(messages) == message_count
+            ), f"Invalid message count for {format_name}"
 
             instance.query_with_retry(
-                "SELECT count() FROM test.view",
+                f"SELECT count() FROM test.{view_name}",
                 check_callback=lambda res: int(res) == num_rows,
             )
 
-            result = instance.query("SELECT * FROM test.view")
+            result = instance.query(f"SELECT * FROM test.{view_name}")
             expected = ""
             for i in range(num_rows):
                 expected += str(i * 10) + "\t" + str(i * 100) + "\n"
-            assert result == expected
+            assert result == expected, f"Invalid result for {format_name}"
+
+    results = []
+    for format_name in [
+        "TSV",
+        "TSVWithNamesAndTypes",
+        "TSKV",
+        "CSV",
+        "CSVWithNamesAndTypes",
+        "CustomSeparatedWithNamesAndTypes",
+        "Values",
+        "JSON",
+        "JSONEachRow",
+        "JSONCompactEachRow",
+        "JSONCompactEachRowWithNamesAndTypes",
+        "JSONObjectEachRow",
+        "Avro",
+        "RowBinary",
+        "RowBinaryWithNamesAndTypes",
+        "MsgPack",
+    ]:
+        results.append(p.apply_async(run_for_format_name, args=(format_name,)))
+
+    for result in results:
+        result.get()
 
 
 @pytest.mark.parametrize(
@@ -4955,16 +4969,12 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
     num_rows = 100
     message_count = 9
 
-    for format_name in [
-        "JSONColumns",
-        "Native",
-        "Arrow",
-        "Parquet",
-        "ORC",
-        "JSONCompactColumns",
-    ]:
+    p = Pool(10)
+
+    def run_for_format_name(format_name):
         topic_name = format_name + get_topic_postfix(create_query_generator)
         table_name = f"kafka_{format_name}"
+        view_name = f"kafka_view_{format_name}"
         logging.debug(f"Checking format {format_name}")
         with kafka_topic(admin_client, topic_name):
             create_query = create_query_generator(
@@ -4977,12 +4987,12 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
 
             instance.query(
                 f"""
-                DROP TABLE IF EXISTS test.view;
+                DROP TABLE IF EXISTS test.{view_name};
                 DROP TABLE IF EXISTS test.{table_name};
 
                 {create_query};
 
-                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
+                CREATE MATERIALIZED VIEW test.{view_name} ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
 
                 INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
@@ -4991,22 +5001,38 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
             messages = kafka_consume_with_retry(
                 kafka_cluster, topic_name, message_count, need_decode=False
             )
-            assert len(messages) == message_count
+            assert (
+                len(messages) == message_count
+            ), f"Invalid message count for {format_name}"
 
             rows = int(
                 instance.query_with_retry(
-                    "SELECT count() FROM test.view",
+                    f"SELECT count() FROM test.{view_name}",
                     check_callback=lambda res: int(res) == num_rows,
                 )
             )
 
-            assert rows == num_rows
+            assert rows == num_rows, f"Invalid row count for {format_name}"
 
-            result = instance.query("SELECT * FROM test.view ORDER by key")
+            result = instance.query(f"SELECT * FROM test.{view_name} ORDER by key")
             expected = ""
             for i in range(num_rows):
                 expected += str(i * 10) + "\t" + str(i * 100) + "\n"
-            assert result == expected
+            assert result == expected, f"Invalid result for {format_name}"
+
+    results = []
+    for format_name in [
+        "JSONColumns",
+        "Native",
+        "Arrow",
+        "Parquet",
+        "ORC",
+        "JSONCompactColumns",
+    ]:
+        results.append(p.apply_async(run_for_format_name, args=(format_name,)))
+
+    for result in results:
+        result.get()
 
 
 def test_system_kafka_consumers(kafka_cluster):
@@ -5300,6 +5326,54 @@ def test_formats_errors(kafka_cluster):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
+    p = Pool(10)
+
+    def run_for_format_name(format_name):
+        with kafka_topic(admin_client, format_name):
+            table_name = f"kafka_{format_name}"
+            view_name = f"kafka_view_{format_name}"
+
+            instance.query(
+                f"""
+                DROP TABLE IF EXISTS test.{view_name};
+                DROP TABLE IF EXISTS test.{table_name};
+
+                CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+                    ENGINE = Kafka
+                    SETTINGS kafka_broker_list = 'kafka1:19092',
+                            kafka_topic_list = '{format_name}',
+                            kafka_group_name = '{format_name}',
+                            kafka_format = '{format_name}',
+                            kafka_max_rows_per_message = 5,
+                            format_template_row='template_row.format',
+                            format_regexp='id: (.+?)',
+                            input_format_with_names_use_header=0,
+                            format_schema='key_value_message:Message';
+
+                CREATE MATERIALIZED VIEW test.{view_name} ENGINE=MergeTree ORDER BY (key, value) AS
+                    SELECT key, value FROM test.{table_name};
+            """
+            )
+
+            kafka_produce(
+                kafka_cluster,
+                format_name,
+                ["Broken message\nBroken message\nBroken message\n"],
+            )
+
+            num_errors = int(
+                instance.query_with_retry(
+                    f"SELECT length(exceptions.text) from system.kafka_consumers where database = 'test' and table = '{table_name}'",
+                    check_callback=lambda res: int(res) > 0,
+                )
+            )
+
+            assert num_errors > 0, f"No errors for {format_name}"
+
+            instance.query(f"DROP TABLE test.{table_name}")
+            instance.query(f"DROP TABLE test.{view_name}")
+
+    results = []
     for format_name in [
         "Template",
         "Regexp",
@@ -5342,48 +5416,10 @@ def test_formats_errors(kafka_cluster):
         "HiveText",
         "MySQLDump",
     ]:
-        with kafka_topic(admin_client, format_name):
-            table_name = f"kafka_{format_name}"
+        results.append(p.apply_async(run_for_format_name, args=(format_name,)))
 
-            instance.query(
-                f"""
-                DROP TABLE IF EXISTS test.view;
-                DROP TABLE IF EXISTS test.{table_name};
-
-                CREATE TABLE test.{table_name} (key UInt64, value UInt64)
-                    ENGINE = Kafka
-                    SETTINGS kafka_broker_list = 'kafka1:19092',
-                            kafka_topic_list = '{format_name}',
-                            kafka_group_name = '{format_name}',
-                            kafka_format = '{format_name}',
-                            kafka_max_rows_per_message = 5,
-                            format_template_row='template_row.format',
-                            format_regexp='id: (.+?)',
-                            input_format_with_names_use_header=0,
-                            format_schema='key_value_message:Message';
-
-                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
-                    SELECT key, value FROM test.{table_name};
-            """
-            )
-
-            kafka_produce(
-                kafka_cluster,
-                format_name,
-                ["Broken message\nBroken message\nBroken message\n"],
-            )
-
-            num_errors = int(
-                instance.query_with_retry(
-                    f"SELECT length(exceptions.text) from system.kafka_consumers where database = 'test' and table = '{table_name}'",
-                    check_callback=lambda res: int(res) > 0,
-                )
-            )
-
-            assert num_errors > 0
-
-            instance.query(f"DROP TABLE test.{table_name}")
-            instance.query("DROP TABLE test.view")
+    for result in results:
+        result.get()
 
 
 @pytest.mark.parametrize(
