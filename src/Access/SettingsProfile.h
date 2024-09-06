@@ -23,6 +23,8 @@ struct SettingsProfile : public IAccessEntity
 
     std::vector<UUID> findDependencies() const override;
     void doReplaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    void copyDependenciesFrom(const IAccessEntity & src, const std::vector<UUID> & ids) override;
+
     bool isBackupAllowed() const override { return elements.isBackupAllowed(); }
 };
 

@@ -179,34 +179,18 @@ namespace
     /// Checks if new entities (which we're going to restore) already exist,
     /// and either skips them or throws an exception depending on the restore settings.
     void checkExistingEntities(std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
-                               std::unordered_map<UUID, UUID> & old_to_new_id,
                                const AccessControl & access_control,
                                RestoreAccessCreationMode creation_mode)
     {
-        if (creation_mode == RestoreAccessCreationMode::kReplace)
+        if (creation_mode != RestoreAccessCreationMode::kCreate)
             return;
 
-        auto should_skip = [&](const std::pair<UUID, AccessEntityPtr> & id_and_entity)
+        for (const auto & [id, entity] : entities)
         {
-            const auto & id = id_and_entity.first;
-            const auto & entity = *id_and_entity.second;
-            auto existing_id = access_control.find(entity.getType(), entity.getName());
-            if (!existing_id)
-            {
-                return false;
-            }
-            else if (creation_mode == RestoreAccessCreationMode::kCreateIfNotExists)
-            {
-                old_to_new_id[id] = *existing_id;
-                return true;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Cannot restore {} because it already exists", entity.formatTypeWithName());
-            }
-        };
-
-        std::erase_if(entities, should_skip);
+            auto existing_id = access_control.find(entity->getType(), entity->getName());
+            if (existing_id)
+                throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Cannot restore {} because it already exists", entity->formatTypeWithName());
+        }
     }
 
     /// If new entities (which we're going to restore) depend on other entities which are not going to be restored or not present in the backup
@@ -388,7 +372,7 @@ std::vector<std::pair<UUID, AccessEntityPtr>> AccessRestorerFromBackup::getAcces
     auto new_entities = entities;
 
     std::unordered_map<UUID, UUID> old_to_new_ids;
-    checkExistingEntities(new_entities, old_to_new_ids, access_control, creation_mode);
+    checkExistingEntities(new_entities, access_control, creation_mode);
     resolveDependencies(dependencies, old_to_new_ids, access_control, allow_unresolved_dependencies);
     generateRandomIDs(new_entities, old_to_new_ids);
     replaceDependencies(new_entities, old_to_new_ids);

@@ -59,6 +59,7 @@ public:
 
     std::vector<UUID> findDependencies() const;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
+    void copyDependenciesFrom(const GrantedRoles & src, const std::vector<UUID> & ids);
 
 private:
     boost::container::flat_set<UUID> roles;

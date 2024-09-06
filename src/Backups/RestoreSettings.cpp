@@ -161,6 +161,7 @@ namespace
     M(Bool, allow_non_empty_tables) \
     M(RestoreAccessCreationMode, create_access) \
     M(Bool, allow_unresolved_access_dependencies) \
+    M(Bool, restore_external_access_dependencies) \
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \

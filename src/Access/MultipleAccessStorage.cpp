@@ -416,7 +416,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
     {
         if (auto old_entity = storage_for_updating->tryRead(id))
         {
-            auto new_entity = update_func(old_entity);
+            auto new_entity = update_func(old_entity, id);
             if (new_entity->getName() != old_entity->getName())
             {
                 for (const auto & storage : *storages)

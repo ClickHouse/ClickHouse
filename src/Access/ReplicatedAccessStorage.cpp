@@ -359,7 +359,7 @@ bool ReplicatedAccessStorage::updateZooKeeper(const zkutil::ZooKeeperPtr & zooke
     }
 
     const AccessEntityPtr old_entity = deserializeAccessEntity(old_entity_definition, entity_path);
-    const AccessEntityPtr new_entity = update_func(old_entity);
+    const AccessEntityPtr new_entity = update_func(old_entity, id);
 
     if (!new_entity->isTypeOf(old_entity->getType()))
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());

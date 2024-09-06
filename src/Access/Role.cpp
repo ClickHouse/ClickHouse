@@ -27,4 +27,13 @@ void Role::doReplaceDependencies(const std::unordered_map<UUID, UUID> & old_to_n
     settings.replaceDependencies(old_to_new_ids);
 }
 
+void Role::copyDependenciesFrom(const IAccessEntity & src, const std::vector<UUID> & ids)
+{
+    if (getType() != src.getType())
+        return;
+    const auto & src_role = typeid_cast<const Role &>(src);
+    granted_roles.copyDependenciesFrom(src_role.granted_roles, ids);
+    settings.copyDependenciesFrom(src_role.settings, ids);    
+}
+
 }

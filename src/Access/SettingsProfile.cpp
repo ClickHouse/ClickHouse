@@ -27,4 +27,13 @@ void SettingsProfile::doReplaceDependencies(const std::unordered_map<UUID, UUID>
     to_roles.replaceDependencies(old_to_new_ids);
 }
 
+void SettingsProfile::copyDependenciesFrom(const IAccessEntity & src, const std::vector<UUID> & ids)
+{
+    if (getType() != src.getType())
+        return;
+    const auto & src_profile = typeid_cast<const SettingsProfile &>(src);
+    elements.copyDependenciesFrom(src_profile.elements, ids);
+    to_roles.copyDependenciesFrom(src_profile.to_roles, ids);
+}
+
 }

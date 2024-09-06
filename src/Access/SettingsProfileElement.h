@@ -64,6 +64,7 @@ public:
 
     std::vector<UUID> findDependencies() const;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
+    void copyDependenciesFrom(const SettingsProfileElements & src, const std::vector<UUID> & ids);
 
     void merge(const SettingsProfileElements & other);
 

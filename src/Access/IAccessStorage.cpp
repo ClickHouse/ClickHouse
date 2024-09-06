@@ -613,11 +613,12 @@ void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     auto create_access = restorer.getRestoreSettings().create_access;
     bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+    bool restore_external_dependencies = restorer.getRestoreSettings().restore_external_access_dependencies;
 
     restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists] mutable
     {
-        std::unordered_map<UUID, UUID> new_to_existing_ids;
-        for (auto & [id, entity] : my_entities)
+        std::unordered_map<UUID /* ID of entity in `my_entities` */, UUID /* ID of an existing entity with the same name */> new_to_existing_ids;
+        for (const auto & [id, entity] : my_entities)
         {
             UUID existing_entity_id;
             if (!insert(id, entity, replace_if_exists, throw_if_exists, &existing_entity_id))
@@ -629,17 +630,46 @@ void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 
         if (!new_to_existing_ids.empty())
         {
+            std::vector<UUID> restored_ids; /// IDs of restored entities
+            std::vector<UUID> ids_to_update;
+            std::unordered_map<UUID, AccessEntityPtr> skipped_entities_from_backup;
+            restored_ids.reserve(my_entities.size());
+            ids_to_update.reserve(my_entities.size());
+
+            for (const auto & [id, entity] : my_entities)
+            {
+                auto it = new_to_existing_ids.find(id);
+                bool is_restored = (it == new_to_existing_ids.end());
+                if (is_restored)
+                {
+                    restored_ids.emplace_back(id);
+                    ids_to_update.emplace_back(id);
+                }
+                else if (restore_external_dependencies)
+                {
+                    const UUID & existing_id = it->second;
+                    skipped_entities_from_backup[existing_id] = entity;
+                    if (!isReadOnly(existing_id))
+                        ids_to_update.emplace_back(existing_id);
+                }
+            }
+
             /// If new entities restored from backup have dependencies on other entities from backup which were not restored because they existed,
             /// then we should correct those dependencies.
-            auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+            auto update_func = [&](const AccessEntityPtr & entity, const UUID & id) -> AccessEntityPtr
             {
-                auto res = entity;
-                IAccessEntity::replaceDependencies(res, new_to_existing_ids);
+                auto res = entity->clone();
+                auto it = skipped_entities_from_backup.find(id);
+                bool is_restored = (it == skipped_entities_from_backup.end());
+                AccessEntityPtr skipped_entity_from_backup = is_restored ? nullptr : it->second;
+                if (is_restored)
+                    res->replaceDependencies(new_to_existing_ids);
+                else if (restore_external_dependencies)
+                    res->copyDependenciesFrom(*skipped_entity_from_backup, restored_ids);
                 return res;
             };
-            std::vector<UUID> ids;
-            boost::copy(my_entities | boost::adaptors::map_keys, std::back_inserter(ids));
-            tryUpdate(ids, update_func);
+
+            tryUpdate(ids_to_update, update_func);
         }
     });
 }

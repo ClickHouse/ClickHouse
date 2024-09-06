@@ -104,6 +104,13 @@ struct RestoreSettings
     /// For example, if an user has a profile assigned and that profile is not in the backup and doesn't exist locally.
     bool allow_unresolved_access_dependencies = false;
 
+    /// Try to restore external dependencies for access entities.
+    /// For example, if before making a backup a role was granted to a user:
+    /// CREATE USER u1; CREATE ROLE r1; GRANT r1 TO u1;
+    /// and now user u1 already exists and we restore only role r1,
+    /// then this flag is whether restored role r1 should be granted to user u1 again.
+    bool restore_external_access_dependencies = true;
+
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 

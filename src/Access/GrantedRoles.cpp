@@ -221,4 +221,15 @@ void GrantedRoles::replaceDependencies(const std::unordered_map<UUID, UUID> & ol
     }
 }
 
+void GrantedRoles::copyDependenciesFrom(const GrantedRoles & src, const std::vector<UUID> & ids)
+{
+    for (const UUID & id : ids)
+    {
+        if (src.roles.contains(id))
+            roles.emplace(id);
+        if (src.roles_with_admin_option.contains(id))
+            roles_with_admin_option.emplace(id);
+    }
+}
+
 }

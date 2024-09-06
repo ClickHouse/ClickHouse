@@ -178,7 +178,7 @@ public:
     /// Removes multiple entities from the storage. Returns the list of successfully dropped.
     std::vector<UUID> tryRemove(const std::vector<UUID> & ids);
 
-    using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &)>;
+    using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &, const UUID &)>;
 
     /// Updates an entity stored in the storage. Throws an exception if couldn't update.
     bool update(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists = true);
