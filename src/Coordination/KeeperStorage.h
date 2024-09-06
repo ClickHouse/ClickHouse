@@ -492,7 +492,7 @@ public:
         void rollback(int64_t rollback_zxid);
         void rollback(std::list<Delta> rollback_deltas);
 
-        std::shared_ptr<Node> getNode(StringRef path) const;
+        std::shared_ptr<Node> getNode(StringRef path, bool should_lock_storage = true) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
         void applyDeltas(const std::list<Delta> & new_deltas);
@@ -503,7 +503,7 @@ public:
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
-        std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
+        std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
 
         std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
         std::unordered_set<int64_t> closed_sessions;

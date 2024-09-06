@@ -521,9 +521,11 @@ template <class... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
 template<typename Container>
-std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(StringRef path) const
+std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(StringRef path, bool should_lock_storage) const
 {
-    std::shared_lock lock(storage.storage_mutex);
+    std::shared_lock lock(storage.storage_mutex, std::defer_lock);
+    if (should_lock_storage)
+        lock.lock();
     if (auto node_it = storage.container.find(path); node_it != storage.container.end())
     {
         const auto & committed_node = node_it->value;
@@ -841,12 +843,12 @@ void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollb
 }
 
 template<typename Container>
-std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::getNode(StringRef path) const
+std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::getNode(StringRef path, bool should_lock_storage) const
 {
     if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
         return node_it->second.node;
 
-    std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path);
+    std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path, should_lock_storage);
 
     if (node)
     {
@@ -2648,7 +2650,7 @@ void KeeperStorage<Container>::preprocessRequest(
                     std::unordered_map<std::string_view, UpdateNodeStatDelta> parent_updates;
                     for (const auto & ephemeral_path : session_ephemerals->second)
                     {
-                        auto node = uncommitted_state.getNode(ephemeral_path);
+                        auto node = uncommitted_state.getNode(ephemeral_path, /*should_lock_storage=*/false);
 
                         /// maybe the node is deleted or recreated with different session_id in the uncommitted state
                         if (!node || node->stats.ephemeralOwner() != session_id)
@@ -2659,7 +2661,7 @@ void KeeperStorage<Container>::preprocessRequest(
                         auto parent_update_it = parent_updates.find(parent_node_path);
                         if (parent_update_it == parent_updates.end())
                         {
-                            auto parent_node = uncommitted_state.getNode(StringRef{parent_node_path});
+                            auto parent_node = uncommitted_state.getNode(StringRef{parent_node_path}, /*should_lock_storage=*/false);
                             std::tie(parent_update_it, std::ignore) = parent_updates.emplace(parent_node_path, *parent_node);
                         }
 
@@ -2684,6 +2686,9 @@ void KeeperStorage<Container>::preprocessRequest(
                     }
                 }
             };
+
+            /// storage lock should always be taken before ephemeral lock
+            std::shared_lock storage_lock(storage_mutex);
             std::lock_guard ephemeral_lock(ephemeral_mutex);
             process_ephemerals_for_session(committed_ephemerals);
             process_ephemerals_for_session(uncommitted_state.ephemerals);
