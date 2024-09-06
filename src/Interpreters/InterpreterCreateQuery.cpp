@@ -811,6 +811,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+        if (create.is_clone_as && !endsWith(as_storage->getName(), "MergeTree"))
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
+        }
+
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
 
@@ -828,10 +833,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             /// Only MergeTree support TTL
             properties.columns.resetColumnTTLs();
-            if (create.is_clone_as)
-            {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
-            }
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
@@ -1960,18 +1961,6 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
-        StorageID as_table_id = {as_database_name, as_table_saved};
-        StoragePtr as_table = DatabaseCatalog::instance().tryGetTable(as_table_id, getContext());
-        if (!as_table)
-        {
-            return {};
-        }
-
-        auto merge_tree_table = std::dynamic_pointer_cast<MergeTreeData>(as_table);
-        if (!merge_tree_table)
-        {
-            return {};
-        }
 
         auto partition = std::make_shared<ASTPartition>();
         partition->all = true;

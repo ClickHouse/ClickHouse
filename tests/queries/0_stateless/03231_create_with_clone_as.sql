@@ -71,17 +71,18 @@ DROP TABLE IF EXISTS foo_replicated_merge_tree;
 DROP TABLE IF EXISTS clone_as_foo_replicated_merge_tree;
 
 -- CLONE AS with a Replicated database
-DROP DATABASE IF EXISTS imdb_03231;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE imdb_03231 ENGINE = Replicated('/test/databases/{database}/imdb_03231', 's1', 'r1');
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/databases/{database}/test_03231', 's1', 'r1');
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE TABLE imdb_03231.foo_merge_tree (x Int8, y String) ENGINE=MergeTree PRIMARY KEY x;
-SHOW CREATE TABLE imdb_03231.foo_merge_tree;
-INSERT INTO imdb_03231.foo_merge_tree VALUES (1, 'a'), (2, 'b');
-SELECT 'from imdb_03231.foo_merge_tree';
-SELECT * FROM imdb_03231.foo_merge_tree;
-CREATE TABLE imdb_03231.clone_as_foo_merge_tree CLONE AS imdb_03231.foo_merge_tree; -- { serverError SUPPORT_IS_DISABLED } 
+CREATE TABLE foo_merge_tree (x Int8, y String) ENGINE=MergeTree PRIMARY KEY x;
+SHOW CREATE TABLE foo_merge_tree;
+INSERT INTO foo_merge_tree VALUES (1, 'a'), (2, 'b');
+SELECT 'from foo_merge_tree';
+SELECT * FROM foo_merge_tree;
+CREATE TABLE clone_as_foo_merge_tree CLONE AS foo_merge_tree; -- { serverError SUPPORT_IS_DISABLED }
 
-DROP TABLE IF EXISTS imdb_03231.clone_as_foo_merge_tree;
-DROP TABLE IF EXISTS imdb_03231.foo_merge_tree;
-DROP DATABASE IF EXISTS imdb_03231;
+DROP TABLE IF EXISTS clone_as_foo_merge_tree;
+DROP TABLE IF EXISTS foo_merge_tree;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
