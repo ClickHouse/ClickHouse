@@ -701,7 +701,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
-        column.statistics.column_name = column.name; /// We assign column name here for better exception error message.
         if (col_decl.statistics_desc)
         {
             if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistics)
@@ -822,6 +821,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
+
+            /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
+            if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
+                create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
+
+            if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+
+            if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+
+            if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
+                create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
         }
         else
         {

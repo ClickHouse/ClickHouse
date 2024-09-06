@@ -130,6 +130,7 @@ jobs:
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
+      force: true
   BuilderBinDarwin:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}

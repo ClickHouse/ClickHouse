@@ -126,6 +126,7 @@ void listFilesWithRegexpMatchingImpl(
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
             fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
+            absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
         }
         catch (const std::exception &) // NOLINT
@@ -1112,9 +1113,9 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
-    setInMemoryMetadata(storage_metadata);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -1468,7 +1469,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified
-                }, getContext(), columns_description);
+                }, getContext());
 
             return chunk;
         }
