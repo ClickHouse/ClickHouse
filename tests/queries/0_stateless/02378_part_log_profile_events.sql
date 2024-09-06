@@ -1,3 +1,5 @@
+-- Tags: no-shared-merge-tree
+-- no-shared-merge-tree: depend on events with local disk
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (key UInt64, val UInt64) engine = MergeTree Order by key PARTITION BY key >= 128;
