@@ -4526,6 +4526,46 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
 
+    /// Check if at least one disk has minimum free bytes/ratio to perform insert
+    {
+        bool insert_ok = false;
+
+        for (const auto & volume : getStoragePolicy()->getVolumes())
+        {
+            for (const auto & disk : volume->getDisks())
+            {
+                const auto available_space = disk->getAvailableSpace().value_or(0);
+                const auto total_space = disk->getTotalSpace().value_or(0);
+
+                if (available_space == 0 || total_space == 0) continue;
+
+                const auto free_ratio = static_cast<Float64>(available_space) / static_cast<Float64>(total_space);
+
+                const auto ratio_ok = free_ratio > settings->min_free_diskspace_ratio_to_throw_insert;
+                const auto bytes_ok = available_space > settings->min_free_diskspace_bytes_to_throw_insert;
+
+                if (ratio_ok || bytes_ok)
+                {
+                    insert_ok = true;   // At least 1 disk has enough space for insert
+                    break;
+                }
+            }
+
+            if (insert_ok)
+                break;
+        }
+
+        if (allow_throw && !insert_ok)
+        {
+            throw Exception(
+                ErrorCodes::NOT_ENOUGH_SPACE,
+                "No disk found with either {} free disk bytes or {} free disk space ratio while trying to perform insert."
+                " Limits can be adjusted with 'min_free_diskspace_bytes_to_throw_insert' and 'min_free_diskspace_ratio_to_throw_insert'.",
+                settings->min_free_diskspace_bytes_to_throw_insert,
+                settings->min_free_diskspace_ratio_to_throw_insert);
+        }
+    }
+
     /// Check if we have too many parts in total
     if (allow_throw && parts_count_in_total >= settings->max_parts_in_total)
     {
