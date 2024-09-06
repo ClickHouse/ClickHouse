@@ -649,7 +649,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
             if (check_responses[i].data != expected_data[i])
             {
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica node {} in ZooKeeper already exists and contains unexpected value: {}",
                     quoteString(check_paths[i]), quoteString(check_responses[i].data));
             }
