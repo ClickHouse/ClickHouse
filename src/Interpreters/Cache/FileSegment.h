@@ -283,7 +283,7 @@ private:
 };
 
 
-struct FileSegmentsHolder : private boost::noncopyable
+struct FileSegmentsHolder final : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
@@ -313,6 +313,8 @@ struct FileSegmentsHolder : private boost::noncopyable
     FileSegments::const_iterator begin() const { return file_segments.begin(); }
     FileSegments::const_iterator end() const { return file_segments.end(); }
     FileSegmentPtr getSingleFileSegment() const;
+
+    void reset();
 
 private:
     FileSegments file_segments{};

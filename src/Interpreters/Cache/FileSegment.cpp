@@ -995,13 +995,19 @@ FileSegmentPtr FileSegmentsHolder::getSingleFileSegment() const
     return file_segments.front();
 }
 
-FileSegmentsHolder::~FileSegmentsHolder()
+void FileSegmentsHolder::reset()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
         file_segment_it = completeAndPopFrontImpl();
+    file_segments.clear();
+}
+
+FileSegmentsHolder::~FileSegmentsHolder()
+{
+    reset();
 }
 
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
