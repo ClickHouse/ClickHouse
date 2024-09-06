@@ -485,6 +485,12 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 current_zookeeper->set(replica_path + "/replica_group", replica_group_name, -1);
                 createEmptyLogEntry(current_zookeeper);
             }
+
+            /// Needed to mark all the queries
+            /// in the range (max log ptr at replica ZooKeeper nodes creation, max log ptr after replica recovery] as successful.
+            String max_log_ptr_at_creation_str;
+            if (current_zookeeper->tryGet(replica_path + "/max_log_ptr_at_creation", max_log_ptr_at_creation_str))
+                max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_at_creation_str);
         }
 
         if (is_create_query)
@@ -614,12 +620,6 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
         replica_path,
         replica_path + "/replica_group",
         replica_path + "/digest",
-
-        /// Needed to mark all the queries
-        /// in the range (max log ptr at replica ZooKeeper nodes creation, max log ptr after replica recovery] as successful.
-        /// Previously, this method was not idempotent and max_log_ptr_at_creation could be stored in memory.
-        /// we need to store max_log_ptr_at_creation in ZooKeeper to make this method idempotent during replica creation.
-        replica_path + "/max_log_ptr_at_creation",
     };
     bool nodes_exist = true;
     auto check_responses = current_zookeeper->tryGet(check_paths);
@@ -656,7 +656,6 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
         }
 
         LOG_DEBUG(log, "Newly initialized replica nodes found in ZooKeeper, reusing them");
-        max_log_ptr_at_creation = parse<UInt32>(check_responses[check_responses.size() - 1].data);
         createEmptyLogEntry(current_zookeeper);
         return;
     }
@@ -672,11 +671,10 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
             zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent),
             zkutil::makeCreateRequest(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent),
 
-            /// In addition to creating the replica nodes, we record the max_log_ptr at the instant where
-            /// we declared ourself as an existing replica. We'll need this during recoverLostReplica to
-            /// notify other nodes that issued new queries while this node was recovering.
-            zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version),
+            /// Previously, this method was not idempotent and max_log_ptr_at_creation could be stored in memory.
+            /// we need to store max_log_ptr_at_creation in ZooKeeper to make this method idempotent during replica creation.
             zkutil::makeCreateRequest(replica_path + "/max_log_ptr_at_creation", max_log_ptr_str, zkutil::CreateMode::Persistent),
+            zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version),
         };
 
         Coordination::Responses ops_responses;
