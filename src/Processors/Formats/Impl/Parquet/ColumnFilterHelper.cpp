@@ -3,7 +3,7 @@
 namespace DB
 {
 
-ColumnFilterCreators ColumnFilterHelper::creators = {BigIntRangeFilter::create, createFloatRangeFilter, ByteValuesFilter::create, NegatedBigIntRangeFilter::create};
+ColumnFilterCreators ColumnFilterHelper::creators = {BigIntRangeFilter::create, NegatedBigIntRangeFilter::create, createFloatRangeFilter, ByteValuesFilter::create, NegatedByteValuesFilter::create};
 void pushFilterToParquetReader(const ActionsDAG& filter_expression, ParquetReader & reader)
 {
     if (filter_expression.getOutputs().empty()) return ;

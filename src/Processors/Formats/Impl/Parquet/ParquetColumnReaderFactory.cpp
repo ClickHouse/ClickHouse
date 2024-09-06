@@ -63,7 +63,7 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Dat
         type_datetime64 = std::make_shared<DataTypeDateTime64>(getScaleFromLogicalTimestamp(tm_type.time_unit()));
     }
     else
-        type_datetime64 = std::make_shared<DataTypeDateTime64>(0);
+        type_datetime64 = std::make_shared<DataTypeDateTime64>(3);
     return std::make_shared<NumberColumnDirectReader<DataTypeDateTime64, Int64>>(
         std::move(page_reader), scan_spec, type_datetime64);
 }

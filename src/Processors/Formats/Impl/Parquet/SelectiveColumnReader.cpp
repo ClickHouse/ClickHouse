@@ -185,9 +185,10 @@ static void decodeFixedValueInternal(PaddedPODArray<T> & data, const S* start, c
             data.insert_assume_reserved(start, start + rows_to_read);
         else
         {
-            data.resize(rows_to_read);
+            auto old_size = data.size();
+            data.resize(old_size + rows_to_read);
             for (size_t i = 0; i < rows_to_read; i++)
-                data[i] = static_cast<T>(start[i]);
+                data[old_size + i] = static_cast<T>(start[i]);
         }
     }
     else
@@ -540,7 +541,9 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
             size_t count = idx_decoder.GetBatchWithDict(dict.data() , static_cast<Int32>(dict.size()), data.data() + old_size, static_cast<int>(rows_to_read));
             if (count != rows_to_read)
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "read full idx batch failed. read {} rows, expect {}", count, rows_to_read);
+
         }
+
         batch_buffer.resize(0);
         state.remain_rows -= rows_to_read;
     }

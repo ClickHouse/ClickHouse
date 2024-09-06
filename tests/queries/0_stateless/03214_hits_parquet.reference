@@ -132,16 +132,16 @@ SELECT UserID, SearchPhrase, COUNT(*) FROM hits GROUP BY UserID, SearchPhrase OR
 835157184735512989		5209
 770542365400669095		4906
 SELECT UserID, SearchPhrase, COUNT(*) FROM hits GROUP BY UserID, SearchPhrase LIMIT 10;
-4763181406542677	эластный олего город 3 кемеро чечневый полись книги	1
-3762749079714784842	кино-технологде есть	1
-5742717625414611048		8
-1232250446672773		10
-2934221607904195718		2
-9022295124610564659	шарарают в пол	1
-4321431981934412610		2
-567025996552890219		3
-1584008930337394931		1
-2162266567166640451		1
+6523812552377900839	препашкирии графия ввкладос отверить	1
+1729073966700156494	jettale disc.ru/player на как работан амелирный перево+и+батторговые серия ип	1
+1568297073130086138	туарегистратор тень	1
+1573165566505549544		1
+657358816649420519		1
+7990126324958832671	универ кости дар ул	1
+1257246503627027855		2
+1743367979318486215		1
+7798118252278892836		2
+842530953704750764		2
 SELECT UserID, extract(minute FROM EventTime) AS m, SearchPhrase, COUNT(*) FROM hits GROUP BY UserID, m, SearchPhrase ORDER BY COUNT(*) DESC LIMIT 10;
 1313338681122956954	31		589
 1313338681122956954	28		578
@@ -169,8 +169,8 @@ SELECT SearchPhrase, MIN(URL), COUNT(*) AS c FROM hits WHERE URL LIKE '%google%'
 прокур гипоаллеры	http://smeshariki.ru/googleTBR%26ad	11
 камедицинск автомобильних условодки на в крем	http://video.yandex.php?com=google.ru/arts/searchAutoSearch	9
 универ 11.6/1366x768/4096mb ddressary of thing	http://smeshariki.ru/index.ua/syllanet.ru/business/hotels.turizm.ru/igooglead%26ar_sliceid%3D1216629/0/&&puid2=15&lo=http	8
-вспомню о названы монстэр	http://tienskaia-moda-zhienskaia-obl.irr.ru/ch/google-c-38208	7
 купить трудовані резюме мертный дина кабинский лежит заднее устан	http://video.yandex.php?com=google.ru/arts/searchAutoSearch	7
+вспомню о названы монстэр	http://tienskaia-moda-zhienskaia-obl.irr.ru/ch/google-c-38208	7
 SELECT SearchPhrase, MIN(URL), MIN(Title), COUNT(*) AS c, COUNT(DISTINCT UserID) FROM hits WHERE Title LIKE '%Google%' AND URL NOT LIKE '%.google.%' AND SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
 винки медведь смотреть фильмы 2013 смотреть	http://smeshariki.ru/a-folder-4/#page-3.2.1; WOW64; Edition=1&input_action=2011/page_type=profiles/88436/currency	видеорегионалу Google	801	600
 секретарь оверка все серии порт	http://kinopoisk.ru/a-albums_scroll_to_auto_id=227&option/vacancies/liver.ru/cgi-bin/click.cgi%3Fsid%3D158197%26ad	@дневники Google Player 1.2.5 л,	214	182
@@ -195,15 +195,15 @@ SELECT * FROM hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10;
 8235569889353442646	1		1	2013-07-02 05:22:53	2013-07-02	35534	-1420082055	11579	4822773326251181180	0	2	7	http:%2F%2Fsapozhki-advertime-2/#page.google/dodge		0	0	0	8565	375	1304	978	37	15	4	700.224	2	7	13	D�	1	1	0	0			2675432	0	0		0	1	1972	778	135	2013-07-02 05:05:22	4	1	16561	0	windows	1601	0	0	1	6494516778257365839		393719418	0	0	0	1	0	5	2013-07-03 00:28:24	31	2	2	14851	1	-1016483843	61823	-1	2	S0	�\f			0	318	0	0	0	0	0	0		0		NH	0											0	-296158784638538920	-5322637665780806659	0
 SELECT SearchPhrase FROM hits WHERE SearchPhrase <> '' ORDER BY EventTime LIMIT 10;
 симптомы регистратов
-ночно китая женщины
 galaxy s4 zoom фильм
+ночно китая женщины
 фильм небольшой бизнеса североятно
-авом констеть ребенка краево
-расписание мультиварка для
-скачать читалию в духовке
-слон.руб., д. а.л. конфигурды по оргатства мультет
-отдыха чем прокат
+брита ганам котлы на шерлок
 анапа оперевянные волшебную
+слон.руб., д. а.л. конфигурды по оргатства мультет
+расписание мультиварка для
+отдыха чем прокат
+авом констеть ребенка краево
 SELECT SearchPhrase FROM hits WHERE SearchPhrase <> '' ORDER BY SearchPhrase LIMIT 10;
  береж
  за русский стил видео какой
@@ -290,7 +290,7 @@ SELECT SearchEngineID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWi
 2	-631062503	1083	31	1581.8171745152354
 2	-465813166	1082	30	1541.253234750462
 2	-1743596151	1080	24	1559.8092592592593
-2	-1125673878	1058	22	1587
+2	-265917476	1058	32	1556.2003780718337
 SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FROM hits WHERE SearchPhrase <> '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
 6170924179692870413	-643591159	1	0	1996
 5769570387413648826	1676003992	1	0	1368
@@ -300,12 +300,12 @@ SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FR
 5714411852894712355	1599996846	1	0	1638
 5305498592897745178	1964715655	1	0	1087
 5364115572003536419	2116081711	1	1	1750
-7170981634253019948	-1927756496	1	1	508
+6157965042570459491	1601338712	1	0	1087
 5406601857928252255	1991467764	1	0	1750
 SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FROM hits GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
-8566928176839891583	-1402644643	2	0	1368
-7904046282518428963	1509330109	2	0	1368
 7224410078130478461	-776509581	2	0	1368
+7904046282518428963	1509330109	2	0	1368
+8566928176839891583	-1402644643	2	0	1368
 6655575552203051303	1611957945	2	0	1638
 8035555071048609389	806773887	1	0	1750
 5761361738312310429	2040139672	1	0	1368
@@ -346,4 +346,80 @@ SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, COUNT(*) AS c FROM hi
 1740861572	1740861571	1740861570	1740861569	11314
 -807147100	-807147101	-807147102	-807147103	9880
 -631062503	-631062504	-631062505	-631062506	9718
-SELECT URL, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND DontCounthits = 0 AND IsRefresh = 0 AND URL <> '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+SELECT URL, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND `DontCountHits` = 0 AND IsRefresh = 0 AND URL <> '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+http://irr.ru/index.php?showalbum/login-leniya7777294,938303130	102341
+http://komme%2F27.0.1453.116	51218
+http://irr.ru/index.php?showalbum/login-kapusta-advert2668]=0&order_by=0	18315
+http://irr.ru/index.php?showalbum/login-kapustic/product_name	16461
+http://irr.ru/index.php	12577
+http://irr.ru/index.php?showalbum/login	10880
+http://komme%2F27.0.1453.116 Safari%2F5.0 (compatible; MSIE 9.0;	7627
+http://irr.ru/index.php?showalbum/login-kupalnik	4369
+http://irr.ru/index.php?showalbum/login-kapusta-advert27256.html_params	4058
+http://komme%2F27.0.1453.116 Safari	3021
+SELECT Title, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND `DontCountHits` = 0 AND IsRefresh = 0 AND Title <> '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+Тест (Россия) - Яндекс	122407
+Шарарай), Выбрать! - обсуждаются на голд: Шоубиз - Свободная историс	82935
+Приморск - IRR.ru	80958
+Брюки New Era H (Асус) 258 общая выплаток, горшечными	39098
+Теплоску на	23123
+Dave and Hotpoint sport – самые вещие	14329
+AUTO.ria.ua ™ - Аппер	14053
+Приморск (Россия) - Яндекс.Видео	13912
+OWAProfessign), продать	10919
+Труси - Шоубиз	10157
+SELECT URL, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND IsRefresh = 0 AND IsLink <> 0 AND IsDownload = 0 GROUP BY URL ORDER BY PageViews DESC LIMIT 10 OFFSET 1000;
+http://omsk/evential/housession%3D0%26rnd%3D1216629/0/&&puid1=m&puid2=23&pvno=2&evlg=VC,7;VL,1052&s_yers[1][from=&power_name=Топы - Обувь и шут в hd&where=all&text=смотреть онлайн	2
+http://stalker-pub-20087898675494,960948/#page_type%3D260117152337&spn=1395,94035/room=1&marka=0&top=0&currency=1#country_id=137336I6GwLZOY3s&where=all&filmId=LnXXt5vaUXI&where=all	2
+http://omsk/evential/housession%3D%26CompPath%3D728%26height%3D90%26ad%3D1216629/0/index.ru/count=473095172777/page_type=&q=cache/wm/203159	2
+http://partment/1231297588736&numphoto=1&with_video.yandex.ru/1.112.ru	2
+http://guid=6&pw=2&pv=0&price_do=&currency=RUR	2
+http://direct.yandex.ru%2Fkategory	2
+http://video.yandex.ru/realty/leaser_map=1/hasimay-2.html?1=1&cid=5772,92419948630585&s_yers=0&with_photo=False	2
+http://mysw.info/trashbox.ru/GameMain.aspx	2
+http://stalker-pub-20087898675494,960948/#page_type%3D260117152337&spn=1395,9459301bd969/curre224.jpg&marka=0&type=produkty/travelru.gdbile/soft Internet Explorer&aV=5.0 (Windows	2
+http://stalker-pub-20087898675494,960948/#page_type%3D0%26pz%3D0%26rleurl%3D%26xpid%3D728%26height.html_parator/en-ru/#!/search=0&drive_type=product.html%3Fhtml?1=1&cid=577&oki=1&op_product_id=0&engineVolumeFrom=&power	2
+SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN (SearchEngineID = 0 AND AdvEngineID = 0) THEN Referer ELSE '' END AS Src, URL AS Dst, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND IsRefresh = 0 GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 10 OFFSET 1000;
+-1	0	0	http://state=19945206/foto-4/login-11925.17661-sh-93861361091_27_iyunya_5_iyunya_5_iyunya_5_iyulyanovskii_interval=&only_owners	http://irr.ru/index.php?showalbum/login=int[2364][from=29&modelove.ru/ru/index.php?vacancies/toolin_MP50807/details	15
+-1	0	0	http://state=19945206/foto-4/login-2006/make=КАМЕРИКА РАСШИРИНА/curre/fancy	http://irr.ru/index.php?showalbum/login-676216b8af/4fd00fa61b3185631821/page_type=2&marka=29&model=19009618123313160	15
+1	0	0	http://yandex.ru/search?q=лавпланется монстружка	http://irr.ru/index.php?showalbum/login-kupaljinik-2008-g-v-stroika/photo=on&input_bdsmpeople.ru/image&sr=http://lk.wildberries	15
+-1	0	0	http://state=19945206/foto-4/login-2491724/?bundlers/search?text	http://irr.ru/index.php?showalbum/login-kupaljinik-Internet Explorer&aV=9.80 (Windows NT 5.1; WOW64	15
+-1	0	0	http://state=19945206/foto-4/login-2006/makumirostova.ru/a-album/login.2/secondary/search	http://irr.ru/index.php?showalbum/login-leniya7777294,938303130	15
+1	0	0	http://launcher-searchads/search	http://komme%2F27.0.1453.116 Safari%2F5.0 (compatible; MSIE 9.0;	15
+-1	0	0	http://state=19945206/foto-4/login-2006/makumiruiushching	http://irr.ru/index.php?showalbum/login-kapusta-advert2704&prr=http:/	15
+-1	0	0	http://state=19945206/foto-4/login-2006/makumiroshoowbiz/down%2Fholodilnik.ru/7656&lr	http://irr.ru/index.php?showalbum/login=vladimir/page_type=0&expand_search?text=метр&f[140][from]=7112-6417817495,932446/next_all=от 33 AA Little&category_id=&auth=0&driver.ru/novostova.ru/photo/69363/27824721&referer_detej-otlicheskiipirog	15
+-1	0	0	http://state=19945206/foto-4/login-2491724/?bundlers/search?text	http://irr.ru/index.php?showalbum/login-kapusta-advert2730675595,9292fa-d61f-fef3-013fc8491073393339363	15
+0	0	0		http://irr.ru/index.php?showalbum/login-kapusta-advert2718599/photo=0&is_hot=0&viewforum/index.ru	15
+SELECT URLHash, EventDate, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND IsRefresh = 0 AND TraficSourceID IN (-1, 6) AND RefererHash = 3594120000172545465 GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 10 OFFSET 100;
+7199155066341437901	2013-07-15	27
+2054727273000865689	2013-07-15	27
+2512899255762264913	2013-07-15	26
+-8505838588544217213	2013-07-15	26
+-6048157399675510565	2013-07-15	25
+-6025761452198030778	2013-07-15	25
+-3611962581960090019	2013-07-15	25
+6976198041684576969	2013-07-15	24
+2033248414344857063	2013-07-15	24
+9013370825190178404	2013-07-15	24
+SELECT WindowClientWidth, WindowClientHeight, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND IsRefresh = 0 AND DontCountHits = 0 AND URLHash = 2868770270353813622 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10 OFFSET 10000;
+1637	578	1
+1284	679	1
+1533	821	1
+1423	963	1
+1285	727	1
+1487	913	1
+1921	742	1
+593	847	1
+1996	784	1
+746	264	1
+SELECT DATE_TRUNC('minute', EventTime) AS M, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-14' AND EventDate <= '2013-07-15' AND IsRefresh = 0 AND DontCountHits = 0 GROUP BY DATE_TRUNC('minute', EventTime) ORDER BY DATE_TRUNC('minute', EventTime) LIMIT 10 OFFSET 1000;
+2013-07-15 20:40:00	513
+2013-07-15 20:41:00	457
+2013-07-15 20:42:00	470
+2013-07-15 20:43:00	468
+2013-07-15 20:44:00	453
+2013-07-15 20:45:00	462
+2013-07-15 20:46:00	481
+2013-07-15 20:47:00	458
+2013-07-15 20:48:00	466
+2013-07-15 20:49:00	467

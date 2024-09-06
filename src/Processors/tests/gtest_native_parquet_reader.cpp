@@ -556,6 +556,44 @@ TEST(TestColumnFilterHepler, TestGatherDictNumberData)
     testGatherDictInt<DateTime64>();
 }
 
+template <class T, class S>
+static void testDecodePlainData(size_t numbers, size_t exist_nums)
+{
+    PaddedPODArray<S> src;
+    for (size_t i = 0; i < numbers; ++i)
+    {
+        src.push_back(std::rand() % 10000);
+    }
+    PaddedPODArray<T> dst;
+    for (size_t i = 0; i < exist_nums; ++i)
+    {
+        dst.push_back(std::rand() % 10000);
+    }
+    dst.reserve(exist_nums + src.size());
+    size_t size = src.size();
+    const auto * buffer = reinterpret_cast<const uint8_t*>(src.data());
+    PlainDecoder decoder(buffer, size);
+    OptionalRowSet row_set = std::nullopt;
+    decoder.decodeFixedValue<T, S>(dst, row_set, size);
+    ASSERT_EQ(dst.size(), exist_nums + src.size());
+    for (size_t i = 0; i < src.size(); ++i)
+    {
+        ASSERT_EQ(src[i], dst[exist_nums+i]);
+    }
+}
+
+TEST(TestPlainDecoder, testDecodeNoFilter)
+{
+    testDecodePlainData<DateTime64, Int64>(1000, 100);
+    testDecodePlainData<DateTime64, Int64>(1000, 0);
+    testDecodePlainData<Int64, Int64>(1000, 100);
+    testDecodePlainData<Int64, Int64>(1000, 0);
+    testDecodePlainData<Int32, Int32>(1000, 100);
+    testDecodePlainData<Int32, Int32>(1000, 0);
+    testDecodePlainData<Int16, Int32>(1000, 100);
+    testDecodePlainData<Int16, Int32>(1000, 0);
+}
+
 TEST(TestRowSet, TestRowSet)
 {
     RowSet rowSet(10000);

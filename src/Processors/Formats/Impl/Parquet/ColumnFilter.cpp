@@ -321,26 +321,30 @@ OptionalFilter BigIntRangeFilter::create(const ActionsDAG::Node & node)
         return std::nullopt;
     auto constant_nodes = getConstantNode(node);
     auto func_name = node.function_base->getName();
-    Int64 value = constant_nodes.front()->column->getInt(0);
     ColumnFilterPtr filter = nullptr;
     if (func_name == "equals")
     {
+        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(value, value, false);
     }
     else if (func_name == "less")
     {
+        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value - 1, false);
     }
     else if (func_name == "greater")
     {
+        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(value + 1, std::numeric_limits<Int64>::max(), false);
     }
     else if (func_name == "lessOrEquals")
     {
+        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value, true);
     }
     else if (func_name == "greaterOrEquals")
     {
+        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(value, std::numeric_limits<Int64>::max(), true);
     }
     if (filter)
@@ -549,10 +553,10 @@ OptionalFilter NegatedBigIntRangeFilter::create(const ActionsDAG::Node & node)
         return std::nullopt;
     auto constant_nodes = getConstantNode(node);
     auto func_name = node.function_base->getName();
-    Int64 value = constant_nodes.front()->column->getInt(0);
     ColumnFilterPtr filter = nullptr;
     if (func_name == "notEquals")
     {
+        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<NegatedBigIntRangeFilter>(value, value, false);
     }
     if (filter)
