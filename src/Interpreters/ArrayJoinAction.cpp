@@ -83,7 +83,7 @@ ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_
 void ArrayJoinAction::prepare(const Names & columns, ColumnsWithTypeAndName & sample)
 {
     NameSet columns_set(columns.begin(), columns.end());
-    return prepare(columns_set, sample);
+    prepare(columns_set, sample);
 }
 
 void ArrayJoinAction::prepare(const NameSet & columns, ColumnsWithTypeAndName & sample)
