@@ -355,7 +355,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     const bool enable_parallel_reading = true;
     return std::make_unique<ReadFromMergeTree>(
         prepared_parts,
-        alter_conversions_for_parts,
+        mutations_snapshot,
         all_column_names,
         data,
         getQueryInfo(),
