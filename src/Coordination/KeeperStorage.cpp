@@ -1654,6 +1654,13 @@ private:
         uint32_t nodes_observed = 1;  /// root node
         std::unordered_map<uint32_t, std::vector<typename Storage::Delta>> by_level_deltas;
 
+        struct Step
+        {
+            String path;
+            std::variant<SNode, const SNode *> node;
+            uint32_t level;
+        };
+
     public:
         ToDeleteTreeCollector(Storage & storage_, int64_t zxid_, uint32_t limit_)
             : storage(storage_)
@@ -1665,10 +1672,11 @@ private:
         bool collect(StringRef root_path, const SNode & root_node)
         {
             std::deque<Step> steps;
-            steps.push_back(Step{root_path.toString(), &root_node, 0});
 
-            if (observeNode(root_node))
+            if (checkLimits(root_node))
                 return true;
+
+            steps.push_back(Step{root_path.toString(), &root_node, 0});
 
             while (!steps.empty())
             {
@@ -1708,13 +1716,6 @@ private:
         }
 
     private:
-        struct Step
-        {
-            String path;
-            std::variant<SNode, const SNode *> node;
-            uint32_t level;
-        };
-
         bool visitRocksDBNode(std::deque<Step> & steps, StringRef root_path, uint32_t level)
         {
             if constexpr (Storage::use_rocksdb)
@@ -1724,7 +1725,7 @@ private:
 
                 for (auto && [child_name, node] : children)
                 {
-                    if (observeNode(node))
+                    if (checkLimits(node))
                         return true;
 
                     auto child_path = (root_fs_path / child_name).generic_string();
@@ -1754,7 +1755,7 @@ private:
                     auto child_it = storage.container.find(child_path);
                     chassert(child_it != storage.container.end());
 
-                    if (observeNode(child_it->value))
+                    if (checkLimits(child_it->value))
                         return true;
 
                     steps.push_back(Step{std::move(child_path), child_it->value, level + 1});
@@ -1777,7 +1778,7 @@ private:
                 const String & path = it->first;
                 const SNode & node = *it->second.node;
 
-                if (observeNode(node))
+                if (checkLimits(node))
                     return true;
 
                 steps.push_back(Step{path, &node, level + 1});
@@ -1806,7 +1807,7 @@ private:
             by_level_deltas[level].emplace_back(root_path.toString(), zxid, typename Storage::RemoveNodeDelta{root_node.version, root_node.ephemeralOwner()});
         }
 
-        bool observeNode(const SNode & node)
+        bool checkLimits(const SNode & node)
         {
             nodes_observed += node.numChildren();
             return nodes_observed > limit;
