@@ -781,14 +781,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_full_text_index)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_full_text_index')");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is disabled. Turn on setting 'allow_experimental_full_text_index'");
                 /// ----
                 /// Temporary check during a transition period. Please remove at the end of 2024.
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
                 /// ----
                 if (index_desc.type == "vector_similarity" && !settings.allow_experimental_vector_similarity_index)
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index is disabled. Turn on allow_experimental_vector_similarity_index");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental vector similarity index is disabled. Turn on setting 'allow_experimental_vector_similarity_index'");
 
                 properties.indices.push_back(index_desc);
             }
@@ -821,19 +821,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
-
-            /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
-            if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
-                create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
-
-            if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
-                create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
-
-            if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
-                create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
-
-            if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
-                create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
         }
         else
         {
