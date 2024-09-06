@@ -157,11 +157,18 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
     elem.peak_memory_usage = query_info.peak_memory_usage > 0 ? query_info.peak_memory_usage : 0;
 
     auto & query_status = query_status_it->second;
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+    if (query_info.profile_counters)
     {
-        const auto & new_value = (*(query_info.profile_counters))[i];
-        elem.profile_events[i] = new_value - query_status.last_profile_events[i];
-        query_status.last_profile_events[i] = new_value;
+        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+        {
+            const auto & new_value = (*(query_info.profile_counters))[i];
+            elem.profile_events[i] = new_value - query_status.last_profile_events[i];
+            query_status.last_profile_events[i] = new_value;
+        }
+    }
+    else
+    {
+        elem.profile_events = query_status.last_profile_events;
     }
 
     query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
