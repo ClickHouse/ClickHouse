@@ -2,6 +2,7 @@
 
 #include <boost/intrusive/list.hpp>
 #include <base/types.h>
+#include <array>
 #include <limits>
 
 namespace DB
@@ -14,6 +15,10 @@ class ISchedulerConstraint;
 /// Cost in terms of used resource (e.g. bytes for network IO)
 using ResourceCost = Int64;
 constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
+
+// TODO(serxa): validate hierarchy to avoid too many constrants
+/// Max number of constraints for a request to pass though (depth of constaints chain)
+constexpr size_t ResourceMaxConstraints = 8;
 
 /*
  * Request for a resource consumption. The main moving part of the scheduling subsystem.
@@ -49,9 +54,10 @@ public:
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost;
 
-    /// Scheduler node to be notified on consumption finish
-    /// Auto-filled during request enqueue/dequeue
-    ISchedulerConstraint * constraint;
+    /// Scheduler nodes to be notified on consumption finish
+    /// Auto-filled during request dequeue
+    /// Vector is not used to avoid allocations in the scheduler thread
+    std::array<ISchedulerConstraint *, ResourceMaxConstraints> constraints;
 
     explicit ResourceRequest(ResourceCost cost_ = 1)
     {
@@ -62,7 +68,8 @@ public:
     void reset(ResourceCost cost_)
     {
         cost = cost_;
-        constraint = nullptr;
+        for (auto & constraint : constraints)
+            constraint = nullptr;
         // Note that list_base_hook should be reset independently (by intrusive list)
     }
 
@@ -79,6 +86,9 @@ public:
     /// ResourceRequest should not be destructed or reset before calling to `finish()`.
     /// WARNING: this function MUST not be called if request was canceled.
     void finish();
+
+    /// Is called from the scheduler thread to fill `constraints` chain
+    void addConstraint(ISchedulerConstraint * new_constraint);
 };
 
 }

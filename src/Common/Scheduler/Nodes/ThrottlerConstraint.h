@@ -79,10 +79,7 @@ public:
         if (!request)
             return {nullptr, false};
 
-        // Request has reference to the first (closest to leaf) `constraint`, which can have `parent_constraint`.
-        // The former is initialized here dynamically and the latter is initialized once during hierarchy construction.
-        if (!request->constraint)
-            request->constraint = this;
+        // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
 
         updateBucket(request->cost);
 
@@ -93,12 +90,8 @@ public:
         return {request, active()};
     }
 
-    void finishRequest(ResourceRequest * request) override
+    void finishRequest(ResourceRequest *) override
     {
-        // Recursive traverse of parent flow controls in reverse order
-        if (parent_constraint)
-            parent_constraint->finishRequest(request);
-
         // NOTE: Token-bucket constraint does not require any action when consumption ends
     }
 

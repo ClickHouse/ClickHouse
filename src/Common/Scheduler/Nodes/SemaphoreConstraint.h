@@ -69,10 +69,7 @@ public:
         if (!request)
             return {nullptr, false};
 
-        // Request has reference to the first (closest to leaf) `constraint`, which can have `parent_constraint`.
-        // The former is initialized here dynamically and the latter is initialized once during hierarchy construction.
-        if (!request->constraint)
-            request->constraint = this;
+        request->addConstraint(this);
 
         // Update state on request arrival
         std::unique_lock lock(mutex);
@@ -87,10 +84,6 @@ public:
 
     void finishRequest(ResourceRequest * request) override
     {
-        // Recursive traverse of parent flow controls in reverse order
-        if (parent_constraint)
-            parent_constraint->finishRequest(request);
-
         // Update state on request departure
         std::unique_lock lock(mutex);
         bool was_active = active();
