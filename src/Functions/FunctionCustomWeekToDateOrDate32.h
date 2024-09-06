@@ -4,6 +4,7 @@
 
 namespace DB
 {
+extern const SettingsBool enable_extended_results_for_datetime_functions;
 
 namespace ErrorCodes
 {
@@ -14,7 +15,7 @@ template <typename Transform>
 class FunctionCustomWeekToDateOrDate32 : public IFunctionCustomWeek<Transform>
 {
 private:
-    const bool enable_extended_results_for_datetime_functions = false;
+    const bool enable_extended_results_for_datetime_functions_v = false;
 
 public:
     static FunctionPtr create(ContextPtr context)
@@ -23,7 +24,7 @@ public:
     }
 
     explicit FunctionCustomWeekToDateOrDate32(ContextPtr context)
-        : enable_extended_results_for_datetime_functions(context->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions_v(context->getSettingsRef()[enable_extended_results_for_datetime_functions])
     {
     }
 
@@ -33,7 +34,7 @@ public:
 
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
-        if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
+        if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions_v)
             return std::make_shared<DataTypeDate32>();
         else
             return std::make_shared<DataTypeDate>();
@@ -48,7 +49,7 @@ public:
             return CustomWeekTransformImpl<DataTypeDate, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
         else if (which.isDate32())
         {
-            if (enable_extended_results_for_datetime_functions)
+            if (enable_extended_results_for_datetime_functions_v)
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count, Transform{});
             else
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
@@ -58,7 +59,7 @@ public:
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime64())
         {
-            if (enable_extended_results_for_datetime_functions)
+            if (enable_extended_results_for_datetime_functions_v)
                 return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate32, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count,
                     TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
             else

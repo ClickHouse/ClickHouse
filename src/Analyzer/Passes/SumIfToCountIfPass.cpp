@@ -14,6 +14,7 @@
 
 namespace DB
 {
+extern const SettingsBool aggregate_functions_null_for_empty;
 extern const SettingsBool optimize_rewrite_sum_if_to_count_if;
 
 namespace
@@ -57,7 +58,7 @@ public:
                 return;
 
             const auto & constant_value_literal = constant_node->getValue();
-            if (getSettings().aggregate_functions_null_for_empty)
+            if (getSettings()[aggregate_functions_null_for_empty])
                 return;
 
             /// Rewrite `sumIf(1, cond)` into `countIf(cond)`

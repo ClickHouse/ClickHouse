@@ -17,6 +17,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 regexp_max_matches_per_row;
 
 namespace ErrorCodes
 {
@@ -155,7 +156,7 @@ public:
         else
         {
             /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
+            const auto max_matches_per_row = context->getSettingsRef()[regexp_max_matches_per_row];
 
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.

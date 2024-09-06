@@ -193,8 +193,6 @@ public:
     MutableRange allMutable(SkipFlags skip_flags = SKIP_NONE) { return MutableRange{*this, skip_flags}; }
     Range allChanged() const { return all(SKIP_UNCHANGED); }
     Range allUnchanged() const { return all(SKIP_CHANGED); }
-    Range allBuiltin() const { return all(SKIP_CUSTOM); }
-    Range allCustom() const { return all(SKIP_BUILTIN); }
 
     Iterator begin() const { return allChanged().begin(); }
     Iterator end() const { return allChanged().end(); }

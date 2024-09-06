@@ -24,6 +24,7 @@
 
 namespace DB
 {
+extern const SettingsBool parallel_replicas_allow_in_with_subquery;
 
 namespace ErrorCodes
 {
@@ -196,7 +197,7 @@ const QueryNode * findQueryForParallelReplicas(
                 const auto * filter = typeid_cast<FilterStep *>(step);
 
                 const auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(step);
-                bool allowed_creating_sets = settings.parallel_replicas_allow_in_with_subquery && creating_sets;
+                bool allowed_creating_sets = settings[parallel_replicas_allow_in_with_subquery] && creating_sets;
 
                 if (!expression && !filter && !allowed_creating_sets)
                     can_distribute_full_node = false;

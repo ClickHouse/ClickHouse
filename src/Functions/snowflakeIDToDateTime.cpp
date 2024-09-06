@@ -15,6 +15,7 @@
 
 namespace DB
 {
+extern const SettingsBool allow_nonconst_timezone_arguments;
 
 namespace ErrorCodes
 {
@@ -32,14 +33,14 @@ constexpr size_t time_shift = 22;
 class FunctionSnowflakeIDToDateTime : public IFunction
 {
 private:
-    const bool allow_nonconst_timezone_arguments;
+    const bool allow_nonconst_timezone_arguments_v;
 
 public:
     static constexpr auto name = "snowflakeIDToDateTime";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime>(context); }
     explicit FunctionSnowflakeIDToDateTime(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments_v(context->getSettingsRef()[allow_nonconst_timezone_arguments])
     {}
 
     String getName() const override { return name; }
@@ -61,7 +62,7 @@ public:
 
         String timezone;
         if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments_v);
 
         return std::make_shared<DataTypeDateTime>(timezone);
     }
@@ -103,14 +104,14 @@ public:
 class FunctionSnowflakeIDToDateTime64 : public IFunction
 {
 private:
-    const bool allow_nonconst_timezone_arguments;
+    const bool allow_nonconst_timezone_arguments_v;
 
 public:
     static constexpr auto name = "snowflakeIDToDateTime64";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime64>(context); }
     explicit FunctionSnowflakeIDToDateTime64(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments_v(context->getSettingsRef()[allow_nonconst_timezone_arguments])
     {}
 
     String getName() const override { return name; }
@@ -132,7 +133,7 @@ public:
 
         String timezone;
         if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments_v);
 
         return std::make_shared<DataTypeDateTime64>(3, timezone);
     }

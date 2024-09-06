@@ -15,7 +15,7 @@ template <typename Transform>
 class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>
 {
 private:
-    const bool enable_extended_results_for_datetime_functions = false;
+    const bool enable_extended_results_for_datetime_functions_v = false;
 
 public:
     static FunctionPtr create(ContextPtr context_)
@@ -24,7 +24,7 @@ public:
     }
 
     explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_)
-        : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[enable_extended_results_for_datetime_functions])
+        : enable_extended_results_for_datetime_functions_v(context_->getSettingsRef()[enable_extended_results_for_datetime_functions])
     {
     }
 
@@ -43,7 +43,7 @@ public:
                 "Function {} supports a 2nd argument (optional) that must be a valid time zone",
                 this->getName());
 
-        if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
+        if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions_v)
             return std::make_shared<DataTypeDate32>();
         else
             return std::make_shared<DataTypeDate>();
@@ -58,7 +58,7 @@ public:
             return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDate32())
         {
-            if (enable_extended_results_for_datetime_functions)
+            if (enable_extended_results_for_datetime_functions_v)
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
             else
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
@@ -70,7 +70,7 @@ public:
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
 
             const TransformDateTime64<Transform> transformer(scale);
-            if (enable_extended_results_for_datetime_functions)
+            if (enable_extended_results_for_datetime_functions_v)
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count, transformer);
             else
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
