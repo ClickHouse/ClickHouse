@@ -38,6 +38,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 preferred_block_size_bytes;
 
 namespace ErrorCodes
 {
@@ -688,8 +689,8 @@ Pipe StorageGenerateRandom::read(
     }
 
     /// Correction of block size for wide tables.
-    size_t preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes;
-    if (preferred_block_size_bytes)
+    size_t preferred_block_size = context->getSettingsRef()[preferred_block_size_bytes];
+    if (preferred_block_size)
     {
         size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
 
@@ -698,9 +699,9 @@ Pipe StorageGenerateRandom::read(
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large estimated block size in GenerateRandom table: its estimation leads to 64bit overflow");
         chassert(estimated_block_size_bytes != 0);
 
-        if (estimated_block_size_bytes > preferred_block_size_bytes)
+        if (estimated_block_size_bytes > preferred_block_size)
         {
-            max_block_size = static_cast<size_t>(max_block_size * (static_cast<double>(preferred_block_size_bytes) / estimated_block_size_bytes));
+            max_block_size = static_cast<size_t>(max_block_size * (static_cast<double>(preferred_block_size) / estimated_block_size_bytes));
             if (max_block_size == 0)
                 max_block_size = 1;
         }

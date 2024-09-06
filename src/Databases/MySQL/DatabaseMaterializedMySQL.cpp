@@ -25,6 +25,7 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+extern const SettingsUInt64 glob_expansion_max_elements;
 
 namespace ErrorCodes
 {
@@ -238,7 +239,7 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
 
             if (engine_name == "MySQL")
             {
-                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+                size_t max_addresses = args.context->getSettingsRef()[glob_expansion_max_elements];
                 configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
             }
             else

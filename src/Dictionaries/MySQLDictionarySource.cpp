@@ -28,6 +28,9 @@
 
 namespace DB
 {
+extern const SettingsUInt64 external_storage_connect_timeout_sec;
+extern const SettingsUInt64 external_storage_rw_timeout_sec;
+extern const SettingsUInt64 glob_expansion_max_elements;
 
 [[maybe_unused]]
 static const size_t default_num_tries_on_connection_loss = 3;
@@ -89,7 +92,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             }
             else
             {
-                size_t max_addresses = global_context->getSettingsRef().glob_expansion_max_elements;
+                size_t max_addresses = global_context->getSettingsRef()[glob_expansion_max_elements];
                 addresses = parseRemoteDescriptionForExternalDatabase(addresses_expr, max_addresses, 3306);
             }
 
@@ -109,9 +112,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
             const auto & settings = global_context->getSettingsRef();
             if (!mysql_settings.isChanged("connect_timeout"))
-                mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
+                mysql_settings.connect_timeout = settings[external_storage_connect_timeout_sec];
             if (!mysql_settings.isChanged("read_write_timeout"))
-                mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+                mysql_settings.read_write_timeout = settings[external_storage_rw_timeout_sec];
 
             for (const auto & setting : mysql_settings.all())
             {

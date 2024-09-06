@@ -34,6 +34,7 @@
 
 namespace DB
 {
+extern const SettingsUInt64 max_insert_block_size;
 
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
@@ -389,9 +390,9 @@ void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, 
 
 size_t StorageRabbitMQ::getMaxBlockSize() const
 {
-     return rabbitmq_settings->rabbitmq_max_block_size.changed
-         ? rabbitmq_settings->rabbitmq_max_block_size.value
-         : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+    return rabbitmq_settings->rabbitmq_max_block_size.changed
+        ? rabbitmq_settings->rabbitmq_max_block_size.value
+        : (getContext()->getSettingsRef()[max_insert_block_size].value / num_consumers);
 }
 
 

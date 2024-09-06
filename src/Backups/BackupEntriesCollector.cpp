@@ -35,6 +35,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+extern const SettingsUInt64 backup_restore_keeper_max_retries;
+extern const SettingsSeconds lock_acquire_timeout;
 
 namespace ErrorCodes
 {

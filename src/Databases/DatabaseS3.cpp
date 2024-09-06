@@ -26,6 +26,8 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "url",
@@ -192,7 +194,8 @@ ASTPtr DatabaseS3::getCreateDatabaseQuery() const
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[max_parser_depth], settings[max_parser_backtracks]);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {

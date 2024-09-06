@@ -39,6 +39,9 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+extern const SettingsUInt64 glob_expansion_max_elements;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
 
 namespace ErrorCodes
 {
@@ -181,8 +184,8 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         storage,
         table_storage_define,
         true,
-        static_cast<unsigned>(settings.max_parser_depth),
-        static_cast<unsigned>(settings.max_parser_backtracks),
+        static_cast<unsigned>(settings[max_parser_depth]),
+        static_cast<unsigned>(settings[max_parser_backtracks]),
         throw_on_error);
     return create_table_query;
 }
@@ -546,7 +549,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
 
             if (engine_name == "MySQL")
             {
-                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+                size_t max_addresses = args.context->getSettingsRef()[glob_expansion_max_elements];
                 configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
             }
             else

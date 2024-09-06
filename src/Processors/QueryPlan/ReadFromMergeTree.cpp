@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -8,6 +9,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -16,6 +19,7 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -24,10 +28,11 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyVectorSimilarity.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
@@ -35,17 +40,9 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <base/sort.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
-#include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <algorithm>
 #include <iterator>
@@ -55,6 +52,50 @@
 #include "config.h"
 
 using namespace DB;
+
+extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
+extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
+extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
+extern const SettingsBool apply_deleted_mask;
+extern const SettingsBool checksum_on_read;
+extern const SettingsBool compile_sort_description;
+extern const SettingsBool do_not_merge_across_partitions_select_final;
+extern const SettingsBool enable_multiple_prewhere_read_steps;
+extern const SettingsBool enable_vertical_final;
+extern const SettingsBool force_aggregate_partitions_independently;
+extern const SettingsBool force_primary_key;
+extern const SettingsString ignore_data_skipping_indices;
+extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
+extern const SettingsUInt64 max_rows_to_read;
+extern const SettingsUInt64 max_rows_to_read_leaf;
+extern const SettingsMaxThreads max_final_threads;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
+extern const SettingsFloat max_streams_to_max_threads_ratio;
+extern const SettingsUInt64 max_streams_for_merge_tree_reading;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsUInt64 merge_tree_max_bytes_to_use_cache;
+extern const SettingsUInt64 merge_tree_max_rows_to_use_cache;
+extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
+extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
+extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read;
+extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read;
+extern const SettingsUInt64 merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
+extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
+extern const SettingsUInt64 min_count_to_compile_sort_description;
+extern const SettingsOverflowMode read_overflow_mode;
+extern const SettingsOverflowMode read_overflow_mode_leaf;
+extern const SettingsUInt64 parallel_replicas_count;
+extern const SettingsFloat parallel_replicas_single_task_marks_count_multiplier;
+extern const SettingsUInt64 preferred_block_size_bytes;
+extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
+extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
+extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
+extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
+extern const SettingsBool use_skip_indexes;
+extern const SettingsBool use_skip_indexes_if_final;
+extern const SettingsBool use_uncompressed_cache;
 
 namespace
 {
@@ -144,16 +185,15 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
     const ContextPtr & context, const SelectQueryInfo & query_info)
 {
     const auto & settings = context->getSettingsRef();
-    return
-    {
+    return {
         .read_settings = context->getReadSettings(),
         .save_marks_in_cache = true,
-        .checksum_on_read = settings.checksum_on_read,
+        .checksum_on_read = settings[checksum_on_read],
         .read_in_order = query_info.input_order_info != nullptr,
-        .apply_deleted_mask = settings.apply_deleted_mask,
-        .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
-            && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
-        .enable_multiple_prewhere_read_steps = settings.enable_multiple_prewhere_read_steps,
+        .apply_deleted_mask = settings[apply_deleted_mask],
+        .use_asynchronous_read_from_pool = settings[allow_asynchronous_read_from_io_pool_for_merge_tree]
+            && (settings[max_streams_to_max_threads_ratio] > 1 || settings[max_streams_for_merge_tree_reading] > 1),
+        .enable_multiple_prewhere_read_steps = settings[enable_multiple_prewhere_read_steps],
     };
 }
 
@@ -169,10 +209,15 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 
 /// build sort description for output stream
 static void updateSortDescriptionForOutputStream(
-    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
+    DataStream & output_stream,
+    const Names & sorting_key_columns,
+    const int sort_direction,
+    InputOrderInfoPtr input_order_info,
+    PrewhereInfoPtr prewhere_info,
+    bool enable_vertical_final_v)
 {
     /// Updating sort description can be done after PREWHERE actions are applied to the header.
-    /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
+    /// After PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
     /// To mitigate it, we're trying to build original header and use it to deduce sorting description
     /// TODO: this approach is fragile, it'd be more robust to update sorting description for the whole plan during plan optimization
     Block original_header = output_stream.header.cloneEmpty();
@@ -215,7 +260,7 @@ static void updateSortDescriptionForOutputStream(
 
     if (!sort_description.empty())
     {
-        if (input_order_info && !enable_vertical_final)
+        if (input_order_info && !enable_vertical_final_v)
         {
             output_stream.sort_scope = DataStream::SortScope::Stream;
             const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
@@ -239,16 +284,12 @@ void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, c
     /// because we can stop reading at any time.
 
     SizeLimits limits;
-    if (settings.read_overflow_mode == OverflowMode::THROW
-        && settings.max_rows_to_read
-        && !query_info_.input_order_info)
-        limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+    if (settings[read_overflow_mode] == OverflowMode::THROW && settings[max_rows_to_read] && !query_info_.input_order_info)
+        limits = SizeLimits(settings[max_rows_to_read], 0, settings[read_overflow_mode]);
 
     SizeLimits leaf_limits;
-    if (settings.read_overflow_mode_leaf == OverflowMode::THROW
-        && settings.max_rows_to_read_leaf
-        && !query_info_.input_order_info)
-        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+    if (settings[read_overflow_mode_leaf] == OverflowMode::THROW && settings[max_rows_to_read_leaf] && !query_info_.input_order_info)
+        leaf_limits = SizeLimits(settings[max_rows_to_read_leaf], 0, settings[read_overflow_mode_leaf]);
 
     if (limits.max_rows || leaf_limits.max_rows)
     {
@@ -289,8 +330,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
     , block_size{
         .max_block_size_rows = max_block_size_,
-        .preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes,
-        .preferred_max_column_in_block_size_bytes = context->getSettingsRef().preferred_max_column_in_block_size_bytes}
+        .preferred_block_size_bytes = context->getSettingsRef()[preferred_block_size_bytes],
+        .preferred_max_column_in_block_size_bytes = context->getSettingsRef()[preferred_max_column_in_block_size_bytes]}
     , requested_num_streams(num_streams_)
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , log(std::move(log_))
@@ -305,26 +346,27 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     const auto & settings = context->getSettingsRef();
-    if (settings.max_streams_for_merge_tree_reading)
+    if (settings[max_streams_for_merge_tree_reading])
     {
-        if (settings.allow_asynchronous_read_from_io_pool_for_merge_tree)
+        if (settings[allow_asynchronous_read_from_io_pool_for_merge_tree])
         {
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
-            output_streams_limit = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+            output_streams_limit = std::min<size_t>(requested_num_streams, settings[max_streams_for_merge_tree_reading]);
             /// We intentionally set `max_streams` to 1 in InterpreterSelectQuery in case of small limit.
             /// Changing it here to `max_streams_for_merge_tree_reading` proven itself as a threat for performance.
             if (requested_num_streams != 1)
-                requested_num_streams = std::max<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+                requested_num_streams = std::max<size_t>(requested_num_streams, settings[max_streams_for_merge_tree_reading]);
         }
         else
             /// Just limit requested_num_streams otherwise.
-            requested_num_streams = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+            requested_num_streams = std::min<size_t>(requested_num_streams, settings[max_streams_for_merge_tree_reading]);
     }
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
-    enable_vertical_final = query_info.isFinal() && context->getSettingsRef().enable_vertical_final && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+    enable_vertical_final_v = query_info.isFinal() && context->getSettingsRef()[enable_vertical_final]
+        && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
     updateSortDescriptionForOutputStream(
         *output_stream,
@@ -332,7 +374,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         getSortDirection(),
         query_info.input_order_info,
         prewhere_info,
-        enable_vertical_final);
+        enable_vertical_final_v);
 }
 
 
@@ -352,11 +394,11 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+    auto multiplier = context->getSettingsRef()[parallel_replicas_single_task_marks_count_multiplier];
     const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
     if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
     {
-        /// limit min marks to read in case it's big, happened in test since due to settings randomzation
+        /// limit min marks to read in case it's big, happened in test since due to settings randomization
         pool_settings.min_marks_for_concurrent_read = min_marks_for_concurrent_read_limit;
         multiplier = 1.0f;
     }
@@ -435,12 +477,10 @@ Pipe ReadFromMergeTree::readFromPool(
 
     MergeTreeReadPoolPtr pool;
 
-    bool allow_prefetched_remote = all_parts_are_remote
-        && settings.allow_prefetched_read_pool_for_remote_filesystem
+    bool allow_prefetched_remote = all_parts_are_remote && settings[allow_prefetched_read_pool_for_remote_filesystem]
         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method);
 
-    bool allow_prefetched_local = all_parts_are_local
-        && settings.allow_prefetched_read_pool_for_local_filesystem
+    bool allow_prefetched_local = all_parts_are_local && settings[allow_prefetched_read_pool_for_local_filesystem]
         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_method);
 
     /** Do not use prefetched read pool if query is trivial limit query.
@@ -529,7 +569,7 @@ Pipe ReadFromMergeTree::readInOrder(
             .number_of_current_replica = client_info.number_of_current_replica,
         };
 
-        auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+        auto multiplier = context->getSettingsRef()[parallel_replicas_single_task_marks_count_multiplier];
         const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
         if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
         {
@@ -645,14 +685,13 @@ Pipe ReadFromMergeTree::read(
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
-    PoolSettings pool_settings
-    {
+    PoolSettings pool_settings{
         .threads = max_streams,
         .sum_marks = sum_marks,
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
-        .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+        .preferred_block_size_bytes = settings[preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
-        .use_const_size_tasks_for_remote_reading = settings.merge_tree_use_const_size_tasks_for_remote_reading,
+        .use_const_size_tasks_for_remote_reading = settings[merge_tree_use_const_size_tasks_for_remote_reading],
     };
 
     if (read_type == ReadType::ParallelReplicas)
@@ -685,7 +724,7 @@ struct PartRangesReadInfo
     size_t index_granularity_bytes = 0;
     size_t max_marks_to_use_cache = 0;
     size_t min_marks_for_concurrent_read = 0;
-    bool use_uncompressed_cache = false;
+    bool use_uncompressed_cache_v = false;
 
     PartRangesReadInfo(
         const RangesInDataParts & parts,
@@ -709,8 +748,8 @@ struct PartRangesReadInfo
             index_granularity_bytes = data_settings.index_granularity_bytes;
 
         max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
-            settings.merge_tree_max_rows_to_use_cache,
-            settings.merge_tree_max_bytes_to_use_cache,
+            settings[merge_tree_max_rows_to_use_cache],
+            settings[merge_tree_max_bytes_to_use_cache],
             data_settings.index_granularity,
             index_granularity_bytes);
 
@@ -720,22 +759,22 @@ struct PartRangesReadInfo
         size_t min_bytes_for_concurrent_read;
         if (all_parts_on_remote_disk)
         {
-            min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
-            min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
+            min_rows_for_concurrent_read = settings[merge_tree_min_rows_for_concurrent_read_for_remote_filesystem];
+            min_bytes_for_concurrent_read = settings[merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem];
         }
         else
         {
-            min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read;
-            min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read;
+            min_rows_for_concurrent_read = settings[merge_tree_min_rows_for_concurrent_read];
+            min_bytes_for_concurrent_read = settings[merge_tree_min_bytes_for_concurrent_read];
         }
 
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
             data_settings.index_granularity, index_granularity_bytes, sum_marks);
 
-        use_uncompressed_cache = settings.use_uncompressed_cache;
+        use_uncompressed_cache_v = settings[use_uncompressed_cache];
         if (sum_marks > max_marks_to_use_cache)
-            use_uncompressed_cache = false;
+            use_uncompressed_cache_v = false;
     }
 };
 
@@ -784,7 +823,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
 
-    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = settings.merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
+    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
+        = settings[merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
     std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
 
     if (read_type != ReadType::ParallelReplicas &&
@@ -816,7 +856,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
                 ReadType::InOrder,
                 1 /* num_streams */,
                 0 /* min_marks_for_concurrent_read */,
-                info.use_uncompressed_cache);
+                info.use_uncompressed_cache_v);
         };
 
         auto sorting_expr = storage_snapshot->metadata->getSortingKey().expression;
@@ -832,12 +872,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
             true /*split_intersecting_parts_ranges_into_layers*/);
 
         auto merging_pipes = std::move(split_ranges_result.merging_pipes);
-        auto non_intersecting_parts_ranges_read_pipe = read(std::move(split_ranges_result.non_intersecting_parts_ranges),
+        auto non_intersecting_parts_ranges_read_pipe = read(
+            std::move(split_ranges_result.non_intersecting_parts_ranges),
             column_names,
             read_type,
             num_streams,
             info.min_marks_for_concurrent_read,
-            info.use_uncompressed_cache);
+            info.use_uncompressed_cache_v);
 
         if (merging_pipes.empty())
             return non_intersecting_parts_ranges_read_pipe;
@@ -860,12 +901,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         return Pipe::unitePipes(std::move(pipes));
     }
 
-    return read(std::move(parts_with_ranges),
+    return read(
+        std::move(parts_with_ranges),
         column_names,
         read_type,
         num_streams,
         info.min_marks_for_concurrent_read,
-        info.use_uncompressed_cache);
+        info.use_uncompressed_cache_v);
 }
 
 static ActionsDAG createProjection(const Block & header)
@@ -954,17 +996,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     };
 
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
-    bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
+    bool need_preliminary_merge = (parts_with_ranges.size() > settings[read_in_order_two_level_merge_threshold]);
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
-    PoolSettings pool_settings
-    {
+    PoolSettings pool_settings{
         .threads = num_streams,
         .sum_marks = parts_with_ranges.getMarksCountAllParts(),
         .min_marks_for_concurrent_read = info.min_marks_for_concurrent_read,
-        .preferred_block_size_bytes = settings.preferred_block_size_bytes,
-        .use_uncompressed_cache = info.use_uncompressed_cache,
+        .preferred_block_size_bytes = settings[preferred_block_size_bytes],
+        .use_uncompressed_cache = info.use_uncompressed_cache_v,
     };
 
     Pipes pipes;
@@ -1063,8 +1104,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
 
         SortDescription sort_description;
-        sort_description.compile_sort_description = settings.compile_sort_description;
-        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+        sort_description.compile_sort_description = settings[compile_sort_description];
+        sort_description.min_count_to_compile_sort_description = settings[min_count_to_compile_sort_description];
 
         for (size_t j = 0; j < prefix_size; ++j)
             sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
@@ -1112,7 +1153,7 @@ static void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
     size_t max_block_size_rows,
-    bool enable_vertical_final)
+    bool enable_vertical_final_v)
 {
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1140,8 +1181,18 @@ static void addMergingFinal(
                             sort_description, max_block_size_rows, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Replacing:
-                return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final);
+                return std::make_shared<ReplacingSortedTransform>(
+                    header,
+                    num_outputs,
+                    sort_description,
+                    merging_params.is_deleted_column,
+                    merging_params.version_column,
+                    max_block_size_rows,
+                    /*max_block_size_bytes=*/0,
+                    /*out_row_sources_buf_*/ nullptr,
+                    /*use_average_block_sizes*/ false,
+                    /*cleanup*/ !merging_params.is_deleted_column.empty(),
+                    enable_vertical_final_v);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1154,7 +1205,7 @@ static void addMergingFinal(
     };
 
     pipe.addTransform(get_merging_processor());
-    if (enable_vertical_final)
+    if (enable_vertical_final_v)
         pipe.addSimpleTransform([](const Block & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
 }
@@ -1164,8 +1215,8 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     const auto & settings = context->getSettingsRef();
 
     /// If setting do_not_merge_across_partitions_select_final is set always prefer it
-    if (settings.do_not_merge_across_partitions_select_final.changed)
-        return settings.do_not_merge_across_partitions_select_final;
+    if (settings[do_not_merge_across_partitions_select_final].changed)
+        return settings[do_not_merge_across_partitions_select_final];
 
     if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
         return false;
@@ -1200,7 +1251,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
     assert(num_streams == requested_num_streams);
-    num_streams = std::min<size_t>(num_streams, settings.max_final_threads);
+    num_streams = std::min<size_t>(num_streams, settings[max_final_threads]);
 
     /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
@@ -1281,13 +1332,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         ReadType::InOrder,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
-                        info.use_uncompressed_cache);
+                        info.use_uncompressed_cache_v);
                 };
 
                 /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
                 /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
-                bool split_parts_ranges_into_intersecting_and_non_intersecting_final = settings.split_parts_ranges_into_intersecting_and_non_intersecting_final &&
-                    data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
+                bool split_parts_ranges_into_intersecting_and_non_intersecting_final_v
+                    = settings[split_parts_ranges_into_intersecting_and_non_intersecting_final]
+                    && data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
 
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     storage_snapshot->metadata->getPrimaryKey(),
@@ -1296,8 +1348,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     num_streams,
                     context,
                     std::move(in_order_reading_step_getter),
-                    split_parts_ranges_into_intersecting_and_non_intersecting_final,
-                    settings.split_intersecting_parts_ranges_into_layers_final);
+                    split_parts_ranges_into_intersecting_and_non_intersecting_final_v,
+                    settings[split_intersecting_parts_ranges_into_layers_final]);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
@@ -1307,8 +1359,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             }
             else
             {
-                pipes.emplace_back(read(
-                    std::move(new_parts), column_names, ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache));
+                pipes.emplace_back(
+                    read(std::move(new_parts), column_names, ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache_v));
 
                 pipes.back().addSimpleTransform([sorting_expr](const Block & header)
                                                 { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
@@ -1324,8 +1376,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         Names sort_columns = storage_snapshot->metadata->getSortingKeyColumns();
         SortDescription sort_description;
-        sort_description.compile_sort_description = settings.compile_sort_description;
-        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+        sort_description.compile_sort_description = settings[compile_sort_description];
+        sort_description.min_count_to_compile_sort_description = settings[min_count_to_compile_sort_description];
 
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
@@ -1342,7 +1394,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 data.merging_params,
                 partition_key_columns,
                 block_size.max_block_size_rows,
-                enable_vertical_final);
+                enable_vertical_final_v);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -1436,10 +1488,10 @@ static void buildIndexes(
         = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_actions_dag, context);
     MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
 
-    indexes->use_skip_indexes = settings.use_skip_indexes;
+    indexes->use_skip_indexes = settings[use_skip_indexes];
     bool final = query_info.isFinal();
 
-    if (final && !settings.use_skip_indexes_if_final)
+    if (final && !settings[use_skip_indexes_if_final])
         indexes->use_skip_indexes = false;
 
     if (!indexes->use_skip_indexes)
@@ -1447,11 +1499,11 @@ static void buildIndexes(
 
     std::unordered_set<std::string> ignored_index_names;
 
-    if (settings.ignore_data_skipping_indices.changed)
+    if (settings[ignore_data_skipping_indices].changed)
     {
-        const auto & indices = settings.ignore_data_skipping_indices.toString();
-        Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
-        IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
+        const auto & indices = settings[ignore_data_skipping_indices].toString();
+        Tokens tokens(indices.data(), indices.data() + indices.size(), settings[max_query_size]);
+        IParser::Pos pos(tokens, static_cast<unsigned>(settings[max_parser_depth]), static_cast<unsigned>(settings[max_parser_backtracks]));
         Expected expected;
 
         /// Use an unordered list rather than string vector
@@ -1593,7 +1645,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     if (indexes->key_condition.alwaysUnknownOrTrue())
     {
-        if (settings.force_primary_key)
+        if (settings[force_primary_key])
         {
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
@@ -1739,7 +1791,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
     /// Let prefer in-order optimization over vertical FINAL for now
-    enable_vertical_final = false;
+    enable_vertical_final_v = false;
 
     return true;
 }
@@ -1764,7 +1816,7 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         getSortDirection(),
         query_info.input_order_info,
         prewhere_info,
-        enable_vertical_final);
+        enable_vertical_final_v);
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -1780,7 +1832,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     const auto & settings = context->getSettingsRef();
 
     const auto partitions_cnt = countPartitions(prepared_parts);
-    if (!settings.force_aggregate_partitions_independently && (partitions_cnt == 1 || partitions_cnt < settings.max_threads / 2))
+    if (!settings[force_aggregate_partitions_independently] && (partitions_cnt == 1 || partitions_cnt < settings[max_threads] / 2))
     {
         LOG_TRACE(
             log,
@@ -1790,8 +1842,8 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
         return false;
     }
 
-    if (!settings.force_aggregate_partitions_independently
-        && (partitions_cnt > settings.max_number_of_partitions_for_independent_aggregation))
+    if (!settings[force_aggregate_partitions_independently]
+        && (partitions_cnt > settings[max_number_of_partitions_for_independent_aggregation]))
     {
         LOG_TRACE(
             log,
@@ -1799,11 +1851,11 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
             "max_number_of_partitions_for_independent_aggregation (current value is {}) or set "
             "force_aggregate_partitions_independently to suppress this check",
             partitions_cnt,
-            settings.max_number_of_partitions_for_independent_aggregation);
+            settings[max_number_of_partitions_for_independent_aggregation]);
         return false;
     }
 
-    if (!settings.force_aggregate_partitions_independently)
+    if (!settings[force_aggregate_partitions_independently])
     {
         std::unordered_map<String, size_t> partition_rows;
         for (const auto & part : prepared_parts)
@@ -1819,7 +1871,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
         /// Merging shouldn't take more time than preaggregation in normal cases. And exec time is proportional to the amount of data.
         /// We assume that exec time of independent aggr is proportional to the maximum of sizes and
         /// exec time of ordinary aggr is proportional to sum of sizes divided by number of threads and multiplied by two (preaggregation + merging).
-        const size_t avg_rows_in_partition = sum_rows / settings.max_threads;
+        const size_t avg_rows_in_partition = sum_rows / settings[max_threads];
         if (max_rows > avg_rows_in_partition * 2)
         {
             LOG_TRACE(
@@ -1843,7 +1895,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 
 bool ReadFromMergeTree::isQueryWithSampling() const
 {
-    if (context->getSettingsRef().parallel_replicas_count > 1 && data.supportsSampling())
+    if (context->getSettingsRef()[parallel_replicas_count] > 1 && data.supportsSampling())
         return true;
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();

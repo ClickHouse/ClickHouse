@@ -20,6 +20,7 @@
 
 namespace DB
 {
+extern const SettingsBool dictionary_use_async_executor;
 
 namespace ErrorCodes
 {
@@ -414,7 +415,7 @@ void DirectDictionary<dictionary_key_type>::applySettings(const Settings & setti
     if (const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get()))
     {
         /// Only applicable for CLICKHOUSE dictionary source.
-        use_async_executor = settings.dictionary_use_async_executor && clickhouse_source->isLocal();
+        use_async_executor = settings[dictionary_use_async_executor] && clickhouse_source->isLocal();
     }
 }
 

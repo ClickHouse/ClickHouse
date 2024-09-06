@@ -35,6 +35,9 @@ FORMAT_SETTINGS_SUPPORTED_TYPES(FormatFactorySettings, DECLARE_SETTING_TRAIT)
 
 struct FormatFactorySettings
 {
+    FormatFactorySettings();
+    ~FormatFactorySettings();
+
     FORMAT_SETTINGS_SUPPORTED_TYPES(FormatFactorySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     /// General API as needed

@@ -267,7 +267,7 @@ private:
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
-    bool enable_vertical_final = false;
+    bool enable_vertical_final_v = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
 };
 

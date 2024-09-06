@@ -27,6 +27,11 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Parsers/queryToString.h>
 
+namespace DB
+{
+extern const SettingsString preferred_optimize_projection_name;
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -513,7 +518,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             agg_projections.begin(),
             agg_projections.end(),
             [&](const auto * projection)
-            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+            { return projection->name == context->getSettingsRef()[preferred_optimize_projection_name].value; });
 
         if (it != agg_projections.end())
         {

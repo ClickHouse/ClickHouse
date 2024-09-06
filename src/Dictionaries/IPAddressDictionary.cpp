@@ -29,6 +29,8 @@
 
 namespace DB
 {
+extern const SettingsBool dictionary_use_async_executor;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -1187,7 +1189,8 @@ void registerDictionaryTrie(DictionaryFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+        bool use_async_executor
+            = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[dictionary_use_async_executor];
 
         IPAddressDictionary::Configuration configuration{
             .dict_lifetime = dict_lifetime,
