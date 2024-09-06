@@ -821,19 +821,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
-
-            /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
-            if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
-                create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
-
-            if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
-                create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
-
-            if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
-                create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
-
-            if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
-                create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
         }
         else
         {
