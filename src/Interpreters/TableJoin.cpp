@@ -118,7 +118,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
     , sort_right_perkey_rows_threshold(settings.join_to_sort_perkey_rows_threshold)
     , sort_right_table_rows_threshold(settings.join_to_sort_table_rows_threshold)
-    , allow_join_sorting(settings.allow_experimental_inner_join_right_table_sorting)
+    , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
     , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
