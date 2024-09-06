@@ -1,4 +1,3 @@
-
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
