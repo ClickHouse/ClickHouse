@@ -255,6 +255,18 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
+## datetime64_trim_suffix_zeros {#datetime64_trim_suffix_zeros}
+
+Dynamically trim the trailing zeros of `datetime64` values to adjust the output scale to `(0, 3, 6)`, corresponding to `seconds`, `milliseconds`, and `microseconds`.
+
+See changes in following examples:
+
+- 2012-01-01 00:11:22.000000 -> 2012-01-01 00:11:22
+- 2012-01-01 00:11:22.120000 -> 2012-01-01 00:11:22.120
+- 2012-01-01 00:11:22.123400 -> 2012-01-01 00:11:22.123400
+
+Default value: `false`.
+
 ## interval_output_format {#interval_output_format}
 
 Allows choosing different output formats of the text representation of interval types.

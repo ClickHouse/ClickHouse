@@ -76,7 +76,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
             {"output_format_always_quote_identifiers", false, false, "New setting."},
-            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."}
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
+            {"datetime64_trim_suffix_zeros", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
         }
     },
     {"24.8",
