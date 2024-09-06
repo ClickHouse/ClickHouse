@@ -2693,7 +2693,7 @@ void KeeperStorage<Container>::preprocessRequest(
                     }
                 );
 
-                new_deltas.emplace_back(ephemeral_path, transaction.zxid, RemoveNodeDelta{.ephemeral_owner = session_id});
+                new_deltas.emplace_back(getEncodedKey<use_rocksdb>(ephemeral_path), transaction.zxid, RemoveNodeDelta{.ephemeral_owner = session_id});
             }
 
             ephemerals.erase(session_ephemerals);
