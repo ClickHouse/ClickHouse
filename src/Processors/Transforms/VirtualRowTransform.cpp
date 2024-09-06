@@ -10,11 +10,12 @@ namespace ErrorCodes
 }
 
 VirtualRowTransform::VirtualRowTransform(const Block & header)
-    : IInflatingTransform(header, header)
+    : IProcessor({header}, {header})
+    , input(inputs.front()), output(outputs.front())
 {
 }
 
-IInflatingTransform::Status VirtualRowTransform::prepare()
+VirtualRowTransform::Status VirtualRowTransform::prepare()
 {
     /// Check can output.
 
@@ -46,13 +47,8 @@ IInflatingTransform::Status VirtualRowTransform::prepare()
     {
         if (input.isFinished())
         {
-            if (is_finished)
-            {
-                output.finish();
-                return Status::Finished;
-            }
-            is_finished = true;
-            return Status::Ready;
+            output.finish();
+            return Status::Finished;
         }
 
         input.setNeeded();
@@ -67,6 +63,28 @@ IInflatingTransform::Status VirtualRowTransform::prepare()
 
     /// Now transform.
     return Status::Ready;
+}
+
+void VirtualRowTransform::work()
+{
+    if (can_generate)
+    {
+        if (generated)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "VirtualRowTransform cannot consume chunk because it already was generated");
+
+        current_chunk = generate();
+        generated = true;
+        can_generate = false;
+    }
+    else
+    {
+        if (!has_input)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "VirtualRowTransform cannot consume chunk because it wasn't read");
+
+        consume(std::move(current_chunk));
+        has_input = false;
+        can_generate = true;
+    }
 }
 
 void VirtualRowTransform::consume(Chunk chunk)
@@ -89,11 +107,6 @@ Chunk VirtualRowTransform::generate()
     Chunk result;
     result.swap(temp_chunk);
     return result;
-}
-
-bool VirtualRowTransform::canGenerate()
-{
-    return !temp_chunk.empty();
 }
 
 }

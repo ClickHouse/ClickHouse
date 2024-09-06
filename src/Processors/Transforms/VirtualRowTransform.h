@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class VirtualRowTransform : public IInflatingTransform
+class VirtualRowTransform : public IProcessor
 {
 public:
     explicit VirtualRowTransform(const Block & header);
@@ -14,13 +14,20 @@ public:
     String getName() const override { return "VirtualRowTransform"; }
 
     Status prepare() override;
-
-protected:
-    void consume(Chunk chunk) override;
-    bool canGenerate() override;
-    Chunk generate() override;
+    void work() override;
 
 private:
+    void consume(Chunk chunk);
+    Chunk generate();
+
+    InputPort & input;
+    OutputPort & output;
+
+    Chunk current_chunk;
+    bool has_input = false;
+    bool generated = false;
+    bool can_generate = false;
+
     bool is_first = false;
     Chunk temp_chunk;
 };
