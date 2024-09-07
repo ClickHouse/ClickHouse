@@ -22,7 +22,7 @@ overlay(s, replace, offset[, length])
 
 - `s`: A string type [String](../data-types/string.md).
 - `replace`: A string type [String](../data-types/string.md).
-- `offset`: An integer type [Int](../data-types/int-uint.md). If `offset` is negative, it is counted from the end of the string `s`.
+- `offset`: An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the string `s`.
 - `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of bytes removed from `s` equals the length of `replace`; otherwise `length` bytes are removed.
 
 **Returned value**
