@@ -16,6 +16,7 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['QueryConditionCacheHits'], ProfileEvents['QueryConditionCacheMisses'], toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
   AND query IN ('SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;',
                 'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;')
 order by event_time_microseconds;
@@ -31,6 +32,7 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['QueryConditionCacheHits'], ProfileEvents['QueryConditionCacheMisses'], toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
   AND query IN ('SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere=false;',
                'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere=false;');
 
