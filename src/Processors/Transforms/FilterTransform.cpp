@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
 static void replaceFilterToConstant(Block & block, const String & filter_column_name)
