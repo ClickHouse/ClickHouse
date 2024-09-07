@@ -2609,8 +2609,15 @@ void KeeperStorage<Container>::preprocessRequest(
         else
         {
             if (last_zxid == new_last_zxid && digest && checkDigest(*digest, current_digest))
-                // we found the preprocessed request with the same ZXID, we can skip it
+            {
+                auto & last_transaction = uncommitted_transactions.back();
+                // we found the preprocessed request with the same ZXID, we can get log_idx and skip preprocessing it
+                chassert(last_transaction.zxid == new_last_zxid && log_idx != 0);
+                /// initially leader preprocessed without knowing the log idx
+                /// on the second call we have that information and can set the log idx for the correct transaction
+                last_transaction.log_idx = log_idx;
                 return;
+            }
 
             if (new_last_zxid <= last_zxid)
                 throw Exception(
