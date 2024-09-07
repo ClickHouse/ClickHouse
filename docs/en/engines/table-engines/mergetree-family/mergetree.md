@@ -989,7 +989,11 @@ ALTER TABLE tab DROP STATISTICS a;
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
 They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
-#### Available Types of Column Statistics {#available-types-of-column-statistics}
+### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+- `MinMax`
+
+    The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
 
 - `TDigest`
 
@@ -1002,6 +1006,27 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 - `count_min`
 
     [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+
+
+### Supported Data Types {#supported-data-types}
+
+|           | (U)Int* | Float* | Decimal(*) | Date* | Boolean | Enum* | (Fixed)String    |
+|-----------|---------|--------|------------|-------|---------|-------|------------------|
+| count_min | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✔                |
+| MinMax    | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✗                |
+| TDigest   | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✗                |
+| Uniq      | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✔                |
+
+
+### Supported Operations {#supported-operations}
+
+|           | Equality filters (==) | Range filters (>, >=, <, <=) |
+|-----------|-----------------------|------------------------------|
+| count_min | ✔                     | ✗                            |
+| MinMax    | ✗                     | ✔                            |
+| TDigest   | ✗                     | ✔                            |
+| Uniq      | ✔                     | ✗                            |
+
 
 ## Column-level Settings {#column-level-settings}
 
