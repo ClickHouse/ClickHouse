@@ -52,7 +52,7 @@ static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 static NO_INLINE void insertManyFrom(IColumn & dst, const IColumn & src)
 #else
 static NO_INLINE void doInsertManyFrom(IColumn & dst, const IColumn & src)

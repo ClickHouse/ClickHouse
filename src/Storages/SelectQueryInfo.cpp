@@ -18,7 +18,7 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
-        const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
         const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
         for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
         {

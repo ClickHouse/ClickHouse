@@ -7,7 +7,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/SipHash.h>
-#include <Common/typeid_cast.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -19,9 +18,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
-#include <Core/QualifiedTableName.h>
-
-#include <boost/algorithm/string.hpp>
 
 
 using namespace std::literals;
@@ -306,6 +302,8 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, const IAST::FormatSettings
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
+    if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
+        frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
@@ -329,7 +327,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (arguments && !parameters && nulls_action == NullsAction::EMPTY)
+    if (arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -350,19 +348,23 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
+                const auto * subquery = arguments->children[0]->as<ASTSubquery>();
                 bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
-                // do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
+                /// Do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
                 bool literal_need_parens = literal && !is_tuple;
 
-                // negate always requires parentheses, otherwise -(-1) will be printed as --1
-                bool inside_parens = name == "negate" && (literal_need_parens || (function && function->name == "negate"));
+                /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
+                /// Also extra parentheses are needed for subqueries, because NOT can be parsed as a function:
+                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
+                bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
+                    || (subquery && name == "not");
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
                 bool outside_parens = frame.need_parens && !inside_parens;
 
-                // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
+                /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
                     nested_need_parens.need_parens = false;
 
@@ -537,7 +539,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
-                        && lit_right->value.get<Int64>() >= 0)
+                        && lit_right->value.safeGet<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -649,6 +651,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
                     settings.ostr << "SETTINGS ";
+                nested_dont_need_parens.list_element_index = i;
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ']' << (settings.hilite ? hilite_none : "");
@@ -659,12 +662,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         {
             settings.ostr << (settings.hilite ? hilite_operator : "") << ((frame.need_parens && !alias.empty()) ? "tuple" : "") << '('
                           << (settings.hilite ? hilite_none : "");
+
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
                     settings.ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
                     settings.ostr << "SETTINGS ";
+                nested_dont_need_parens.list_element_index = i;
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
@@ -680,6 +685,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
                     settings.ostr << "SETTINGS ";
+                nested_dont_need_parens.list_element_index = i;
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");

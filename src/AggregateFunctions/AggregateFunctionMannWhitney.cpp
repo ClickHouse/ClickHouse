@@ -114,7 +114,7 @@ private:
             {
                 if (ind < first.size())
                     return first[ind];
-                return second[ind % first.size()];
+                return second[ind - first.size()];
             }
 
             size_t size() const
@@ -152,7 +152,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
-        const auto & param = params[0].get<String>();
+        const auto & param = params[0].safeGet<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")
@@ -169,7 +169,7 @@ public:
         if (params[1].getType() != Field::Types::UInt64)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a UInt64", getName());
 
-        continuity_correction = static_cast<bool>(params[1].get<UInt64>());
+        continuity_correction = static_cast<bool>(params[1].safeGet<UInt64>());
     }
 
     String getName() const override

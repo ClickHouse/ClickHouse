@@ -93,7 +93,7 @@ StoragePtr TableFunctionHive::executeImpl(
     ColumnsDescription /*cached_columns_*/,
     bool /*is_insert_query*/) const
 {
-    const Settings & settings = context_->getSettings();
+    const Settings & settings = context_->getSettingsRef();
     ParserExpression partition_by_parser;
     ASTPtr partition_by_ast = parseQuery(
         partition_by_parser,

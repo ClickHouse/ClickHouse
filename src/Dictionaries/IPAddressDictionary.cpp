@@ -613,14 +613,14 @@ void IPAddressDictionary::calculateBytesAllocated()
 template <typename T>
 void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<T>());
+    attribute.null_values = null_value.isNull() ? T{} : T(null_value.safeGet<T>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
 template <>
 void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.isNull() ? String() : null_value.get<String>();
+    attribute.null_values = null_value.isNull() ? String() : null_value.safeGet<String>();
     attribute.maps.emplace<ContainerType<StringRef>>();
     attribute.string_arena = std::make_unique<Arena>();
 }
@@ -976,13 +976,13 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            const auto & string = value.get<String>();
+            const auto & string = value.safeGet<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
         }
         else
         {
-            setAttributeValueImpl<AttributeType>(attribute, static_cast<AttributeType>(value.get<AttributeType>()));
+            setAttributeValueImpl<AttributeType>(attribute, static_cast<AttributeType>(value.safeGet<AttributeType>()));
         }
     };
 

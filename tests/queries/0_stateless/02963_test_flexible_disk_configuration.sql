@@ -2,13 +2,33 @@
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
-settings disk=disk(name='test1', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test1/');
+settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test1/');
 
-drop table test;
+drop table if exists test;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/'); -- { serverError BAD_ARGUMENTS }
+
+drop table if exists test;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk=disk(name='02963_custom_disk'); -- { serverError BAD_ARGUMENTS }
+
+drop table if exists test;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk='02963_custom_disk'; -- { serverError BAD_ARGUMENTS }
+
+drop table if exists test;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk=disk(name='s3_disk_02963'); -- { serverError BAD_ARGUMENTS }
+
+drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk='s3_disk_02963';
 
-drop table test;
+drop table if exists test;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk=disk(name='s3_disk_02963', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/'); -- { serverError BAD_ARGUMENTS }
+
+drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='test1',
                    type = object_storage,
@@ -17,7 +37,7 @@ settings disk=disk(name='test1',
                    access_key_id = clickhouse,
                    secret_access_key = clickhouse);
 
-drop table test;
+drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='test2',
                    type = object_storage,
@@ -27,7 +47,7 @@ settings disk=disk(name='test2',
                    access_key_id = clickhouse,
                    secret_access_key = clickhouse);
 
-drop table test;
+drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='test3',
                    type = object_storage,
@@ -37,8 +57,8 @@ settings disk=disk(name='test3',
                    endpoint = 'http://localhost:11111/test/common/',
                    access_key_id = clickhouse,
                    secret_access_key = clickhouse);
-drop table test;
 
+drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='test4',
                    type = object_storage,
@@ -48,8 +68,8 @@ settings disk=disk(name='test4',
                    endpoint = 'http://localhost:11111/test/common/',
                    access_key_id = clickhouse,
                    secret_access_key = clickhouse);
-drop table test;
 
+drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='test5',
                    type = object_storage,

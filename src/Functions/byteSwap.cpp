@@ -10,6 +10,7 @@ extern const int NOT_IMPLEMENTED;
 
 namespace
 {
+
 template <typename T>
 requires std::is_integral_v<T>
 T byteSwap(T x)

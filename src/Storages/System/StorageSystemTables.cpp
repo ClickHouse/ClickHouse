@@ -125,7 +125,7 @@ ColumnPtr getFilteredTables(
         block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
 
     if (dag)
-        VirtualColumnUtils::filterBlockWithDAG(dag, block, context);
+        VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
 
     return block.getByPosition(0).column;
 }
@@ -484,7 +484,8 @@ protected:
                     if (ast_create && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
                         ast_create->uuid = UUIDHelpers::Nil;
-                        ast_create->to_inner_uuid = UUIDHelpers::Nil;
+                        if (ast_create->targets)
+                            ast_create->targets->resetInnerUUIDs();
                     }
 
                     if (columns_mask[src_index++])

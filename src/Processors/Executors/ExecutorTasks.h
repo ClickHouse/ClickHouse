@@ -28,7 +28,7 @@ class ExecutorTasks
     TaskQueue<ExecutingGraph::Node> task_queue;
 
     /// Queue which stores tasks where processors returned Async status after prepare.
-    /// If multiple threads are using, main thread will wait for async tasks.
+    /// If multiple threads are used, main thread will wait for async tasks.
     /// For single thread, will wait for async tasks only when task_queue is empty.
     PollingQueue async_task_queue;
 

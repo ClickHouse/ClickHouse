@@ -165,11 +165,21 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
+String IAST::formatWithPossiblyHidingSensitiveData(
+    size_t max_length,
+    bool one_line,
+    bool show_secrets,
+    bool print_pretty_type_names,
+    bool always_quote_identifiers,
+    IdentifierQuotingStyle identifier_quoting_style) const
 {
+
     WriteBufferFromOwnString buf;
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
+    settings.print_pretty_type_names = print_pretty_type_names;
+    settings.always_quote_identifiers = always_quote_identifiers;
+    settings.identifier_quoting_style = identifier_quoting_style;
     format(settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
@@ -242,6 +252,34 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
                 writeBackQuotedStringMySQL(name, ostr);
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);
+            break;
+        }
+    }
+}
+
+
+void IAST::FormatSettings::quoteIdentifier(const String & name) const
+{
+    switch (identifier_quoting_style)
+    {
+        case IdentifierQuotingStyle::None:
+        {
+            writeBackQuotedString(name, ostr);
+            break;
+        }
+        case IdentifierQuotingStyle::Backticks:
+        {
+            writeBackQuotedString(name, ostr);
+            break;
+        }
+        case IdentifierQuotingStyle::DoubleQuotes:
+        {
+            writeDoubleQuotedString(name, ostr);
+            break;
+        }
+        case IdentifierQuotingStyle::BackticksMySQL:
+        {
+            writeBackQuotedStringMySQL(name, ostr);
             break;
         }
     }

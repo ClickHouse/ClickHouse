@@ -119,23 +119,23 @@ using RangesWithStep = std::vector<RangeWithStep>;
 
 std::optional<RangeWithStep> steppedRangeFromRange(const Range & r, UInt64 step, UInt64 remainder)
 {
-    if ((r.right.get<UInt64>() == 0) && (!r.right_included))
+    if ((r.right.safeGet<UInt64>() == 0) && (!r.right_included))
         return std::nullopt;
-    UInt64 begin = (r.left.get<UInt64>() / step) * step;
+    UInt64 begin = (r.left.safeGet<UInt64>() / step) * step;
     if (begin > std::numeric_limits<UInt64>::max() - remainder)
         return std::nullopt;
     begin += remainder;
 
-    while ((r.left_included <= r.left.get<UInt64>()) && (begin <= r.left.get<UInt64>() - r.left_included))
+    while ((r.left_included <= r.left.safeGet<UInt64>()) && (begin <= r.left.safeGet<UInt64>() - r.left_included))
     {
         if (std::numeric_limits<UInt64>::max() - step < begin)
             return std::nullopt;
         begin += step;
     }
 
-    if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
+    if ((begin >= r.right_included) && (begin - r.right_included >= r.right.safeGet<UInt64>()))
         return std::nullopt;
-    UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
+    UInt64 right_edge_included = r.right.safeGet<UInt64>() - (1 - r.right_included);
     return std::optional{RangeWithStep{begin, step, static_cast<UInt128>(right_edge_included - begin) / step + 1}};
 }
 
@@ -459,7 +459,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     chassert(numbers_storage.step != UInt64{0});
 
     /// Build rpn of query filters
-    KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
+    KeyCondition condition(filter_actions_dag ? &*filter_actions_dag : nullptr, context, column_names, key_expression);
 
     if (condition.extractPlainRanges(ranges))
     {
@@ -596,12 +596,12 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             numbers_storage.step,
             step_between_chunks);
 
-        if (numbers_storage.limit && i == 0)
+        if (end && i == 0)
         {
-            auto rows_appr = itemCountInRange(numbers_storage.offset, *numbers_storage.limit, numbers_storage.step);
-            if (limit > 0 && limit < rows_appr)
-                rows_appr = query_info_limit;
-            source->addTotalRowsApprox(rows_appr);
+            UInt64 rows_approx = itemCountInRange(numbers_storage.offset, *end, numbers_storage.step);
+            if (limit > 0 && limit < rows_approx)
+                rows_approx = query_info_limit;
+            source->addTotalRowsApprox(rows_approx);
         }
 
         pipe.addSource(std::move(source));

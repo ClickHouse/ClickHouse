@@ -132,7 +132,7 @@ void ReadBufferIterator::setFormatName(const String & format_name)
     format = format_name;
 }
 
-String ReadBufferIterator::getLastFileName() const
+String ReadBufferIterator::getLastFilePath() const
 {
     if (current_object_info)
         return current_object_info->getPath();
@@ -163,7 +163,9 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         {
             for (const auto & object_info : read_keys)
             {
-                if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(object_info->getFileName()))
+                auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(object_info->getFileName());
+                /// Use this format only if we have a schema reader for it.
+                if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
                 {
                     format = format_from_file_name;
                     break;
@@ -221,7 +223,9 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             {
                 for (auto it = read_keys.begin() + prev_read_keys_size; it != read_keys.end(); ++it)
                 {
-                    if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->getFileName()))
+                    auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->getFileName());
+                    /// Use this format only if we have a schema reader for it.
+                    if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
                     {
                         format = format_from_file_name;
                         break;

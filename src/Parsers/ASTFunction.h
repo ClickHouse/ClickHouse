@@ -50,7 +50,7 @@ public:
 
     NullsAction nulls_action = NullsAction::EMPTY;
 
-    /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
+    /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool no_empty_args = false;
 
     /// Specifies where this function-like expression is used.
@@ -62,6 +62,8 @@ public:
         TABLE_ENGINE,
         DATABASE_ENGINE,
         BACKUP_NAME,
+        CODEC,
+        STATISTICS,
     };
     Kind kind = Kind::ORDINARY_FUNCTION;
 
