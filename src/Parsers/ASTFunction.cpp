@@ -73,11 +73,16 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
             (*it)->appendColumnName(ostr);
         }
+
+        if (by_or_totals)
+        {
+            writeChar(' ', ostr);
+        }
     }
 
     if (by_columns && by_or_totals)
     {
-        writeCString(" BY ", ostr);
+        writeCString("BY ", ostr);
         for (auto * it = by_columns->children.begin(); it != by_columns->children.end(); ++it)
         {
             if (it != by_columns->children.begin())
@@ -88,7 +93,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else if (by_or_totals)
     {
-        writeCString(" TOTALS", ostr);
+        writeCString("TOTALS", ostr);
     }
 
     writeChar(')', ostr);

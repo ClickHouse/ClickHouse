@@ -124,7 +124,8 @@ private:
 
     static ProjectionName calculateFunctionProjectionName(const QueryTreeNodePtr & function_node,
         const ProjectionNames & parameters_projection_names,
-        const ProjectionNames & arguments_projection_names);
+        const ProjectionNames & arguments_projection_names,
+        const ProjectionNames & by_clause_projection_names = {});
 
     static ProjectionName calculateWindowProjectionName(const QueryTreeNodePtr & window_node,
         const QueryTreeNodePtr & parent_window_node,
