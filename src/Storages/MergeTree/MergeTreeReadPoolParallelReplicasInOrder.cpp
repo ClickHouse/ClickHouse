@@ -13,6 +13,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     ParallelReadingExtension extension_,
     CoordinationMode mode_,
     RangesInDataParts parts_,
+    MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -23,6 +24,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
+        std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
