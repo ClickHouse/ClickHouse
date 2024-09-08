@@ -590,6 +590,7 @@ MurmurHash
 MySQLConnection
 MySQLDump
 MySQLThreads
+MemoryCredits
 NATS
 NCHAR
 NDJSON

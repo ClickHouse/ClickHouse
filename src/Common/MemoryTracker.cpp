@@ -34,7 +34,6 @@
 
 namespace
 {
-
 /// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
 /// limit reached or fault injected), in the following cases:
 ///
@@ -117,6 +116,7 @@ namespace ProfileEvents
     extern const Event QueryMemoryLimitExceeded;
     extern const Event MemoryAllocatorPurge;
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
+    extern const Event MemoryCredits;
 }
 
 using namespace std::chrono_literals;
@@ -232,6 +232,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::add(metric_loaded, size);
+
+            updateMemoryCredits(size);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -253,6 +255,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end() && size)
         CurrentMetrics::add(metric_loaded, size);
+
+    updateMemoryCredits(size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -401,6 +405,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         return loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker, _sample_probability);
     }
 
+    updateMemoryCredits(size);
     return AllocationTrace(_sample_probability);
 }
 
@@ -445,6 +450,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::sub(metric_loaded, size);
+            updateMemoryCredits(size);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -486,6 +492,8 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         return loaded_next->free(size, _sample_probability);
+
+    updateMemoryCredits(size);
 
     return AllocationTrace(_sample_probability);
 }
@@ -608,4 +616,20 @@ bool canEnqueueBackgroundTask()
     auto limit = background_memory_tracker.getSoftLimit();
     auto amount = background_memory_tracker.get();
     return limit == 0 || amount < limit;
+}
+
+void MemoryTracker::updateMemoryCredits(size_t size)
+{
+    static thread_local Stopwatch stopwatch;  // Thread-local to avoid races
+
+    auto elapsed_time = stopwatch.elapsedMicroseconds();
+    constexpr size_t update_threshold = 512 * 1024;
+
+    if (elapsed_time > 0 && size > update_threshold)
+    {
+        // Use a more precise calculation for delta
+        size_t delta = (size * elapsed_time) / (1024 * 1024);
+        ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
+        stopwatch.restart();
+    }
 }
