@@ -98,7 +98,7 @@ void VirtualRowTransform::work()
             ColumnPtr current_column = type_and_name.type->createColumn();
             // ordered_columns.push_back(current_column->cloneResized(1));
 
-            if (j < index->size() && type_and_name.name == primary_key.column_names[j] 
+            if (j < index->size() && type_and_name.name == primary_key.column_names[j]
                 && type_and_name.type == primary_key.data_types[j])
             {
                 auto column = current_column->cloneEmpty();

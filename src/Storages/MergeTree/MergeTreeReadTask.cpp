@@ -161,12 +161,6 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read(const BlockSizeParam
 
     auto read_result = range_readers.main.read(rows_to_read, mark_ranges);
 
-    if (add_virtual_row)
-    {
-        /// Now we have the virtual row, which is at most once for each part.
-        add_virtual_row = false;
-    }
-
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
         read_result.columns.clear();

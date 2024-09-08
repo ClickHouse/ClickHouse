@@ -195,14 +195,14 @@ INSERT INTO tab VALUES (201, 'rick c01'), (202, 'mick c02'), (203, 'nick c03');
 SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
 
 -- search full_text index
-SELECT * FROM tab WHERE s LIKE '%01%' ORDER BY k SETTINGS optimize_read_in_order = 0;
+SELECT * FROM tab WHERE s LIKE '%01%' ORDER BY k;
 
 -- check the query only read 3 granules (6 rows total; each granule has 2 rows)
 SYSTEM FLUSH LOGS;
 SELECT read_rows==6 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
-        AND endsWith(trimRight(query), 'SELECT * FROM tab WHERE s LIKE \'%01%\' ORDER BY k SETTINGS optimize_read_in_order = 0;')
+        AND endsWith(trimRight(query), 'SELECT * FROM tab WHERE s LIKE \'%01%\' ORDER BY k;')
         AND type='QueryFinish'
         AND result_rows==3
     LIMIT 1;
