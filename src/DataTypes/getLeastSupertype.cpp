@@ -609,6 +609,15 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
+    /// For numeric types, the most complicated part.
+    {
+        /// First, if we have signed integers, try to convert all UInt64 to Int64 if possible.
+        convertUInt64toInt64IfPossible(types, type_ids);
+        auto numeric_type = getNumericType<on_error>(type_ids);
+        if (numeric_type)
+            return numeric_type;
+    }
+
     /// Decimals
     {
         size_t have_decimal32 = type_ids.count(TypeIndex::Decimal32);
@@ -674,15 +683,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 return std::make_shared<DataTypeDecimal<Decimal64>>(DataTypeDecimal<Decimal64>::maxPrecision(), max_scale);
             return std::make_shared<DataTypeDecimal<Decimal32>>(DataTypeDecimal<Decimal32>::maxPrecision(), max_scale);
         }
-    }
-
-    /// For numeric types, the most complicated part.
-    {
-        /// First, if we have signed integers, try to convert all UInt64 to Int64 if possible.
-        convertUInt64toInt64IfPossible(types, type_ids);
-        auto numeric_type = getNumericType<on_error>(type_ids);
-        if (numeric_type)
-            return numeric_type;
     }
 
     /// For interval data types.
