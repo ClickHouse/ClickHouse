@@ -60,12 +60,6 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
-    void addVirtualRowToChunk(const IMergeTreeDataPart::Index & index_, size_t mark_range_begin_)
-    {
-        index = index_;
-        mark_range_begin = mark_range_begin_;
-    }
-
     void enableVirtualRow() { enable_virtual_row = true; }
 
     const KeyDescription & getPrimaryKey() const { return storage_snapshot->metadata->primary_key; }
@@ -100,8 +94,6 @@ private:
     bool enable_virtual_row = false;
     /// PK index used in virtual row.
     IMergeTreeDataPart::Index index;
-    /// The first range that might contain the candidate, used in virtual row.
-    size_t mark_range_begin;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

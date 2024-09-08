@@ -615,15 +615,25 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings, block_size, reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
-        processor->addVirtualRowToChunk(part_with_ranges.data_part->getIndex(), part_with_ranges.ranges.front().begin);
-        if (need_virtual_row)
-            processor->enableVirtualRow();
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 
-        pipes.emplace_back(std::move(source));
+        Pipe pipe(source);
+
+        if (need_virtual_row)
+        {
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<VirtualRowTransform>(header,
+                    storage_snapshot->metadata->primary_key,
+                    part_with_ranges.data_part->getIndex(),
+                    part_with_ranges.ranges.front().begin);
+            });
+        }
+
+        pipes.emplace_back(std::move(pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -635,8 +645,6 @@ Pipe ReadFromMergeTree::readInOrder(
             return std::make_shared<ReverseTransform>(header);
         });
     }
-
-    pipe.addSimpleTransform([](const Block & header){ return std::make_shared<VirtualRowTransform>(header); });
 
     return pipe;
 }
