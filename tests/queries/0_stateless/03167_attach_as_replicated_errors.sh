@@ -30,6 +30,8 @@ echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_log
   | grep -c 'Table engine conversion is supported only for MergeTree family engines'
 echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE mt AS REPLICATED ON CLUSTER test_shard_localhost" 2>&1)" \
   | grep -c 'ATTACH AS \[NOT\] REPLICATED is not supported for ON CLUSTER queries'
+echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE mt AS REPLICATED ( A Int64, D Date, S String ) ENGINE MergeTree ORDER BY A" 2>&1)" \
+  | grep -c 'Attaching table as \[not\] replicated is supported only for short attach queries'
 echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE $ORDINARY_DB.mt AS REPLICATED" 2>&1)" \
   | grep -c 'Table engine conversion to replicated is supported only for Atomic databases'
 

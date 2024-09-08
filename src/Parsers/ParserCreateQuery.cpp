@@ -858,6 +858,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = query;
 
     query->attach = attach;
+    query->attach_as_replicated = attach_as_replicated;
     query->replace_table = replace;
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;

@@ -73,7 +73,7 @@ public:
         return permanently_detached_tables;
     }
 
-    static void setReplicatedMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
+    static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
 protected:
     virtual void commitAlterTable(

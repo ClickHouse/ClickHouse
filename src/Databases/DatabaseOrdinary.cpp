@@ -89,7 +89,7 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
         );
 }
 
-void DatabaseOrdinary::setReplicatedMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
+void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
     auto args = std::make_shared<ASTExpressionList>();
@@ -181,7 +181,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
     checkReplicaPathExists(create_query, getContext());
-    setReplicatedMergeTreeEngine(create_query, getContext(), true);
+    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
     /// Write changes to metadata
     String table_metadata_path = full_path;

@@ -1383,6 +1383,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
+    if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Attaching table as [not] replicated is supported only for short attach queries");
 
     if (create.attach_from_path)
     {
@@ -2207,7 +2210,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
     /// Set new engine
-    DatabaseOrdinary::setReplicatedMergeTreeEngine(create, getContext(), to_replicated);
+    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
 
     /// Save new metadata
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
