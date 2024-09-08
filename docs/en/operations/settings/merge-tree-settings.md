@@ -156,6 +156,28 @@ Default value: 1000.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
+## min_free_diskspace_bytes_to_throw_insert {#min_free_diskspace_bytes_to_throw_insert}
+
+The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes - `keep_free_space_bytes` is less than `min_free_diskspace_bytes_to_throw_insert` then an exception is thrown and the insert is not executed. Note that this setting does not take into account the amount of data that will be written by the `INSERT` operation.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 10,737,418,240 (10 GiB).
+
+ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
+
+## min_free_diskspace_ratio_to_throw_insert {#min_free_diskspace_ratio_to_throw_insert}
+
+The minimum free to total disk space ratio to perform an `INSERT`. The free space is calculated by subtracting `keep_free_space_bytes` from the total available space in disk.
+
+Possible values:
+
+- Float, 0.0 - 1.0
+
+Default value: 0.02
+
 ## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
 
 If the number of inactive parts in a single partition more than the `inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the "Too many inactive parts (N). Parts cleaning are processing significantly slower than inserts" exception.
