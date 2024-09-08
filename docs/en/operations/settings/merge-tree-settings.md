@@ -166,8 +166,6 @@ Possible values:
 
 Default value: 10,737,418,240 (10 GiB).
 
-ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
-
 ## min_free_diskspace_ratio_to_throw_insert {#min_free_diskspace_ratio_to_throw_insert}
 
 The minimum free to total disk space ratio to perform an `INSERT`. The free space is calculated by subtracting `keep_free_space_bytes` from the total available space in disk.
