@@ -334,13 +334,13 @@ typedef uint64_t uintmax_t;
 /* #undef ARCHIVE_XATTR_LINUX */
 
 /* Version number of bsdcpio */
-#define BSDCPIO_VERSION_STRING "3.7.0"
+#define BSDCPIO_VERSION_STRING "3.7.1"
 
 /* Version number of bsdtar */
-#define BSDTAR_VERSION_STRING "3.7.0"
+#define BSDTAR_VERSION_STRING "3.7.1"
 
 /* Version number of bsdcat */
-#define BSDCAT_VERSION_STRING "3.7.0"
+#define BSDCAT_VERSION_STRING "3.7.1"
 
 /* Define to 1 if you have the `acl_create_entry' function. */
 /* #undef HAVE_ACL_CREATE_ENTRY */
@@ -641,6 +641,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the `getgrnam_r' function. */
 #define HAVE_GETGRNAM_R 1
+
+/* Define to 1 if you have the `getline' function. */
+#define HAVE_GETLINE 1
 
 /* Define to 1 if platform uses `optreset` to reset `getopt` */
 #define HAVE_GETOPT_OPTRESET 1
@@ -1273,13 +1276,13 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE__MKGMTIME */
 
 /* Define as const if the declaration of iconv() needs const. */
-#define ICONV_CONST 
+#define ICONV_CONST
 
 /* Version number of libarchive as a single integer */
-#define LIBARCHIVE_VERSION_NUMBER "3007000"
+#define LIBARCHIVE_VERSION_NUMBER "3007001"
 
 /* Version number of libarchive */
-#define LIBARCHIVE_VERSION_STRING "3.7.0"
+#define LIBARCHIVE_VERSION_STRING "3.7.1"
 
 /* Define to 1 if `lstat' dereferences a symlink specified with a trailing
    slash. */
@@ -1333,7 +1336,7 @@ typedef uint64_t uintmax_t;
 #endif /* SAFE_TO_DEFINE_EXTENSIONS */
 
 /* Version number of package */
-#define VERSION "3.7.0"
+#define VERSION "3.7.1"
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 /* #undef _FILE_OFFSET_BITS */
