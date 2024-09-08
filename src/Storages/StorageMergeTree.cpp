@@ -1695,7 +1695,7 @@ auto getNameWithState(const auto & parts)
 // Same as stopMergesAndWait, but waits only for merges on parts belonging to a certain partition.
 ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
 {
-    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition partition_id: \"{}\"", partition_id);
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition partition_id: `{}`", partition_id);
     /// Stop all merges and prevent new from starting, BUT unlike stopMergesAndWait(), only wait for the merges on small set of parts to finish.
 
     std::unique_lock lock(currently_processing_in_background_mutex);
@@ -1705,7 +1705,7 @@ ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
     auto merge_blocker = merger_mutator.merges_blocker.cancelForPartition(partition_id);
 
     const DataPartsVector parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id);
-    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {} ({} items)",
+    LOG_TRACE(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {} ({} items)",
         fmt::join(getNameWithState(parts_to_wait), ", "), parts_to_wait.size());
 
     LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition all mutating parts: {} ({} items)",

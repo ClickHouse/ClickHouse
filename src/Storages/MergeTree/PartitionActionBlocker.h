@@ -48,6 +48,8 @@ public:
     const std::atomic<int> & getCounter() const { return global_blocker.getCounter(); }
 
     size_t countPartitionBlockers() const;
+
+    /// Cleanup partition blockers
     void compactPartitionBlockers();
 
     std::string formatDebug() const;

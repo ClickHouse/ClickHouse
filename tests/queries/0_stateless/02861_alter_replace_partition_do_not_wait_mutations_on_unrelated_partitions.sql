@@ -20,7 +20,7 @@ INSERT INTO t1 VALUES (1, 1), (2, 2);
 CREATE TABLE t2 AS t1;
 INSERT INTO t2 VALUES (2, 2000);
 
--- mutation that is supposed to be running in bg while REPLACE is performed.
+-- mutation that is supposed to be running in background while REPLACE is performed.
 -- sleep(1) is arbitrary here, we just need mutation to take long enough to be noticeable.
 ALTER TABLE t1 UPDATE i = if(sleep(1), 0, 9000) IN PARTITION id '1' WHERE p == 1;
 -- check that mutation is started
@@ -34,3 +34,6 @@ SELECT is_done, latest_fail_reason, parts_to_do FROM system.mutations WHERE data
 -- Expecting that mutation hasn't finished yet (since ALTER TABLE .. REPLACE wasn't waiting for it),
 -- so row with `p == 1` still has the old value of `i == 1`.
 SELECT * FROM t1 ORDER BY p;
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;

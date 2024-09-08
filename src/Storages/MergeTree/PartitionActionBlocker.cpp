@@ -15,7 +15,8 @@ ActionLock PartitionActionBlocker::cancelForPartition(const std::string & partit
     ActionLock result = partition_blockers[partition_id].cancel();
 
     // Cleanup stale `ActionBlocker` instances once in a while, to prevent unbound growth.
-    if (prev_size != partition_blockers.size() && ++cleanup_counter > 32) // 32 is arbitrary.
+    cleanup_counter++;
+    if (prev_size != partition_blockers.size() && cleanup_counter > 32) // 32 is arbitrary.
         compactPartitionBlockersLocked();
 
     return result;
@@ -70,7 +71,7 @@ std::string PartitionActionBlocker::formatDebug() const
     size_t i = 0;
     for (const auto & p : partition_blockers)
     {
-        out << "\n\t" << DB::quote << p.first << " : " << p.second.getCounter().load();
+        out << "\n\t" << DB::double_quote << p.first << ": " << p.second.getCounter().load();
 
         if (++i < partition_blockers.size())
             out << ",";
