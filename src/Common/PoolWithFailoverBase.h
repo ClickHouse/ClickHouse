@@ -28,7 +28,6 @@ namespace ErrorCodes
 
 namespace ProfileEvents
 {
-    extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
     extern const Event DistributedConnectionSkipReadOnlyReplica;
 }
@@ -116,6 +115,20 @@ public:
             bool skip_read_only_replicas,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority);
+
+    // Returns if the TryResult provided is an invalid one that cannot be used. Used to prevent logical errors.
+    bool isTryResultInvalid(const TryResult & result, bool skip_read_only_replicas) const
+    {
+        return result.entry.isNull() || !result.is_usable || (skip_read_only_replicas && result.is_readonly);
+    }
+
+    void checkTryResultIsValid(const TryResult & result, bool skip_read_only_replicas) const
+    {
+        if (isTryResultInvalid(result, skip_read_only_replicas))
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+                "Got an invalid connection result: entry.isNull {}, is_usable {}, is_up_to_date {}, delay {}, is_readonly {}, skip_read_only_replicas {}",
+                result.entry.isNull(), result.is_usable, result.is_up_to_date, result.delay, result.is_readonly, skip_read_only_replicas);
+    }
 
     size_t getPoolSize() const { return nested_pools.size(); }
 
@@ -285,7 +298,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             else
             {
                 LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
-                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 
@@ -302,7 +314,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                 "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-    std::erase_if(try_results, [&](const TryResult & r) { return r.entry.isNull() || !r.is_usable || (skip_read_only_replicas && r.is_readonly); });
+    std::erase_if(try_results, [&](const TryResult & r) { return isTryResultInvalid(r, skip_read_only_replicas); });
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(
@@ -323,6 +335,9 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
     else if (up_to_date_count >= min_entries)
     {
+        if (try_results.size() < up_to_date_count)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Could not find enough connections for up-to-date results. Got: {}, needed: {}", try_results.size(), up_to_date_count);
+
         /// There is enough up-to-date entries.
         try_results.resize(up_to_date_count);
     }

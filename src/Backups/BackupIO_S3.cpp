@@ -1,6 +1,7 @@
 #include <Backups/BackupIO_S3.h>
 
 #if USE_AWS_S3
+#include <Core/Settings.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
@@ -54,9 +55,9 @@ namespace
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             settings.auth_settings.region,
             context->getRemoteHostFilter(),
-            static_cast<unsigned>(global_settings.s3_max_redirects),
-            static_cast<unsigned>(global_settings.s3_retry_attempts),
-            global_settings.enable_s3_requests_logging,
+            static_cast<unsigned>(local_settings.s3_max_redirects),
+            static_cast<unsigned>(local_settings.backup_restore_s3_retry_attempts),
+            local_settings.enable_s3_requests_logging,
             /* for_disk_s3 = */ false,
             request_settings.get_request_throttler,
             request_settings.put_request_throttler,
@@ -88,14 +89,10 @@ namespace
             std::move(headers),
             S3::CredentialsConfiguration
             {
-                settings.auth_settings.use_environment_credentials.value_or(
-                    context->getConfigRef().getBool("s3.use_environment_credentials", true)),
-                settings.auth_settings.use_insecure_imds_request.value_or(
-                    context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
-                settings.auth_settings.expiration_window_seconds.value_or(
-                    context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
-                settings.auth_settings.no_sign_request.value_or(
-                    context->getConfigRef().getBool("s3.no_sign_request", false)),
+                settings.auth_settings.use_environment_credentials,
+                settings.auth_settings.use_insecure_imds_request,
+                settings.auth_settings.expiration_window_seconds,
+                settings.auth_settings.no_sign_request
             });
     }
 
@@ -131,12 +128,18 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup).value_or(S3Settings{}))
 {
-    auto & request_settings = s3_settings.request_settings;
-    request_settings.updateFromSettingsIfChanged(context_->getSettingsRef());
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = allow_s3_native_copy;
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+
+    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    {
+        s3_settings.updateIfChanged(*endpoint_settings);
+    }
+
+    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
+    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
+
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
@@ -223,13 +226,19 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup).value_or(S3Settings{}))
 {
-    auto & request_settings = s3_settings.request_settings;
-    request_settings.updateFromSettingsIfChanged(context_->getSettingsRef());
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = allow_s3_native_copy;
-    request_settings.setStorageClassName(storage_class_name);
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+
+    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    {
+        s3_settings.updateIfChanged(*endpoint_settings);
+    }
+
+    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
+    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
+    s3_settings.request_settings.storage_class_name = storage_class_name;
+
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {

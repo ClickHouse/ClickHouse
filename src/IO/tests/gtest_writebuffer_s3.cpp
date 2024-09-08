@@ -546,8 +546,8 @@ public:
 
     std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
     {
-        S3Settings::RequestSettings request_settings;
-        request_settings.updateFromSettingsIfChanged(settings);
+        S3::RequestSettings request_settings;
+        request_settings.updateFromSettings(settings, /* if_changed */true, /* validate_settings */false);
 
         client->resetCounters();
 
@@ -917,8 +917,8 @@ TEST_P(SyncAsync, ExceptionOnUploadPart) {
 
 
 TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
-#ifdef ABORT_ON_LOGICAL_ERROR
-    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if ABORT_ON_LOGICAL_ERROR is not defined";
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
     EXPECT_THROW({
         try {

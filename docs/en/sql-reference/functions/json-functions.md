@@ -5,10 +5,10 @@ sidebar_label: JSON
 ---
 
 There are two sets of functions to parse JSON:
-   - [`simpleJSON*` (`visitParam*`)](#simplejson--visitparam-functions) which is made for parsing a limited subset of JSON extremely fast.
+   - [`simpleJSON*` (`visitParam*`)](#simplejson-visitparam-functions) which is made for parsing a limited subset of JSON extremely fast.
    - [`JSONExtract*`](#jsonextract-functions) which is made for parsing ordinary JSON.
 
-## simpleJSON / visitParam functions
+## simpleJSON (visitParam) functions
 
 ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be. They try to do as little as possible to get the job done as quickly as possible.
 
@@ -1154,4 +1154,208 @@ SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 ┌─res───────────────────┐
 │ {"a":1,"name":"zoey"} │
 └───────────────────────┘
+```
+
+### JSONAllPaths
+
+Returns the list of all paths stored in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONAllPaths(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Array(String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONAllPaths(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a":"42"}                           │ ['a']              │
+│ {"b":"Hello"}                        │ ['b']              │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a','c']          │
+└──────────────────────────────────────┴────────────────────┘
+```
+
+### JSONAllPathsWithTypes
+
+Returns the map of all paths and their data types stored in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONAllPathsWithTypes(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Map(String, String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONAllPathsWithTypes(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
+│ {"a":"42"}                           │ {'a':'Int64'}                             │
+│ {"b":"Hello"}                        │ {'b':'String'}                            │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
+└──────────────────────────────────────┴───────────────────────────────────────────┘
+```
+
+### JSONDynamicPaths
+
+Returns the list of dynamic paths that are stored as separate subcolumns in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONDynamicPaths(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Array(String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONDynamicPaths(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONDynamicPaths(json)─┐
+| {"a":"42"}                           │ ['a']                  │
+│ {"b":"Hello"}                        │ []                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a']                  │
+└──────────────────────────────────────┴────────────────────────┘
+```
+
+### JSONDynamicPathsWithTypes
+
+Returns the map of dynamic paths that are stored as separate subcolumns and their types in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONAllPathsWithTypes(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Map(String, String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
+│ {"a":"42"}                           │ {'a':'Int64'}                   │
+│ {"b":"Hello"}                        │ {}                              │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
+└──────────────────────────────────────┴─────────────────────────────────┘
+```
+
+### JSONSharedDataPaths
+
+Returns the list of paths that are stored in shared data structure in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONSharedDataPaths(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Array(String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONSharedDataPaths(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONSharedDataPaths(json)─┐
+│ {"a":"42"}                           │ []                        │
+│ {"b":"Hello"}                        │ ['b']                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['c']                     │
+└──────────────────────────────────────┴───────────────────────────┘
+```
+
+### JSONSharedDataPathsWithTypes
+
+Returns the map of paths that are stored in shared data structure and their types in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONSharedDataPathsWithTypes(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Map(String, String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
+│ {"a":"42"}                           │ {}                                 │
+│ {"b":"Hello"}                        │ {'b':'String'}                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└──────────────────────────────────────┴────────────────────────────────────┘
 ```

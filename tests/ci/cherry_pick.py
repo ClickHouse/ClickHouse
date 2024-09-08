@@ -38,7 +38,7 @@ from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from lambda_shared_package.lambda_shared.pr import Labels
+from ci_config import Labels
 from ssh import SSHKey
 
 
@@ -127,12 +127,10 @@ close it.
                 to_pop.append(i)
             elif pr.head.ref.startswith(f"backport/{self.name}"):
                 self.backport_pr = pr
+                self._backported = True
                 to_pop.append(i)
             else:
                 assert False, f"BUG! Invalid PR's branch [{pr.head.ref}]"
-
-            # Cherry-pick or backport PR found, set @backported flag for current release branch
-            self._backported = True
 
         for i in reversed(to_pop):
             # Going from the tail to keep the order and pop greater index first
@@ -218,6 +216,7 @@ close it.
                     self.name,
                     self.pr.number,
                 )
+                self._backported = True
                 return
         except CalledProcessError:
             # There are most probably conflicts, they'll be resolved in PR
@@ -247,7 +246,6 @@ close it.
             self.cherrypick_pr.add_to_labels(Labels.PR_CRITICAL_BUGFIX)
         elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
             self.cherrypick_pr.add_to_labels(Labels.PR_BUGFIX)
-        self._backported = True
         self._assign_new_pr(self.cherrypick_pr)
         # update cherrypick PR to get the state for PR.mergable
         self.cherrypick_pr.update()
@@ -359,10 +357,10 @@ class Backport:
         self._fetch_from = fetch_from
         self.dry_run = dry_run
 
-        self.must_create_backport_label = (
-            Labels.MUST_BACKPORT
+        self.must_create_backport_labels = (
+            [Labels.MUST_BACKPORT]
             if self._repo_name == self._fetch_from
-            else Labels.MUST_BACKPORT_CLOUD
+            else [Labels.MUST_BACKPORT_CLOUD, Labels.MUST_BACKPORT]
         )
         self.backport_created_label = (
             Labels.PR_BACKPORTS_CREATED
@@ -419,10 +417,13 @@ class Backport:
                 f"v{branch}-must-backport" for branch in self.release_branches
             ]
         else:
-            fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
-            fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
             self.labels_to_backport = [
-                f"v{branch}-must-backport" for branch in fetch_release_branches
+                (
+                    f"v{branch}-must-backport"
+                    if self._repo_name == "ClickHouse/ClickHouse"
+                    else f"v{branch.replace('release/','')}-must-backport"
+                )
+                for branch in self.release_branches
             ]
 
             logging.info("Fetching from %s", self._fetch_from)
@@ -468,7 +469,7 @@ class Backport:
         query_args = {
             "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
             "label": ",".join(
-                self.labels_to_backport + [self.must_create_backport_label]
+                self.labels_to_backport + self.must_create_backport_labels
             ),
             "merged": [since_date, tomorrow],
         }
@@ -492,14 +493,23 @@ class Backport:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if self.must_create_backport_label in pr_labels:
+        if any(label in pr_labels for label in self.must_create_backport_labels):
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in self.release_branches
             ]  # type: List[ReleaseBranch]
         else:
             branches = [
-                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                ReleaseBranch(
+                    (
+                        br
+                        if self._repo_name == "ClickHouse/ClickHouse"
+                        else f"release/{br}"
+                    ),
+                    pr,
+                    self.repo,
+                    self.backport_created_label,
+                )
                 for br in [
                     label.split("-", 1)[0][1:]  # v21.8-must-backport
                     for label in pr_labels
@@ -531,9 +541,9 @@ class Backport:
         for br in branches:
             br.process(self.dry_run)
 
-        for br in branches:
-            assert br.backported, f"BUG! backport to branch [{br}] failed"
-        self.mark_pr_backported(pr)
+        if all(br.backported for br in branches):
+            # And check it after the running
+            self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:

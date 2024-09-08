@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
 from git_helper import Git, commit, release_branch
-from lambda_shared_package.lambda_shared.pr import Labels
+from ci_config import Labels
 from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
@@ -94,6 +94,7 @@ class Release:
         self._version = get_version_from_repo(git=self._git)
         self.release_version = self.version
         self._release_branch = ""
+        self._version_new_tag = None  # type: Optional[ClickHouseVersion]
         self._rollback_stack = []  # type: List[str]
 
     def run(
@@ -180,7 +181,8 @@ class Release:
             )
             raise
 
-        self.check_commit_release_ready()
+        if self.release_type == self.PATCH:
+            self.check_commit_release_ready()
 
     def do(
         self, check_dirty: bool, check_run_from_master: bool, check_branch: bool
@@ -328,10 +330,16 @@ class Release:
         self.check_no_tags_after()
         # Create release branch
         self.read_version()
-        with self._create_branch(self.release_branch, self.release_commit):
-            with self._checkout(self.release_branch, True):
-                with self._bump_release_branch():
-                    yield
+        assert self._version_new_tag is not None
+        with self._create_tag(
+            self._version_new_tag.describe,
+            self.release_commit,
+            f"Initial commit for release {self._version_new_tag.major}.{self._version_new_tag.minor}",
+        ):
+            with self._create_branch(self.release_branch, self.release_commit):
+                with self._checkout(self.release_branch, True):
+                    with self._bump_release_branch():
+                        yield
 
     @contextmanager
     def patch_release(self):
@@ -444,6 +452,11 @@ class Release:
         self.version.with_description(VersionType.TESTING)
         self._update_cmake_contributors(self.version)
         self._commit_cmake_contributors(self.version)
+        # Create a version-new tag
+        self._version_new_tag = self.version.copy()
+        self._version_new_tag.tweak = 1
+        self._version_new_tag.with_description(VersionType.NEW)
+
         with self._push(helper_branch):
             body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
             # The following command is rolled back by deleting branch in self._push
@@ -458,10 +471,10 @@ class Release:
 
     @contextmanager
     def _checkout(self, ref: str, with_checkout_back: bool = False) -> Iterator[None]:
+        self._git.update()
         orig_ref = self._git.branch or self._git.sha
-        need_rollback = False
+        rollback_cmd = ""
         if ref not in (self._git.branch, self._git.sha):
-            need_rollback = True
             self.run(f"git checkout {ref}")
             # checkout is not put into rollback_stack intentionally
             rollback_cmd = f"git checkout {orig_ref}"
@@ -474,7 +487,7 @@ class Release:
             self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
         # Normal flow when we need to checkout back
-        if with_checkout_back and need_rollback:
+        if with_checkout_back and rollback_cmd:
             self.run(rollback_cmd)
 
     @contextmanager
@@ -510,9 +523,9 @@ class Release:
 
     @contextmanager
     def _create_gh_release(self, as_prerelease: bool) -> Iterator[None]:
-        with self._create_tag():
+        tag = self.release_version.describe
+        with self._create_tag(tag, self.release_commit):
             # Preserve tag if version is changed
-            tag = self.release_version.describe
             prerelease = ""
             if as_prerelease:
                 prerelease = "--prerelease"
@@ -534,13 +547,13 @@ class Release:
                 raise
 
     @contextmanager
-    def _create_tag(self):
-        tag = self.release_version.describe
-        self.run(
-            f"git tag -a -m 'Release {tag}' '{tag}' {self.release_commit}",
-            dry_run=self.dry_run,
-        )
-        rollback_cmd = f"{self.dry_run_prefix}git tag -d '{tag}'"
+    def _create_tag(
+        self, tag: str, commit: str, tag_message: str = ""
+    ) -> Iterator[None]:
+        tag_message = tag_message or f"Release {tag}"
+        # Create tag even in dry-run
+        self.run(f"git tag -a -m '{tag_message}' '{tag}' {commit}")
+        rollback_cmd = f"git tag -d '{tag}'"
         self._rollback_stack.append(rollback_cmd)
         try:
             with self._push(tag):
@@ -676,4 +689,5 @@ def main():
 
 
 if __name__ == "__main__":
+    assert False, "Script Deprecated, ask ci team for help"
     main()

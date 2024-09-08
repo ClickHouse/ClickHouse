@@ -78,9 +78,8 @@ std::vector<size_t> getOtherColumnIndexes(const Block & block, const SortDescrip
 ///          --------
 ///          2      1     a     3
 ///          ----------------------
-EqualRanges getEqualRanges(const Block & block, const SortDescription & sort_description, const IColumn::Permutation & permutation, const LoggerPtr & log)
+EqualRanges getEqualRanges(const Block & block, const SortDescription & sort_description, const IColumn::Permutation & permutation)
 {
-    LOG_TRACE(log, "Finding equal ranges");
     EqualRanges ranges;
     const size_t rows = block.rows();
     if (sort_description.empty())
@@ -122,11 +121,10 @@ void updatePermutationInEqualRange(
     const std::vector<size_t> & other_column_indexes,
     IColumn::Permutation & permutation,
     const EqualRange & equal_range,
-    const std::vector<size_t> & cardinalities)
+    const std::vector<size_t> & cardinalities,
+    const LoggerPtr & log)
 {
-    LoggerPtr log = getLogger("RowOrderOptimizer");
-
-    LOG_TRACE(log, "Starting optimization in equal range");
+    LOG_TEST(log, "Starting optimization in equal range");
 
     std::vector<size_t> column_order(other_column_indexes.size());
     iota(column_order.begin(), column_order.end(), 0);
@@ -134,17 +132,17 @@ void updatePermutationInEqualRange(
     stable_sort(column_order.begin(), column_order.end(), cmp);
 
     std::vector<EqualRange> ranges = {equal_range};
-    LOG_TRACE(log, "equal_range: .from: {}, .to: {}", equal_range.from, equal_range.to);
+    LOG_TEST(log, "equal_range: .from: {}, .to: {}", equal_range.from, equal_range.to);
     for (size_t i : column_order)
     {
         const size_t column_id = other_column_indexes[i];
         const ColumnPtr & column = block.getByPosition(column_id).column;
-        LOG_TRACE(log, "i: {}, column_id: {}, column->getName(): {}, cardinality: {}", i, column_id, column->getName(), cardinalities[i]);
+        LOG_TEST(log, "i: {}, column_id: {}, column type: {}, cardinality: {}", i, column_id, column->getName(), cardinalities[i]);
         column->updatePermutation(
             IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Stable, 0, 1, permutation, ranges);
     }
 
-    LOG_TRACE(log, "Finish optimization in equal range");
+    LOG_TEST(log, "Finish optimization in equal range");
 }
 
 }
@@ -156,7 +154,10 @@ void RowOrderOptimizer::optimize(const Block & block, const SortDescription & so
     LOG_TRACE(log, "Starting optimization");
 
     if (block.columns() == 0)
+    {
+        LOG_TRACE(log, "Finished optimization (block has no columns)");
         return; /// a table without columns, this should not happen in the first place ...
+    }
 
     if (permutation.empty())
     {
@@ -165,17 +166,17 @@ void RowOrderOptimizer::optimize(const Block & block, const SortDescription & so
         iota(permutation.data(), rows, IColumn::Permutation::value_type(0));
     }
 
-    const EqualRanges equal_ranges = getEqualRanges(block, sort_description, permutation, log);
+    const EqualRanges equal_ranges = getEqualRanges(block, sort_description, permutation);
     const std::vector<size_t> other_columns_indexes = getOtherColumnIndexes(block, sort_description);
 
-    LOG_TRACE(log, "block.columns(): {}, block.rows(): {}, sort_description.size(): {}, equal_ranges.size(): {}", block.columns(), block.rows(), sort_description.size(), equal_ranges.size());
+    LOG_TRACE(log, "columns: {}, sorting key columns: {}, rows: {}, equal ranges: {}", block.columns(), sort_description.size(), block.rows(), equal_ranges.size());
 
     for (const auto & equal_range : equal_ranges)
     {
         if (equal_range.size() <= 1)
             continue;
         const std::vector<size_t> cardinalities = getCardinalitiesInPermutedRange(block, other_columns_indexes, permutation, equal_range);
-        updatePermutationInEqualRange(block, other_columns_indexes, permutation, equal_range, cardinalities);
+        updatePermutationInEqualRange(block, other_columns_indexes, permutation, equal_range, cardinalities, log);
     }
 
     LOG_TRACE(log, "Finished optimization");

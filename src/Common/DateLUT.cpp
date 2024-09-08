@@ -2,7 +2,9 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 #include <Poco/DigestStream.h>
 #include <Poco/Exception.h>

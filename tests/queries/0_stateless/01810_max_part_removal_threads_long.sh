@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-s3-storage
+# Tags: long, no-object-storage
 # Because parallel parts removal disabled for s3 storage
 
 # NOTE: this done as not .sql since we need to Ordinary database

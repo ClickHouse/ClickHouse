@@ -59,9 +59,6 @@ Token quotedStringWithUnicodeQuotes(const char *& pos, const char * const token_
         pos = find_first_symbols<'\xE2'>(pos, end);
         if (pos + 2 >= end)
             return Token(error_token, token_begin, end);
-        /// Empty identifiers are not allowed, while empty strings are.
-        if (success_token == TokenType::QuotedIdentifier && pos + 3 >= end)
-            return Token(error_token, token_begin, end);
 
         if (pos[0] == '\xE2' && pos[1] == '\x80' && pos[2] == expected_end_byte)
         {
@@ -426,6 +423,8 @@ Token Lexer::nextTokenImpl()
         }
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
+        case '^':
+            return Token(TokenType::Caret, token_begin, ++pos);
         case ':':
         {
             ++pos;

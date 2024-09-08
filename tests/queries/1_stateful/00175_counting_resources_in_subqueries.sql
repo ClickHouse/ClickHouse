@@ -1,3 +1,5 @@
+SET optimize_use_implicit_projections = 0;
+
 -- the work for scalar subquery is properly accounted:
 SET max_rows_to_read = 1000000;
 SELECT 1 = (SELECT count() FROM test.hits WHERE NOT ignore(AdvEngineID)); -- { serverError TOO_MANY_ROWS }

@@ -22,11 +22,29 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsNotNull>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIsNotNull>(context->getSettingsRef().allow_experimental_analyzer); }
+
+    explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     std::string getName() const override
     {
         return name;
+    }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
+        if (!use_analyzer)
+            return nullptr;
+
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (elem.type->onlyNull())
+            return result_type->createColumnConst(1, UInt8(0));
+
+        if (canContainNull(*elem.type))
+            return nullptr;
+
+        return result_type->createColumnConst(1, UInt8(1));
     }
 
     size_t getNumberOfArguments() const override { return 1; }
@@ -111,6 +129,8 @@ private:
 #endif
         vectorImpl(null_map, res);
     }
+
+    bool use_analyzer;
 };
 }
 

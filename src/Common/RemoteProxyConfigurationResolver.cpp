@@ -42,11 +42,12 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
 RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
     const RemoteServerConfiguration & remote_server_configuration_,
     Protocol request_protocol_,
+    const std::string & no_proxy_hosts_,
     std::shared_ptr<RemoteProxyHostFetcher> fetcher_,
     bool disable_tunneling_for_https_requests_over_http_proxy_
 )
 : ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_),
-    remote_server_configuration(remote_server_configuration_), fetcher(fetcher_)
+    remote_server_configuration(remote_server_configuration_), no_proxy_hosts(no_proxy_hosts_), fetcher(fetcher_)
 {
 }
 
@@ -84,7 +85,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     auto proxy_protocol = ProxyConfiguration::protocolFromString(proxy_protocol_string);
 
-    bool use_tunneling_for_https_requests_over_http_proxy = useTunneling(
+    bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
         request_protocol,
         proxy_protocol,
         disable_tunneling_for_https_requests_over_http_proxy);
@@ -94,6 +95,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
     cached_config.port = proxy_port;
     cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
     cached_config.original_request_protocol = request_protocol;
+    cached_config.no_proxy_hosts = no_proxy_hosts;
     cache_timestamp = std::chrono::system_clock::now();
     cache_valid = true;
 

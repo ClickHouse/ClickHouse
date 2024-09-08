@@ -150,7 +150,7 @@ The function also works for [Arrays](array-functions.md#function-empty) and [Str
 
 **Example**
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#generateuuidv4) function.
 
 Query:
 
@@ -190,7 +190,7 @@ The function also works for [Arrays](array-functions.md#function-notempty) or [S
 
 **Example**
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#generateuuidv4) function.
 
 Query:
 
@@ -543,11 +543,16 @@ serverUUID()
 
 Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
-The generated Snowflake ID contains the current Unix timestamp in milliseconds 41 (+ 1 top zero bit) bits, followed by machine id (10 bits), a counter (12 bits) to distinguish IDs within a millisecond.
+The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond.
 For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes.
 In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0.
 
 Function `generateSnowflakeID` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
+
+:::note
+The generated Snowflake IDs are based on the UNIX epoch 1970-01-01.
+While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
+:::
 
 ```
  0                   1                   2                   3
@@ -562,12 +567,13 @@ Function `generateSnowflakeID` guarantees that the counter field within a timest
 **Syntax**
 
 ``` sql
-generateSnowflakeID([expr])
+generateSnowflakeID([expr, [machine_id]])
 ```
 
 **Arguments**
 
 - `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+- `machine_id` — A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -603,7 +609,22 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 └────────────────────────┴────────────────────────┘
 ```
 
+**Example with expression and a machine ID**
+
+```
+SELECT generateSnowflakeID('expr', 1);
+
+┌─generateSnowflakeID('expr', 1)─┐
+│            7201148511606784002 │
+└────────────────────────────────┘
+```
+
 ## snowflakeToDateTime
+
+:::warning
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+:::
 
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](../data-types/datetime.md) format.
 
@@ -641,6 +662,11 @@ Result:
 
 ## snowflakeToDateTime64
 
+:::warning
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+:::
+
 Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](../data-types/datetime64.md) format.
 
 **Syntax**
@@ -677,6 +703,11 @@ Result:
 
 ## dateTimeToSnowflake
 
+:::warning
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+:::
+
 Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
@@ -711,6 +742,11 @@ Result:
 
 ## dateTime64ToSnowflake
 
+:::warning
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
+The function will be removed at some point in future.
+:::
+
 Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
@@ -741,6 +777,148 @@ Result:
 ┌─dateTime64ToSnowflake(dt64)─┐
 │         1426860704886947840 │
 └─────────────────────────────┘
+```
+
+## snowflakeIDToDateTime
+
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](../data-types/datetime.md).
+
+**Syntax**
+
+``` sql
+snowflakeIDToDateTime(value[, epoch[, time_zone]])
+```
+
+**Arguments**
+
+- `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
+- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+
+**Returned value**
+
+- The timestamp component of `value` as a [DateTime](../data-types/datetime.md) value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT snowflakeIDToDateTime(7204436857747984384) AS res
+```
+
+Result:
+
+```
+┌─────────────────res─┐
+│ 2024-06-06 10:59:58 │
+└─────────────────────┘
+```
+
+## snowflakeIDToDateTime64
+
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](../data-types/datetime64.md).
+
+**Syntax**
+
+``` sql
+snowflakeIDToDateTime64(value[, epoch[, time_zone]])
+```
+
+**Arguments**
+
+- `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
+- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+
+**Returned value**
+
+- The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
+
+**Example**
+
+Query:
+
+```sql
+SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
+```
+
+Result:
+
+```
+┌─────────────────res─┐
+│ 2024-06-06 10:59:58 │
+└─────────────────────┘
+```
+
+## dateTimeToSnowflakeID
+
+Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+
+**Syntax**
+
+``` sql
+dateTimeToSnowflakeID(value[, epoch])
+```
+
+**Arguments**
+
+- `value` — Date with time. [DateTime](../data-types/datetime.md).
+- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+
+**Returned value**
+
+- Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowflakeID(dt) AS res;
+```
+
+Result:
+
+```
+┌──────────────────dt─┬─────────────────res─┐
+│ 2021-08-15 18:57:56 │ 6832626392367104000 │
+└─────────────────────┴─────────────────────┘
+```
+
+## dateTime64ToSnowflakeID
+
+Convert a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+
+**Syntax**
+
+``` sql
+dateTime64ToSnowflakeID(value[, epoch])
+```
+
+**Arguments**
+
+- `value` — Date with time. [DateTime64](../data-types/datetime64.md).
+- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+
+**Returned value**
+
+- Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toDateTime('2021-08-15 18:57:56.493', 3, 'Asia/Shanghai') AS dt, dateTime64ToSnowflakeID(dt) AS res;
+```
+
+Result:
+
+```
+┌──────────────────────dt─┬─────────────────res─┐
+│ 2021-08-15 18:57:56.493 │ 6832626394434895872 │
+└─────────────────────────┴─────────────────────┘
 ```
 
 ## See also

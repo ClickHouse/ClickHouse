@@ -196,6 +196,16 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
         UInt64 idx;
         in >> idx >> "\n";
         files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
+
+        ReadBufferFromFile header_buffer(files.back());
+        const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
+        total_bytes += total_bytes;
+
+        if (header.rows)
+        {
+            total_rows += header.rows;
+            total_bytes += header.bytes;
+        }
     }
 
     recovered = true;
@@ -231,8 +241,10 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                connection = std::move(result.front().entry);
+                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = results.front();
+                parent.pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+                connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
                 LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
@@ -289,8 +301,10 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-            auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            auto connection = std::move(result.front().entry);
+            auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+            auto result = results.front();
+            parent.pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+            auto connection = std::move(result.entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
             RemoteInserter remote(*connection, timeouts,

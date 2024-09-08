@@ -30,3 +30,7 @@ WHERE (time_stamp_utc >= toDateTime('2024-04-25 00:00:00')) AND (time_stamp_utc 
 GROUP BY time_stamp_utc
 ORDER BY Impressions DESC
 LIMIT 1000;
+
+drop table test_table;
+create table test_table engine MergeTree order by sum as select 100 as sum union all select 200 as sum;
+select sum as sum from (select sum(sum) as sum from test_table);

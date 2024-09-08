@@ -1,7 +1,6 @@
 #pragma once
 #include <Interpreters/Context.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
 
@@ -23,7 +22,12 @@ class NamedCollection
 public:
     using Key = std::string;
     using Keys = std::set<Key, std::less<>>;
-    using SourceId = NamedCollectionUtils::SourceId;
+    enum class SourceId : uint8_t
+    {
+        NONE = 0,
+        CONFIG = 1,
+        SQL = 2,
+    };
 
     static MutableNamedCollectionPtr create(
         const Poco::Util::AbstractConfiguration & config,

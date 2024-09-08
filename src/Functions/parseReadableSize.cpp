@@ -68,7 +68,7 @@ public:
         {
             {"readable_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
         DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
         if constexpr (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(return_type);
@@ -217,7 +217,10 @@ private:
         }
 
         Float64 num_bytes_with_decimals = base * iter->second;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
         if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
+#pragma clang diagnostic pop
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

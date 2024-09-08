@@ -45,13 +45,13 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 
 Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
 
-## MD5 {#md5}
+## MD5
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64 {#siphash64}
+## sipHash64
 
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
@@ -314,10 +314,71 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 Calculates a 32-bit hash code from any type of integer.
 This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
+**Syntax**
+
+```sql
+intHash32(int)
+```
+
+**Arguments**
+
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+
+**Returned value**
+
+- 32-bit hash code. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT intHash32(42);
+```
+
+Result:
+
+```response
+┌─intHash32(42)─┐
+│    1228623923 │
+└───────────────┘
+```
+
 ## intHash64
 
 Calculates a 64-bit hash code from any type of integer.
-It works faster than intHash32. Average quality.
+This is a relatively fast non-cryptographic hash function of average quality for numbers. 
+It works faster than [intHash32](#inthash32).
+
+**Syntax**
+
+```sql
+intHash64(int)
+```
+
+**Arguments**
+
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+
+**Returned value**
+
+- 64-bit hash code. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT intHash64(42);
+```
+
+Result:
+
+```response
+┌────────intHash64(42)─┐
+│ 11490350930367293593 │
+└──────────────────────┘
+```
 
 ## SHA1, SHA224, SHA256, SHA512, SHA512_256
 
@@ -625,6 +686,40 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 ┌─kostikConsistentHash(16045690984833335023, 2)─┐
 │                                             1 │
 └───────────────────────────────────────────────┘
+```
+
+## ripeMD160
+
+Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
+
+**Syntax**
+
+```sql
+ripeMD160(input)
+```
+
+**Parameters**
+
+- `input`: Input string. [String](../data-types/string.md)
+
+**Returned value**
+
+- A [UInt256](../data-types/int-uint.md) hash value where the 160-bit RIPEMD-160 hash is stored in the first 20 bytes. The remaining 12 bytes are zero-padded.
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+```sql
+SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'));
+```
+
+```response
+┌─hex(ripeMD160('The quick brown fox jumps over the lazy dog'))─┐
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ## murmurHash2_32, murmurHash2_64

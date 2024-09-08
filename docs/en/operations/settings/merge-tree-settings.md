@@ -3,9 +3,121 @@ slug: /en/operations/settings/merge-tree-settings
 title: "MergeTree tables settings"
 ---
 
-The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.
+System table `system.merge_tree_settings` shows the globally set MergeTree settings.
 
-These are example overrides for `max_suspicious_broken_parts`:
+MergeTree settings can be set in the `merge_tree` section of the server config file, or specified for each `MergeTree` table individually in
+the `SETTINGS` clause of the `CREATE TABLE` statement.
+
+Example for customizing setting `max_suspicious_broken_parts`:
+
+Configure the default for all `MergeTree` tables in the server configuration file:
+
+``` text
+<merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</merge_tree>
+```
+
+Set for a particular table:
+
+``` sql
+CREATE TABLE tab
+(
+    `A` Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS max_suspicious_broken_parts = 500;
+```
+
+Change the settings for a particular table using `ALTER TABLE ... MODIFY SETTING`:
+
+```sql
+ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
+
+-- reset to global default (value from system.merge_tree_settings)
+ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
+```
+
+## index_granularity
+
+Maximum number of data rows between the marks of an index.
+
+Default value: 8192.
+
+## index_granularity_bytes
+
+Maximum size of data granules in bytes.
+
+Default value: 10Mb.
+
+To restrict the granule size only by number of rows, set to 0 (not recommended).
+
+## min_index_granularity_bytes
+
+Min allowed size of data granules in bytes.
+
+Default value: 1024b.
+
+To provide a safeguard against accidentally creating tables with very low index_granularity_bytes.
+
+## enable_mixed_granularity_parts
+
+Enables or disables transitioning to control the granule size with the `index_granularity_bytes` setting. Before version 19.11, there was only the `index_granularity` setting for restricting granule size. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from tables with big rows (tens and hundreds of megabytes). If you have tables with big rows, you can enable this setting for the tables to improve the efficiency of `SELECT` queries.
+
+## use_minimalistic_part_header_in_zookeeper
+
+Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper stores less data. For details, see [here](../server-configuration-parameters/settings.md/#server-settings-use_minimalistic_part_header_in_zookeeper).
+
+## min_merge_bytes_to_use_direct_io
+
+The minimum data volume for merge operation that is required for using direct I/O access to the storage disk.
+When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged.
+If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option).
+If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
+
+Default value: `10 * 1024 * 1024 * 1024` bytes.
+
+## merge_with_ttl_timeout
+
+Minimum delay in seconds before repeating a merge with delete TTL.
+
+Default value: `14400` seconds (4 hours).
+
+## merge_with_recompression_ttl_timeout
+
+Minimum delay in seconds before repeating a merge with recompression TTL.
+
+Default value: `14400` seconds (4 hours).
+
+## write_final_mark
+
+Enables or disables writing the final index mark at the end of data part (after the last byte).
+
+Default value: 1.
+
+Don’t change or bad things will happen.
+
+## storage_policy
+
+Storage policy.
+
+## min_bytes_for_wide_part
+
+Minimum number of bytes/rows in a data part that can be stored in `Wide` format.
+You can set one, both or none of these settings.
+
+## max_compress_block_size
+
+Maximum size of blocks of uncompressed data before compressing for writing to a table.
+You can also specify this setting in the global settings (see [max_compress_block_size](/docs/en/operations/settings/settings.md/#max-compress-block-size) setting).
+The value specified when table is created overrides the global value for this setting.
+
+## min_compress_block_size
+
+Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+You can also specify this setting in the global settings (see [min_compress_block_size](/docs/en/operations/settings/settings.md/#min-compress-block-size) setting).
+The value specified when table is created overrides the global value for this setting.
 
 ## max_suspicious_broken_parts
 
@@ -16,37 +128,6 @@ Possible values:
 - Any positive integer.
 
 Default value: 100.
-
-Override example in `config.xml`:
-
-``` text
-<merge_tree>
-    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
-</merge_tree>
-```
-
-An example to set in `SETTINGS` for a particular table:
-
-``` sql
-CREATE TABLE foo
-(
-    `A` Int64
-)
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS max_suspicious_broken_parts = 500;
-```
-
-An example of changing the settings for a specific table with the `ALTER TABLE ... MODIFY SETTING` command:
-
-``` sql
-ALTER TABLE foo
-    MODIFY SETTING max_suspicious_broken_parts = 100;
-
--- reset to default (use value from system.merge_tree_settings)
-ALTER TABLE foo
-    RESET SETTING max_suspicious_broken_parts;
-```
 
 ## parts_to_throw_insert {#parts-to-throw-insert}
 
@@ -300,6 +381,8 @@ Possible values:
 Default value: 10800
 
 ## try_fetch_recompressed_part_timeout
+
+Timeout (in seconds) before starting merge with recompression. During this time ClickHouse tries to fetch recompressed part from replica which assigned this merge with recompression.
 
 Recompression works slow in most cases, so we don't start merge with recompression until this timeout and trying to fetch recompressed part from replica which assigned this merge with recompression.
 
@@ -603,6 +686,8 @@ Possible values:
 
 Default value: -1 (unlimited).
 
+You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read) at a query / session / profile level.
+
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 
 Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
@@ -886,9 +971,36 @@ Default value: false
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 
-### allow_experimental_optimized_row_order
+## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
+
+Enables compact mode for binary serialization of discriminators in Variant data type.
+This mode allows to use significantly less memory for storing discriminators in parts when there is mostly one variant or a lot of NULL values.
+
+Default value: true
+
+## merge_workload
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for background merges of this table. If not specified (empty string), then server setting `merge_workload` is used instead.
+
+Default value: an empty string
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for background mutations of this table. If not specified (empty string), then server setting `mutation_workload` is used instead.
+
+Default value: an empty string
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+### optimize_row_order
 
 Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
+
+Only has an effect for ordinary MergeTree-engine tables. Does nothing for specialized MergeTree engine tables (e.g. CollapsingMergeTree).
 
 MergeTree tables are (optionally) compressed using [compression codecs](../../sql-reference/statements/create/table.md#column_compression_codec).
 Generic compression codecs such as LZ4 and ZSTD achieve maximum compression rates if the data exposes patterns.
@@ -915,7 +1027,7 @@ A table with no primary key represents the extreme case of a single equivalence 
 
 The fewer and the larger the equivalence classes are, the higher the degree of freedom when re-shuffling rows.
 
-The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemir, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
+The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemire, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
 It performs three steps:
 1. Find all equivalence classes based on the row values in primary key columns.
 2. For each equivalence class, calculate (usually estimate) the cardinalities of the non-primary-key columns.
@@ -929,3 +1041,27 @@ Compression rates of LZ4 or ZSTD improve on average by 20-40%.
 
 This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
+
+## lightweight_mutation_projection_mode
+
+By default, lightweight delete `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. So the default value would be `throw`.
+However, this option can change the behavior. With the value either `drop` or `rebuild`, deletes will work with projections. `drop` would delete the projection so it might be fast in the current query as projection gets deleted but slow in future queries as no projection attached.
+`rebuild` would rebuild the projection which might affect the performance of the current query, but might speedup for future queries. A good thing is that these options would only work in the part level,
+which means projections in the part that don't get touched would stay intact instead of triggering any action like drop or rebuild.
+
+Possible values:
+
+- throw, drop, rebuild
+
+Default value: throw
+
+## deduplicate_merge_projection_mode
+
+Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. If allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
+It also controls `OPTIMIZE DEDUPLICATE` as well, but has effect on all MergeTree family members. Similar to the option `lightweight_mutation_projection_mode`, it is also part level.
+
+Possible values:
+
+- throw, drop, rebuild
+
+Default value: throw

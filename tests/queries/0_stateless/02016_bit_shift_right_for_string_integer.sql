@@ -41,8 +41,6 @@ SELECT 37,'Hello',bin(bitShiftRight('Hello', 37));
 SELECT 38,'Hello',bin(bitShiftRight('Hello', 38));
 SELECT 39,'Hello',bin(bitShiftRight('Hello', 39));
 SELECT 40,'Hello',bin(bitShiftRight('Hello', 40));
-SELECT 41,'Hello',bin(bitShiftRight('Hello', 41));
-SELECT 42,'Hello',bin(bitShiftRight('Hello', 42));
 
 SELECT 'FixedString ConstConst';
 SELECT bin(toFixedString('Hello', 10)) == bin(bitShiftRight(toFixedString('Hello', 10), 0));
@@ -93,40 +91,39 @@ SELECT 77,toFixedString('Hello', 10), bin(bitShiftRight(toFixedString('Hello', 1
 SELECT 78,toFixedString('Hello', 10), bin(bitShiftRight(toFixedString('Hello', 10), 78));
 SELECT 79,toFixedString('Hello', 10), bin(bitShiftRight(toFixedString('Hello', 10), 79));
 SELECT 80,toFixedString('Hello', 10), bin(bitShiftRight(toFixedString('Hello', 10), 80));
-SELECT 81,toFixedString('Hello', 10), bin(bitShiftRight(toFixedString('Hello', 10), 81));
 
 DROP TABLE IF EXISTS test_bit_shift_right_string_integer;
 
 CREATE TABLE test_bit_shift_right_string_integer (str String, fixedStr FixedString(10), id Int64) engine=Log;
 
-INSERT INTO test_bit_shift_right_string_integer VALUES('Hello','Hello',-1)('Hello','Hello',0),('Hello','Hello',1),('Hello','Hello',7),('Hello','Hello',8),('Hello','Hello',9),('Hello','Hello',15),('Hello','Hello',16),('Hello','Hello',17),('Hello','Hello',23),('Hello','Hello',24),('Hello','Hello',25),('Hello','Hello',31),('Hello','Hello',32),('Hello','Hello',33),('Hello','Hello',39),('Hello','Hello',40),('Hello','Hello',41),('Hello','Hello',42),('Hel','Hel',7),('Hel','Hel',8),('Hel','Hel',9);
+INSERT INTO test_bit_shift_right_string_integer VALUES('Hello','Hello',0),('Hello','Hello',1),('Hello','Hello',7),('Hello','Hello',8),('Hello','Hello',9),('Hello','Hello',15),('Hello','Hello',16),('Hello','Hello',17),('Hello','Hello',23),('Hello','Hello',24),('Hello','Hello',25),('Hello','Hello',31),('Hello','Hello',32),('Hello','Hello',33),('Hello','Hello',39),('Hello','Hello',40),('Hel','Hel',7),('Hel','Hel',8),('Hel','Hel',9);
 
-SELECT bin(bitShiftRight('Hello', 42));  --A blank line
+SELECT bin(bitShiftRight('Hello', 40));  --A blank line
 SELECT 'String VectorVector';
 SELECT id as shift_right_bit,str as arg,bin(bitShiftRight(str, id)) as string_res FROM test_bit_shift_right_string_integer;
 SELECT id as shift_right_bit,str as arg,bin(bitShiftRight(str, id)) as string_res FROM test_bit_shift_right_string_integer WHERE (str='Hello' AND (id=23 OR id=24 OR id=25)) OR (str='Hel' AND (id=7 OR id=8 OR id=9));
 
-SELECT bin(bitShiftRight('Hello', 42));
+SELECT bin(bitShiftRight('Hello', 40));
 SELECT 'FixedString VectorVector';
 SELECT id as shift_right_bit,fixedStr as arg,bin(bitShiftRight(fixedStr, id)) as fixed_string_res FROM test_bit_shift_right_string_integer;
 SELECT id as shift_right_bit,fixedStr as arg,bin(bitShiftRight(fixedStr, id)) as fixed_string_res FROM test_bit_shift_right_string_integer WHERE (str='Hello' AND (id=23 OR id=24 OR id=25)) OR (str='Hel' AND (id=7 OR id=8 OR id=9));
 
-SELECT bin(bitShiftRight('Hello', 42));  --A blank line
+SELECT bin(bitShiftRight('Hello', 40));  --A blank line
 SELECT 'String VectorConst';
 SELECT 7 as shift_right_bit,str as arg,bin(bitShiftRight(str, 7)) as string_res FROM test_bit_shift_right_string_integer;
 SELECT 8 as shift_right_bit,str as arg,bin(bitShiftRight(str, 8)) as string_res FROM test_bit_shift_right_string_integer;
 
-SELECT bin(bitShiftRight('Hello', 42));  --A blank line
+SELECT bin(bitShiftRight('Hello', 40));  --A blank line
 SELECT 'FixedString VectorConst';
 SELECT 7 as shift_right_bit,fixedStr as arg,bin(bitShiftRight(fixedStr, 7)) as fixed_string_res FROM test_bit_shift_right_string_integer;
 SELECT 8 as shift_right_bit,fixedStr as arg,bin(bitShiftRight(fixedStr, 8)) as fixed_string_res FROM test_bit_shift_right_string_integer;
 
-SELECT bin(bitShiftRight('Hello', 42));  --A blank line
+SELECT bin(bitShiftRight('Hello', 40));  --A blank line
 SELECT 'String ConstVector';
 SELECT id as shift_right_bit,'Hello' as arg,bin(bitShiftRight('Hello', id)) as string_res FROM test_bit_shift_right_string_integer;
-SELECT id as shift_right_bit,'Hel' as arg,bin(bitShiftRight('Hel', id)) as string_res FROM test_bit_shift_right_string_integer;
+SELECT id as shift_right_bit,'Hel' as arg,bin(bitShiftRight('Hel', id)) as string_res FROM test_bit_shift_right_string_integer WHERE id <= 8 * 3;
 
-SELECT bin(bitShiftRight('Hello', 42));  --A blank line
+SELECT bin(bitShiftRight('Hello', 40));  --A blank line
 SELECT 'FixedString ConstVector';
 SELECT id as shift_right_bit,toFixedString('Hello', 10) as arg,bin(bitShiftRight(toFixedString('Hello', 10), id)) as fixed_string_res FROM test_bit_shift_right_string_integer;
 SELECT id as shift_right_bit,toFixedString('Hel', 10) as arg,bin(bitShiftRight(toFixedString('Hel', 10), id)) as fixed_string_res FROM test_bit_shift_right_string_integer;

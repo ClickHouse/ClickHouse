@@ -69,7 +69,7 @@ struct fmt::formatter<DB::MarkRange>
     }
 
     template <typename FormatContext>
-    auto format(const DB::MarkRange & range, FormatContext & ctx)
+    auto format(const DB::MarkRange & range, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", fmt::format("({}, {})", range.begin, range.end));
     }

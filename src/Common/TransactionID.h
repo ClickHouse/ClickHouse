@@ -108,7 +108,7 @@ struct fmt::formatter<DB::TransactionID>
     }
 
     template<typename FormatContext>
-    auto format(const DB::TransactionID & tid, FormatContext & context)
+    auto format(const DB::TransactionID & tid, FormatContext & context) const
     {
         return fmt::format_to(context.out(), "({}, {}, {})", tid.start_csn, tid.local_tid, tid.host_id);
     }

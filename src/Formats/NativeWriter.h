@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -23,7 +24,7 @@ public:
     /** If non-zero client_revision is specified, additional block information can be written.
       */
     NativeWriter(
-        WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, bool remove_low_cardinality_ = false,
+        WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, std::optional<FormatSettings> format_settings_ = std::nullopt, bool remove_low_cardinality_ = false,
         IndexForNativeFormat * index_ = nullptr, size_t initial_size_of_file_ = 0);
 
     Block getHeader() const { return header; }
@@ -44,6 +45,7 @@ private:
     CompressedWriteBuffer * ostr_concrete = nullptr;
 
     bool remove_low_cardinality;
+    std::optional<FormatSettings> format_settings;
 };
 
 }

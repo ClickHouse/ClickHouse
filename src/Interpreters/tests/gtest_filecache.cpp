@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <numeric>
 #include <thread>
+#include <chrono>
 
+#include <Core/ServerUUID.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -41,6 +43,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 
+using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 using namespace DB;
 
@@ -245,7 +248,8 @@ void download(FileSegment & file_segment)
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
-    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000));
+    std::string failure_reason;
+    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000, failure_reason));
     download(cache_base_path, file_segment);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
 
@@ -257,7 +261,8 @@ void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
-    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000));
+    std::string failure_reason;
+    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000, failure_reason));
     file_segment.complete();
 }
 
@@ -333,6 +338,7 @@ public:
 
 TEST_F(FileCacheTest, LRUPolicy)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -356,8 +362,10 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings.max_size = 30;
     settings.max_elements = 5;
     settings.boundary_alignment = 1;
+    settings.load_metadata_asynchronously = false;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
+
 
     const auto user = FileCache::getCommonUser();
     {
@@ -807,11 +815,13 @@ TEST_F(FileCacheTest, LRUPolicy)
 
 TEST_F(FileCacheTest, writeBuffer)
 {
+    ServerUUID::setRandomForUnitTests();
     FileCacheSettings settings;
     settings.max_size = 100;
     settings.max_elements = 5;
     settings.max_file_segment_size = 5;
     settings.base_path = cache_base_path;
+    settings.load_metadata_asynchronously = false;
 
     FileCache cache("6", settings);
     cache.initialize();
@@ -938,10 +948,12 @@ static size_t readAllTemporaryData(TemporaryFileStream & stream)
 
 TEST_F(FileCacheTest, temporaryData)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::FileCacheSettings settings;
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
     settings.base_path = cache_base_path;
+    settings.load_metadata_asynchronously = false;
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
@@ -953,10 +965,11 @@ TEST_F(FileCacheTest, temporaryData)
 
     {
         ASSERT_EQ(some_data_holder->size(), 5);
+        std::string failure_reason;
         for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000));
+            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason));
             download(*segment);
             segment->complete();
         }
@@ -1044,6 +1057,7 @@ TEST_F(FileCacheTest, temporaryData)
 
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -1068,6 +1082,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings.max_size = 30;
     settings.max_elements = 10;
     settings.boundary_alignment = 1;
+    settings.load_metadata_asynchronously = false;
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1087,6 +1102,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     auto cache = std::make_shared<DB::FileCache>("8", settings);
     cache->initialize();
+
     auto key = cache->createKeyForPath(file_path);
     const auto user = FileCache::getCommonUser();
 
@@ -1120,12 +1136,14 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
 TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 {
+    ServerUUID::setRandomForUnitTests();
     /// Temporary data stored in cache
     {
         DB::FileCacheSettings settings;
         settings.max_size = 10_KiB;
         settings.max_file_segment_size = 1_KiB;
         settings.base_path = cache_base_path;
+        settings.load_metadata_asynchronously = false;
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
@@ -1167,6 +1185,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 
 TEST_F(FileCacheTest, SLRUPolicy)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
     std::string query_id = "query_id"; /// To work with cache need query_id and query context.
 
@@ -1188,6 +1207,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     settings.max_size = 40;
     settings.max_elements = 6;
     settings.boundary_alignment = 1;
+    settings.load_metadata_asynchronously = false;
 
     settings.cache_policy = "SLRU";
     settings.slru_size_ratio = 0.5;
@@ -1300,6 +1320,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         settings2.boundary_alignment = 1;
         settings2.cache_policy = "SLRU";
         settings2.slru_size_ratio = 0.5;
+        settings.load_metadata_asynchronously = false;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();

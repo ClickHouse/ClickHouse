@@ -103,8 +103,6 @@ Default: 2
 
 The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
-## background_merges_mutations_scheduling_policy
-
 Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
 Could be applied from the `default` profile for backward compatibility.
 
@@ -498,6 +496,8 @@ Default: 0.9
 Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
 settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
 
+To disable the cgroup observer, set this value to `0`.
+
 Type: UInt64
 
 Default: 15
@@ -591,6 +591,22 @@ Default value: 100000
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
+## max\_table\_num\_to\_throw {#max-table-num-to-throw}
+If number of tables is greater than this value, server will throw an exception. 0 means no limitation. View, remote tables, dictionary, system tables are not counted. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.Default value: 0
+
+**Example**
+```xml
+<max_table_num_to_throw>400</max_table_num_to_throw>
+```
+
+## max\_database\_num\_to\_throw {#max-table-num-to-throw}
+If number of _database is greater than this value, server will throw an exception. 0 means no limitation.
+Default value: 0
+
+**Example**
+```xml
+<max_database_num_to_throw>400</max_database_num_to_throw>
+```
 
 ## max_temporary_data_on_disk_size
 
@@ -938,6 +954,38 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
+## error_log {#error_log}
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on error history collection [`system.error_log`](../../operations/system-tables/error_log.md), create `/etc/clickhouse-server/config.d/error_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </error_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `error_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_error_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<error_log remove="1" />
+</clickhouse>
+```
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -1352,6 +1400,16 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
+## max_keep_alive_requests {#max-keep-alive-requests}
+
+Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server. Default to 10000.
+
+**Example**
+
+``` xml
+<max_keep_alive_requests>10</max_keep_alive_requests>
+```
+
 ## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
@@ -1415,6 +1473,9 @@ Keys:
 - `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 - `count` – The number of archived log files that ClickHouse stores.
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
+- `console_log_level` – Logging level for console. Default to `level`.
+- `use_syslog` - Log to syslog as well.
+- `syslog_level` - Logging level for logging to syslog.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 - `formatting` – Specify log format to be printed in console log (currently only `json` supported).
 
@@ -1901,7 +1962,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 ## metric_log {#metric_log}
 
-It is enabled by default. If it`s not, you can do this manually.
+It is disabled by default.
 
 **Enabling**
 
@@ -2059,48 +2120,6 @@ The trailing slash is mandatory.
 
 ``` xml
 <path>/var/lib/clickhouse/</path>
-```
-
-## Prometheus {#prometheus}
-
-:::note
-ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
-:::
-
-Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
-
-Settings:
-
-- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
-- `port` – Port for `endpoint`.
-- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
-- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
-
-**Example**
-
-``` xml
-<clickhouse>
-    <listen_host>0.0.0.0</listen_host>
-    <http_port>8123</http_port>
-    <tcp_port>9000</tcp_port>
-    <!-- highlight-start -->
-    <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>9363</port>
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
-        <errors>true</errors>
-    </prometheus>
-    <!-- highlight-end -->
-</clickhouse>
-```
-
-Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
-```bash
-curl 127.0.0.1:9363/metrics
 ```
 
 ## query_log {#query-log}
@@ -2924,6 +2943,8 @@ Define proxy servers for HTTP and HTTPS requests, currently supported by S3 stor
 
 There are three ways to define proxy servers: environment variables, proxy lists, and remote proxy resolvers.
 
+Bypassing proxy servers for specific hosts is also supported with the use of `no_proxy`.
+
 ### Environment variables
 
 The `http_proxy` and `https_proxy` environment variables allow you to specify a
@@ -3033,6 +3054,29 @@ This also allows a mix of resolver types can be used.
 
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
 
+### no_proxy
+By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
+
+Example:
+
+The below configuration bypasses proxy requests to `clickhouse.cloud` and all of its subdomains (e.g, `auth.clickhouse.cloud`).
+The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` and `about.gitlab.com` would bypass the proxy.
+
+``` xml
+<proxy>
+    <no_proxy>clickhouse.cloud,.gitlab.com</no_proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
 ## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 A limit on the number of materialized views attached to a table.
@@ -3059,3 +3103,21 @@ This setting is only necessary for the migration period and will become obsolete
 Type: Bool
 
 Default: 1
+
+## merge_workload {#merge_workload}
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload {#mutation_workload}
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)

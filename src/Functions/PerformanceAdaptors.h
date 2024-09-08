@@ -4,6 +4,7 @@
 
 #include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <mutex>

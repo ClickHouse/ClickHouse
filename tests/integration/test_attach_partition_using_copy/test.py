@@ -98,7 +98,8 @@ def create_destination_table(node, table_name, replicated):
     )
 
 
-def test_both_mergtree(start_cluster):
+def test_both_mergetree(start_cluster):
+    cleanup([replica1, replica2])
     create_source_table(replica1, "source", False)
     create_destination_table(replica1, "destination", False)
 
@@ -120,12 +121,13 @@ def test_both_mergtree(start_cluster):
 
 
 def test_all_replicated(start_cluster):
+    cleanup([replica1, replica2])
     create_source_table(replica1, "source", True)
     create_destination_table(replica1, "destination", True)
     create_destination_table(replica2, "destination", True)
 
-    replica1.query("SYSTEM SYNC REPLICA destination")
     replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+    replica2.query("SYSTEM SYNC REPLICA destination")
 
     assert_eq_with_retry(
         replica1,
@@ -154,12 +156,13 @@ def test_all_replicated(start_cluster):
 
 
 def test_only_destination_replicated(start_cluster):
+    cleanup([replica1, replica2])
     create_source_table(replica1, "source", False)
     create_destination_table(replica1, "destination", True)
     create_destination_table(replica2, "destination", True)
 
-    replica1.query("SYSTEM SYNC REPLICA destination")
     replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+    replica2.query("SYSTEM SYNC REPLICA destination")
 
     assert_eq_with_retry(
         replica1,
@@ -188,6 +191,7 @@ def test_only_destination_replicated(start_cluster):
 
 
 def test_not_work_on_different_disk(start_cluster):
+    cleanup([replica1, replica2])
     # Replace and move should not work on replace
     create_source_table(replica1, "source", False)
     create_destination_table(replica2, "destination", False)

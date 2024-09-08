@@ -3,6 +3,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
 #include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -101,6 +102,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");
+                mutate_task->updateProfileEvents();
                 write_part_log({});
 
                 state = State::NEED_FINISH;
@@ -113,6 +115,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
                 storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
+                mutate_task->updateProfileEvents();
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
@@ -136,7 +139,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
-    context->makeQueryContext();
+    context->makeQueryContextForMutate(*storage.getSettings());
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
     context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);

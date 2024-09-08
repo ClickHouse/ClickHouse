@@ -7,7 +7,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/S3/S3Capabilities.h>
 #include <memory>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 
@@ -20,7 +20,7 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        const S3Settings::RequestSettings & request_settings_,
+        const S3::RequestSettings & request_settings_,
         const S3::AuthSettings & auth_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
@@ -34,7 +34,7 @@ struct S3ObjectStorageSettings
         , read_only(read_only_)
     {}
 
-    S3Settings::RequestSettings request_settings;
+    S3::RequestSettings request_settings;
     S3::AuthSettings auth_settings;
 
     uint64_t min_bytes_for_seek;
@@ -67,7 +67,7 @@ private:
     }
 
 public:
-    template <class ...Args>
+    template <typename... Args>
     explicit S3ObjectStorage(std::unique_ptr<S3::Client> && client_, Args && ...args)
         : S3ObjectStorage("S3ObjectStorage", std::move(client_), std::forward<Args>(args)...)
     {
@@ -164,11 +164,12 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 

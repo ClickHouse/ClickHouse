@@ -273,6 +273,8 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.default_database,
             address.user,
             address.password,
+            address.proto_send_chunked,
+            address.proto_recv_chunked,
             address.quota_key,
             address.cluster,
             address.cluster_secret,
@@ -283,7 +285,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
-    const auto settings = storage.getContext()->getSettings();
+    const auto & settings = storage.getContext()->getSettingsRef();
     return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -412,8 +414,10 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-        auto result = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto connection = std::move(result.front().entry);
+        auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto result = results.front();
+        pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+        auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,

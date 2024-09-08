@@ -1,4 +1,4 @@
-set allow_experimental_analyzer = true;
+set enable_analyzer = true;
 
 select count; -- { serverError UNKNOWN_IDENTIFIER }
 

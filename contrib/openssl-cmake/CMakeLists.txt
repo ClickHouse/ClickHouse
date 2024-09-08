@@ -1298,7 +1298,6 @@ elseif(ARCH_PPC64LE)
         ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
         ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
         ${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha_enc.c
-        ${OPENSSL_SOURCE_DIR}/crypto/mem_clr.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
         ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c

@@ -65,6 +65,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
+    ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
@@ -92,6 +93,7 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
+    ErrorCodes::Value
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -240,8 +242,22 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     esac
 done
 
-# All the submodules should be from https://github.com/
-find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
+# All submodules should be from https://github.com/
+git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.url' | \
+while read -r line; do
+    name=${line#submodule.}; name=${name%.url*}
+    url=${line#* }
+    [[ "$url" != 'https://github.com/'* ]] && echo "All submodules should be from https://github.com/, submodule '$name' has '$url'"
+done
+
+# All submodules should be of this form: [submodule "contrib/libxyz"] (for consistency, the submodule name does matter too much)
+# - restrict the check to top-level .gitmodules file
+git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.path' | \
+while read -r line; do
+    name=${line#submodule.}; name=${name%.path*}
+    path=${line#* }
+    [ "$name" != "$path" ] && echo "Submodule name '$name' is not equal to it's path '$path'"
+done
 
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
@@ -302,13 +318,19 @@ std_cerr_cout_excludes=(
     src/Interpreters/Context.cpp
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
+    src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
     src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
+    src/Client/ClientBase.h
+    src/Client/LineReader.h
+    src/Client/ReplxxLineReader.h
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
+    src/Common/GWPAsan.cpp
+    src/Common/ProgressIndication.h
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
@@ -445,3 +467,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
+
+PATTERN="allow_";
+DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.h | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
+[ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"

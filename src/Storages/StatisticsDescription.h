@@ -13,6 +13,7 @@ enum class StatisticsType : UInt8
 {
     TDigest = 0,
     Uniq = 1,
+    CountMinSketch = 2,
 
     Max = 63,
 };
@@ -54,12 +55,12 @@ struct ColumnStatisticsDescription
 
     ASTPtr getAST() const;
 
-    static std::vector<ColumnStatisticsDescription> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
-    static ColumnStatisticsDescription fromColumnDeclaration(const ASTColumnDeclaration & column);
+    /// get a vector of <column name, statistics desc> pair
+    static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
+    static ColumnStatisticsDescription fromColumnDeclaration(const ASTColumnDeclaration & column, DataTypePtr data_type);
 
     using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
     StatisticsTypeDescMap types_to_desc;
-    String column_name;
     DataTypePtr data_type;
 };
 

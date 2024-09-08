@@ -68,7 +68,7 @@ public:
 private:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -207,6 +207,8 @@ private:
 
         size_t total_rows = 0;
         size_t total_bytes_compressed = 0;
+
+        size_t adaptive_chunk_size = 0;
 
         std::vector<int> row_groups_idxs;
 

@@ -91,13 +91,13 @@
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse/aws-sdk-cpp
-[submodule "aws-c-event-stream"]
+[submodule "contrib/aws-c-event-stream"]
 	path = contrib/aws-c-event-stream
 	url = https://github.com/awslabs/aws-c-event-stream
-[submodule "aws-c-common"]
+[submodule "contrib/aws-c-common"]
 	path = contrib/aws-c-common
 	url = https://github.com/awslabs/aws-c-common.git
-[submodule "aws-checksums"]
+[submodule "contrib/aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums
 [submodule "contrib/curl"]
@@ -108,7 +108,7 @@
 	url = https://github.com/ClickHouse/icudata
 [submodule "contrib/icu"]
 	path = contrib/icu
-	url = https://github.com/unicode-org/icu
+	url = https://github.com/ClickHouse/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
 	url = https://github.com/ClickHouse/flatbuffers
@@ -163,7 +163,7 @@
 	url = https://github.com/xz-mirror/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp
+	url = https://github.com/ClickHouse/abseil-cpp.git
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse/dragonbox
@@ -230,9 +230,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/annoy"]
-	path = contrib/annoy
-	url = https://github.com/ClickHouse/annoy
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
@@ -341,16 +338,13 @@
 	url = https://github.com/graphitemaster/incbin.git
 [submodule "contrib/usearch"]
 	path = contrib/usearch
-	url = https://github.com/unum-cloud/usearch.git
+	url = https://github.com/ClickHouse/usearch.git
 [submodule "contrib/SimSIMD"]
 	path = contrib/SimSIMD
 	url = https://github.com/ashvardanian/SimSIMD.git
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git
-[submodule "contrib/robin-map"]
-	path = contrib/robin-map
-	url = https://github.com/Tessil/robin-map.git
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
@@ -372,3 +366,6 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
+[submodule "contrib/numactl"]
+	path = contrib/numactl
+	url = https://github.com/ClickHouse/numactl.git
