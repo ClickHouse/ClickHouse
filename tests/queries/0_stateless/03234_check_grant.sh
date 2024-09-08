@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS user_03234; DROP TABLE IF EXISTS tb;CREATE USER user_03234; GRANT SELECT ON tb TO user_03234;"
 
