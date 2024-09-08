@@ -48,6 +48,7 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -300,6 +301,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);               /// Mark filter for caching query conditions
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -3236,6 +3238,41 @@ void Context::clearQueryCache(const std::optional<String> & tag) const
 
     if (shared->query_cache)
         shared->query_cache->clear(tag);
+}
+
+void Context::setQueryConditionCache(size_t max_entries)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
+
+    shared->query_condition_cache = std::make_shared<QueryConditionCache>(max_entries);
+}
+
+QueryConditionCachePtr Context::getQueryConditionCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->query_condition_cache;
+}
+
+void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
+
+    size_t max_entries = config.getUInt64("query_condition_cache.max_entries", DEFAULT_QUERY_CONDITION_CACHE_MAX_ENTRIES);
+    shared->query_condition_cache->updateConfiguration(max_entries);
+}
+
+void Context::clearQueryConditionCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        shared->query_condition_cache->clear();
 }
 
 void Context::clearCaches() const

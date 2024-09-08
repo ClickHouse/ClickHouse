@@ -85,6 +85,7 @@ class MarkCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class QueryConditionCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -1075,6 +1076,11 @@ public:
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
     void clearQueryCache(const std::optional<String> & tag) const;
+
+    void setQueryConditionCache(size_t max_entries);
+    std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
+    void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void clearQueryConditionCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

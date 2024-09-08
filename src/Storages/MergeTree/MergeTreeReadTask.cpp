@@ -194,6 +194,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read(const BlockSizeParam
 
     BlockAndProgress res = {
         .block = std::move(block),
+        .read_mark_ranges = read_result.read_mark_ranges,
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };

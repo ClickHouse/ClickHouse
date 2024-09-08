@@ -1454,6 +1454,9 @@ try
     }
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
+    size_t query_condition_cache_max_entries = config().getUInt64("query_condition_cache.max_entries", DEFAULT_QUERY_CONDITION_CACHE_MAX_ENTRIES);
+    global_context->setQueryConditionCache(query_condition_cache_max_entries);
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
     size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
@@ -1744,6 +1747,7 @@ try
             global_context->updateIndexMarkCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
+            global_context->updateQueryConditionCacheConfiguration(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL

@@ -65,6 +65,8 @@
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
+    M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of invalid marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.") \
+    M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.") \
     /* Each page cache chunk access increments exactly one of the following 5 PageCacheChunk* counters. */ \
     /* Something like hit rate: (PageCacheChunkShared + PageCacheChunkDataHits) / [sum of all 5]. */ \
     M(PageCacheChunkMisses, "Number of times a chunk has not been found in the userspace page cache.") \

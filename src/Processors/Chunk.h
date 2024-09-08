@@ -2,6 +2,7 @@
 
 #include <Common/CollectionOfDerived.h>
 #include <Columns/IColumn.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 #include <memory>
 
@@ -173,6 +174,25 @@ private:
     /// If rows_mask_by_column_id[column_id][row_id] is true related value in Block should be replaced with column default.
     /// It could contain less columns and rows then related block.
     RowsMaskByColumnId rows_mask_by_column_id;
+};
+
+
+class IMergeTreeDataPart;
+
+/// The query condition cache needs to know the mark ranges of which part the chunk data comes from.
+class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
+{
+public:
+    MarkRangesInfo(std::shared_ptr<const IMergeTreeDataPart> data_part_, MarkRanges mark_ranges_)
+        : data_part(data_part_)
+        , mark_ranges(std::move(mark_ranges_))
+    {}
+
+    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const { return data_part; }
+    const MarkRanges & getMarkRanges() const { return mark_ranges; }
+private:
+    std::shared_ptr<const IMergeTreeDataPart> data_part;
+    MarkRanges mark_ranges;
 };
 
 /// Converts all columns to full serialization in chunk.

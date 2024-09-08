@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <city.h>
 
 namespace DB
@@ -149,6 +150,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (add_part_level)
                 chunk.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level));
 
+            chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(task->getInfo().data_part, res.read_mark_ranges));
+
             return ChunkAndProgress{
                 .chunk = std::move(chunk),
                 .num_read_rows = res.num_read_rows,
@@ -157,6 +160,13 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         else
         {
+            if (reader_settings.enable_writes_to_query_condition_cache && prewhere_info)
+            {
+                auto data_part = task->getInfo().data_part;
+                auto query_condition_cache = data_part->storage.getContext()->getQueryConditionCache();
+                query_condition_cache->write(data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges);
+            }
+
             return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
         }
     }

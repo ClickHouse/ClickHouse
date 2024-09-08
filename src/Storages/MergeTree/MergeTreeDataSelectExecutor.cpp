@@ -857,6 +857,90 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
+void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, const ContextPtr & context, LoggerPtr log)
+{
+    auto & settings = context->getSettingsRef();
+    if (!settings.use_query_condition_cache || !settings.enable_reads_to_query_condition_cache ||
+        (!query_info_.prewhere_info && !query_info_.filter_actions_dag))
+        return;
+
+    QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
+
+    struct Stat
+    {
+        size_t total_granules{0};
+        size_t granules_dropped{0};
+    };
+
+    auto dropMarkRanges =[&](const String & condition) -> Stat
+    {
+        Stat stat;
+        for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
+        {
+            auto & part_with_ranges = *it;
+            stat.total_granules += part_with_ranges.getMarksCount();
+
+            auto filter = query_condition_cache->read(part_with_ranges.data_part, condition);
+            if (!filter)
+            {
+                ++it;
+                continue;
+            }
+
+            auto & mark_filter = *filter;
+            MarkRanges ranges;
+            for (auto & mark_range : part_with_ranges.ranges)
+            {
+                size_t begin = mark_range.begin;
+                for (size_t mark_it = begin; mark_it < mark_range.end; ++mark_it)
+                {
+                    if (!mark_filter[mark_it])
+                    {
+                        ++stat.granules_dropped;
+                        if (mark_it == begin)
+                            ++begin;
+                        else
+                        {
+                            ranges.emplace_back(begin, mark_it);
+                            begin = mark_it + 1;
+                        }
+                    }
+                }
+
+                if (begin != mark_range.begin && begin != mark_range.end)
+                    ranges.emplace_back(begin, mark_range.end);
+                else if (begin == mark_range.begin)
+                    ranges.emplace_back(begin, mark_range.end);
+            }
+
+            if (ranges.empty())
+                it = parts_with_ranges.erase(it);
+            else
+            {
+                part_with_ranges.ranges = ranges;
+                ++it;
+            }
+        }
+
+        return stat;
+    };
+
+    if (auto prewhere_info = query_info_.prewhere_info)
+    {
+        String & condition = prewhere_info->prewhere_column_name;
+        auto stat = dropMarkRanges(condition);
+        LOG_DEBUG(log, "PREWHERE contition {} by query condition cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
+    }
+
+    if (auto filter_dag = query_info_.filter_actions_dag)
+    {
+        String condition = filter_dag->getOutputs().front()->result_name;
+        auto stat = dropMarkRanges(condition);
+        LOG_DEBUG(log, "WHERE condition {} by query condition cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
+    }
+}
+
+
 std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
     const ReadFromMergeTree::AnalysisResult & result,

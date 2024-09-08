@@ -2,6 +2,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters//Cache/QueryConditionCache.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
 static void replaceFilterToConstant(Block & block, const String & filter_column_name)
@@ -61,7 +63,9 @@ FilterTransform::FilterTransform(
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
-    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
+    QueryConditionCachePtr query_condition_cache_,
+    std::optional<String> where_condition_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -71,6 +75,8 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
+    , query_condition_cache(query_condition_cache_)
+    , where_condition(std::move(where_condition_))
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -126,6 +132,16 @@ void FilterTransform::doTransform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     DataTypes types;
 
+    auto updateQueryConditionCache = [&]()
+    {
+        auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+        if (!mark_info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Chunk should have MarkRangesInfo in FilterTransform.");
+
+        query_condition_cache->write(mark_info->getDataPart(), *where_condition, mark_info->getMarkRanges());
+    };
+
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
@@ -155,7 +171,12 @@ void FilterTransform::doTransform(Chunk & chunk)
     constant_filter_description = ConstantFilterDescription(*filter_column);
 
     if (constant_filter_description.always_false)
+    {
+        if (query_condition_cache)
+            updateQueryConditionCache();
+
         return; /// Will finish at next prepare call
+    }
 
     if (constant_filter_description.always_true)
     {
@@ -202,8 +223,13 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
+    {
+        if (query_condition_cache)
+            updateQueryConditionCache();
+
         /// SimpleTransform will skip it.
         return;
+    }
 
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
