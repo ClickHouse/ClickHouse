@@ -286,6 +286,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (enabledBlockOffsetColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+    };
+
+    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+
     SerializationInfo::Settings info_settings =
     {
         .ratio_of_defaults_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
@@ -293,10 +301,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
+    global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
     {
         global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
             LOG_INFO(ctx->log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
@@ -317,6 +327,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
             infos.add(part_infos);
         }
+
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
     }
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
@@ -815,6 +827,7 @@ Pipe MergeTask::VerticalMergeStage::createPipeForReadingOneColumn(const String &
             *global_ctx->data,
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
+            global_ctx->alter_conversions[part_num],
             Names{column_name},
             /*mark_ranges=*/ {},
             global_ctx->input_rows_filtered,
@@ -1238,13 +1251,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    for (const auto & part : global_ctx->future_part->parts)
+    for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
     {
         Pipe pipe = createMergeTreeSequentialSource(
             MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            part,
+            global_ctx->future_part->parts[i],
+            global_ctx->alter_conversions[i],
             global_ctx->merging_columns.getNames(),
             /*mark_ranges=*/ {},
             global_ctx->input_rows_filtered,

@@ -1210,6 +1210,7 @@ arraySum
 arrayUniq
 arrayWithConstant
 arrayZip
+arrayZipUnaligned
 ascii
 asin
 asinh
@@ -1565,6 +1566,11 @@ disjunctions
 displayName
 displaySecretsInShowAndSelect
 distro
+distinctdynamictypes
+distinctDynamicTypes
+distinctjsonpaths
+distinctJSONPaths
+distinctJSONPathsAndTypes
 divideDecimal
 dmesg
 doesnt
