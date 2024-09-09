@@ -98,7 +98,7 @@ public:
 
     std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {}, bool use_slowdown_count = false);
 
-    size_t getMaxErrorCup() const { return Base::max_error_cap; }
+    size_t getMaxErrorCap() const { return Base::max_error_cap; }
 
     void updateSharedError(std::vector<ShuffledPool> & shuffled_pools)
     {
