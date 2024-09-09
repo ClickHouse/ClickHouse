@@ -3,6 +3,8 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
 #include <base/types.h>
 
 namespace DB
@@ -20,25 +22,29 @@ struct ObjectStorageQueueTableMetadata
     String columns;
     String after_processing;
     String mode;
-    UInt64 tracked_files_limit = 0;
-    UInt64 tracked_file_ttl_sec = 0;
-    UInt64 buckets = 0;
-    UInt64 processing_threads_num = 1;
+    UInt64 tracked_files_limit;
+    UInt64 tracked_file_ttl_sec;
+    UInt64 buckets;
+    UInt64 processing_threads_num;
     String last_processed_path;
 
-    ObjectStorageQueueTableMetadata() = default;
+    bool processing_threads_num_from_cpu_cores;
+
     ObjectStorageQueueTableMetadata(
         const StorageObjectStorage::Configuration & configuration,
         const ObjectStorageQueueSettings & engine_settings,
-        const StorageInMemoryMetadata & storage_metadata);
+        const StorageInMemoryMetadata & storage_metadata,
+        bool processing_threads_num_from_cpu_cores_);
 
-    void read(const String & metadata_str);
+    explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
+
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
 
     String toString() const;
 
+    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, ObjectStorageQueueSettings & settings);
+
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
-    static void checkEquals(const ObjectStorageQueueSettings & current, const ObjectStorageQueueSettings & expected);
 
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;

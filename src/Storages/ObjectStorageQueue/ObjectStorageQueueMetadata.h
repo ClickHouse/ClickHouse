@@ -52,11 +52,10 @@ public:
     using Bucket = size_t;
     using Processor = std::string;
 
-    ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, const ObjectStorageQueueSettings & settings_);
+    ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, std::shared_ptr<ObjectStorageQueueSettings> settings_);
     ~ObjectStorageQueueMetadata();
 
-    void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata);
-    void checkSettings(const ObjectStorageQueueSettings & settings) const;
+    void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata, bool processing_threads_num_from_cpu_cores);
     void shutdown();
 
     FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
@@ -76,7 +75,7 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
-    const ObjectStorageQueueSettings settings;
+    std::shared_ptr<ObjectStorageQueueSettings> settings;
     const fs::path zookeeper_path;
     const size_t buckets_num;
 

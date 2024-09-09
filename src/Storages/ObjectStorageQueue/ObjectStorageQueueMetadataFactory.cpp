@@ -15,18 +15,17 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 }
 
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr
-ObjectStorageQueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, const ObjectStorageQueueSettings & settings)
+ObjectStorageQueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, MetadataCreatorFunc creator_func)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
     if (it == metadata_by_path.end())
     {
-        auto files_metadata = std::make_shared<ObjectStorageQueueMetadata>(zookeeper_path, settings);
+        auto files_metadata = creator_func();
         it = metadata_by_path.emplace(zookeeper_path, std::move(files_metadata)).first;
     }
     else
     {
-        it->second.metadata->checkSettings(settings);
         it->second.ref_count += 1;
     }
     return it->second.metadata;

@@ -64,9 +64,9 @@ namespace
 
     void checkAndAdjustSettings(
         ObjectStorageQueueSettings & queue_settings,
-        ASTStorage * engine_args,
         bool is_attach,
-        const LoggerPtr & log)
+        const LoggerPtr & log,
+        bool & processing_threads_num_from_cpu_cores)
     {
         if (!is_attach && !queue_settings.mode.changed)
         {
@@ -86,14 +86,20 @@ namespace
                             queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
         }
 
-        if (!is_attach && !queue_settings.processing_threads_num.changed)
+        if (!is_attach)
         {
-            queue_settings.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
-            engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
-                "processing_threads_num",
-                queue_settings.processing_threads_num.value);
+            if (queue_settings.processing_threads_num.changed)
+            {
+                if (queue_settings.processing_threads_num == 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting processing_threads_num cannot be zero");
+            }
+            else
+            {
+                processing_threads_num_from_cpu_cores = true;
+                queue_settings.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
-            LOG_TRACE(log, "Set `processing_threads_num` to {}", queue_settings.processing_threads_num);
+                LOG_TRACE(log, "Set `processing_threads_num` to {}", queue_settings.processing_threads_num);
+            }
         }
     }
 
@@ -154,7 +160,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::SECONDARY_CREATE, log);
+    bool processing_threads_num_from_cpu_cores = false;
+    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::SECONDARY_CREATE, log, processing_threads_num_from_cpu_cores);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -175,18 +182,19 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 
-    /// Get metadata manager from ObjectStorageQueueMetadataFactory,
-    /// it will increase the ref count for the metadata object.
-    /// The ref count is decreased when StorageObjectStorageQueue::drop() method is called.
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, *queue_settings);
-    try
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
+        zk_path,
+        [&](){
+            auto metadata = std::make_shared<ObjectStorageQueueMetadata>(zk_path, queue_settings);
+            metadata->initialize(configuration_, storage_metadata, processing_threads_num_from_cpu_cores);
+            return metadata;
+        });
+
+    if (processing_threads_num_from_cpu_cores)
     {
-        files_metadata->initialize(configuration_, storage_metadata);
-    }
-    catch (...)
-    {
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
-        throw;
+        engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
+            "processing_threads_num",
+            queue_settings->processing_threads_num.value);
     }
 }
 
