@@ -991,6 +991,23 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 ### Available Types of Column Statistics {#available-types-of-column-statistics}
 
+Names of statistics types are case-insensitive, i.e. both
+
+``` sql
+CREATE TABLE tab
+(
+a LowCardinality(Int64) STATISTICS(minmax)
+) [...]
+```
+and
+``` sql
+CREATE TABLE tab
+(
+a LowCardinality(Int64) STATISTICS(MiNmAx)
+) [...]
+```
+work.
+
 - `MinMax`
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
