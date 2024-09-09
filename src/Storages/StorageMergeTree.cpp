@@ -2169,7 +2169,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     DataPartsVector src_parts;
-    String partition_id;
+
     bool is_all = partition->as<ASTPartition>()->all;
     if (is_all)
     {
