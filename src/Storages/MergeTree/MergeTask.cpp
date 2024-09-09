@@ -14,7 +14,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <IO/IReadableWriteBuffer.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -125,6 +125,10 @@ public:
         if (!finalized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file is not finalized yet");
 
+        /// tmp_disk might not create real file if no data was written to it.
+        if (final_size == 0)
+            return std::make_unique<ReadBufferFromEmptyFile>();
+
         /// Reopen the file for each read so that multiple reads can be performed in parallel and there is no need to seek to the beginning.
         auto raw_file_read_buffer = std::make_unique<ReadBufferFromFile>(tmp_file_name_on_disk);
         return std::make_unique<CompressedReadBufferFromFile>(std::move(raw_file_read_buffer));
@@ -136,7 +140,8 @@ public:
         write_buffer->finalize();
         uncompressed_write_buffer->finalize();
         finalized = true;
-        return write_buffer->count();
+        final_size = write_buffer->count();
+        return final_size;
     }
 
 private:
@@ -145,6 +150,7 @@ private:
     std::unique_ptr<WriteBuffer> write_buffer;
     const String tmp_file_name_on_disk;
     bool finalized = false;
+    size_t final_size = 0;
 };
 
 static void addMissedColumnsToSerializationInfos(
