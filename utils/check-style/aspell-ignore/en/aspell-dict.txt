@@ -421,6 +421,7 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
+JSONCompactWithProgress
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -975,6 +976,7 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+TimescaleDB's
 TimeSeries
 Timeunit
 TinyLog
@@ -1209,6 +1211,7 @@ arraySum
 arrayUniq
 arrayWithConstant
 arrayZip
+arrayZipUnaligned
 ascii
 asin
 asinh
@@ -1914,6 +1917,7 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
+jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
