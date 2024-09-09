@@ -81,7 +81,7 @@ public:
         //File name to drop is escaped_db_name.escaped_table_name.uuid.sql
         //File name to create is table_name.sql
         auto max_to_create = static_cast<size_t>(max_create_length)  - suffix.length();
-        IColumn * col;
+        const IColumn * col;
 
         if (!isColumnConst(*arguments[0].column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());
