@@ -147,6 +147,8 @@ DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & ar
     nested_types.reserve(arguments.size());
 
     bool has_nothing = false;
+    DataTypePtr has_decimal_type = nullptr;
+    DataTypePtr has_non_decimal_type = nullptr;
 
     if (arguments.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
@@ -170,7 +172,24 @@ DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & ar
             }
         }
         else
+        {
             nested_types.push_back(nested_type);
+
+            /// Throw exception if have a decimal and another type (e.g int/date type)
+            /// This is the same behavior as the arrayIntersect and notEquals functions
+            /// This case is not covered by getLeastSupertype() and results in crashing the program if left out
+            if constexpr (std::is_same_v<Mode, ArrayModeUnion>)
+            {
+                if (WhichDataType(nested_type).isDecimal())
+                    has_decimal_type = nested_type;
+                else
+                    has_non_decimal_type = nested_type;
+
+                if (has_non_decimal_type && has_decimal_type)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments for function {}: {} and {}.",
+                                    getName(), has_non_decimal_type->getName(), has_decimal_type);
+            }
+        }
     }
 
     DataTypePtr result_type;
