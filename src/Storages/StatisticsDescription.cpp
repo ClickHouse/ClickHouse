@@ -6,7 +6,6 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Poco/Logger.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -51,7 +50,9 @@ static StatisticsType stringToStatisticsType(String type)
         return StatisticsType::Uniq;
     if (type == "count_min")
         return StatisticsType::CountMinSketch;
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'tdigest', 'uniq' and 'count_min'.", type);
+    if (type == "minmax")
+        return StatisticsType::MinMax;
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'count_min', 'minmax', 'tdigest' and 'uniq'.", type);
 }
 
 String SingleStatisticsDescription::getTypeName() const
@@ -64,8 +65,10 @@ String SingleStatisticsDescription::getTypeName() const
             return "Uniq";
         case StatisticsType::CountMinSketch:
             return "count_min";
+        case StatisticsType::MinMax:
+            return "minmax";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'tdigest', 'uniq' and 'count_min'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'count_min', 'minmax', 'tdigest' and 'uniq'.", type);
     }
 }
 
@@ -97,16 +100,13 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
 {
     chassert(merging_column_type);
 
-    if (column_name.empty())
-        column_name = merging_column_name;
-
     data_type = merging_column_type;
 
     for (const auto & [stats_type, stats_desc]: other.types_to_desc)
     {
         if (!if_not_exists && types_to_desc.contains(stats_type))
         {
-            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics type name {} has existed in column {}", stats_type, column_name);
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics type name {} has existed in column {}", stats_type, merging_column_name);
         }
         else if (!types_to_desc.contains(stats_type))
             types_to_desc.emplace(stats_type, stats_desc);
@@ -115,9 +115,6 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
 
 void ColumnStatisticsDescription::assign(const ColumnStatisticsDescription & other)
 {
-    if (other.column_name != column_name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot assign statistics from column {} to {}", column_name, other.column_name);
-
     types_to_desc = other.types_to_desc;
     data_type = other.data_type;
 }
@@ -127,7 +124,7 @@ void ColumnStatisticsDescription::clear()
     types_to_desc.clear();
 }
 
-std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
+std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDescription::fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
 {
     const auto * stat_definition_ast = definition_ast->as<ASTStatisticsDeclaration>();
     if (!stat_definition_ast)
@@ -145,7 +142,7 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(co
         statistics_types.emplace(stat.type, stat);
     }
 
-    std::vector<ColumnStatisticsDescription> result;
+    std::vector<std::pair<String, ColumnStatisticsDescription>> result;
     result.reserve(stat_definition_ast->columns->children.size());
 
     for (const auto & column_ast : stat_definition_ast->columns->children)
@@ -157,10 +154,9 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(co
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect column name {}", physical_column_name);
 
         const auto & column = columns.getPhysical(physical_column_name);
-        stats.column_name = column.name;
         stats.data_type = column.type;
         stats.types_to_desc = statistics_types;
-        result.push_back(stats);
+        result.emplace_back(physical_column_name, stats);
     }
 
     if (result.empty())
@@ -175,14 +171,13 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(c
     if (stat_type_list_ast->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", queryToString(column));
     ColumnStatisticsDescription stats;
-    stats.column_name = column.name;
     for (const auto & ast : stat_type_list_ast->children)
     {
         const auto & stat_type = ast->as<const ASTFunction &>().name;
 
         SingleStatisticsDescription stat(stringToStatisticsType(Poco::toLower(stat_type)), ast->clone());
         if (stats.types_to_desc.contains(stat.type))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", stats.column_name, stat_type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", column.name, stat_type);
         stats.types_to_desc.emplace(stat.type, std::move(stat));
     }
     stats.data_type = data_type;

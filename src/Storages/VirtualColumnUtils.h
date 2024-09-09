@@ -70,7 +70,7 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 
 NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
-    const ColumnsDescription & storage_columns,
+    ColumnsDescription & storage_columns,
     const ContextPtr & context,
     const std::string & sample_path = "",
     std::optional<FormatSettings> format_settings_ = std::nullopt);
@@ -105,7 +105,7 @@ struct VirtualsForFileLikeStorage
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context, const ColumnsDescription & columns);
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 }
 
 }

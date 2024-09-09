@@ -577,10 +577,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
         {
-            /// With fixed granularity we can have last mark with less rows than granularity
-            const bool is_last_mark = (mark_num + 1 == index_granularity.getMarksCount());
-            if (!index_granularity_info.fixed_index_granularity || !is_last_mark)
-                throw Exception(
+            throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
                             "Incorrect mark rows for part {} for mark #{}"
                             " (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",
@@ -844,14 +841,7 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_
             /// Without offset
             rows_written_in_last_mark = 0;
         }
-
-        if (compute_granularity)
-        {
-            index_granularity.popMark();
-            index_granularity.appendMark(new_rows_in_last_mark);
-        }
     }
-
 }
 
 }

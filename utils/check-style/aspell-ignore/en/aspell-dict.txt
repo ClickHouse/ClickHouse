@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2942
+personal_ws-1.1 en 2983
 AArch
 ACLs
 ALTERs
@@ -385,6 +385,18 @@ IntelliJ
 IntelliSense
 InterserverConnection
 InterserverThreads
+IntervalDay
+IntervalHour
+IntervalMicrosecond
+IntervalMillisecond
+IntervalMilliseconds
+IntervalMinute
+IntervalMonth
+IntervalNanosecond
+IntervalQuarter
+IntervalSecond
+IntervalWeek
+IntervalYear
 IsPentagon
 IsResClassIII
 IsValid
@@ -409,6 +421,7 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
+JSONCompactWithProgress
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -963,6 +976,8 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+TimescaleDB's
+TimeSeries
 Timeunit
 TinyLog
 Tkachenko
@@ -1104,12 +1119,12 @@ addressToLineWithInlines
 addressToSymbol
 adviced
 agg
+aggThrow
 aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
 aggthrow
-aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1196,6 +1211,7 @@ arraySum
 arrayUniq
 arrayWithConstant
 arrayZip
+arrayZipUnaligned
 ascii
 asin
 asinh
@@ -1551,6 +1567,11 @@ disjunctions
 displayName
 displaySecretsInShowAndSelect
 distro
+distinctdynamictypes
+distinctDynamicTypes
+distinctjsonpaths
+distinctJSONPaths
+distinctJSONPathsAndTypes
 divideDecimal
 dmesg
 doesnt
@@ -1883,8 +1904,8 @@ joinGet
 joinGetOrNull
 json
 jsonMergePatch
-jsonasstring
 jsonasobject
+jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -1896,6 +1917,7 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
+jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -1925,8 +1947,8 @@ kurtSamp
 kurtosis
 kurtpop
 kurtsamp
-laion
 lagInFrame
+laion
 lang
 laravel
 largestTriangleThreeBuckets
@@ -2028,7 +2050,6 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
-minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2198,6 +2219,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overlayUTF
 overparallelization
 packetpool
 packetsize
@@ -2224,8 +2246,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
-partitionId
 partitionID
+partitionId
 pathFull
 pclmulqdq
 pcre
@@ -2454,6 +2476,7 @@ rewritable
 rightPad
 rightPadUTF
 rightUTF
+ripeMD
 risc
 riscv
 ro
@@ -2705,7 +2728,6 @@ themself
 threadpool
 throwIf
 timeDiff
-TimeSeries
 timeSeriesData
 timeSeriesMetrics
 timeSeriesTags
@@ -2717,6 +2739,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
@@ -2740,6 +2763,17 @@ toISOWeek
 toISOYear
 toInt
 toInterval
+toIntervalDay
+toIntervalHour
+toIntervalMicrosecond
+toIntervalMillisecond
+toIntervalMinute
+toIntervalMonth
+toIntervalNanosecond
+toIntervalQuarter
+toIntervalSecond
+toIntervalWeek
+toIntervalYear
 toJSONString
 toLastDayOfMonth
 toLastDayOfWeek

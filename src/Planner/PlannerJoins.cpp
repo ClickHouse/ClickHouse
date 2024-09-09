@@ -494,6 +494,12 @@ JoinClausesAndActions buildJoinClausesAndActions(
             necessary_names.push_back(name);
     };
 
+    bool is_join_with_special_storage = false;
+    if (const auto * right_table_node = join_node.getRightTableExpression()->as<TableNode>())
+    {
+        is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
+    }
+
     for (auto & join_clause : result.join_clauses)
     {
         const auto & left_filter_condition_nodes = join_clause.getLeftFilterConditionNodes();
@@ -561,7 +567,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 if (!left_key_node->result_type->equals(*common_type))
                     left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {});
 
-                if (!right_key_node->result_type->equals(*common_type))
+                if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
                     right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
