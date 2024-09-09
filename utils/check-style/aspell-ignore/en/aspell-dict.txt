@@ -975,6 +975,7 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+TimescaleDB's
 TimeSeries
 Timeunit
 TinyLog
