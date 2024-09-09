@@ -1540,8 +1540,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    auto sorting_key_expression_dag = global_ctx->metadata_snapshot->getSortingKey().expression->getActionsDAG().clone();
-
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
@@ -1566,15 +1564,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->context,
             ctx->log);
 
-        if (global_ctx->metadata_snapshot->hasSortingKey())
-        {
-            /// Calculate sorting key expressions so that they are available for merge sorting.
-            auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
-                plan_for_part->getCurrentDataStream(),
-                sorting_key_expression_dag.clone());    /// TODO: can we avoid cloning here?
-            plan_for_part->addStep(std::move(calculate_sorting_key_expression_step));
-        }
-
         plans.emplace_back(std::move(plan_for_part));
     }
 
@@ -1589,6 +1578,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
         merge_parts_query_plan.unitePlans(std::move(union_step), std::move(plans));
+    }
+
+    if (global_ctx->metadata_snapshot->hasSortingKey())
+    {
+        /// Calculate sorting key expressions so that they are available for merge sorting.
+        auto sorting_key_expression_dag = global_ctx->metadata_snapshot->getSortingKey().expression->getActionsDAG().clone();
+        auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
+            merge_parts_query_plan.getCurrentDataStream(),
+            std::move(sorting_key_expression_dag));
+        merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
     /// Merge
