@@ -125,7 +125,7 @@ public:
     TryResult getValidTryResult(const std::vector<TryResult> & results, bool skip_read_only_replicas) const
     {
         if (results.empty())
-            throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get any valid connection. Probably all connection tries failed");
+            throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get any valid connection because all connection tries failed");
 
         auto result = results.front();
         if (isTryResultInvalid(result, skip_read_only_replicas))
