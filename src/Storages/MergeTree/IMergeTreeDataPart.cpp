@@ -1015,6 +1015,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().exists(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
 
+    if (getDataPartStorage().exists(MIN_MAX_TIME_OF_DATA_INSERT_FILE))
+        result.emplace(MIN_MAX_TIME_OF_DATA_INSERT_FILE);
+
     return result;
 }
 
