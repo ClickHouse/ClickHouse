@@ -99,6 +99,8 @@ void FilterHelper::filterPlainFixedData(const S* src, PaddedPODArray<T> & dst, c
 
 template void FilterHelper::filterPlainFixedData<Int16, Int32>(Int32 const*, DB::PaddedPODArray<Int16>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int16, Int16>(Int16 const*, DB::PaddedPODArray<Int16>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<UInt16, Int32>(Int32 const*, DB::PaddedPODArray<UInt16>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<UInt16, UInt16>(UInt16 const*, DB::PaddedPODArray<UInt16>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int32, Int32>(Int32 const*, DB::PaddedPODArray<Int32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<UInt32, UInt32>(UInt32 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<UInt32, Int64>(Int64 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);

@@ -491,6 +491,8 @@ TEST(TestColumnFilterHepler, TestFilterPlainFixedData)
 {
     testFilterPlainFixedData<Int16, Int32>(100000, 1.0);
     testFilterPlainFixedData<Int16, Int16>(100000, 1.0);
+    testFilterPlainFixedData<UInt16, Int32>(100000, 1.0);
+    testFilterPlainFixedData<UInt16, UInt16>(100000, 1.0);
     testFilterPlainFixedData<Int32, Int32>(100000, 1.0);
     testFilterPlainFixedData<Int64, Int64>(100000, 1.0);
     testFilterPlainFixedData<Float32, Float32>(100000, 1.0);
@@ -500,6 +502,8 @@ TEST(TestColumnFilterHepler, TestFilterPlainFixedData)
 
     testFilterPlainFixedData<Int16, Int32>(100000, 0);
     testFilterPlainFixedData<Int16, Int16>(100000, 0);
+    testFilterPlainFixedData<UInt16, Int32>(100000, 0);
+    testFilterPlainFixedData<UInt16, UInt16>(100000, 0);
     testFilterPlainFixedData<Int32, Int32>(100000, 0);
     testFilterPlainFixedData<Int64, Int64>(100000, 0);
     testFilterPlainFixedData<Float32, Float32>(100000, 0);
@@ -509,6 +513,8 @@ TEST(TestColumnFilterHepler, TestFilterPlainFixedData)
 
     testFilterPlainFixedData<Int16, Int32>(100000, 0.9);
     testFilterPlainFixedData<Int16, Int16>(100000, 0.9);
+    testFilterPlainFixedData<UInt16, Int32>(100000, 0.9);
+    testFilterPlainFixedData<UInt16, UInt16>(100000, 0.9);
     testFilterPlainFixedData<Int32, Int32>(100000, 0.9);
     testFilterPlainFixedData<Int64, Int64>(100000, 0.9);
     testFilterPlainFixedData<Float32, Float32>(100000, 0.9);

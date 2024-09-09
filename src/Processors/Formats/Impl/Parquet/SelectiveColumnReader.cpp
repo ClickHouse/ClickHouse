@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
@@ -26,11 +27,9 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
     for (auto & reader : column_readers)
     {
         columns.push_back(reader->createColumn());
-        columns.back()->reserve(rows);
     }
-
     size_t rows_read = 0;
-    while (rows_read < rows)
+    while (!rows_read)
     {
         size_t rows_to_read = std::min(rows - rows_read, remain_rows);
         if (!rows_to_read)
@@ -66,7 +65,14 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         bool all = true;
         if (row_set.has_value())  all = row_set.value().all();
         if (all) row_set = std::nullopt;
-
+        if (!skip_all)
+            for (auto & column : columns)
+            {
+                if (all)
+                    column->reserve(rows);
+                else
+                    column->reserve(row_set.value().count());
+            }
         for (size_t i = 0; i < column_readers.size(); i++)
         {
             if (skip_all)
@@ -844,6 +850,7 @@ template class NumberColumnDirectReader<DataTypeInt64, Int64>;
 template class NumberColumnDirectReader<DataTypeFloat32, Float32>;
 template class NumberColumnDirectReader<DataTypeFloat64, Float64>;
 template class NumberColumnDirectReader<DataTypeDate32, Int32>;
+template class NumberColumnDirectReader<DataTypeDate, Int32>;
 template class NumberColumnDirectReader<DataTypeDateTime64, Int64>;
 template class NumberColumnDirectReader<DataTypeDateTime, Int64>;
 
@@ -853,6 +860,7 @@ template class NumberDictionaryReader<DataTypeInt64, Int64>;
 template class NumberDictionaryReader<DataTypeFloat32, Float32>;
 template class NumberDictionaryReader<DataTypeFloat64, Float64>;
 template class NumberDictionaryReader<DataTypeDate32, Int32>;
+template class NumberDictionaryReader<DataTypeDate, Int32>;
 template class NumberDictionaryReader<DataTypeDateTime64, Int64>;
 template class NumberDictionaryReader<DataTypeDateTime, Int64>;
 

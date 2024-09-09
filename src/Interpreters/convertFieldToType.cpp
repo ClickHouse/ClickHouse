@@ -273,7 +273,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// We don't need any conversion Int64 is under type of Date32
             return src;
         }
-
+        if (which_type.isDateTime() && isInt64OrUInt64FieldType(src.getType()))
+        {
+            return static_cast<UInt32>(src.safeGet<UInt64>());
+        }
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             const auto & from_type = src.safeGet<Decimal64>();

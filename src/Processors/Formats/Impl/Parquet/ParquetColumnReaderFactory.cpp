@@ -152,7 +152,7 @@ template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::Date, false>(
     std::unique_ptr<LazyPageReader> page_reader, const ScanSpec & scan_spec, const parquet::LogicalType &)
 {
-    return std::make_shared<NumberColumnDirectReader<DataTypeDate32, Int32>>(
+    return std::make_shared<NumberColumnDirectReader<DataTypeDate, Int32>>(
         std::move(page_reader), scan_spec, std::make_shared<DataTypeDate>());
 }
 
@@ -160,7 +160,7 @@ template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::Date, true>(
     std::unique_ptr<LazyPageReader> page_reader, const ScanSpec & scan_spec, const parquet::LogicalType &)
 {
-    return std::make_shared<NumberDictionaryReader<DataTypeDate32, Int32>>(
+    return std::make_shared<NumberDictionaryReader<DataTypeDate, Int32>>(
         std::move(page_reader), scan_spec, std::make_shared<DataTypeDate>());
 }
 
