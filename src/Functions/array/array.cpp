@@ -123,7 +123,6 @@ private:
             || executeFixedString(columns, out_data, input_rows_count) || executeGeneric(columns, out_data, input_rows_count);
     }
 
-    
     template <typename T>
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
