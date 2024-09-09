@@ -69,6 +69,9 @@ StorageNATS::StorageNATS(
     auto nats_password = getContext()->getMacros()->expand(nats_settings->nats_password);
     auto nats_token = getContext()->getMacros()->expand(nats_settings->nats_token);
     auto nats_credential_file = getContext()->getMacros()->expand(nats_settings->nats_credential_file);
+    auto nats_ca_file = getContext()->getMacros()->expand(nats_settings->nats_ca_file);
+    auto nats_client_cert_file = getContext()->getMacros()->expand(nats_settings->nats_client_cert_file);
+    auto nats_client_key_file = getContext()->getMacros()->expand(nats_settings->nats_client_key_file);
 
     configuration =
     {
@@ -78,6 +81,9 @@ StorageNATS::StorageNATS(
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
         .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
+        .ca_file = nats_ca_file.empty() ? getContext()->getConfigRef().getString("nats.ca_file", "") : nats_ca_file,
+        .client_cert_file = nats_client_cert_file.empty() ? getContext()->getConfigRef().getString("nats.client_cert_file", "") : nats_client_cert_file,
+        .client_key_file = nats_client_key_file.empty() ? getContext()->getConfigRef().getString("nats.client_key_file", "") : nats_client_key_file,
         .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
         .reconnect_wait = static_cast<int>(nats_settings->nats_reconnect_wait.value),
         .secure = nats_settings->nats_secure.value

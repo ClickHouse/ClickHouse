@@ -97,6 +97,10 @@ void NATSConnectionManager::connectImpl()
     if (configuration.secure)
     {
         natsOptions_SetSecure(options, true);
+        if (!configuration.ca_file.empty())
+            natsOptions_LoadCATrustedCertificates(options, configuration.ca_file.c_str());
+        if (!configuration.client_cert_file.empty() && !configuration.client_key_file.empty())
+            natsOptions_LoadCertificatesChain(options, configuration.client_cert_file.c_str(), configuration.client_key_file.c_str());       
     }
     if (skip_verification)
     {
