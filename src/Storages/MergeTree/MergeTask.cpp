@@ -1321,10 +1321,10 @@ bool MergeTask::execute()
 
 
 /// Apply merge strategy (Ordinary, Colapsing, Aggregating, etc) to the stream
-class ApplyMergeStep : public ITransformingStep
+class MergePartsStep : public ITransformingStep
 {
 public:
-    ApplyMergeStep(
+    MergePartsStep(
         const DataStream & input_stream_,
         const SortDescription & sort_description_,
         const Names partition_key_columns_,
@@ -1347,7 +1347,7 @@ public:
         , time_of_merge(time_of_merge_)
     {}
 
-    String getName() const override { return "ApplyMergePolicy"; }
+    String getName() const override { return "MergeParts"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*pipelineSettings*/) override
     {
@@ -1651,7 +1651,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         if (global_ctx->cleanup && !data_settings->allow_experimental_replacing_merge_with_cleanup)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
-        auto merge_step = std::make_unique<ApplyMergeStep>(
+        auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentDataStream(),
             sort_description,
             partition_key_columns,
