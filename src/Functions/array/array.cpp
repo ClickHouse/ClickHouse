@@ -100,14 +100,14 @@ public:
         if (num_elements == 1)
             out_data.insertRangeFrom(*column_ptrs[0], 0, input_rows_count);
         else
-            executeAny(column_ptrs, out_data, input_rows_count);
+            execute(column_ptrs, out_data, input_rows_count);
         return out;
     }
+
 private:
-    bool executeAny(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
+    bool execute(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        return false // NOLINT
-            || executeNumber<UInt8>(columns, out_data, input_rows_count) || executeNumber<UInt16>(columns, out_data, input_rows_count)
+        return executeNumber<UInt8>(columns, out_data, input_rows_count) || executeNumber<UInt16>(columns, out_data, input_rows_count)
             || executeNumber<UInt32>(columns, out_data, input_rows_count) || executeNumber<UInt64>(columns, out_data, input_rows_count)
             || executeNumber<UInt128>(columns, out_data, input_rows_count) || executeNumber<UInt256>(columns, out_data, input_rows_count)
             || executeNumber<Int8>(columns, out_data, input_rows_count) || executeNumber<Int16>(columns, out_data, input_rows_count)
@@ -123,14 +123,7 @@ private:
             || executeFixedString(columns, out_data, input_rows_count) || executeGeneric(columns, out_data, input_rows_count);
     }
 
-    bool executeGeneric(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
-    {
-        for (size_t i = 0; i < input_rows_count; ++i)
-            for (const auto * column : columns)
-                out_data.insertFrom(*column, i);
-        return true;
-    }
-
+    
     template <typename T>
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
@@ -178,18 +171,18 @@ private:
         out_chars.resize_exact(total_bytes);
         out_offsets.resize_exact(input_rows_count * columns.size());
 
-        size_t curr_out_offset = 0;
+        size_t cur_out_offset = 0;
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
                 StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data, ref.size);
-                out_chars[curr_out_offset + ref.size] = 0;
+                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
+                out_chars[cur_out_offset + ref.size] = 0;
 
-                curr_out_offset += ref.size + 1;
-                out_offsets[base + col_i] = curr_out_offset;
+                cur_out_offset += ref.size + 1;
+                out_offsets[base + col_i] = cur_out_offset;
             }
         }
         return true;
@@ -211,7 +204,7 @@ private:
         auto & out_chars = concrete_out_data.getChars();
 
         const size_t n = concrete_out_data.getN();
-        size_t total_bytes = concrete_out_data.getN() * columns.size() * input_rows_count;
+        size_t total_bytes = n * columns.size() * input_rows_count;
         out_chars.resize_exact(total_bytes);
 
         size_t curr_out_offset = 0;
@@ -244,8 +237,8 @@ private:
         ColumnNullable & concrete_out_data = assert_cast<ColumnNullable &>(out_data);
         auto & out_null_map = concrete_out_data.getNullMapColumn();
         auto & out_nested_column = concrete_out_data.getNestedColumn();
-        executeAny(null_maps, out_null_map, input_rows_count);
-        executeAny(nested_columns, out_nested_column, input_rows_count);
+        execute(null_maps, out_null_map, input_rows_count);
+        execute(nested_columns, out_nested_column, input_rows_count);
         return true;
     }
 
@@ -264,10 +257,19 @@ private:
                 const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
                 elem_columns[j] = &concrete_column->getColumn(i);
             }
-            executeAny(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
+            execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
         }
         return true;
     }
+
+    bool executeGeneric(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            for (const auto * column : columns)
+                out_data.insertFrom(*column, i);
+        return true;
+    }
+
 
     String getName() const override
     {

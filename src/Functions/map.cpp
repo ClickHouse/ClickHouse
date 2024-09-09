@@ -38,7 +38,7 @@ public:
     static constexpr auto name = "map";
 
     explicit FunctionMap(ContextPtr context_)
-        : context(std::move(context_))
+        : context(context_)
         , use_variant_as_common_type(
               context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
         , function_array(FunctionFactory::instance().get("array", context))
@@ -48,7 +48,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionMap>(std::move(context));
+        return std::make_shared<FunctionMap>(context);
     }
 
     String getName() const override
