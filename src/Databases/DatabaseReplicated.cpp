@@ -907,18 +907,6 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     bool maybe_replica_macros = info.expanded_other;
     bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
 
-    if (!enable_functional_tests_helper)
-    {
-        if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
-            LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-        else
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "It's not allowed to specify explicit zookeeper_path and replica_name "
-                            "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
-                            "specify them explicitly, enable setting "
-                            "database_replicated_allow_replicated_engine_arguments.");
-    }
-
     if (maybe_shard_macros && maybe_replica_macros)
         return;
 
@@ -931,7 +919,9 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
         return;
     }
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY,
+    /// We will replace it with default arguments if the setting is 2
+    if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments != 2)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
                     "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
                     "If you really want to specify it explicitly, then you should use some macros "
                     "to distinguish different shards and replicas");
@@ -1199,6 +1189,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
+
+        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
+        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);

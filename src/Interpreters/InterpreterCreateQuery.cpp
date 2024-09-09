@@ -1229,6 +1229,27 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     bool from_path = create.attach_from_path.has_value();
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !is_on_cluster && !create.attach)
+    {
+        if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It's not allowed to explicitly specify UUIDs for tables in Replicated databases, "
+                                                       "see database_replicated_allow_explicit_uuid");
+        }
+        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 1)
+        {
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "It's not recommended to explicitly specify UUIDs for tables in Replicated databases");
+        }
+        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 2)
+        {
+            UUID old_uuid = create.uuid;
+            create.uuid = UUIDHelpers::Nil;
+            create.generateRandomUUIDs();
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Replaced a user-provided UUID ({}) with a random one ({}) "
+                                                                   "to make sure it's unique", old_uuid, create.uuid);
+        }
+    }
+
     if (is_replicated_database_internal && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
