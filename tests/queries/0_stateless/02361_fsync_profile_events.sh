@@ -46,7 +46,7 @@ for i in {1..100}; do
 
     # Non retriable errors
     if [[ $FileSync -ne 8 ]]; then
-        echo "FileSync: $FileSync != 8" >&2
+        echo "FileSync: $FileSync != 9" >&2
         exit 2
     fi
     # Check that all files was synced

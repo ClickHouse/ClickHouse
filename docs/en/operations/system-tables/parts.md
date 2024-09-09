@@ -64,6 +64,10 @@ Columns:
 
 - `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
 
+- `min_time_of_data_insert` ([DateTime](../../sql-reference/data-types/datetime.md)) – The minimum time of when data was inserted into this part.
+
+- `max_time_of_data_insert` ([DateTime](../../sql-reference/data-types/datetime.md)) – The maximum time of when data was inserted into this part.
+
 - `remove_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time when the data part became inactive.
 
 - `refcount` ([UInt32](../../sql-reference/data-types/int-uint.md)) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
@@ -149,6 +153,8 @@ secondary_indices_uncompressed_bytes:  6
 secondary_indices_marks_bytes:         48
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
+min_time_of_data_insert:               2020-06-18 13:01:49
+max_time_of_data_insert:               2020-06-18 13:01:49
 remove_time:                           1970-01-01 00:00:00
 refcount:                              1
 min_date:                              1970-01-01

@@ -476,6 +476,8 @@ CREATE TABLE system.parts
     `secondary_indices_uncompressed_bytes` UInt64,
     `secondary_indices_marks_bytes` UInt64,
     `modification_time` DateTime,
+    `min_time_of_data_insert` DateTime,
+    `max_time_of_data_insert` DateTime,
     `remove_time` DateTime,
     `refcount` UInt32,
     `min_date` Date,
@@ -1067,6 +1069,7 @@ CREATE TABLE system.storage_policies
     `volume_type` Enum8('JBOD' = 0, 'SINGLE_DISK' = 1, 'UNKNOWN' = 2),
     `max_data_part_size` UInt64,
     `move_factor` Float32,
+    `move_policy` Enum8('BY_PART_SIZE' = 0, 'BY_INSERT_DATA_TIME' = 1),
     `prefer_not_to_merge` UInt8,
     `perform_ttl_move_on_insert` UInt8,
     `load_balancing` Enum8('ROUND_ROBIN' = 0, 'LEAST_USED' = 1)
