@@ -377,20 +377,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     {
-        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, write_settings);
-        HashingWriteBuffer out_hashing(*out);
-        DB::writeIntText(*new_part->min_time_of_data_insert, out_hashing);
-        DB::writeText(" ", out_hashing);
-        DB::writeIntText(*new_part->max_time_of_data_insert, out_hashing);
-        out_hashing.finalize();
-        checksums.files[IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE].file_size = out_hashing.count();
-        checksums.files[IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE].file_hash = out_hashing.getHash();
-
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
-    }
-
-    {
         /// Write a file with a description of columns.
         auto out = new_part->getDataPartStorage().writeFile("columns.txt", 4096, write_settings);
         new_part->getColumns().writeText(*out);
@@ -402,6 +388,16 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         /// Write a file with a description of columns.
         auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
         DB::writeIntText(new_part->getMetadataVersion(), *out);
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
+
+    {
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, write_settings);
+        DB::writeIntText(*new_part->min_time_of_data_insert, *out);
+        DB::writeText(" ", *out);
+        DB::writeIntText(*new_part->max_time_of_data_insert, *out);
+
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }
