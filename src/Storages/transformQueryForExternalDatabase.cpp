@@ -1,19 +1,20 @@
-#include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Parsers/IAST.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/Context.h>
-#include <IO/WriteBufferFromString.h>
-#include <Storages/transformQueryForExternalDatabase.h>
+#include <Parsers/IAST.h>
+#include <Parsers/IdentifierQuotingRule.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/transformQueryForExternalDatabase.h>
+#include <Common/typeid_cast.h>
 
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
@@ -383,11 +384,17 @@ String transformQueryForExternalDatabaseImpl(
     dropAliases(select_ptr);
 
     WriteBufferFromOwnString out;
+    IdentifierQuotingRule identifier_quoting_rule = (identifier_quoting_style != IdentifierQuotingStyle::None)
+        ? IdentifierQuotingRule::AlwaysQuote
+        : IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity;
     IAST::FormatSettings settings(
-            out, /*one_line*/ true, /*hilite*/ false,
-            /*always_quote_identifiers*/ identifier_quoting_style != IdentifierQuotingStyle::None,
-            /*identifier_quoting_style*/ identifier_quoting_style, /*show_secrets_*/ true,
-            /*literal_escaping_style*/ literal_escaping_style);
+        out,
+        /*one_line*/ true,
+        /*hilite*/ false,
+        /*identifier_quoting_rule*/ identifier_quoting_rule,
+        /*identifier_quoting_style*/ identifier_quoting_style,
+        /*show_secrets_*/ true,
+        /*literal_escaping_style*/ literal_escaping_style);
 
     select->format(settings);
 

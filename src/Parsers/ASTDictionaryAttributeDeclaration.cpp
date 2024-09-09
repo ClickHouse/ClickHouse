@@ -35,7 +35,14 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
 {
     frame.need_parens = false;
 
-    settings.quoteIdentifier(name);
+    if (settings.identifier_quoting_rule == IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity)
+    {
+        settings.quoteIdentifier(name);
+    }
+    else
+    {
+        settings.writeIdentifier(name);
+    }
 
     if (type)
     {

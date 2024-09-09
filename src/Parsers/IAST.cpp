@@ -1,8 +1,9 @@
 #include <Parsers/IAST.h>
 
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
+#include <Parsers/IdentifierQuotingRule.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 
@@ -170,7 +171,7 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     bool one_line,
     bool show_secrets,
     bool print_pretty_type_names,
-    bool always_quote_identifiers,
+    IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
 
@@ -178,7 +179,7 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
     settings.print_pretty_type_names = print_pretty_type_names;
-    settings.always_quote_identifiers = always_quote_identifiers;
+    settings.identifier_quoting_rule = identifier_quoting_rule;
     settings.identifier_quoting_style = identifier_quoting_style;
     format(settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
@@ -219,14 +220,16 @@ String IAST::getColumnNameWithoutAlias() const
 
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
+    auto always_quote_identifiers = (identifier_quoting_rule == IdentifierQuotingRule::AlwaysQuote);
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
         {
             if (always_quote_identifiers)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Incompatible arguments: always_quote_identifiers = true && "
-                                "identifier_quoting_style == IdentifierQuotingStyle::None");
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Incompatible arguments: identifier_quoting_rule = IdentifierQuotingRule::AlwaysQuote && "
+                    "identifier_quoting_style == IdentifierQuotingStyle::None");
             writeString(name, ostr);
             break;
         }

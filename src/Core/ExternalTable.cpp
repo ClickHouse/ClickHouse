@@ -93,7 +93,7 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
                     /*one_line=*/true,
                     /*show_secrets=*/true,
                     /*print_pretty_type_names=*/false,
-                    /*always_quote_identifiers=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity,
                     /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: expected column definition, got {}", child->formatForErrorMessage());
@@ -118,7 +118,7 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
                 /*one_line=*/true,
                 /*show_secrets=*/true,
                 /*print_pretty_type_names=*/false,
-                /*always_quote_identifiers=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity,
                 /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
 

@@ -1,28 +1,29 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/DelayedSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Common/logger_useful.h>
-#include <Common/checkStackSize.h>
-#include <Core/QueryProcessingStage.h>
-#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Core/QueryProcessingStage.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/DelayedSource.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <boost/algorithm/string/join.hpp>
+#include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
+#include "Parsers/IdentifierQuotingRule.h"
 
 namespace DB
 {
@@ -94,7 +95,8 @@ static String formattedAST(const ASTPtr & ast)
         return {};
 
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
+    IAST::FormatSettings ast_format_settings(
+        buf, /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_*/ IdentifierQuotingRule::AlwaysQuote);
     ast->format(ast_format_settings);
     return buf.str();
 }

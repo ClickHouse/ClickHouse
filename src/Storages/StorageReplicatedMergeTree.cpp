@@ -101,6 +101,7 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 
+#include <Parsers/IdentifierQuotingRule.h>
 #include <Common/scope_guard_safe.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -5690,7 +5691,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     String query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
+        IAST::FormatSettings ast_format_settings(
+            buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::AlwaysQuote);
         query.IAST::format(ast_format_settings);
         query_str = buf.str();
     }

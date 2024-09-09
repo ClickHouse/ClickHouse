@@ -48,9 +48,10 @@
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -64,8 +65,8 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Parsers/IdentifierQuotingRule.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -795,7 +796,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                0, true, true, false, IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity, IdentifierQuotingStyle::Backticks);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -820,7 +822,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
+                0, true, true, false, IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity, IdentifierQuotingStyle::Backticks);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
