@@ -162,9 +162,13 @@
   "test_storage_kafka/test.py::test_system_kafka_consumers_rebalance_mv",
   "test_storage_kafka/test.py::test_formats_errors",
   "test_storage_kafka/test.py::test_multiple_read_in_materialized_views",
+  "test_storage_kafka/test.py::test_kafka_null_message",
+
+  "test_storage_kafka/test_produce_http_interface.py::test_kafka_produce_http_interface_row_based_format",
 
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string",
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string_request_new_ticket_after_expiration",
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string_no_kdc",
   "test_storage_kerberized_kafka/test.py::test_kafka_config_from_sql_named_collection"
+
 ]

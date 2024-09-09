@@ -3307,6 +3307,17 @@ void NO_INLINE Aggregator::destroyImpl(Table & table) const
 
         data = nullptr;
     });
+
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+    {
+        if (table.getNullKeyData() != nullptr)
+        {
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_functions[i]->destroy(table.getNullKeyData() + offsets_of_aggregate_states[i]);
+
+            table.getNullKeyData() = nullptr;
+        }
+    }
 }
 
 

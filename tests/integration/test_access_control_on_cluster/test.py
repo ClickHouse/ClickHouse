@@ -89,3 +89,5 @@ def test_grant_current_database_on_cluster():
     assert ch1.query("SHOW DATABASES", user="test_user") == "user_db\n"
     ch1.query("GRANT SELECT ON * TO test_user ON CLUSTER 'cluster'", user="test_user")
     assert ch1.query("SHOW DATABASES", user="test_user") == "user_db\n"
+    ch1.query("DROP DATABASE user_db ON CLUSTER 'cluster'")
+    ch1.query("DROP USER test_user ON CLUSTER 'cluster'")

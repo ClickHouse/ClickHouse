@@ -52,6 +52,8 @@ CREATE TABLE system.clusters
     `database_shard_name` String,
     `database_replica_name` String,
     `is_active` Nullable(UInt8),
+    `replication_lag` Nullable(UInt32),
+    `recovery_time` Nullable(UInt64),
     `name` String ALIAS cluster
 )
 ENGINE = SystemClusters

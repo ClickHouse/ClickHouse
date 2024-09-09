@@ -263,17 +263,12 @@ private:
 
     /// Split range into subranges by max_file_segment_size,
     /// each subrange size must be less or equal to max_file_segment_size.
-    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size);
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size);
 
-    /// Split range into subranges by max_file_segment_size (same as in splitRange())
-    /// and create a new file segment for each subrange.
-    /// If `file_segments_limit` > 0, create no more than first file_segments_limit
-    /// file segments.
-    FileSegments splitRangeIntoFileSegments(
+    FileSegments createFileSegmentsFromRanges(
         LockedKey & locked_key,
-        size_t offset,
-        size_t size,
-        FileSegment::State state,
+        const std::vector<FileSegment::Range> & ranges,
+        size_t & file_segments_count,
         size_t file_segments_limit,
         const CreateFileSegmentSettings & create_settings);
 
@@ -281,6 +276,7 @@ private:
         LockedKey & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
+        size_t non_aligned_right_offset,
         size_t file_segments_limit,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);

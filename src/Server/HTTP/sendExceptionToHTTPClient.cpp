@@ -43,7 +43,6 @@ void sendExceptionToHTTPClient(
             out->position() = out->buffer().begin();
 
         out->writeln(exception_message);
-        out->finalize();
     }
 }
 

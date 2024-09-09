@@ -483,6 +483,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (auto to_storage = getTargetInnerEngine(ViewTarget::To))
         to_storage->formatImpl(settings, state, frame);
 
+    if (targets)
+    {
+        targets->formatTarget(ViewTarget::Data, settings, state, frame);
+        targets->formatTarget(ViewTarget::Tags, settings, state, frame);
+        targets->formatTarget(ViewTarget::Metrics, settings, state, frame);
+    }
+
     if (dictionary)
         dictionary->formatImpl(settings, state, frame);
 

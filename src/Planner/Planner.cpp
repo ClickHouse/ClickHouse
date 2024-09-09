@@ -1099,7 +1099,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
         /// I don't know if this is a good decision,
-        /// But for now it is done in the same way as in old analyzer.
+        /// but for now it is done in the same way as in old analyzer.
         /// This would not ignore limits for subqueries (affects mutations only).
         /// See test_build_sets_from_multiple_threads-analyzer.
         subquery_options.ignore_limits = false;

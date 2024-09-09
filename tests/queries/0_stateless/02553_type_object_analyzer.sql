@@ -1,6 +1,6 @@
 SET output_format_json_named_tuples_as_objects = 1;
 SET allow_experimental_object_type = 1;
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_json_analyzer;
 CREATE TABLE t_json_analyzer (a JSON) ENGINE = Memory;

@@ -1158,7 +1158,8 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             }
         }
 
-        has_virtual_shard_num = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()) && virtuals->has("_shard_num");
+        has_virtual_shard_num
+            = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
     }
 
     /// Collect missed object subcolumns

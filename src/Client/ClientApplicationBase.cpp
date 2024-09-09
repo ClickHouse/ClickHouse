@@ -200,8 +200,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
-        ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
-
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
     ;
 

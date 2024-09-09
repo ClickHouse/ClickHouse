@@ -244,6 +244,9 @@ public:
     /// Same as checkTimeLimit but it never throws
     [[nodiscard]] bool checkTimeLimitSoft();
 
+    /// Use it in case of the query left in background to execute asynchronously
+    void updateContext(ContextWeakPtr weak_context) { context = std::move(weak_context); }
+
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
     UInt64 getQueryCPUStartTime() { return watch.getStart(); }
 };

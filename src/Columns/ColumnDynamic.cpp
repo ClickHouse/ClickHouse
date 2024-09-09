@@ -643,6 +643,116 @@ ColumnPtr ColumnDynamic::compress() const
         });
 }
 
+void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
+{
+    if (source_columns.empty())
+        return;
+
+    /// Internal variants of source dynamic columns may differ.
+    /// We want to preallocate memory for all variants we will have after squashing.
+    /// It may happen that the total number of variants in source columns will
+    /// exceed the limit, in this case we will choose the most frequent variants.
+
+    /// First, preallocate memory for variant discriminators and offsets.
+    size_t new_size = size();
+    for (const auto & source_column : source_columns)
+        new_size += source_column->size();
+    auto & variant_col = getVariantColumn();
+    variant_col.getLocalDiscriminators().reserve_exact(new_size);
+    variant_col.getOffsets().reserve_exact(new_size);
+
+    /// Second, collect all variants and their total sizes.
+    std::unordered_map<String, size_t> total_variant_sizes;
+    DataTypes all_variants;
+
+    auto add_variants = [&](const ColumnDynamic & source_dynamic)
+    {
+        const auto & source_variant_column = source_dynamic.getVariantColumn();
+        const auto & source_variant_info = source_dynamic.getVariantInfo();
+        const auto & source_variants = assert_cast<const DataTypeVariant &>(*source_variant_info.variant_type).getVariants();
+
+        for (size_t i = 0; i != source_variants.size(); ++i)
+        {
+            const auto & variant_name = source_variant_info.variant_names[i];
+            auto it = total_variant_sizes.find(variant_name);
+            /// Add this variant to the list of all variants if we didn't see it yet.
+            if (it == total_variant_sizes.end())
+            {
+                all_variants.push_back(source_variants[i]);
+                it = total_variant_sizes.emplace(variant_name, 0).first;
+            }
+
+            it->second += source_variant_column.getVariantByGlobalDiscriminator(i).size();
+        }
+    };
+
+    for (const auto & source_column : source_columns)
+        add_variants(assert_cast<const ColumnDynamic &>(*source_column));
+
+    /// Add variants from this dynamic column.
+    add_variants(*this);
+
+    DataTypePtr result_variant_type;
+    /// Check if the number of all variants exceeds the limit.
+    if (all_variants.size() > max_dynamic_types || (all_variants.size() == max_dynamic_types && !total_variant_sizes.contains("String")))
+    {
+        /// We want to keep the most frequent variants in the resulting dynamic column.
+        DataTypes result_variants;
+        result_variants.reserve(max_dynamic_types);
+        /// Add variants from current variant column as we will not rewrite it.
+        for (const auto & variant : assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())
+            result_variants.push_back(variant);
+        /// Add String variant in advance (if we didn't add it yet) as we must have it across variants when we reach the limit.
+        if (!variant_info.variant_name_to_discriminator.contains("String"))
+            result_variants.push_back(std::make_shared<DataTypeString>());
+
+        /// Create list of remaining variants with their sizes and sort it.
+        std::vector<std::pair<size_t, DataTypePtr>> variants_with_sizes;
+        variants_with_sizes.reserve(all_variants.size() - variant_info.variant_names.size());
+        for (const auto & variant : all_variants)
+        {
+            /// Add variant to the list only of we didn't add it yet.
+            auto variant_name = variant->getName();
+            if (variant_name != "String" && !variant_info.variant_name_to_discriminator.contains(variant_name))
+                variants_with_sizes.emplace_back(total_variant_sizes[variant->getName()], variant);
+        }
+
+        std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+        /// Add the most frequent variants until we reach max_dynamic_types.
+        size_t num_new_variants = max_dynamic_types - result_variants.size();
+        for (size_t i = 0; i != num_new_variants; ++i)
+            result_variants.push_back(variants_with_sizes[i].second);
+
+        result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
+    }
+    else
+    {
+        result_variant_type = std::make_shared<DataTypeVariant>(all_variants);
+    }
+
+    if (!result_variant_type->equals(*variant_info.variant_type))
+        updateVariantInfoAndExpandVariantColumn(result_variant_type);
+
+    /// Now current dynamic column has all resulting variants and we can call
+    /// prepareForSquashing on them to preallocate the memory.
+    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+    {
+        Columns source_variant_columns;
+        source_variant_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+        {
+            const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
+            const auto & source_variant_info = source_dynamic_column.getVariantInfo();
+            /// Try to find this variant in the current source column.
+            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
+            if (it != source_variant_info.variant_name_to_discriminator.end())
+                source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
+        }
+
+        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
+    }
+}
+
 void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     if (!empty())

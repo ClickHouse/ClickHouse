@@ -262,7 +262,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
         {
             case orc::BOOLEAN: {
                 /// May throw exception
-                auto val = field.get<UInt64>();
+                auto val = field.safeGet<UInt64>();
                 return orc::Literal(val != 0);
             }
             case orc::BYTE:
@@ -275,7 +275,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
                 ///   SELECT * FROM file('t.orc', ORC, 'x UInt8') WHERE x > 10
                 /// We have to reject this, otherwise it would miss values > 127 (because
                 /// they're treated as negative by ORC).
-                auto val = field.get<Int64>();
+                auto val = field.safeGet<Int64>();
                 return orc::Literal(val);
             }
             case orc::FLOAT:

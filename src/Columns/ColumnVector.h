@@ -85,7 +85,7 @@ public:
 
     void insertMany(const Field & field, size_t length) override
     {
-        data.resize_fill(data.size() + length, static_cast<T>(field.get<T>()));
+        data.resize_fill(data.size() + length, static_cast<T>(field.safeGet<T>()));
     }
 
     void insertData(const char * pos, size_t) override
@@ -235,7 +235,7 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(static_cast<T>(x.get<T>()));
+        data.push_back(static_cast<T>(x.safeGet<T>()));
     }
 
     bool tryInsert(const DB::Field & x) override;

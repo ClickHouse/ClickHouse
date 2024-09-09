@@ -74,7 +74,7 @@ public:
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
-    void insert(const Field & x) override { data.push_back(x.get<T>()); }
+    void insert(const Field & x) override { data.push_back(x.safeGet<T>()); }
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;

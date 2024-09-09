@@ -19,6 +19,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -109,7 +110,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
-            command.comment = ast_comment.value.get<String>();
+            command.comment = ast_comment.value.safeGet<String>();
         }
 
         if (ast_col_decl.codec)
@@ -167,7 +168,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
-            command.comment.emplace(ast_comment.value.get<String>());
+            command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
         if (ast_col_decl.ttl)
@@ -210,7 +211,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = COMMENT_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -220,7 +221,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = COMMENT_TABLE;
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
@@ -1316,6 +1317,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
+            validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+
             /// FIXME: Adding a new column of type Object(JSON) is broken.
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
@@ -1395,6 +1398,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
+                validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 

@@ -27,6 +27,9 @@ size_t getNumberOfDimensions(const IColumn & column);
 /// Returns type of scalars of Array of arbitrary dimensions.
 DataTypePtr getBaseTypeOfArray(const DataTypePtr & type);
 
+/// The same as above but takes into account Tuples of Nested.
+DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements);
+
 /// Returns Array type with requested scalar type and number of dimensions.
 DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions);
 

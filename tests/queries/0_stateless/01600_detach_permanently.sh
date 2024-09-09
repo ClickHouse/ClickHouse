@@ -111,8 +111,8 @@ clickhouse_local "INSERT INTO db_ordinary.src SELECT * FROM numbers(10)"
 clickhouse_local "SELECT if(count() = 10, 'MV is working', 'MV failed') FROM db_ordinary.src_mv_with_inner"
 
 clickhouse_local "DETACH VIEW db_ordinary.src_mv_with_inner PERMANENTLY; INSERT INTO db_ordinary.src SELECT * FROM numbers(10)" --stacktrace
-clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS allow_experimental_analyzer = 0" 2>&1 | grep -c "db_ordinary.src_mv_with_inner does not exist"
-clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS allow_experimental_analyzer = 1" 2>&1 | grep -c "Unknown table expression identifier 'db_ordinary.src_mv_with_inner'"
+clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS enable_analyzer = 0" 2>&1 | grep -c "db_ordinary.src_mv_with_inner does not exist"
+clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS enable_analyzer = 1" 2>&1 | grep -c "Unknown table expression identifier 'db_ordinary.src_mv_with_inner'"
 
 ## Quite silly: ATTACH MATERIALIZED VIEW don't work with short syntax (w/o select), but i can attach it using ATTACH TABLE ...
 clickhouse_local "ATTACH TABLE db_ordinary.src_mv_with_inner"

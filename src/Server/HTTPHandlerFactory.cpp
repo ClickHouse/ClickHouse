@@ -1,18 +1,16 @@
-#include <memory>
 #include <Server/HTTPHandlerFactory.h>
 
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Server/PrometheusMetricsWriter.h>
+#include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/IServer.h>
-#include <Access/Credentials.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
-#include "Server/PrometheusMetricsWriter.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
-#include "PrometheusRequestHandler.h"
 #include "WebUIRequestHandler.h"
 
 
@@ -124,7 +122,7 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "prometheus")
             {
-                main_handler_factory->addHandler(createPrometheusHandlerFactory(server, config, async_metrics, prefix + "." + key));
+                main_handler_factory->addHandler(createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics));
             }
             else if (handler_type == "replicas_status")
             {
@@ -201,10 +199,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
-    {
-        auto metrics_writer = std::make_shared<PrometheusMetricsWriter>(config, "prometheus", async_metrics);
-        return createPrometheusMainHandlerFactory(server, config, metrics_writer, name);
-    }
+        return createPrometheusHandlerFactory(server, config, async_metrics, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
 }
@@ -291,20 +286,9 @@ void addDefaultHandlersFactory(
     );
     factory.addHandler(query_handler);
 
-    /// We check that prometheus handler will be served on current (default) port.
-    /// Otherwise it will be created separately, see createHandlerFactory(...).
-    if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
-    {
-        auto writer = std::make_shared<PrometheusMetricsWriter>(config, "prometheus", async_metrics);
-        auto creator = [&server, writer] () -> std::unique_ptr<PrometheusRequestHandler>
-        {
-            return std::make_unique<PrometheusRequestHandler>(server, writer);
-        };
-        auto prometheus_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
-        prometheus_handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
-        prometheus_handler->allowGetAndHeadRequest();
+    /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
+    if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
         factory.addHandler(prometheus_handler);
-    }
 }
 
 }

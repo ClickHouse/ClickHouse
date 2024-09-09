@@ -243,7 +243,7 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
+                    Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;

@@ -170,7 +170,11 @@ jobs:
         if: ${{ needs.StyleCheck.result == 'success' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 merge_pr.py --set-ci-status
       - name: Check Workflow results
         uses: ./.github/actions/check_workflow
         with:

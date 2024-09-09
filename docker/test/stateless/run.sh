@@ -3,6 +3,12 @@
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
 
+# shellcheck source=../stateless/stress_tests.lib
+source /stress_tests.lib
+
+# Avoid overlaps with previous runs
+dmesg --clear
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
@@ -48,8 +54,6 @@ source /utils.lib
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh stateless
-./mc admin trace clickminio > /test_output/minio.log &
-MC_ADMIN_PID=$!
 
 ./setup_hdfs_minicluster.sh
 
@@ -72,8 +76,12 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 fi
 
+export IS_FLAKY_CHECK=0
+
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
+    export IS_FLAKY_CHECK=1
+
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
     export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
     export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
@@ -164,7 +172,56 @@ do
 done
 
 setup_logs_replication
-attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+attach_gdb_to_clickhouse
+
+# create tables for minio log webhooks
+clickhouse-client --query "CREATE TABLE minio_audit_logs
+(
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY tuple()"
+
+clickhouse-client --query "CREATE TABLE minio_server_logs
+(
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY tuple()"
+
+# create minio log webhooks for both audit and server logs
+# use async inserts to avoid creating too many parts
+./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_server_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
+./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
+
+max_retries=100
+retry=1
+while [ $retry -le $max_retries ]; do
+    echo "clickminio restart attempt $retry:"
+
+    output=$(./mc admin service restart clickminio --wait --json 2>&1 | jq -r .status)
+    echo "Output of restart status: $output"
+
+    expected_output="success
+success"
+    if [ "$output" = "$expected_output" ]; then
+        echo "Restarted clickminio successfully."
+        break
+    fi
+
+    sleep 1
+
+    retry=$((retry + 1))
+done
+
+if [ $retry -gt $max_retries ]; then
+    echo "Failed to restart clickminio after $max_retries attempts."
+fi
+
+./mc admin trace clickminio > /test_output/minio.log &
+MC_ADMIN_PID=$!
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
@@ -254,13 +311,24 @@ function run_tests()
     TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
     START_TIME=${SECONDS}
     set +e
-    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s \
-        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-            --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-    | ts '%Y-%m-%d %H:%M:%S' \
-    | tee -a test_output/test_result.txt
+
+    TEST_ARGS=(
+        --testname
+        --shard
+        --zookeeper
+        --check-zookeeper-session
+        --hung-check
+        --print-time
+        --no-drop-if-fail
+        --capture-client-stacktrace
+        --test-runs "$NUM_TRIES"
+        "${ADDITIONAL_OPTIONS[@]}"
+    )
+    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s clickhouse-test "${TEST_ARGS[@]}" 2>&1 \
+        | ts '%Y-%m-%d %H:%M:%S' \
+        | tee -a test_output/test_result.txt
     set -e
-    DURATION=$((START_TIME - SECONDS))
+    DURATION=$((SECONDS - START_TIME))
 
     echo "Elapsed ${DURATION} seconds."
     if [[ $DURATION -ge $TIMEOUT ]]
@@ -299,24 +367,32 @@ stop_logs_replication
 failed_to_save_logs=0
 for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
 do
-    err=$(clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.gz' format TSVWithNamesAndTypes")
-    echo "$err"
-    [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+    if ! clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
+        failed_to_save_logs=1
+    fi
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-        err=$( { clickhouse-client --port 29000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 
     if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 done
+
+
+# collect minio audit and server logs
+# wait for minio to flush its batch if it has any
+sleep 1
+clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+clickhouse-client -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
@@ -387,6 +463,8 @@ do
         | zstd --threads=0 > "/test_output/trace-log-$trace_type-flamegraph.tsv.zst" ||:
 done
 
+# Grep logs for sanitizer asserts, crashes and other critical errors
+check_logs_for_critical_errors
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log

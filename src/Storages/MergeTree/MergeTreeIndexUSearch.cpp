@@ -377,12 +377,12 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
     static constexpr auto default_distance_function = DISTANCE_FUNCTION_L2;
     String distance_function = default_distance_function;
     if (!index.arguments.empty())
-        distance_function = index.arguments[0].get<String>();
+        distance_function = index.arguments[0].safeGet<String>();
 
     static constexpr auto default_scalar_kind = unum::usearch::scalar_kind_t::f16_k;
     auto scalar_kind = default_scalar_kind;
     if (index.arguments.size() > 1)
-        scalar_kind = nameToScalarKind.at(index.arguments[1].get<String>());
+        scalar_kind = nameToScalarKind.at(index.arguments[1].safeGet<String>());
 
     return std::make_shared<MergeTreeIndexUSearch>(index, distance_function, scalar_kind);
 }
@@ -408,14 +408,14 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
 
     if (!index.arguments.empty())
     {
-        String distance_name = index.arguments[0].get<String>();
+        String distance_name = index.arguments[0].safeGet<String>();
         if (distance_name != DISTANCE_FUNCTION_L2 && distance_name != DISTANCE_FUNCTION_COSINE)
             throw Exception(ErrorCodes::INCORRECT_DATA, "USearch index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
     }
 
     /// Check that a supported kind was passed as a second argument
 
-    if (index.arguments.size() > 1 && !nameToScalarKind.contains(index.arguments[1].get<String>()))
+    if (index.arguments.size() > 1 && !nameToScalarKind.contains(index.arguments[1].safeGet<String>()))
     {
         String supported_kinds;
         for (const auto & [name, kind] : nameToScalarKind)

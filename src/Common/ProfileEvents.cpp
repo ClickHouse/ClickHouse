@@ -193,8 +193,10 @@
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
+    M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
+    M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.") \
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).") \
@@ -457,6 +459,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
+    M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.") \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
     M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls") \
@@ -464,8 +467,9 @@ The server successfully detected this situation and will download merged part fr
     M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls") \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
-    M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(DiskAzureDeleteObjects, "Number of Disk Azure blob storage API DeleteObject(s) calls.") \
     M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.") \
+    M(DiskAzureCreateContainer, "Number of Disk Azure blob storage API CreateContainer calls.") \
     \
     M(ReadBufferFromAzureMicroseconds, "Time spent on reading from Azure.") \
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.") \

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNested.h>
@@ -66,6 +67,36 @@ DataTypePtr getBaseTypeOfArray(const DataTypePtr & type)
     return last_array ? last_array->getNestedType() : type;
 }
 
+DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
+{
+    auto it = tuple_elements.begin();
+    while (true)
+    {
+        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            type = type_array->getNestedType();
+        }
+        else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            if (it == tuple_elements.end())
+                break;
+
+            auto pos = type_tuple->tryGetPositionByName(*it);
+            if (!pos)
+                break;
+
+            ++it;
+            type = type_tuple->getElement(*pos);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    return type;
+}
+
 ColumnPtr getBaseColumnOfArray(const ColumnPtr & column)
 {
     /// Get raw pointers to avoid extra copying of column pointers.
@@ -104,7 +135,7 @@ Array createEmptyArrayField(size_t num_dimensions)
     for (size_t i = 1; i < num_dimensions; ++i)
     {
         current_array->push_back(Array());
-        current_array = &current_array->back().get<Array &>();
+        current_array = &current_array->back().safeGet<Array &>();
     }
 
     return array;

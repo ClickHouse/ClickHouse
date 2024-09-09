@@ -341,7 +341,7 @@
 	url = https://github.com/graphitemaster/incbin.git
 [submodule "contrib/usearch"]
 	path = contrib/usearch
-	url = https://github.com/unum-cloud/usearch.git
+	url = https://github.com/ClickHouse/usearch.git
 [submodule "contrib/SimSIMD"]
 	path = contrib/SimSIMD
 	url = https://github.com/ashvardanian/SimSIMD.git

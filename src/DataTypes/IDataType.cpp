@@ -90,7 +90,9 @@ void IDataType::forEachSubcolumn(
             {
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
                 auto subdata = ISerialization::createFromPath(subpath, prefix_len);
-                callback(subpath, name, subdata);
+                auto path_copy = subpath;
+                path_copy.resize(prefix_len);
+                callback(path_copy, name, subdata);
             }
             subpath[i].visited = true;
         }

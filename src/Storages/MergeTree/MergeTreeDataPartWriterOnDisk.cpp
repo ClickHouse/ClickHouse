@@ -255,6 +255,12 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
             index_compressor_stream = std::make_unique<CompressedWriteBuffer>(*index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
             index_source_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_compressor_stream);
         }
+
+        const auto & primary_key_types = metadata_snapshot->getPrimaryKey().data_types;
+        index_serializations.reserve(primary_key_types.size());
+
+        for (const auto & type : primary_key_types)
+            index_serializations.push_back(type->getDefaultSerialization());
     }
 }
 
@@ -300,22 +306,30 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, storage_settings->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
+
         skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));
         skip_index_accumulated_marks.push_back(0);
     }
 }
 
+void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndexRow(const Block & index_block, size_t row)
+{
+    chassert(index_block.columns() == index_serializations.size());
+    auto & index_stream = compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream;
+
+    for (size_t i = 0; i < index_block.columns(); ++i)
+    {
+        const auto & column = index_block.getByPosition(i).column;
+
+        index_columns[i]->insertFrom(*column, row);
+        index_serializations[i]->serializeBinary(*column, row, index_stream, {});
+    }
+}
+
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write)
 {
-    size_t primary_columns_num = primary_index_block.columns();
-    if (index_columns.empty())
-    {
-        index_types = primary_index_block.getDataTypes();
-        index_columns.resize(primary_columns_num);
-        last_block_index_columns.resize(primary_columns_num);
-        for (size_t i = 0; i < primary_columns_num; ++i)
-            index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
-    }
+    if (!metadata_snapshot->hasPrimaryKey())
+        return;
 
     {
         /** While filling index (index_columns), disable memory tracker.
@@ -326,25 +340,20 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
+        if (index_columns.empty())
+            index_columns = primary_index_block.cloneEmptyColumns();
+
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (const auto & granule : granules_to_write)
         {
-            if (metadata_snapshot->hasPrimaryKey() && granule.mark_on_start)
-            {
-                for (size_t j = 0; j < primary_columns_num; ++j)
-                {
-                    const auto & primary_column = primary_index_block.getByPosition(j);
-                    index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
-                    primary_column.type->getDefaultSerialization()->serializeBinary(
-                        *primary_column.column, granule.start_row, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
-                }
-            }
+            if (granule.mark_on_start)
+                calculateAndSerializePrimaryIndexRow(primary_index_block, granule.start_row);
         }
     }
 
-    /// store last index row to write final mark at the end of column
-    for (size_t j = 0; j < primary_columns_num; ++j)
-        last_block_index_columns[j] = primary_index_block.getByPosition(j).column;
+    /// Store block with last index row to write final mark at the end of column
+    if (with_final_mark)
+        last_index_block = primary_index_block;
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block & block)
@@ -421,18 +430,13 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
 
     if (index_file_hashing_stream)
     {
-        if (write_final_mark)
+        if (write_final_mark && last_index_block)
         {
-            for (size_t j = 0; j < index_columns.size(); ++j)
-            {
-                const auto & column = *last_block_index_columns[j];
-                size_t last_row_number = column.size() - 1;
-                index_columns[j]->insertFrom(column, last_row_number);
-                index_types[j]->getDefaultSerialization()->serializeBinary(
-                    column, last_row_number, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
-            }
-            last_block_index_columns.clear();
+            MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
         }
+
+        last_index_block.clear();
 
         if (compress_primary_key)
         {

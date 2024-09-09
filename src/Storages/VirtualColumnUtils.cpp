@@ -1,51 +1,46 @@
-#include <algorithm>
+#include <Storages/VirtualColumnUtils.h>
+
 #include <memory>
 #include <stack>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/FilterDescription.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
-
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
-
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/FilterDescription.h>
-
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeDateTime.h>
-
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
-#include <Storages/VirtualColumnUtils.h>
-#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunction.h"
-#include "Functions/IFunctionAdaptors.h"
-#include "Functions/indexHint.h"
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <Columns/ColumnSet.h>
-#include <Functions/FunctionHelpers.h>
-#include <Interpreters/ActionsVisitor.h>
 
 
 namespace DB
@@ -116,7 +111,7 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return {"_path", "_file", "_size", "_time"};
+    return {"_path", "_file", "_size", "_time", "_etag"};
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
@@ -135,6 +130,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
     add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
+    add_virtual("_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
     return desc;
 }
@@ -230,6 +226,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
+        else if (virtual_column.name == "_etag")
+        {
+            if (virtual_values.etag)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
     }
 }
 
@@ -273,10 +276,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 }
 
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
-    const ActionsDAG::Node * node,
-    const Block * allowed_inputs,
-    ActionsDAG::Nodes & additional_nodes,
-    bool allow_non_deterministic_functions)
+    const ActionsDAG::Node * node, const Block * allowed_inputs, ActionsDAG::Nodes & additional_nodes, bool allow_partial_result)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -285,13 +285,14 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             auto & node_copy = additional_nodes.emplace_back(*node);
             node_copy.children.clear();
             for (const auto * child : node->children)
-                if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_non_deterministic_functions))
+                if (const auto * child_copy
+                    = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_partial_result))
                     node_copy.children.push_back(child_copy);
-                /// Expression like (now_allowed AND allowed) is not allowed if allow_non_deterministic_functions = true. This is important for
+                /// Expression like (now_allowed AND allowed) is not allowed if allow_partial_result = true. This is important for
                 /// trivial count optimization, otherwise we can get incorrect results. For example, if the query is
                 /// SELECT count() FROM table WHERE _partition_id = '0' AND rowNumberInBlock() = 1, we cannot apply
                 /// trivial count.
-                else if (!allow_non_deterministic_functions)
+                else if (!allow_partial_result)
                     return nullptr;
 
             if (node_copy.children.empty())
@@ -300,7 +301,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             if (node_copy.children.size() == 1)
             {
                 const ActionsDAG::Node * res = node_copy.children.front();
-                /// Expression like (not_allowed AND 256) can't be resuced to (and(256)) because AND requires
+                /// Expression like (not_allowed AND 256) can't be reduced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 if (!res->result_type->equals(*node->result_type))
                 {
@@ -318,7 +319,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
-                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_non_deterministic_functions); !child)
+                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_partial_result); !child)
                     return nullptr;
 
             return &node_copy;
@@ -332,7 +333,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
                     for (const auto & output : index_hint_dag.getOutputs())
-                        if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, allow_non_deterministic_functions))
+                        if (const auto * child_copy
+                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, allow_partial_result))
                             atoms.push_back(child_copy);
 
                     if (!atoms.empty())
@@ -366,22 +368,24 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     return node;
 }
 
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_non_deterministic_functions)
+std::optional<ActionsDAG>
+splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result)
 {
     if (!predicate)
         return {};
 
     ActionsDAG::Nodes additional_nodes;
-    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, allow_non_deterministic_functions);
+    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, allow_partial_result);
     if (!res)
         return {};
 
     return ActionsDAG::cloneSubDAG({res}, true);
 }
 
-void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context)
+void filterBlockWithPredicate(
+    const ActionsDAG::Node * predicate, Block & block, ContextPtr context, bool allow_filtering_with_partial_predicate)
 {
-    auto dag = splitFilterDagForAllowedInputs(predicate, &block,  /*allow_non_deterministic_functions=*/ false);
+    auto dag = splitFilterDagForAllowedInputs(predicate, &block, /*allow_partial_result=*/allow_filtering_with_partial_predicate);
     if (dag)
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }

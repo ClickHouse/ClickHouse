@@ -38,12 +38,10 @@ private:
 
     std::pair<String, Field> extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const;
 
-    static constexpr auto default_good_cond_factor = 0.1;
-    static constexpr auto default_normal_cond_factor = 0.5;
-    static constexpr auto default_unknown_cond_factor = 1.0;
-    /// Conditions like "x = N" are considered good if abs(N) > threshold.
-    /// This is used to assume that condition is likely to have good selectivity.
-    static constexpr auto threshold = 2;
+    /// Used to estimate the selectivity of a condition when there is no statistics.
+    static constexpr auto default_cond_range_factor = 0.5;
+    static constexpr auto default_cond_equal_factor = 0.01;
+    static constexpr auto default_unknown_cond_factor = 1;
 
     UInt64 total_rows = 0;
     std::map<String, ColumnSelectivityEstimator> column_estimators;
