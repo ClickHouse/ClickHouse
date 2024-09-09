@@ -196,7 +196,7 @@ Restrictions on the «maximum amount of something» can take the value 0, which 
 
 Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
+This settings applies to [SELECT ... JOIN](../../sql-reference/statements/select/join.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
@@ -213,7 +213,7 @@ Default value: 0.
 
 Limits the size in bytes of the hash table used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
+This settings applies to [SELECT ... JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
 
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 

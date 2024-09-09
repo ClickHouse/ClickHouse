@@ -37,13 +37,13 @@ namespace
 {
     using Pos = const char *;
 
-    enum class ParseSyntax
+    enum class ParseSyntax : uint8_t
     {
         MySQL,
         Joda
     };
 
-    enum class ErrorHandling
+    enum class ErrorHandling : uint8_t
     {
         Exception,
         Zero,
@@ -713,7 +713,7 @@ namespace
         class Instruction
         {
         private:
-            enum class NeedCheckSpace
+            enum class NeedCheckSpace : uint8_t
             {
                 Yes,
                 No

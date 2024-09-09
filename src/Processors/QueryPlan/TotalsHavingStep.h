@@ -8,7 +8,7 @@ namespace DB
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
-enum class TotalsMode;
+enum class TotalsMode : uint8_t;
 
 /// Execute HAVING and calculate totals. See TotalsHavingTransform.
 class TotalsHavingStep : public ITransformingStep

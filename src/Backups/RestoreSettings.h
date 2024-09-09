@@ -9,7 +9,7 @@ namespace DB
 class ASTBackupQuery;
 
 /// How the RESTORE command will handle table/database existence.
-enum class RestoreTableCreationMode
+enum class RestoreTableCreationMode : uint8_t
 {
     /// RESTORE TABLE always tries to create a table and it throws an exception if the table already exists.
     kCreate,
@@ -24,7 +24,7 @@ enum class RestoreTableCreationMode
 using RestoreDatabaseCreationMode = RestoreTableCreationMode;
 
 /// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
-enum class RestoreAccessCreationMode
+enum class RestoreAccessCreationMode : uint8_t
 {
     /// RESTORE will throw an exception if some user already exists.
     kCreate,

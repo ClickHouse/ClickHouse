@@ -41,7 +41,7 @@ public:
       * If direct write is performed into [position(), buffer().end()) and its length is not enough,
       * you need to fill it first (i.g with write call), after it the capacity is regained.
       */
-    inline void next()
+    void next()
     {
         if (!offset())
             return;
@@ -69,7 +69,7 @@ public:
     /// Calling finalize() in the destructor of derived classes is a bad practice.
     virtual ~WriteBuffer();
 
-    inline void nextIfAtEnd()
+    void nextIfAtEnd()
     {
         if (!hasPendingData())
             next();
@@ -96,7 +96,7 @@ public:
         }
     }
 
-    inline void write(char x)
+    void write(char x)
     {
         if (finalized)
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};

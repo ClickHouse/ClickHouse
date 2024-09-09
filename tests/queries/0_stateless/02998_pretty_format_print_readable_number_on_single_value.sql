@@ -1,3 +1,4 @@
+SET output_format_pretty_display_footer_column_names=0;
 SELECT 1_000_000 as a FORMAT Pretty;
 SELECT 1_000_000 as a FORMAT PrettyNoEscapes;
 SELECT 1_000_000 as a FORMAT PrettyMonoBlock;

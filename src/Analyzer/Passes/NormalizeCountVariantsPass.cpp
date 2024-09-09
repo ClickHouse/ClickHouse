@@ -59,7 +59,7 @@ public:
         }
     }
 private:
-    static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
+    static void resolveAsCountAggregateFunction(FunctionNode & function_node)
     {
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);

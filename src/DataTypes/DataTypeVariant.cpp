@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Common/assert_cast.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/IAST.h>
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -33,6 +31,9 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nullable/LowCardinality(Nullable) types are not allowed inside Variant type");
         if (type->getTypeId() == TypeIndex::Variant)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested Variant types are not allowed");
+        if (type->getTypeId() == TypeIndex::Dynamic)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic type is not allowed inside Variant type");
+
         /// Don't use Nothing type as a variant.
         if (!isNothing(type))
             name_to_type[type->getName()] = type;
@@ -41,9 +42,6 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
     variants.reserve(name_to_type.size());
     for (const auto & [_, type] : name_to_type)
         variants.push_back(type);
-
-    if (variants.empty())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Variant cannot be empty");
 
     if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
@@ -113,8 +111,15 @@ bool DataTypeVariant::equals(const IDataType & rhs) const
         return false;
 
     for (size_t i = 0; i < size; ++i)
+    {
         if (!variants[i]->equals(*rhs_variant.variants[i]))
             return false;
+
+        /// The same data types with different custom names considered different.
+        /// For example, UInt8 and Bool.
+        if ((variants[i]->hasCustomName() || rhs_variant.variants[i]) && variants[i]->getName() != rhs_variant.variants[i]->getName())
+            return false;
+    }
 
     return true;
 }
@@ -129,17 +134,15 @@ bool DataTypeVariant::haveMaximumSizeOfValue() const
     return std::all_of(variants.begin(), variants.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
-bool DataTypeVariant::hasDynamicSubcolumns() const
+bool DataTypeVariant::hasDynamicSubcolumnsDeprecated() const
 {
-    return std::any_of(variants.begin(), variants.end(), [](auto && elem) { return elem->hasDynamicSubcolumns(); });
+    return std::any_of(variants.begin(), variants.end(), [](auto && elem) { return elem->hasDynamicSubcolumnsDeprecated(); });
 }
 
-std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const IDataType & type) const
+std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const String & type_name) const
 {
-    String type_name = type.getName();
     for (size_t i = 0; i != variants.size(); ++i)
     {
-        /// We don't use equals here, because it doesn't respect custom type names.
         if (variants[i]->getName() == type_name)
             return i;
     }
@@ -151,11 +154,7 @@ size_t DataTypeVariant::getMaximumSizeOfValueInMemory() const
 {
     size_t max_size = 0;
     for (const auto & elem : variants)
-    {
-        size_t elem_max_size = elem->getMaximumSizeOfValueInMemory();
-        if (elem_max_size > max_size)
-            max_size = elem_max_size;
-    }
+        max_size = std::max(max_size, elem->getMaximumSizeOfValueInMemory());
     return max_size;
 }
 
@@ -187,7 +186,7 @@ void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Variant cannot be empty");
+        return std::make_shared<DataTypeVariant>(DataTypes{});
 
     DataTypes nested_types;
     nested_types.reserve(arguments->children.size());

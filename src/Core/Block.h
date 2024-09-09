@@ -152,6 +152,10 @@ public:
     /** See IColumn::shrinkToFit() */
     Block shrinkToFit() const;
 
+    Block compress() const;
+
+    Block decompress() const;
+
     void clear();
     void swap(Block & other) noexcept;
 

@@ -12,7 +12,7 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 
@@ -183,7 +183,7 @@ public:
         const ColumnString & col_string = assert_cast<const ColumnString &>(*str_subcolumn.get());
 
         auto col_res = ColumnString::create();
-        if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(col_arr.getData()))
+        if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(&col_arr.getData()))
             executeInternal(col_string, col_arr, delimiter, *col_res, col_nullable->getNullMapData().data());
         else
             executeInternal(col_string, col_arr, delimiter, *col_res);

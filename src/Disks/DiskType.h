@@ -6,14 +6,14 @@
 namespace DB
 {
 
-enum class DataSourceType
+enum class DataSourceType : uint8_t
 {
     Local,
     RAM,
     ObjectStorage,
 };
 
-enum class ObjectStorageType
+enum class ObjectStorageType : uint8_t
 {
     None,
     S3,
@@ -23,7 +23,7 @@ enum class ObjectStorageType
     Local,
 };
 
-enum class MetadataStorageType
+enum class MetadataStorageType : uint8_t
 {
     None,
     Local,

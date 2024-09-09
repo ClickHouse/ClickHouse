@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <cstdint>
 
 
 namespace DB
@@ -75,7 +76,7 @@ namespace DB
     M(ErrorMaxQuerySizeExceeded) \
 
 
-enum class TokenType
+enum class TokenType : uint8_t
 {
 #define M(TOKEN) TOKEN,
 APPLY_FOR_TOKENS(M)

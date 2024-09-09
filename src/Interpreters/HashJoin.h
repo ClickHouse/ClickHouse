@@ -26,11 +26,13 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
 
 class TableJoin;
+class ExpressionActions;
 
 namespace JoinStuff
 {
@@ -60,16 +62,16 @@ public:
     bool getUsedSafe(size_t i) const;
     bool getUsedSafe(const Block * block_ptr, size_t row_idx) const;
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     void setUsed(const T & f);
 
-    template <bool use_flags, bool multiple_disjunct>
+    template <bool use_flags, bool flag_per_row>
     void setUsed(const Block * block, size_t row_num, size_t offset);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     bool getUsed(const T & f);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     bool setUsedOnce(const T & f);
 };
 
@@ -252,7 +254,7 @@ public:
         M(key_string)                          \
         M(key_fixed_string)
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY,
         CROSS,
@@ -320,8 +322,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -336,8 +336,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -352,8 +350,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
@@ -438,8 +434,15 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
+
     RightTableDataPtr data;
+    bool have_compressed = false;
+
     std::vector<Sizes> key_sizes;
+
+    /// Needed to do external cross join
+    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -485,6 +488,9 @@ private:
     static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
+
+    void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
+    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
 
 }

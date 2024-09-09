@@ -10,3 +10,23 @@ select dumpColumnStructure('x') GROUP BY 'x';
 select dumpColumnStructure('x');
 -- from https://github.com/ClickHouse/ClickHouse/pull/60046
 SELECT cityHash64('limit', _CAST(materialize('World'), 'LowCardinality(String)')) FROM system.one GROUP BY GROUPING SETS ('limit');
+
+WITH (
+        SELECT dummy AS x
+        FROM system.one
+    ) AS y
+SELECT
+    y,
+    min(dummy)
+FROM remote('127.0.0.{1,2}', system.one)
+GROUP BY y;
+
+WITH (
+        SELECT dummy AS x
+        FROM system.one
+    ) AS y
+SELECT
+    y,
+    min(dummy)
+FROM remote('127.0.0.{2,3}', system.one)
+GROUP BY y;

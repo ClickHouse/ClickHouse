@@ -89,11 +89,14 @@ struct ColumnDescription
     ASTPtr codec;
     SettingsChanges settings;
     ASTPtr ttl;
-    std::optional<StatisticDescription> stat;
+    ColumnStatisticsDescription statistics;
 
     ColumnDescription() = default;
-    ColumnDescription(ColumnDescription &&) = default;
-    ColumnDescription(const ColumnDescription &) = default;
+    ColumnDescription(const ColumnDescription & other) { *this = other; }
+    ColumnDescription & operator=(const ColumnDescription & other);
+    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
+    ColumnDescription & operator=(ColumnDescription && other) noexcept;
+
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);
     ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);

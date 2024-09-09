@@ -95,11 +95,20 @@ UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
     return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
 }
 
-std::string DataPartStorageOnDiskFull::getRemotePath(const std::string & file_name) const
+std::string DataPartStorageOnDiskFull::getRemotePath(const std::string & file_name, bool if_exists) const
 {
-    auto objects = volume->getDisk()->getStorageObjects(fs::path(root_path) / part_dir / file_name);
+    const std::string path = fs::path(root_path) / part_dir / file_name;
+    auto objects = volume->getDisk()->getStorageObjects(path);
+
+    if (objects.empty() && if_exists)
+        return "";
+
     if (objects.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "One file must be mapped to one object on blob storage in MergeTree tables");
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "One file must be mapped to one object on blob storage by path {} in MergeTree tables, have {}.",
+                        path, objects.size());
+    }
 
     return objects[0].remote_path;
 }

@@ -10,7 +10,7 @@
 
 namespace DB
 {
-enum class LocalFSReadMethod
+enum class LocalFSReadMethod : uint8_t
 {
     /**
      * Simple synchronous reads with 'read'.
@@ -54,7 +54,7 @@ enum class LocalFSReadMethod
     pread_fake_async
 };
 
-enum class RemoteFSReadMethod
+enum class RemoteFSReadMethod : uint8_t
 {
     read,
     threadpool,
@@ -126,9 +126,6 @@ struct ReadSettings
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
     bool http_make_head_request = true;
-
-    /// Monitoring
-    bool for_object_storage = false; // to choose which profile events should be incremented
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {

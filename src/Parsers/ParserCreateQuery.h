@@ -138,7 +138,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
     ParserKeyword s_comment{Keyword::COMMENT};
     ParserKeyword s_codec{Keyword::CODEC};
-    ParserKeyword s_stat{Keyword::STATISTIC};
+    ParserKeyword s_stat{Keyword::STATISTICS};
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
@@ -155,7 +155,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserCollation collation_parser;
-    ParserStatisticType stat_type_parser;
+    ParserStatisticsType stat_type_parser;
     ParserExpression expression_parser;
     ParserSetQuery settings_parser(true);
 
@@ -193,7 +193,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
-    ASTPtr stat_type_expression;
+    ASTPtr statistics_desc_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
     ASTPtr settings;
@@ -325,7 +325,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (s_stat.ignore(pos, expected))
     {
-        if (!stat_type_parser.parse(pos, stat_type_expression, expected))
+        if (!stat_type_parser.parse(pos, statistics_desc_expression, expected))
             return false;
     }
 
@@ -398,10 +398,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(settings));
     }
 
-    if (stat_type_expression)
+    if (statistics_desc_expression)
     {
-        column_declaration->stat_type = stat_type_expression;
-        column_declaration->children.push_back(std::move(stat_type_expression));
+        column_declaration->statistics_desc = statistics_desc_expression;
+        column_declaration->children.push_back(std::move(statistics_desc_expression));
     }
 
     if (ttl_expression)
@@ -452,15 +452,26 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserStatisticDeclaration : public IParserBase
+class ParserStatisticsDeclaration : public IParserBase
 {
 public:
-    ParserStatisticDeclaration() = default;
+    ParserStatisticsDeclaration() = default;
 
 protected:
     const char * getName() const override { return "statistics declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+class ParserStatisticsDeclarationWithoutTypes : public IParserBase
+{
+public:
+    ParserStatisticsDeclarationWithoutTypes() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 class ParserConstraintDeclaration : public IParserBase
 {

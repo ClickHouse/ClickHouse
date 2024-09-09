@@ -96,7 +96,7 @@ void NativeReader::readData(const ISerialization & serialization, ColumnPtr & co
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
-    serialization.deserializeBinaryBulkStatePrefix(settings, state);
+    serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
     serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
@@ -327,7 +327,7 @@ Block NativeReader::read()
     }
 
     if (res.rows() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after desirialization, got: {}, expected: {}", res.rows(), rows);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
 }

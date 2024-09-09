@@ -298,8 +298,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
         /// If one of pipelines uses more threads then current limit, will keep it.
         /// It may happen if max_distributed_connections > max_threads
-        if (pipeline.max_threads > max_threads_limit)
-            max_threads_limit = pipeline.max_threads;
+        max_threads_limit = std::max(pipeline.max_threads, max_threads_limit);
 
         concurrency_control = pipeline.getConcurrencyControl();
     }

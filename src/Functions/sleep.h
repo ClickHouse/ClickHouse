@@ -34,7 +34,7 @@ namespace ErrorCodes
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
   */
 
-enum class FunctionSleepVariant
+enum class FunctionSleepVariant : uint8_t
 {
     PerBlock,
     PerRow

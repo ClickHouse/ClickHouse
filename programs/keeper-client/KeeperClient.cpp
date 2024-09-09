@@ -86,7 +86,10 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
 {
     if (!ask_confirmation)
-        return callback();
+    {
+        callback();
+        return;
+    }
 
     std::cout << prompt << " Continue?\n";
     waiting_confirmation = true;

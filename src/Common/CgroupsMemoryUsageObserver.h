@@ -30,7 +30,7 @@ public:
     using OnMemoryLimitFn = std::function<void(bool)>;
     using OnMemoryAmountAvailableChangedFn = std::function<void()>;
 
-    enum class CgroupsVersion
+    enum class CgroupsVersion : uint8_t
     {
         V1,
         V2

@@ -490,11 +490,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (key_node_function_name == "arrayElement")
         {
             /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] IN ('') because if key does not exists in map
-              * we return default value for arrayElement.
+              * It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
+              * we return the default value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
+              * that way we skip necessary granules where the map key does not exist.
               */
             if (!prepared_set)
                 return false;
@@ -781,11 +781,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (key_node_function_name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
         {
             /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
-              * we return default value for arrayElement.
+              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
+              * we return default the value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
+              * that way we skip necessary granules where map key does not exist.
               */
             if (value_field == value_type->getDefault())
                 return false;
@@ -865,8 +865,8 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
         const auto & column_and_type = block.getByName(index_columns_name[column]);
         auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
-        const auto & index_col = checkAndGetColumn<ColumnUInt64>(index_column.get());
-        const auto & index_data = index_col->getData();
+        const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
+        const auto & index_data = index_col.getData();
         for (const auto & hash: index_data)
             column_hashes[column].insert(hash);
     }

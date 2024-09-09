@@ -2,7 +2,6 @@
     <proxy>
         <http>
             <uri>http://proxy1</uri>
-            <uri>http://proxy2</uri>
         </http>
     </proxy>
 </clickhouse>

@@ -130,7 +130,7 @@ def test_prohibited(started_cluster):
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert (
-            "Unable to open HDFS file: /storage_user_two_prohibited error: Permission denied: user=specuser, access=WRITE"
+            "Unable to open HDFS file: /storage_user_two_prohibited (hdfs://suser@kerberizedhdfs1:9010/storage_user_two_prohibited) error: Permission denied: user=specuser, access=WRITE"
             in str(ex)
         )
 

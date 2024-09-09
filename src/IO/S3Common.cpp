@@ -1,18 +1,20 @@
 #include <IO/S3Common.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Common/formatReadable.h>
+#include <Common/quoteString.h>
+#include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
 
 #if USE_AWS_S3
 
-#    include <IO/HTTPHeaderEntries.h>
-#    include <IO/S3/Client.h>
-#    include <IO/S3/Requests.h>
-#    include <Common/quoteString.h>
-#    include <Common/logger_useful.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/Requests.h>
 
 
 namespace ProfileEvents
@@ -58,6 +60,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int BAD_ARGUMENTS;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace S3
@@ -98,101 +102,320 @@ ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, c
     return sse_kms_config;
 }
 
-AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
+template <typename Settings>
+static bool setValueFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    typename Settings::SettingFieldRef & field)
 {
-    auto access_key_id = config.getString(config_elem + ".access_key_id", "");
-    auto secret_access_key = config.getString(config_elem + ".secret_access_key", "");
-    auto session_token = config.getString(config_elem + ".session_token", "");
+    if (!config.has(path))
+        return false;
 
-    auto region = config.getString(config_elem + ".region", "");
-    auto server_side_encryption_customer_key_base64 = config.getString(config_elem + ".server_side_encryption_customer_key_base64", "");
+    auto which = field.getValue().getType();
+    if (isInt64OrUInt64FieldType(which))
+        field.setValue(config.getUInt64(path));
+    else if (which == Field::Types::String)
+        field.setValue(config.getString(path));
+    else if (which == Field::Types::Bool)
+        field.setValue(config.getBool(path));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
 
-    std::optional<bool> use_environment_credentials;
-    if (config.has(config_elem + ".use_environment_credentials"))
-        use_environment_credentials = config.getBool(config_elem + ".use_environment_credentials");
+    return true;
+}
 
-    std::optional<bool> use_insecure_imds_request;
-    if (config.has(config_elem + ".use_insecure_imds_request"))
-        use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
+AuthSettings::AuthSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    const DB::Settings & settings,
+    const std::string & config_prefix)
+{
+    for (auto & field : allMutable())
+    {
+        auto path = fmt::format("{}.{}", config_prefix, field.getName());
 
-    std::optional<uint64_t> expiration_window_seconds;
-    if (config.has(config_elem + ".expiration_window_seconds"))
-        expiration_window_seconds = config.getUInt64(config_elem + ".expiration_window_seconds");
+        bool updated = setValueFromConfig<AuthSettings>(config, path, field);
+        if (!updated)
+        {
+            auto setting_name = "s3_" + field.getName();
+            if (settings.has(setting_name) && settings.isChanged(setting_name))
+                field.setValue(settings.get(setting_name));
+        }
+    }
 
-    std::optional<bool> no_sign_request;
-    if (config.has(config_elem + ".no_sign_request"))
-        no_sign_request = config.getBool(config_elem + ".no_sign_request");
+    headers = getHTTPHeaders(config_prefix, config);
+    server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
 
-    HTTPHeaderEntries headers = getHTTPHeaders(config_elem, config);
-    ServerSideEncryptionKMSConfig sse_kms_config = getSSEKMSConfig(config_elem, config);
-
-    std::unordered_set<std::string> users;
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_elem, keys);
+    config.keys(config_prefix, keys);
     for (const auto & key : keys)
     {
         if (startsWith(key, "user"))
-            users.insert(config.getString(config_elem + "." + key));
+            users.insert(config.getString(config_prefix + "." + key));
     }
-
-    return AuthSettings
-    {
-        std::move(access_key_id), std::move(secret_access_key), std::move(session_token),
-        std::move(region),
-        std::move(server_side_encryption_customer_key_base64),
-        std::move(sse_kms_config),
-        std::move(headers),
-        use_environment_credentials,
-        use_insecure_imds_request,
-        expiration_window_seconds,
-        no_sign_request,
-        std::move(users)
-    };
 }
 
-bool AuthSettings::canBeUsedByUser(const String & user) const
+AuthSettings::AuthSettings(const DB::Settings & settings)
 {
-    return users.empty() || users.contains(user);
+    updateFromSettings(settings, /* if_changed */false);
+}
+
+void AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_changed)
+{
+    for (auto & field : allMutable())
+    {
+        const auto setting_name = "s3_" + field.getName();
+        if (settings.has(setting_name) && (!if_changed || settings.isChanged(setting_name)))
+        {
+            field.setValue(settings.get(setting_name));
+        }
+    }
 }
 
 bool AuthSettings::hasUpdates(const AuthSettings & other) const
 {
     AuthSettings copy = *this;
-    copy.updateFrom(other);
+    copy.updateIfChanged(other);
     return *this != copy;
 }
 
-void AuthSettings::updateFrom(const AuthSettings & from)
+void AuthSettings::updateIfChanged(const AuthSettings & settings)
 {
-    /// Update with check for emptyness only parameters which
-    /// can be passed not only from config, but via ast.
+    for (auto & setting : settings.all())
+    {
+        if (setting.isValueChanged())
+            set(setting.getName(), setting.getValue());
+    }
 
-    if (!from.access_key_id.empty())
-        access_key_id = from.access_key_id;
-    if (!from.secret_access_key.empty())
-        secret_access_key = from.secret_access_key;
-    if (!from.session_token.empty())
-        session_token = from.session_token;
+    if (!settings.headers.empty())
+        headers = settings.headers;
 
-    headers = from.headers;
-    region = from.region;
-    server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
-    server_side_encryption_kms_config = from.server_side_encryption_kms_config;
+    if (!settings.users.empty())
+        users.insert(settings.users.begin(), settings.users.end());
 
-    if (from.use_environment_credentials.has_value())
-        use_environment_credentials = from.use_environment_credentials;
-
-    if (from.use_insecure_imds_request.has_value())
-        use_insecure_imds_request = from.use_insecure_imds_request;
-
-    if (from.expiration_window_seconds.has_value())
-        expiration_window_seconds = from.expiration_window_seconds;
-
-    if (from.no_sign_request.has_value())
-        no_sign_request = from.no_sign_request;
-
-    users.insert(from.users.begin(), from.users.end());
+    if (settings.server_side_encryption_kms_config.key_id.has_value()
+        || settings.server_side_encryption_kms_config.encryption_context.has_value()
+        || settings.server_side_encryption_kms_config.key_id.has_value())
+        server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
 }
 
+RequestSettings::RequestSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    const DB::Settings & settings,
+    const std::string & config_prefix,
+    const std::string & setting_name_prefix,
+    bool validate_settings)
+{
+    for (auto & field : allMutable())
+    {
+        auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
+
+        bool updated = setValueFromConfig<RequestSettings>(config, path, field);
+        if (!updated)
+        {
+            auto setting_name = "s3_" + field.getName();
+            if (settings.has(setting_name) && settings.isChanged(setting_name))
+                field.setValue(settings.get(setting_name));
+        }
+    }
+    finishInit(settings, validate_settings);
 }
+
+RequestSettings::RequestSettings(
+    const NamedCollection & collection,
+    const DB::Settings & settings,
+    bool validate_settings)
+{
+    auto values = allMutable();
+    for (auto & field : values)
+    {
+        const auto path = field.getName();
+        if (collection.has(path))
+        {
+            auto which = field.getValue().getType();
+            if (isInt64OrUInt64FieldType(which))
+                field.setValue(collection.get<UInt64>(path));
+            else if (which == Field::Types::String)
+                field.setValue(collection.get<String>(path));
+            else if (which == Field::Types::Bool)
+                field.setValue(collection.get<bool>(path));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+        }
+    }
+    finishInit(settings, validate_settings);
+}
+
+RequestSettings::RequestSettings(const DB::Settings & settings, bool validate_settings)
+{
+    updateFromSettings(settings, /* if_changed */false, validate_settings);
+    finishInit(settings, validate_settings);
+}
+
+void RequestSettings::updateFromSettings(
+    const DB::Settings & settings, bool if_changed, bool validate_settings)
+{
+    for (auto & field : allMutable())
+    {
+        const auto setting_name = "s3_" + field.getName();
+        if (settings.has(setting_name) && (!if_changed || settings.isChanged(setting_name)))
+        {
+            set(field.getName(), settings.get(setting_name));
+        }
+    }
+
+    normalizeSettings();
+    if (validate_settings)
+        validateUploadSettings();
+}
+
+void RequestSettings::updateIfChanged(const RequestSettings & settings)
+{
+    for (auto & setting : settings.all())
+    {
+        if (setting.isValueChanged())
+            set(setting.getName(), setting.getValue());
+    }
+}
+
+void RequestSettings::normalizeSettings()
+{
+    if (!storage_class_name.value.empty() && storage_class_name.changed)
+        storage_class_name = Poco::toUpperInPlace(storage_class_name.value);
+}
+
+void RequestSettings::finishInit(const DB::Settings & settings, bool validate_settings)
+{
+    normalizeSettings();
+    if (validate_settings)
+        validateUploadSettings();
+
+    /// NOTE: it would be better to reuse old throttlers
+    /// to avoid losing token bucket state on every config reload,
+    /// which could lead to exceeding limit for short time.
+    /// But it is good enough unless very high `burst` values are used.
+    if (UInt64 max_get_rps = isChanged("max_get_rps") ? get("max_get_rps").get<UInt64>() : settings.s3_max_get_rps)
+    {
+        size_t default_max_get_burst = settings.s3_max_get_burst
+            ? settings.s3_max_get_burst
+            : (Throttler::default_burst_seconds * max_get_rps);
+
+        size_t max_get_burst = isChanged("max_get_burts") ? get("max_get_burst").get<UInt64>() : default_max_get_burst;
+        get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
+    }
+    if (UInt64 max_put_rps = isChanged("max_put_rps") ? get("max_put_rps").get<UInt64>() : settings.s3_max_put_rps)
+    {
+        size_t default_max_put_burst = settings.s3_max_put_burst
+            ? settings.s3_max_put_burst
+            : (Throttler::default_burst_seconds * max_put_rps);
+        size_t max_put_burst = isChanged("max_put_burts") ? get("max_put_burst").get<UInt64>() : default_max_put_burst;
+        put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
+    }
+}
+
+void RequestSettings::validateUploadSettings()
+{
+    static constexpr size_t min_upload_part_size_limit = 5 * 1024 * 1024;
+    if (strict_upload_part_size && strict_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting strict_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(strict_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
+    if (min_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting min_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(min_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
+    static constexpr size_t max_upload_part_size_limit = 5ull * 1024 * 1024 * 1024;
+    if (max_upload_part_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size has invalid value {} which is greater than the s3 API limit {}",
+            ReadableSize(max_upload_part_size), ReadableSize(max_upload_part_size_limit));
+
+    if (max_single_part_upload_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_single_part_upload_size has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(max_single_part_upload_size), ReadableSize(max_upload_part_size_limit));
+
+    if (max_single_operation_copy_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_single_operation_copy_size has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(max_single_operation_copy_size), ReadableSize(max_upload_part_size_limit));
+
+    if (max_upload_part_size < min_upload_part_size)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size {}",
+            ReadableSize(max_upload_part_size), ReadableSize(min_upload_part_size));
+
+    if (!upload_part_size_multiply_factor)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_part_size_multiply_factor cannot be zero");
+
+    if (!upload_part_size_multiply_parts_count_threshold)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
+
+    if (!max_part_number)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_part_number cannot be zero");
+
+    static constexpr size_t max_part_number_limit = 10000;
+    if (max_part_number > max_part_number_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_part_number has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+
+    size_t maybe_overflow;
+    if (common::mulOverflow(max_upload_part_size.value, upload_part_size_multiply_factor.value, maybe_overflow))
+        throw Exception(
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Setting upload_part_size_multiply_factor is too big ({}). "
+                        "Multiplication to max_upload_part_size ({}) will cause integer overflow",
+                        ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+
+    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    if (!storage_class_name.value.empty() && !storage_class_names.contains(storage_class_name))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
+            storage_class_name.value);
+
+    /// TODO: it's possible to set too small limits.
+    /// We can check that max possible object size is not too small.
+}
+
+bool operator==(const AuthSettings & left, const AuthSettings & right)
+{
+    if (left.headers != right.headers)
+        return false;
+
+    if (left.users != right.users)
+        return false;
+
+    if (left.server_side_encryption_kms_config != right.server_side_encryption_kms_config)
+        return false;
+
+    auto l = left.begin();
+    for (const auto & r : right)
+    {
+        if ((l == left.end()) || (*l != r))
+            return false;
+        ++l;
+    }
+    return l == left.end();
+}
+}
+
+IMPLEMENT_SETTINGS_TRAITS(S3::AuthSettingsTraits, CLIENT_SETTINGS_LIST)
+IMPLEMENT_SETTINGS_TRAITS(S3::RequestSettingsTraits, REQUEST_SETTINGS_LIST)
+
 }

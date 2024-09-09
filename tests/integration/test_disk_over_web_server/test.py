@@ -40,6 +40,12 @@ def cluster():
             image="clickhouse/clickhouse-server",
             tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
         )
+        cluster.add_instance(
+            "node5",
+            main_configs=["configs/storage_conf.xml"],
+            with_nginx=True,
+            use_old_analyzer=True,
+        )
 
         cluster.start()
 
@@ -110,7 +116,7 @@ def test_usage(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i], i, i
+                i, uuids[i]
             )
         )
 
@@ -332,7 +338,7 @@ def test_page_cache(cluster):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i], i, i
+                i, uuids[i]
             )
         )
 
@@ -352,7 +358,6 @@ def test_page_cache(cluster):
         node.query("SYSTEM FLUSH LOGS")
 
         def get_profile_events(query_name):
-            print(f"asdqwe {query_name}")
             text = node.query(
                 f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
             )
@@ -361,7 +366,6 @@ def test_page_cache(cluster):
                 if line == "":
                     continue
                 name, value = line.split("\t")
-                print(f"asdqwe {name} = {int(value)}")
                 res[name] = int(value)
             return res
 
@@ -390,3 +394,21 @@ def test_page_cache(cluster):
 
         node.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
+
+
+def test_config_reload(cluster):
+    node1 = cluster.instances["node5"]
+    table_name = "config_reload"
+
+    global uuids
+    node1.query(
+        f"""
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name} UUID '{uuids[0]}'
+        (id Int32) ENGINE = MergeTree() ORDER BY id
+        SETTINGS disk = disk(type=web, endpoint='http://nginx:80/test1/');
+    """
+    )
+
+    node1.query("SYSTEM RELOAD CONFIG")
+    node1.query(f"DROP TABLE {table_name} SYNC")

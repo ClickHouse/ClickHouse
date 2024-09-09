@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is 
 rm -f $path/count.txt
 
 $CLICKHOUSE_CLIENT -q "detach table rmt2 sync"
-$CLICKHOUSE_CLIENT --send_logs_level='fatal' -q "attach table rmt2"
+$CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level='fatal' -q "attach table rmt2"
 
 $CLICKHOUSE_CLIENT -q "select reason, name from system.detached_parts where database='$CLICKHOUSE_DATABASE' and table='rmt2'"
 

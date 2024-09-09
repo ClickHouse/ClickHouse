@@ -323,7 +323,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     {
                         fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
                                    main_bin_path.string(), points_to.string(), binary_self_canonical_path.string());
-                        fs::remove(main_bin_path);
+                        (void)fs::remove(main_bin_path);
                     }
                 }
             }
@@ -489,7 +489,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                         {
                             fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
                                        symlink_path.string(), points_to.string(), main_bin_path.string());
-                            fs::remove(symlink_path);
+                            (void)fs::remove(symlink_path);
                         }
                     }
                 }
@@ -1006,7 +1006,7 @@ namespace
             else
             {
                 fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                fs::remove(pid_file);
+                (void)fs::remove(pid_file);
             }
         }
         else
@@ -1014,7 +1014,7 @@ namespace
             /// Create a directory for pid file.
             /// It's created by "install" but we also support cases when ClickHouse is already installed different way.
             fs::path pid_path = pid_file;
-            pid_path.remove_filename();
+            pid_path = pid_path.remove_filename();
             fs::create_directories(pid_path);
             /// All users are allowed to read pid file (for clickhouse status command).
             fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
@@ -1098,7 +1098,7 @@ namespace
                 else
                 {
                     fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                    fs::remove(pid_file);
+                    (void)fs::remove(pid_file);
                 }
             }
             catch (const Exception & e)

@@ -30,8 +30,8 @@ struct WindowFunctionDescription
 
 struct WindowFrame
 {
-    enum class FrameType { ROWS, GROUPS, RANGE };
-    enum class BoundaryType { Unbounded, Current, Offset };
+    enum class FrameType : uint8_t { ROWS, GROUPS, RANGE };
+    enum class BoundaryType : uint8_t { Unbounded, Current, Offset };
 
     // This flag signifies that the frame properties were not set explicitly by
     // user, but the fields of this structure still have to contain proper values

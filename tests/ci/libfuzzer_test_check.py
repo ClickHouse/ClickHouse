@@ -46,7 +46,6 @@ def get_run_command(
     fuzzers_path: Path,
     repo_path: Path,
     result_path: Path,
-    kill_timeout: int,
     additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
@@ -59,7 +58,6 @@ def get_run_command(
     )
 
     envs = [
-        f"-e MAX_RUN_TIME={int(0.9 * kill_timeout)}",
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
     ]
@@ -83,7 +81,6 @@ def get_run_command(
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
-    parser.add_argument("kill_timeout", type=int)
     return parser.parse_args()
 
 
@@ -99,7 +96,6 @@ def main():
 
     args = parse_args()
     check_name = args.check_name
-    kill_timeout = args.kill_timeout
 
     pr_info = PRInfo()
 
@@ -145,7 +141,6 @@ def main():
         fuzzers_path,
         repo_path,
         result_path,
-        kill_timeout,
         additional_envs,
         ci_logs_args,
         docker_image,

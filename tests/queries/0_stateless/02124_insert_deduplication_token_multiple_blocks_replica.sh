@@ -9,6 +9,8 @@ INSERT_BLOCK_SETTINGS="max_insert_block_size=1&min_insert_block_size_rows=0&min_
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS block_dedup_token_replica SYNC"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE block_dedup_token_replica (id Int32) ENGINE=ReplicatedMergeTree('/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/{table}', '{replica}') ORDER BY id"
+# Need to stop merges due to randomization of old_parts_lifetime setting, so all initial parts are guaranteed to exist when we check them
+$CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES block_dedup_token_replica"
 
 $CLICKHOUSE_CLIENT --query="SELECT 'insert 2 blocks with dedup token, 1 row per block'"
 DEDUP_TOKEN='dedup1'

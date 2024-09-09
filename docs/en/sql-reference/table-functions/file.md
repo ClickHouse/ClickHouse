@@ -18,7 +18,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 **Parameters**
 
-- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Supports in read-only mode the following [globs](#globs_in_path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
+- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
 - `path_to_archive` - The relative path to a zip/tar/7z archive. Supports the same globs as `path`.
 - `format` — The [format](/docs/en/interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
@@ -128,7 +128,7 @@ Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globs in path {#globs_in_path}
+## Globs in path 
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
@@ -169,7 +169,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 **Example**
 
-Query the total number of rows in files named `file000`, `file001`, … , `file999`:
+Query the total number of rows in files named `file000`, `file001`, ... , `file999`:
 
 ``` sql
 SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
@@ -196,6 +196,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 - `_path` — Path to the file. Type: `LowCardinalty(String)`.
 - `_file` — Name of the file. Type: `LowCardinalty(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Settings {#settings}
 

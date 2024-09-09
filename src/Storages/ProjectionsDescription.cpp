@@ -64,7 +64,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.sample_block_for_keys = sample_block_for_keys;
     other.metadata = metadata;
     other.key_size = key_size;
-    other.is_minmax_count_projection = is_minmax_count_projection;
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
 
@@ -195,7 +194,6 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     ContextPtr query_context)
 {
     ProjectionDescription result;
-    result.is_minmax_count_projection = true;
 
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
@@ -282,12 +280,10 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     return result;
 }
 
-
 void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
 {
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
-
 
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
 {

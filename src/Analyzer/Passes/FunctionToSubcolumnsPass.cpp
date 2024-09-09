@@ -215,7 +215,7 @@ public:
     }
 
 private:
-    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
         auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));

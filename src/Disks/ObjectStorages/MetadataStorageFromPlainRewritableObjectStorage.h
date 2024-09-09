@@ -14,6 +14,7 @@ private:
 
 public:
     MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
+    ~MetadataStorageFromPlainRewritableObjectStorage() override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
 

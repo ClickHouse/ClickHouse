@@ -344,11 +344,6 @@ void WebObjectStorage::startup()
 {
 }
 
-void WebObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
-{
-}
-
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());

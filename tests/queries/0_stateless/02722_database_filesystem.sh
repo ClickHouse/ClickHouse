@@ -72,7 +72,7 @@ DROP DATABASE IF EXISTS test2;
 CREATE DATABASE test2 ENGINE = Filesystem('/tmp');
 """ 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
-# BAD_ARGUMENTS: .../user_files/relative_unknown_dir does not exists
+# BAD_ARGUMENTS: .../user_files/relative_unknown_dir does not exist
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test2;
 CREATE DATABASE test2 ENGINE = Filesystem('relative_unknown_dir');

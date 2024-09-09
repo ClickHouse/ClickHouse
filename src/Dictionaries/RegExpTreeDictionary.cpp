@@ -474,7 +474,7 @@ public:
     }
 
     // Checks if no more values can be added for a given attribute
-    inline bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
+    bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
     {
         if (collect_values_limit)
         {
@@ -490,7 +490,7 @@ public:
     }
 
     // Returns the number of full attributes
-    inline size_t attributesFull() const { return n_full_attributes; }
+    size_t attributesFull() const { return n_full_attributes; }
 };
 
 std::pair<String, bool> processBackRefs(const String & data, const re2::RE2 & searcher, const std::vector<StringPiece> & pieces)
@@ -807,6 +807,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                 if (attributes_to_set.contains(name_))
                     continue;
 
+                columns[name_]->insertDefault();
                 default_mask.value().get()[key_idx] = 1;
             }
 
@@ -982,7 +983,6 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
                             "to represent regular expressions");
         }
 
-        String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);

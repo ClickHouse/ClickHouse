@@ -95,7 +95,7 @@ namespace
                 parent_key_column_non_null = parent_key_column_typed->getNestedColumnPtr();
             }
 
-            const auto * parent_key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*parent_key_column_non_null);
+            const auto * parent_key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(&*parent_key_column_non_null);
             if (!parent_key_column_typed)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Parent key column should be UInt64. Actual {}",
@@ -166,7 +166,7 @@ ColumnPtr getKeysHierarchyDefaultImplementation(
     valid_keys = 0;
 
     key_column = key_column->convertToFullColumnIfConst();
-    const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*key_column);
+    const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(&*key_column);
     if (!key_column_typed)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Key column should be UInt64");
 
@@ -224,11 +224,11 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     key_column = key_column->convertToFullColumnIfConst();
     in_key_column = in_key_column->convertToFullColumnIfConst();
 
-    const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*key_column);
+    const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(&*key_column);
     if (!key_column_typed)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Key column should be UInt64");
 
-    const auto * in_key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*in_key_column);
+    const auto * in_key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(&*in_key_column);
     if (!in_key_column_typed)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Key column should be UInt64");
 

@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -21,6 +22,15 @@ public:
     String getName() const override
     {
         return name;
+    }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (elem.type->onlyNull() || canContainNull(*elem.type))
+            return result_type->createColumnConst(1, UInt8(1));
+
+        return result_type->createColumnConst(1, UInt8(0));
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }

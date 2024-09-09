@@ -63,6 +63,7 @@ struct AzureObjectStorageSettings
     bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
     size_t max_inflight_parts_for_one_file = 20;
+    size_t max_blocks_in_multipart_upload = 50000;
     size_t strict_upload_part_size = 0;
     size_t upload_part_size_multiply_factor = 2;
     size_t upload_part_size_multiply_parts_count_threshold = 500;
@@ -81,11 +82,12 @@ public:
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_,
-        const String & object_namespace_);
+        const String & object_namespace_,
+        const String & description_);
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -93,7 +95,7 @@ public:
 
     std::string getCommonKeyPrefix() const override { return ""; }
 
-    std::string getDescription() const override { return client.get()->GetUrl(); }
+    std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -142,7 +144,8 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override { return object_namespace ; }
 
@@ -163,6 +166,8 @@ public:
         return client.get();
     }
 
+    bool supportParallelWrite() const override { return true; }
+
 private:
     using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
     void removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists);
@@ -172,6 +177,9 @@ private:
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
     const String object_namespace; /// container + prefix
+
+    /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
+    const String description;
 
     LoggerPtr log;
 };

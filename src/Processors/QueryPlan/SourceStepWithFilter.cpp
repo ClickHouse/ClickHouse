@@ -21,7 +21,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     {
         if (prewhere_info->row_level_filter)
         {
-            block = prewhere_info->row_level_filter->updateHeader(std::move(block));
+            block = prewhere_info->row_level_filter->updateHeader(block);
             auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
@@ -36,7 +36,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
 
         if (prewhere_info->prewhere_actions)
         {
-            block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
+            block = prewhere_info->prewhere_actions->updateHeader(block);
 
             auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
             if (!prewhere_column.type->canBeUsedInBooleanContext())
@@ -80,7 +80,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
 
 void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
 }
 
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)

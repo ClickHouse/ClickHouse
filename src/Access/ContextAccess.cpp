@@ -360,10 +360,13 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
     subscription_for_roles_changes.reset();
     enabled_roles = access_control->getEnabledRoles(current_roles, current_roles_with_admin_option);
-    subscription_for_roles_changes = enabled_roles->subscribeForChanges([this](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
+    subscription_for_roles_changes = enabled_roles->subscribeForChanges([weak_ptr = weak_from_this()](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
     {
-        std::lock_guard lock{mutex};
-        setRolesInfo(roles_info_);
+        auto ptr = weak_ptr.lock();
+        if (!ptr)
+            return;
+        std::lock_guard lock{ptr->mutex};
+        ptr->setRolesInfo(roles_info_);
     });
 
     setRolesInfo(enabled_roles->getRolesInfo());
@@ -570,11 +573,8 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (params.full_access)
         return true;
 
-    auto access_granted = [&]
+    auto access_granted = []
     {
-        if (trace_log)
-            LOG_TRACE(trace_log, "Access granted: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
-                      (grant_option ? " WITH GRANT OPTION" : ""));
         return true;
     };
 
@@ -582,9 +582,6 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
                                                FormatStringHelper<String, FmtArgs...> fmt_string [[maybe_unused]],
                                                FmtArgs && ...fmt_args [[maybe_unused]])
     {
-        if (trace_log)
-            LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
-                      (grant_option ? " WITH GRANT OPTION" : ""));
         if constexpr (throw_if_denied)
             throw Exception(error_code, std::move(fmt_string), getUserName(), std::forward<FmtArgs>(fmt_args)...);
         return false;

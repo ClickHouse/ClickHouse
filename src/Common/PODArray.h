@@ -1,17 +1,20 @@
 #pragma once
 
-#include <Common/Allocator.h>
-#include <Common/BitHelpers.h>
-#include <Common/memcpySmall.h>
-#include <Common/PODArray_fwd.h>
+#include "config.h"
+
 #include <base/getPageSize.h>
 #include <boost/noncopyable.hpp>
+#include <Common/Allocator.h>
+#include <Common/BitHelpers.h>
+#include <Common/GWPAsan.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/memcpySmall.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <cstddef>
-#include <cassert>
-#include <algorithm>
-#include <memory>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
@@ -112,6 +115,11 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
+#if USE_GWP_ASAN
+        if (unlikely(GWPAsan::shouldForceSample()))
+            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
+#endif
+
         char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
         c_start = allocated + pad_left;
@@ -140,6 +148,11 @@ protected:
             alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...);
             return;
         }
+
+#if USE_GWP_ASAN
+        if (unlikely(GWPAsan::shouldForceSample()))
+            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
+#endif
 
         unprotect();
 
@@ -284,7 +297,7 @@ public:
     }
 
     template <typename It1, typename It2>
-    inline void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
+    void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
     {
 #if !defined(NDEBUG)
         const char * ptr_begin = reinterpret_cast<const char *>(&*from_begin);
@@ -424,7 +437,7 @@ public:
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
-        new (t_end()) T(std::forward<U>(x));
+        new (reinterpret_cast<void*>(t_end())) T(std::forward<U>(x));
         this->c_end += sizeof(T);
     }
 

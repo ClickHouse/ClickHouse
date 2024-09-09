@@ -715,7 +715,7 @@
         <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
-             By default this setting is false for compatibility with earlier access configurations. -->
+             By default this setting is true. -->
         <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
 
         <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
@@ -1561,6 +1561,7 @@
     <rocksdb>
         <options>
             <max_background_jobs>8</max_background_jobs>
+            <info_log_level>DEBUG_LEVEL</info_log_level>
         </options>
         <column_family_options>
             <num_levels>2</num_levels>

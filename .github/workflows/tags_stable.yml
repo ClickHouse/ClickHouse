@@ -46,9 +46,10 @@ jobs:
         ./utils/list-versions/list-versions.sh > ./utils/list-versions/version_date.tsv
         ./utils/list-versions/update-docker-version.sh
         GID=$(id -g "${UID}")
-        docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 \
+        # --network=host and CI=1 are required for the S3 access from a container
+        docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 -e CI=1 --network=host \
             --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test \
-                /ClickHouse/utils/changelog/changelog.py -v --debug-helpers \
+                /ClickHouse/tests/ci/changelog.py -v --debug-helpers \
                 --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
                 --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
         git add "./docs/changelogs/${GITHUB_TAG}.md"

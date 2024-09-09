@@ -3,8 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/Stopwatch.h>
+#include <Core/Types.h>
 #include <base/types.h>
-#include <Common/ThreadPool.h>
 #include <base/phdr_cache.h>
 #include <random>
 #include <pcg_random.hpp>
@@ -541,7 +541,7 @@ TEST(Common, RWLockWriteLockTimeoutDuringWriteWithWaitingRead)
         events.add(wc ? "Locked wb" : "Failed to lock wb");
         EXPECT_EQ(wc, nullptr);
     });
-    
+
     std::thread rc_thread([&] ()
     {
         std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(200));

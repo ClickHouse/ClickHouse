@@ -458,6 +458,31 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
         taskstats->reset();
 }
 
+void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
+{
+#if !defined(SANITIZER) && !defined(__APPLE__)
+    /// profilers are useless without trace collector
+    auto context = Context::getGlobalContextInstance();
+    if (!context->hasTraceCollector())
+        return;
+
+    try
+    {
+        if (global_profiler_real_time_period > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
+
+        if (global_profiler_cpu_time_period > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
+    }
+    catch (...)
+    {
+        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
+    }
+#endif
+}
+
 void ThreadStatus::initQueryProfiler()
 {
     if (internal_thread)

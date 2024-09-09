@@ -6,7 +6,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <deque>
+#include <boost/intrusive/list.hpp>
+
 #include <mutex>
 
 
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INVALID_SCHEDULER_NODE;
 }
 
@@ -42,7 +44,7 @@ public:
         std::lock_guard lock(mutex);
         queue_cost += request->cost;
         bool was_empty = requests.empty();
-        requests.push_back(request);
+        requests.push_back(*request);
         if (was_empty)
             scheduleActivation();
     }
@@ -52,7 +54,7 @@ public:
         std::lock_guard lock(mutex);
         if (requests.empty())
             return {nullptr, false};
-        ResourceRequest * result = requests.front();
+        ResourceRequest * result = &requests.front();
         requests.pop_front();
         if (requests.empty())
             busy_periods++;
@@ -65,19 +67,24 @@ public:
     bool cancelRequest(ResourceRequest * request) override
     {
         std::lock_guard lock(mutex);
-        // TODO(serxa): reimplement queue as intrusive list of ResourceRequest to make this O(1) instead of O(N)
-        for (auto i = requests.begin(), e = requests.end(); i != e; ++i)
+        if (request->is_linked())
         {
-            if (*i == request)
-            {
-                requests.erase(i);
-                if (requests.empty())
-                    busy_periods++;
-                queue_cost -= request->cost;
-                canceled_requests++;
-                canceled_cost += request->cost;
-                return true;
-            }
+            // It's impossible to check that `request` is indeed inserted to this queue and not another queue.
+            // It's up to caller to make sure this is the case. Otherwise, list sizes will be corrupted.
+            // Not tracking list sizes is not an option, because another problem appears: removing from list w/o locking.
+            // Another possible solution - keep track if request `is_cancelable` guarded by `mutex`
+            // Simple check for list size corruption
+            if (requests.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "trying to cancel request (linked into another queue) from empty queue: {}", getPath());
+
+            requests.erase(requests.iterator_to(*request));
+
+            if (requests.empty())
+                busy_periods++;
+            queue_cost -= request->cost;
+            canceled_requests++;
+            canceled_cost += request->cost;
+            return true;
         }
         return false;
     }
@@ -124,7 +131,7 @@ public:
 private:
     std::mutex mutex;
     Int64 queue_cost = 0;
-    std::deque<ResourceRequest *> requests; // TODO(serxa): reimplement it using intrusive list to avoid allocations/deallocations and O(N) during cancel
+    boost::intrusive::list<ResourceRequest> requests;
 };
 
 }

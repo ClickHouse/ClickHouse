@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
-static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
+static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
@@ -60,7 +60,9 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     add_column("name", "data_type_families", false, {});
     add_column("name", "merge_tree_settings", false, {});
     add_column("name", "settings", false, {});
-    add_column("keyword", "keywords", false, {});
+
+    if (server_revision >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE)
+        add_column("keyword", "keywords", false, {});
 
     if (!basic_suggestion)
     {
@@ -99,7 +101,14 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
             try
             {
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
-                fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
+                fetch(*connection,
+                    connection_parameters.timeouts,
+                    getLoadSuggestionQuery(
+                        suggestion_limit,
+                        std::is_same_v<ConnectionType, LocalConnection>,
+                        connection->getServerRevision(connection_parameters.timeouts)
+                    ),
+                    my_context->getClientInfo());
             }
             catch (const Exception & e)
             {
@@ -138,11 +147,12 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
 void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
-                   Int32 suggestion_limit)
+                   Int32 suggestion_limit,
+                   const ClientInfo & client_info)
 {
     try
     {
-        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true));
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true, connection.getServerRevision(timeouts)), client_info);
     }
     catch (...)
     {
@@ -151,10 +161,10 @@ void Suggest::load(IServerConnection & connection,
     }
 }
 
-void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
+void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
 {
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {});
 
     while (true)
     {

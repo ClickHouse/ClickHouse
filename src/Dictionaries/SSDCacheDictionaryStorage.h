@@ -134,7 +134,7 @@ public:
 
     /// Reset block with new block_data
     /// block_data must be filled with zeroes if it is new block
-    inline void reset(char * new_block_data)
+    void reset(char * new_block_data)
     {
         block_data = new_block_data;
         current_block_offset = block_header_size;
@@ -142,13 +142,13 @@ public:
     }
 
     /// Check if it is enough place to write key in block
-    inline bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
+    bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
     {
         return (current_block_offset + (sizeof(cache_key.key) + sizeof(cache_key.size) + cache_key.size)) <= block_size;
     }
 
     /// Check if it is enough place to write key in block
-    inline bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
+    bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
         const StringRef & key = cache_key.key;
         size_t complex_key_size = sizeof(key.size) + key.size;
@@ -159,7 +159,7 @@ public:
     /// Write key and returns offset in ssd cache block where data is written
     /// It is client responsibility to check if there is enough place in block to write key
     /// Returns true if key was written and false if there was not enough place to write key
-    inline bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
+    bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
     {
         assert(cache_key.size > 0);
 
@@ -188,7 +188,7 @@ public:
         return true;
     }
 
-    inline bool writeKey(const SSDCacheComplexKey & cache_key, size_t & offset_in_block)
+    bool writeKey(const SSDCacheComplexKey & cache_key, size_t & offset_in_block)
     {
         assert(cache_key.size > 0);
 
@@ -223,20 +223,20 @@ public:
         return true;
     }
 
-    inline size_t getKeysSize() const { return keys_size; }
+    size_t getKeysSize() const { return keys_size; }
 
     /// Write keys size into block header
-    inline void writeKeysSize()
+    void writeKeysSize()
     {
         char * keys_size_offset_data = block_data + block_header_check_sum_size;
         std::memcpy(keys_size_offset_data, &keys_size, sizeof(size_t));
     }
 
     /// Get check sum from block header
-    inline size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
+    size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
 
     /// Calculate check sum in block
-    inline size_t calculateCheckSum() const
+    size_t calculateCheckSum() const
     {
         size_t calculated_check_sum = static_cast<size_t>(CityHash_v1_0_2::CityHash64(block_data + block_header_check_sum_size, block_size - block_header_check_sum_size));
 
@@ -244,7 +244,7 @@ public:
     }
 
     /// Check if check sum from block header matched calculated check sum in block
-    inline bool checkCheckSum() const
+    bool checkCheckSum() const
     {
         size_t calculated_check_sum = calculateCheckSum();
         size_t check_sum = getCheckSum();
@@ -253,16 +253,16 @@ public:
     }
 
     /// Write check sum in block header
-    inline void writeCheckSum()
+    void writeCheckSum()
     {
         size_t check_sum = static_cast<size_t>(CityHash_v1_0_2::CityHash64(block_data + block_header_check_sum_size, block_size - block_header_check_sum_size));
         std::memcpy(block_data, &check_sum, sizeof(size_t));
     }
 
-    inline size_t getBlockSize() const { return block_size; }
+    size_t getBlockSize() const { return block_size; }
 
     /// Returns block data
-    inline char * getBlockData() const { return block_data; }
+    char * getBlockData() const { return block_data; }
 
     /// Read keys that were serialized in block
     /// It is client responsibility to ensure that simple or complex keys were written in block
@@ -405,16 +405,16 @@ public:
         current_write_block.writeCheckSum();
     }
 
-    inline char * getPlace(SSDCacheIndex index) const
+    char * getPlace(SSDCacheIndex index) const
     {
         return buffer.m_data + index.block_index * block_size + index.offset_in_block;
     }
 
-    inline size_t getCurrentBlockIndex() const { return current_block_index; }
+    size_t getCurrentBlockIndex() const { return current_block_index; }
 
-    inline const char * getData() const { return buffer.m_data; }
+    const char * getData() const { return buffer.m_data; }
 
-    inline size_t getSizeInBytes() const { return block_size * partition_blocks_size; }
+    size_t getSizeInBytes() const { return block_size * partition_blocks_size; }
 
     void readKeys(PaddedPODArray<KeyType> & keys) const
     {
@@ -431,7 +431,7 @@ public:
         }
     }
 
-    inline void reset()
+    void reset()
     {
         current_block_index = 0;
         current_write_block.reset(buffer.m_data);
@@ -470,7 +470,7 @@ public:
         auto path = std::filesystem::path{file_path};
         auto parent_path_directory = path.parent_path();
 
-        /// If cache file is in directory that does not exists create it
+        /// If cache file is in directory that does not exist create it
         if (!std::filesystem::exists(parent_path_directory))
             if (!std::filesystem::create_directories(parent_path_directory))
                 throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
@@ -721,14 +721,13 @@ public:
                 if (!block.checkCheckSum())
                 {
                     std::string calculated_check_sum = std::to_string(block.calculateCheckSum());
-                    std::string check_sum = std::to_string(block.getCheckSum());
+                    std::string expected_check_sum = std::to_string(block.getCheckSum());
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
-                        "Cache data corrupted. Checksum validation failed. Calculated {} in block {}",
-                        calculated_check_sum,
-                        check_sum);
+                        "Cache data corrupted. Checksum validation failed. Calculated {} expected in block {}, in file {}",
+                        calculated_check_sum, expected_check_sum, file_path);
                 }
 
-                std::forward<FetchBlockFunc>(func)(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
+                func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
 
                 processed[block_to_fetch_index] = true;
             }
@@ -751,9 +750,9 @@ public:
         }
     }
 
-    inline size_t getCurrentBlockIndex() const { return current_block_index; }
+    size_t getCurrentBlockIndex() const { return current_block_index; }
 
-    inline void reset()
+    void reset()
     {
         current_block_index = 0;
     }
@@ -789,7 +788,7 @@ private:
         int fd = -1;
     };
 
-    inline static int preallocateDiskSpace(int fd, size_t offset, size_t len)
+    static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
         #if defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
@@ -798,7 +797,7 @@ private:
         #endif
     }
 
-    inline static char * getRequestBuffer(const iocb & request)
+    static char * getRequestBuffer(const iocb & request)
     {
         char * result = nullptr;
 
@@ -811,7 +810,7 @@ private:
         return result;
     }
 
-    inline static ssize_t eventResult(io_event & event)
+    static ssize_t eventResult(io_event & event)
     {
         ssize_t  bytes_written;
 
@@ -986,9 +985,9 @@ private:
         size_t in_memory_partition_index;
         CellState state;
 
-        inline bool isInMemory() const { return state == in_memory; }
-        inline bool isOnDisk() const { return state == on_disk; }
-        inline bool isDefaultValue() const { return state == default_value; }
+        bool isInMemory() const { return state == in_memory; }
+        bool isOnDisk() const { return state == on_disk; }
+        bool isDefaultValue() const { return state == default_value; }
     };
 
     struct KeyToBlockOffset
@@ -1367,7 +1366,7 @@ private:
         }
     }
 
-    inline void setCellDeadline(Cell & cell, TimePoint now)
+    void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
@@ -1384,7 +1383,7 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    inline void eraseKeyFromIndex(KeyType key)
+    void eraseKeyFromIndex(KeyType key)
     {
         auto it = index.find(key);
 

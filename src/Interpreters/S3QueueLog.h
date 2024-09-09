@@ -20,7 +20,7 @@ struct S3QueueLogElement
     std::string file_name;
     size_t rows_processed = 0;
 
-    enum class S3QueueStatus
+    enum class S3QueueStatus : uint8_t
     {
         Processed,
         Failed,

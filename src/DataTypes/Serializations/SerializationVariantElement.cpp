@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -9,34 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-}
-
-void SerializationVariantElement::enumerateStreams(
-    DB::ISerialization::EnumerateStreamsSettings & settings,
-    const DB::ISerialization::StreamCallback & callback,
-    const DB::ISerialization::SubstreamData & data) const
-{
-    /// We will need stream for discriminators during deserialization.
-    settings.path.push_back(Substream::VariantDiscriminators);
-    callback(settings.path);
-    settings.path.pop_back();
-
-    addVariantToPath(settings.path);
-    settings.path.back().data = data;
-    nested_serialization->enumerateStreams(settings, callback, data);
-    removeVariantFromPath(settings.path);
-}
-
-void SerializationVariantElement::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationVariantElement");
-}
-
-void SerializationVariantElement::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationVariantElement");
 }
 
 struct DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -55,12 +28,47 @@ struct DeserializeBinaryBulkStateVariantElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
 };
 
-void SerializationVariantElement::deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const
+void SerializationVariantElement::enumerateStreams(
+    DB::ISerialization::EnumerateStreamsSettings & settings,
+    const DB::ISerialization::StreamCallback & callback,
+    const DB::ISerialization::SubstreamData & data) const
+{
+    /// We will need stream for discriminators during deserialization.
+    settings.path.push_back(Substream::VariantDiscriminators);
+    callback(settings.path);
+    settings.path.pop_back();
+
+    const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_state) : nullptr;
+    addVariantToPath(settings.path);
+    auto nested_data = SubstreamData(nested_serialization)
+                       .withType(data.type ? removeNullableOrLowCardinalityNullable(data.type) : nullptr)
+                       .withColumn(data.column ? removeNullableOrLowCardinalityNullable(data.column) : nullptr)
+                       .withSerializationInfo(data.serialization_info)
+                       .withDeserializeState(deserialize_state ? deserialize_state->variant_element_state : nullptr);
+    settings.path.back().data = nested_data;
+    nested_serialization->enumerateStreams(settings, callback, nested_data);
+    removeVariantFromPath(settings.path);
+}
+
+void SerializationVariantElement::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationVariantElement");
+}
+
+void SerializationVariantElement::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationVariantElement");
+}
+
+void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
     auto variant_element_state = std::make_shared<DeserializeBinaryBulkStateVariantElement>();
 
     addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state);
+    nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
     state = std::move(variant_element_state);
@@ -138,7 +146,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// If we started to read a new column, reinitialize variant column in deserialization state.
-    if (!variant_element_state->variant || result_column->empty())
+    if (!variant_element_state->variant || mutable_column->empty())
     {
         variant_element_state->variant = mutable_column->cloneEmpty();
 

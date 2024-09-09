@@ -4,7 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
 namespace DB
@@ -23,7 +23,7 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }
 
-    NamedCollectionUtils::removeFromSQL(query, current_context);
+    NamedCollectionFactory::instance().removeFromSQL(query);
     return {};
 }
 

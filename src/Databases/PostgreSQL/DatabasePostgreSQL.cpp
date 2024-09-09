@@ -241,7 +241,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
     if (fs::exists(table_marked_as_removed))
-        fs::remove(table_marked_as_removed);
+        (void)fs::remove(table_marked_as_removed);
 }
 
 
@@ -298,7 +298,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    fs::remove_all(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 
@@ -368,7 +368,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
             iter = detached_or_dropped.erase(iter);
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
             if (fs::exists(table_marked_as_removed))
-                fs::remove(table_marked_as_removed);
+                (void)fs::remove(table_marked_as_removed);
         }
         else
             ++iter;

@@ -71,7 +71,7 @@ If it fails, fix the style errors following the [code style guide](style.md).
 ```sh
 mkdir -p /tmp/test_output
 # running all checks
-docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE clickhouse/style-test
+python3 tests/ci/style_check.py --no-push
 
 # run specified check script (e.g.: ./check-mypy)
 docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE --entrypoint= -w/ClickHouse/utils/check-style clickhouse/style-test ./check-mypy
@@ -90,6 +90,9 @@ cd ./utils/check-style
 
 # Check python type hinting with mypy
 ./check-mypy
+
+# Check python with flake8
+./check-flake8
 
 # Check code with codespell
 ./check-typos
@@ -153,7 +156,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 
 ### Report Details
 
-- **Compiler**: `clang-17`, optionally with the name of a target platform
+- **Compiler**: `clang-18`, optionally with the name of a target platform
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Status**: `success` or `fail`
@@ -177,7 +180,7 @@ Performs static analysis and code style checks using `clang-tidy`. The report is
 There is a convenience `packager` script that runs the clang-tidy build in docker
 ```sh
 mkdir build_tidy
-./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-17 --debug-build --clang-tidy
+./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-18 --debug-build --clang-tidy
 ```
 
 

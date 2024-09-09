@@ -41,8 +41,7 @@
     "docker/test/stateless": {
         "name": "clickhouse/stateless-test",
         "dependent": [
-            "docker/test/stateful",
-            "docker/test/unit"
+            "docker/test/stateful"
         ]
     },
     "docker/test/stateful": {
@@ -122,15 +121,16 @@
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [
+            "docker/test/clickbench",
             "docker/test/fuzzer",
-            "docker/test/libfuzzer",
             "docker/test/integration/base",
             "docker/test/keeper-jepsen",
+            "docker/test/libfuzzer",
             "docker/test/server-jepsen",
             "docker/test/sqllogic",
             "docker/test/sqltest",
-            "docker/test/clickbench",
-            "docker/test/stateless"
+            "docker/test/stateless",
+            "docker/test/unit"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {

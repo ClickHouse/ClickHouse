@@ -50,6 +50,8 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    actions_dag = actions_dag->clone();
+    actions_dag->removeAliasesForFilter(filter_column_name);
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -113,7 +115,6 @@ void FilterStep::updateOutputStream()
     const auto & input_sort_description = getInputStreams().front().sort_description;
     for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
     {
-        String alias;
         const auto & original_column = input_sort_description[i].column_name;
         const auto * alias_node = alias_finder.find(original_column);
         if (alias_node)

@@ -1671,7 +1671,7 @@ struct ToISOWeekImpl
     using FactorTransform = ToISOYearImpl;
 };
 
-enum class ResultPrecision
+enum class ResultPrecision : uint8_t
 {
     Standard,
     Extended
@@ -1690,7 +1690,7 @@ struct ToRelativeYearNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int16>(time_zone.toYear(t));
+            return time_zone.toYear(t);
         else
             return static_cast<UInt16>(time_zone.toYear(t));
     }
@@ -1701,7 +1701,7 @@ struct ToRelativeYearNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int16>(time_zone.toYear(ExtendedDayNum(d)));
+            return time_zone.toYear(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toYear(ExtendedDayNum(d)));
     }
@@ -1722,7 +1722,7 @@ struct ToRelativeQuarterNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeQuarterNum(t));
+            return time_zone.toRelativeQuarterNum(t);
         else
             return static_cast<UInt16>(time_zone.toRelativeQuarterNum(t));
     }
@@ -1733,7 +1733,7 @@ struct ToRelativeQuarterNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeQuarterNum(ExtendedDayNum(d)));
+            return time_zone.toRelativeQuarterNum(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toRelativeQuarterNum(ExtendedDayNum(d)));
     }
@@ -1754,7 +1754,7 @@ struct ToRelativeMonthNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeMonthNum(t));
+            return time_zone.toRelativeMonthNum(t);
         else
             return static_cast<UInt16>(time_zone.toRelativeMonthNum(t));
     }
@@ -1765,7 +1765,7 @@ struct ToRelativeMonthNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeMonthNum(ExtendedDayNum(d)));
+            return time_zone.toRelativeMonthNum(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toRelativeMonthNum(ExtendedDayNum(d)));
     }
@@ -1786,7 +1786,7 @@ struct ToRelativeWeekNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeWeekNum(t));
+            return time_zone.toRelativeWeekNum(t);
         else
             return static_cast<UInt16>(time_zone.toRelativeWeekNum(t));
     }
@@ -1797,7 +1797,7 @@ struct ToRelativeWeekNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)));
+            return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)));
     }

@@ -80,8 +80,7 @@ MergeTreeReadPool::MergeTreeReadPool(
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
             const auto heuristic_min_marks = std::min<size_t>(total_marks / pool_settings.threads, min_bytes_per_task / avg_mark_bytes);
 
-            if (heuristic_min_marks > min_marks_for_concurrent_read)
-                min_marks_for_concurrent_read = heuristic_min_marks;
+            min_marks_for_concurrent_read = std::max(heuristic_min_marks, min_marks_for_concurrent_read);
         }
     }
 

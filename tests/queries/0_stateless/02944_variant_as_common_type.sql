@@ -1,5 +1,3 @@
-set allow_experimental_analyzer=0; -- The result type for if function with constant is different with analyzer. It wil be fixed after refactoring around constants in analyzer.
-
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
 

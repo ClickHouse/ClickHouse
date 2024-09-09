@@ -44,8 +44,6 @@ public:
     Status merge() override;
 
 private:
-    MergedData merged_data;
-
     ssize_t is_deleted_column_number = -1;
     ssize_t version_column_number = -1;
     bool cleanup = false;

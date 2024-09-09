@@ -194,6 +194,9 @@ protected:
 
     ConcurrentSet entries_to_skip;
 
+    std::atomic_uint64_t subsequent_errors_count = 0;
+    String last_unexpected_error;
+
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

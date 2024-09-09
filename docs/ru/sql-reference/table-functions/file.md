@@ -116,7 +116,7 @@ SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UIn
 
 **Пример**
 
-Запрос данных из файлов с именами `file000`, `file001`, … , `file999`:
+Запрос данных из файлов с именами `file000`, `file001`, ... , `file999`:
 
 ``` sql
 SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');

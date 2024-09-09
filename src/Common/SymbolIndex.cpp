@@ -141,8 +141,7 @@ void collectSymbolsFromProgramHeaders(
                     __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
 
                     for (ElfW(Word) i = 0; i < hash[0]; ++i)
-                        if (buckets[i] > sym_cnt)
-                            sym_cnt = buckets[i];
+                        sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
 
                     if (sym_cnt)
                     {

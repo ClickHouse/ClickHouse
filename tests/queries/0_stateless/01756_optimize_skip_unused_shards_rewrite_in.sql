@@ -111,11 +111,11 @@ select * from dist_01756 where dummy in ('0');
 select 'errors';
 
 -- optimize_skip_unused_shards does not support non-constants
-select * from dist_01756 where dummy in (select * from system.one); -- { serverError 507 }
+select * from dist_01756 where dummy in (select * from system.one); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- this is a constant for analyzer
-select * from dist_01756 where dummy in (toUInt8(0)) settings allow_experimental_analyzer=0; -- { serverError 507 }
+select * from dist_01756 where dummy in (toUInt8(0)) settings allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- NOT IN does not supported
-select * from dist_01756 where dummy not in (0, 2); -- { serverError 507 }
+select * from dist_01756 where dummy not in (0, 2); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 
 --
 -- others
@@ -146,21 +146,21 @@ create table dist_01756_str as data_01756_str engine=Distributed(test_cluster_tw
 select * from dist_01756_str where key in ('0', '2');
 select * from dist_01756_str where key in (0, 2);
 -- analyzer does support this
-select * from dist_01756_str where key in ('0', Null) settings allow_experimental_analyzer=0; -- { serverError 507 }
--- select * from dist_01756_str where key in (0, 2); -- { serverError 53 }
--- select * from dist_01756_str where key in (0, Null); -- { serverError 53 }
+select * from dist_01756_str where key in ('0', Null) settings allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+-- select * from dist_01756_str where key in (0, 2); -- { serverError TYPE_MISMATCH }
+-- select * from dist_01756_str where key in (0, Null); -- { serverError TYPE_MISMATCH }
 
 -- different type #2
 select 'different types -- conversion';
 create table dist_01756_column as system.one engine=Distributed(test_cluster_two_shards, system, one, dummy);
 select * from dist_01756_column where dummy in (0, '255');
-select * from dist_01756_column where dummy in (0, '255foo'); -- { serverError 53 }
+select * from dist_01756_column where dummy in (0, '255foo'); -- { serverError TYPE_MISMATCH }
 -- intHash64 does not accept string, but implicit conversion should be done
 select * from dist_01756 where dummy in ('0', '2');
 
 -- optimize_skip_unused_shards_limit
 select 'optimize_skip_unused_shards_limit';
-select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1; -- { serverError 507 }
+select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1, force_optimize_skip_unused_shards=0;
 
 -- { echoOff }

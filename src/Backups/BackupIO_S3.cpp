@@ -88,14 +88,10 @@ namespace
             std::move(headers),
             S3::CredentialsConfiguration
             {
-                settings.auth_settings.use_environment_credentials.value_or(
-                    context->getConfigRef().getBool("s3.use_environment_credentials", true)),
-                settings.auth_settings.use_insecure_imds_request.value_or(
-                    context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
-                settings.auth_settings.expiration_window_seconds.value_or(
-                    context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
-                settings.auth_settings.no_sign_request.value_or(
-                    context->getConfigRef().getBool("s3.no_sign_request", false)),
+                settings.auth_settings.use_environment_credentials,
+                settings.auth_settings.use_insecure_imds_request,
+                settings.auth_settings.expiration_window_seconds,
+                settings.auth_settings.no_sign_request
             });
     }
 
@@ -131,12 +127,18 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
 {
-    auto & request_settings = s3_settings.request_settings;
-    request_settings.updateFromSettings(context_->getSettingsRef());
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = allow_s3_native_copy;
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+
+    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    {
+        s3_settings.updateIfChanged(*endpoint_settings);
+    }
+
+    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
+    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
+
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
@@ -188,6 +190,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 fs::path(s3_uri.key) / path_in_backup,
                 0,
                 file_size,
+                /* dest_s3_client= */ destination_disk->getS3StorageClient(),
                 /* dest_bucket= */ blob_path[1],
                 /* dest_key= */ blob_path[0],
                 s3_settings.request_settings,
@@ -222,13 +225,19 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
 {
-    auto & request_settings = s3_settings.request_settings;
-    request_settings.updateFromSettings(context_->getSettingsRef());
-    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
-    request_settings.allow_native_copy = allow_s3_native_copy;
-    request_settings.setStorageClassName(storage_class_name);
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+
+    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    {
+        s3_settings.updateIfChanged(*endpoint_settings);
+    }
+
+    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
+    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
+    s3_settings.request_settings.storage_class_name = storage_class_name;
+
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
@@ -252,18 +261,20 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             copyS3File(
-                client,
+                src_disk->getS3StorageClient(),
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
                 length,
-                s3_uri.bucket,
-                fs::path(s3_uri.key) / path_in_backup,
+                /* dest_s3_client= */ client,
+                /* dest_bucket= */ s3_uri.bucket,
+                /* dest_key= */ fs::path(s3_uri.key) / path_in_backup,
                 s3_settings.request_settings,
                 read_settings,
                 blob_storage_log,
                 {},
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
+                /*for_disk_s3=*/false);
             return; /// copied!
         }
     }
@@ -281,8 +292,9 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         /* src_key= */ fs::path(s3_uri.key) / source,
         0,
         size,
-        s3_uri.bucket,
-        fs::path(s3_uri.key) / destination,
+        /* dest_s3_client= */ client,
+        /* dest_bucket= */ s3_uri.bucket,
+        /* dest_key= */ fs::path(s3_uri.key) / destination,
         s3_settings.request_settings,
         read_settings,
         blob_storage_log,

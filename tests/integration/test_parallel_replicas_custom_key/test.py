@@ -26,7 +26,7 @@ def create_tables(cluster):
     n1.query(f"DROP TABLE IF EXISTS test_table ON CLUSTER {cluster}")
 
     n1.query(
-        f"CREATE TABLE test_table ON CLUSTER {cluster} (key Int32, value String) Engine=MergeTree ORDER BY (key, sipHash64(value))"
+        f"CREATE TABLE test_table ON CLUSTER {cluster} (key UInt32, value String) Engine=MergeTree ORDER BY (key, sipHash64(value))"
     )
     n1.query(
         f"""

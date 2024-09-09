@@ -44,7 +44,7 @@ SELECT sum(value1) from test_alter_on_mutation;
 
 ALTER TABLE test_alter_on_mutation DROP COLUMN value;
 
-SELECT sum(value) from test_alter_on_mutation; -- {serverError 47}
+SELECT sum(value) from test_alter_on_mutation; -- {serverError UNKNOWN_IDENTIFIER}
 
 ALTER TABLE test_alter_on_mutation ADD COLUMN value String DEFAULT '10';
 

@@ -36,7 +36,6 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
-    UNREACHABLE();
 }
 
 ISerialization::Kind ISerialization::stringToKind(const String & str)
@@ -205,6 +204,8 @@ String getNameForSubstreamPath(
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
             stream_name += "." + it->variant_element_name;
+        else if (it->type == SubstreamType::DynamicStructure)
+            stream_name += ".dynamic_structure";
     }
 
     return stream_name;
@@ -272,6 +273,23 @@ void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const Substre
 }
 
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
+{
+    if (!cache || path.empty())
+        return nullptr;
+
+    auto it = cache->find(getSubcolumnNameForStream(path));
+    return it == cache->end() ? nullptr : it->second;
+}
+
+void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
+{
+    if (!cache || path.empty())
+        return;
+
+    cache->emplace(getSubcolumnNameForStream(path), state);
+}
+
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
 {
     if (!cache || path.empty())
         return nullptr;

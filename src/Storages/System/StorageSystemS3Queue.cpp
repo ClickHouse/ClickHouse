@@ -11,7 +11,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/S3Queue/S3QueueFilesMetadata.h>
+#include <Storages/S3Queue/S3QueueMetadata.h>
 #include <Storages/S3Queue/S3QueueMetadataFactory.h>
 #include <Storages/S3Queue/StorageS3Queue.h>
 #include <Disks/IDisk.h>
@@ -45,29 +45,27 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
 {
     for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
     {
-        for (const auto & [file_name, file_status] : metadata->getFileStateses())
+        for (const auto & [file_name, file_status] : metadata->getFileStatuses())
         {
             size_t i = 0;
             res_columns[i++]->insert(zookeeper_path);
             res_columns[i++]->insert(file_name);
 
-            std::lock_guard lock(file_status->metadata_lock);
-
             res_columns[i++]->insert(file_status->processed_rows.load());
-            res_columns[i++]->insert(magic_enum::enum_name(file_status->state));
+            res_columns[i++]->insert(magic_enum::enum_name(file_status->state.load()));
 
             if (file_status->processing_start_time)
-                res_columns[i++]->insert(file_status->processing_start_time);
+                res_columns[i++]->insert(file_status->processing_start_time.load());
             else
                 res_columns[i++]->insertDefault();
             if (file_status->processing_end_time)
-                res_columns[i++]->insert(file_status->processing_end_time);
+                res_columns[i++]->insert(file_status->processing_end_time.load());
             else
                 res_columns[i++]->insertDefault();
 
             ProfileEvents::dumpToMapColumn(file_status->profile_counters.getPartiallyAtomicSnapshot(), res_columns[i++].get(), true);
 
-            res_columns[i++]->insert(file_status->last_exception);
+            res_columns[i++]->insert(file_status->getException());
         }
     }
 }

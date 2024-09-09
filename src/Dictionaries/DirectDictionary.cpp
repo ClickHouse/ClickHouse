@@ -174,6 +174,8 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
                 {
                     if (!mask_filled)
                         (*default_mask)[requested_key_index] = 1;
+
+                    result_column->insertDefault();
                 }
                 else
                 {

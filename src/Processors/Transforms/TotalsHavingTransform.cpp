@@ -49,7 +49,7 @@ Block TotalsHavingTransform::transformHeader(
 
     if (expression)
     {
-        block = expression->updateHeader(std::move(block));
+        block = expression->updateHeader(block);
         if (remove_filter)
             block.erase(filter_column_name);
     }

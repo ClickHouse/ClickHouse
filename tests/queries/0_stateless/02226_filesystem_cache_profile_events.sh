@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings, no-cpu-aarch64, no-replicated-database
+# Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings, no-replicated-database
 
 # set -x
 

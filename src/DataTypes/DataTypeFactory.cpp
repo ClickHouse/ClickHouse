@@ -7,7 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 #include <Common/CurrentThread.h>
@@ -292,6 +292,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeMap(*this);
     registerDataTypeObject(*this);
     registerDataTypeVariant(*this);
+    registerDataTypeDynamic(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

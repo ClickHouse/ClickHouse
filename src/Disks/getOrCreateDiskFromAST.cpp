@@ -47,7 +47,7 @@ namespace
 
         auto result_disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
             auto disk = DiskFactory::instance().create(
-                disk_name, *config, "", context, disks_map, /* attach */attach, /* custom_disk */true);
+                disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
             /// Mark that disk can be used without storage policy.
             disk->markDiskAsCustom();
             return disk;

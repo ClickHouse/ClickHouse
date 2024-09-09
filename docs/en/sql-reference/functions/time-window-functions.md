@@ -17,15 +17,13 @@ tumble(time_attr, interval [, timezone])
 ```
 
 **Arguments**
-- `time_attr` - Date and time. [DateTime](../../sql-reference/data-types/datetime.md) data type.
-- `interval` - Window interval in [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type.
+- `time_attr` - Date and time. [DateTime](../data-types/datetime.md) data type.
+- `interval` - Window interval in [Interval](../data-types/special-data-types/interval.md) data type.
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). 
 
 **Returned values**
 
-- The inclusive lower and exclusive upper bound of the corresponding tumbling window.
-
-Type: `Tuple(DateTime, DateTime)`
+- The inclusive lower and exclusive upper bound of the corresponding tumbling window. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md))`.
 
 **Example**
 
@@ -53,16 +51,14 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 
 **Arguments**
 
-- `time_attr` - Date and time. [DateTime](../../sql-reference/data-types/datetime.md) data type.
-- `hop_interval` - Hop interval in [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type. Should be a positive number.
-- `window_interval` - Window interval in [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type. Should be a positive number.
+- `time_attr` - Date and time. [DateTime](../data-types/datetime.md) data type.
+- `hop_interval` - Hop interval in [Interval](../data-types/special-data-types/interval.md) data type. Should be a positive number.
+- `window_interval` - Window interval in [Interval](../data-types/special-data-types/interval.md) data type. Should be a positive number.
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). 
 
 **Returned values**
 
-- The inclusive lower and exclusive upper bound of the corresponding hopping window. Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`.
-
-Type: `Tuple(DateTime, DateTime)`
+- The inclusive lower and exclusive upper bound of the corresponding hopping window. Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md))`.
 
 **Example**
 

@@ -190,14 +190,14 @@ namespace Protocol
     }
 
     /// Whether the compression must be used.
-    enum class Compression
+    enum class Compression : uint8_t
     {
         Disable = 0,
         Enable = 1,
     };
 
     /// Whether the ssl must be used.
-    enum class Secure
+    enum class Secure : uint8_t
     {
         Disable = 0,
         Enable = 1,

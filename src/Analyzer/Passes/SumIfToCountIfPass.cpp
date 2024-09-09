@@ -156,7 +156,7 @@ public:
     }
 
 private:
-    static inline void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
+    static void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
     {
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(
@@ -165,7 +165,7 @@ private:
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 
-    inline QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
+    QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
     {
         auto multiply_function_node = std::make_shared<FunctionNode>("multiply");
         auto & multiply_arguments_nodes = multiply_function_node->getArguments().getNodes();

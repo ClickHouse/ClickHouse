@@ -11,7 +11,7 @@ struct SignImpl
     using ResultType = Int8;
     static constexpr bool allow_string_or_fixed_string = false;
 
-    static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
+    static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (is_decimal<A> || std::is_floating_point_v<A>)
             return a < A(0) ? -1 : a == A(0) ? 0 : 1;

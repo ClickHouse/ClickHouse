@@ -15,7 +15,7 @@
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ErrorCodes.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/TerminalSize.h>
 #include <Core/BaseSettingsProgramOptions.h>
 

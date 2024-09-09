@@ -30,7 +30,7 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
@@ -232,7 +232,7 @@ inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
 inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
 {
-    return assertStringCaseInsensitive(s.c_str(), buf);
+    assertStringCaseInsensitive(s.c_str(), buf);
 }
 
 /** Check that next character in buf matches first character of s.
@@ -329,7 +329,7 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
     return ReturnType(true);
 }
 
-enum class ReadIntTextCheckOverflow
+enum class ReadIntTextCheckOverflow : uint8_t
 {
     DO_NOT_CHECK_OVERFLOW,
     CHECK_OVERFLOW,
@@ -583,6 +583,8 @@ void readString(String & s, ReadBuffer & buf);
 
 void readEscapedString(String & s, ReadBuffer & buf);
 
+void readEscapedStringCRLF(String & s, ReadBuffer & buf);
+
 void readQuotedString(String & s, ReadBuffer & buf);
 void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
@@ -608,6 +610,9 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
+
+void readStringUntilAmpersand(String & s, ReadBuffer & buf);
+void readStringUntilEquals(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
@@ -642,7 +647,7 @@ void readStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <typename Vector, bool support_crlf>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
 template <bool enable_sql_style_quoting, typename Vector>
@@ -907,7 +912,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
 inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 {
-    return readUUIDTextImpl<void>(uuid, buf);
+    readUUIDTextImpl<void>(uuid, buf);
 }
 
 inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
@@ -929,7 +934,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 
 inline void readIPv4Text(IPv4 & ip, ReadBuffer & buf)
 {
-    return readIPv4TextImpl<void>(ip, buf);
+    readIPv4TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv4Text(IPv4 & ip, ReadBuffer & buf)
@@ -951,7 +956,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 
 inline void readIPv6Text(IPv6 & ip, ReadBuffer & buf)
 {
-    return readIPv6TextImpl<void>(ip, buf);
+    readIPv6TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv6Text(IPv6 & ip, ReadBuffer & buf)
@@ -1898,6 +1903,7 @@ void readJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & se
 bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
 
 void readTSVField(String & s, ReadBuffer & buf);
+void readTSVFieldCRLF(String & s, ReadBuffer & buf);
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol

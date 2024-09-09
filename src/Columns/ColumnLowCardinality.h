@@ -100,7 +100,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
-        return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
+        getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -145,6 +145,8 @@ public:
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
 
+    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
+
     ColumnPtr replicate(const Offsets & offsets) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets));
@@ -154,7 +156,7 @@ public:
 
     void getExtremes(Field & min, Field & max) const override
     {
-        return dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -208,7 +210,7 @@ public:
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
+        getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }

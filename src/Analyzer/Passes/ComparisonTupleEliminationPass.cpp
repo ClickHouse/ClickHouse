@@ -184,7 +184,7 @@ private:
         return result_function;
     }
 
-    inline QueryTreeNodePtr makeEqualsFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument) const
+    QueryTreeNodePtr makeEqualsFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument) const
     {
         return makeComparisonFunction(std::move(lhs_argument), std::move(rhs_argument), "equals");
     }

@@ -99,6 +99,23 @@ bool checkIfGroupAlwaysTrueGraph(const Analyzer::CNF::OrGroup & group, const Com
     return false;
 }
 
+bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
+{
+    /// Filters out groups containing mutually exclusive atoms,
+    /// since these groups are always True
+
+    for (const auto & atom : group)
+    {
+        auto negated(atom);
+        negated.negative = !atom.negative;
+        if (group.contains(negated))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
 {
     const auto constraint_atom_ids = query_tree_constraints.getAtomIds(atom.node_with_hash);
@@ -644,7 +661,8 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
         cnf.filterAlwaysTrueGroups([&](const auto & group)
            {
                /// remove always true groups from CNF
-               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints)
+                   && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
            })
            .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
            {

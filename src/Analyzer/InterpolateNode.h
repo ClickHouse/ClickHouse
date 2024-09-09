@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ListNode.h>
 
 namespace DB
@@ -19,7 +19,7 @@ class InterpolateNode final : public IQueryTreeNode
 {
 public:
     /// Initialize interpolate node with expression and interpolate expression
-    explicit InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_);
+    explicit InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_);
 
     /// Get expression to interpolate
     const QueryTreeNodePtr & getExpression() const
@@ -60,6 +60,9 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+    /// Initial name from column identifier.
+    std::string expression_name;
 
 private:
     static constexpr size_t expression_child_index = 0;

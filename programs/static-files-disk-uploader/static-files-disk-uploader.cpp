@@ -111,13 +111,11 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                auto files_root = dst_path / prefix;
                 directory_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
             }
             else
             {
                 dst_path = fs::canonical(dst_path);
-                auto files_root = dst_path / prefix;
                 fs::create_directories(dst_path / directory_prefix);
                 directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
             }

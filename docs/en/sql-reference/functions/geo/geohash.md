@@ -4,6 +4,8 @@ sidebar_label: Geohash
 title: "Functions for Working with Geohash"
 ---
 
+## Geohash
+
 [Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location.
 
 If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
@@ -74,11 +76,11 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 
 **Arguments**
 
-- `longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
-- `latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
-- `longitude_max` — Maximum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
-- `latitude_max` — Maximum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
-- `precision` — Geohash precision. Range: `[1, 12]`. Type: [UInt8](../../../sql-reference/data-types/int-uint.md).
+- `longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. [Float](../../data-types/float.md).
+- `latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. [Float](../../data-types/float.md).
+- `longitude_max` — Maximum longitude. Range: `[-180°, 180°]`. [Float](../../data-types/float.md).
+- `latitude_max` — Maximum latitude. Range: `[-90°, 90°]`. [Float](../../data-types/float.md).
+- `precision` — Geohash precision. Range: `[1, 12]`. [UInt8](../../data-types/int-uint.md).
 
 :::note    
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
@@ -86,10 +88,8 @@ All coordinate parameters must be of the same type: either `Float32` or `Float64
 
 **Returned values**
 
-- Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
+- Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items. [Array](../../data-types/array.md)([String](../../data-types/string.md)).
 - `[]` - Empty array if minimum latitude and longitude values aren’t less than corresponding maximum values.
-
-Type: [Array](../../../sql-reference/data-types/array.md)([String](../../../sql-reference/data-types/string.md)).
 
 :::note    
 Function throws an exception if resulting array is over 10’000’000 items long.

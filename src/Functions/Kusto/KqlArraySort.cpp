@@ -11,7 +11,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
@@ -35,7 +35,7 @@ public:
     {
         if (arguments.empty())
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Function {} needs at least one argument; passed {}.",
                 getName(),
                 arguments.size());
@@ -158,12 +158,12 @@ public:
                 auto out_tmp = ColumnArray::create(nested_types[i]->createColumn());
 
                 size_t array_size = tuple_coulmn->size();
-                const auto * arr = checkAndGetColumn<ColumnArray>(tuple_coulmn.get());
+                const auto & arr = checkAndGetColumn<ColumnArray>(*tuple_coulmn);
 
                 for (size_t j = 0; j < array_size; ++j)
                 {
                     Field arr_field;
-                    arr->get(j, arr_field);
+                    arr.get(j, arr_field);
                     out_tmp->insert(arr_field);
                 }
 

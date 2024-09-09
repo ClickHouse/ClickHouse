@@ -214,7 +214,7 @@ private:
     template <typename Time>
     struct QuarterWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToQuarterImpl::execute(source, timezone), buffer);
         }
@@ -223,7 +223,7 @@ private:
     template <typename Time>
     struct MonthWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             const auto month = ToMonthImpl::execute(source, timezone);
             static constexpr std::string_view month_names[] =
@@ -249,7 +249,7 @@ private:
     template <typename Time>
     struct WeekWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToISOWeekImpl::execute(source, timezone), buffer);
         }
@@ -258,7 +258,7 @@ private:
     template <typename Time>
     struct DayOfYearWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToDayOfYearImpl::execute(source, timezone), buffer);
         }
@@ -267,7 +267,7 @@ private:
     template <typename Time>
     struct DayWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToDayOfMonthImpl::execute(source, timezone), buffer);
         }
@@ -276,7 +276,7 @@ private:
     template <typename Time>
     struct WeekDayWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             const auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
             static constexpr std::string_view day_names[] =
@@ -297,7 +297,7 @@ private:
     template <typename Time>
     struct HourWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToHourImpl::execute(source, timezone), buffer);
         }
@@ -306,7 +306,7 @@ private:
     template <typename Time>
     struct MinuteWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToMinuteImpl::execute(source, timezone), buffer);
         }
@@ -315,7 +315,7 @@ private:
     template <typename Time>
     struct SecondWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToSecondImpl::execute(source, timezone), buffer);
         }

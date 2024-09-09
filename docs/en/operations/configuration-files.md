@@ -7,6 +7,8 @@ sidebar_label: Configuration Files
 # Configuration Files
 
 The ClickHouse server can be configured with configuration files in XML or YAML syntax. In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file=` or `-C`. Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`. Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server. Configuration files are merged in alphabetical order. To simplify updates and improve modularization, it is best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
+(The ClickHouse keeper configuration lives in `/etc/clickhouse-keeper/keeper_config.xml` and thus the additional files need to be placed in `/etc/clickhouse-keeper/keeper_config.d/` ) 
+
 
 It is possible to mix XML and YAML configuration files, for example you could have a main configuration file `config.xml` and additional configuration files `config.d/network.xml`, `config.d/timezone.yaml` and `config.d/keeper.yaml`. Mixing XML and YAML within a single configuration file is not supported. XML configuration files should use `<clickhouse>...</clickhouse>` as top-level tag. In YAML configuration files, `clickhouse:` is optional, the parser inserts it implicitly if absent.
 
@@ -67,6 +69,8 @@ generates merged configuration file:
 </clickhouse>
 ```
 
+### Using from_env and from_zk
+
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
 Example with `$MAX_QUERY_SIZE = 150000`:
@@ -82,6 +86,59 @@ Example with `$MAX_QUERY_SIZE = 150000`:
 ```
 
 which is equal to
+
+``` xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+The same is possible using `from_zk`:
+
+``` xml
+<clickhouse>
+    <postgresql_port from_zk="/zk_configs/postgresql_port"/>
+</clickhouse>
+```
+
+```
+# clickhouse-keeper-client
+/ :) touch /zk_configs
+/ :) create /zk_configs/postgresql_port "9005"
+/ :) get /zk_configs/postgresql_port
+9005
+```
+
+which is equal to
+
+
+``` xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+#### Default values for from_env and from_zk attributes
+
+It's possible to set the default value and substitute it only if the environment variable or zookeeper node is set using `replace="1"`.
+
+With previous example, but `MAX_QUERY_SIZE` is unset:
+
+``` xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size from_env="MAX_QUERY_SIZE" replace="1">150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+will take the default value
 
 ``` xml
 <clickhouse>

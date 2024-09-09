@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
-enum class TypeIndex
+enum class TypeIndex : uint8_t
 {
     Nothing = 0,
     UInt8,
@@ -50,6 +50,7 @@ enum class TypeIndex
     IPv6,
     JSONPaths,
     Variant,
+    Dynamic
 };
 
 /**

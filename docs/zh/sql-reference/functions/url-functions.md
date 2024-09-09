@@ -11,7 +11,7 @@ slug: /zh/sql-reference/functions/url-functions
 
 ### 协议 {#protocol}
 
-返回URL的协议。例如： http、ftp、mailto、magnet…
+返回URL的协议。例如： http、ftp、mailto、magnet...
 
 ### 域 {#domain}
 

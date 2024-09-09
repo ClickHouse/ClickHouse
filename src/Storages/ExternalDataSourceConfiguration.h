@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <IO/HTTPHeaderEntries.h>
 
 

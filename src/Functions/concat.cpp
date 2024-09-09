@@ -16,7 +16,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 using namespace GatherUtils;
@@ -48,7 +48,7 @@ public:
     {
         if (arguments.size() < 2)
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
                 getName(),
                 arguments.size());
@@ -225,7 +225,7 @@ public:
     {
         if (arguments.empty())
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(),
                 arguments.size());

@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
 #include <DataTypes/DataTypeArray.h>
@@ -76,75 +77,17 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
 {
 
     size_t size = cond.size();
-    bool a_is_short = a.size() < size;
-    bool b_is_short = b.size() < size;
-
-    if (a_is_short && b_is_short)
+    for (size_t i = 0; i < size; ++i)
     {
-        size_t a_index = 0, b_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (is_native_int_or_decimal_v<ResultType>)
+            res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+        else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[b_index], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[b_index]);
-
-            a_index += !!cond[i];
-            b_index += !cond[i];
+            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
         }
-    }
-    else if (a_is_short)
-    {
-        size_t a_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        else
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[i]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[i], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[i]);
-
-            a_index += !!cond[i];
-        }
-    }
-    else if (b_is_short)
-    {
-        size_t b_index = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[b_index], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index]);
-
-            b_index += !cond[i];
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
-            }
-            else
-            {
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
-            }
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
         }
     }
 }
@@ -153,37 +96,16 @@ template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult,
 inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
-    bool a_is_short = a.size() < size;
-    if (a_is_short)
+    for (size_t i = 0; i < size; ++i)
     {
-        size_t a_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (is_native_int_or_decimal_v<ResultType>)
+            res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
+        else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b, res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b);
-
-            a_index += !!cond[i];
+            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
         }
-    }
-    else
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
-        }
+        else
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
     }
 }
 
@@ -191,37 +113,16 @@ template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult,
 inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
-    bool b_is_short = b.size() < size;
-    if (b_is_short)
+    for (size_t i = 0; i < size; ++i)
     {
-        size_t b_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (is_native_int_or_decimal_v<ResultType>)
+            res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
+        else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[b_index], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index]);
-
-            b_index += !cond[i];
+            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
         }
-    }
-    else
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
-        }
+        else
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
     }
 }
 
@@ -879,9 +780,6 @@ private:
         bool then_is_const = isColumnConst(*col_then);
         bool else_is_const = isColumnConst(*col_else);
 
-        bool then_is_short = col_then->size() < cond_col->size();
-        bool else_is_short = col_else->size() < cond_col->size();
-
         const auto & cond_array = cond_col->getData();
 
         if (then_is_const && else_is_const)
@@ -901,37 +799,34 @@ private:
         {
             const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
 
-            size_t else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
                     result_column->insertFrom(then_nested_column, 0);
                 else
-                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
+                    result_column->insertFrom(*col_else, i);
             }
         }
         else if (else_is_const)
         {
             const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
 
-            size_t then_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
-                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
+                    result_column->insertFrom(*col_then, i);
                 else
                     result_column->insertFrom(else_nested_column, 0);
             }
         }
         else
         {
-            size_t then_index = 0, else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
-                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
+                    result_column->insertFrom(*col_then, i);
                 else
-                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
+                    result_column->insertFrom(*col_else, i);
             }
         }
 
@@ -948,12 +843,12 @@ private:
         bool cond_is_const = false;
         bool cond_is_true = false;
         bool cond_is_false = false;
-        if (const auto * const_arg = checkAndGetColumn<ColumnConst>(*arg_cond.column))
+        if (const auto * const_arg = checkAndGetColumn<ColumnConst>(&*arg_cond.column))
         {
             cond_is_const = true;
             not_const_condition = const_arg->getDataColumnPtr();
             ColumnPtr data_column = const_arg->getDataColumnPtr();
-            if (const auto * const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
+            if (const auto * const_nullable_arg = checkAndGetColumn<ColumnNullable>(&*data_column))
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
                 if (!data_column->empty())
@@ -962,7 +857,7 @@ private:
 
             if (!data_column->empty())
             {
-                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column)->getBool(0);
+                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
                 cond_is_false = !cond_is_null && !cond_is_true;
             }
         }
@@ -975,12 +870,12 @@ private:
         else if (cond_is_false || cond_is_null)
             return castColumn(column2, result_type);
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*not_const_condition))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*not_const_condition))
         {
             ColumnPtr new_cond_column = nullable->getNestedColumnPtr();
             size_t column_size = arg_cond.column->size();
 
-            if (checkAndGetColumn<ColumnUInt8>(*new_cond_column))
+            if (checkAndGetColumn<ColumnUInt8>(&*new_cond_column))
             {
                 auto nested_column_copy = new_cond_column->cloneResized(new_cond_column->size());
                 typeid_cast<ColumnUInt8 *>(nested_column_copy.get())->applyZeroMap(nullable->getNullMapData());
@@ -1027,12 +922,12 @@ private:
     /// Const(size = 0, Int32(size = 1))
     static ColumnPtr recursiveGetNestedColumnWithoutNullable(const ColumnPtr & column)
     {
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column))
         {
             /// Nullable cannot contain Nullable
             return nullable->getNestedColumnPtr();
         }
-        else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*column))
+        else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*column))
         {
             /// Save Constant, but remove Nullable
             return ColumnConst::create(recursiveGetNestedColumnWithoutNullable(column_const->getDataColumnPtr()), column->size());
@@ -1051,8 +946,8 @@ private:
         const ColumnWithTypeAndName & arg_then = arguments[1];
         const ColumnWithTypeAndName & arg_else = arguments[2];
 
-        const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_then.column);
-        const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_else.column);
+        const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_then.column);
+        const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_else.column);
 
         if (!then_is_nullable && !else_is_nullable)
             return nullptr;
@@ -1124,9 +1019,6 @@ private:
         if (then_is_null && else_is_null)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        bool then_is_short = arg_then.column->size() < arg_cond.column->size();
-        bool else_is_short = arg_else.column->size() < arg_cond.column->size();
-
         const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
         const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
 
@@ -1145,8 +1037,6 @@ private:
             {
                 arg_else_column = arg_else_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_else_column));
-                if (else_is_short)
-                    result_column->expand(cond_col->getData(), true);
                 if (isColumnNullable(*result_column))
                 {
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
@@ -1155,6 +1045,11 @@ private:
                 else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
                 {
                     variant_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
+                    return result_column;
+                }
+                else if (auto * dynamic_column = typeid_cast<ColumnDynamic *>(result_column.get()))
+                {
+                    dynamic_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
                 else
@@ -1187,8 +1082,6 @@ private:
             {
                 arg_then_column = arg_then_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_then_column));
-                if (then_is_short)
-                    result_column->expand(cond_col->getData(), false);
 
                 if (isColumnNullable(*result_column))
                 {
@@ -1198,6 +1091,11 @@ private:
                 else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
                 {
                     variant_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
+                    return result_column;
+                }
+                else if (auto * dynamic_column = typeid_cast<ColumnDynamic *>(result_column.get()))
+                {
+                    dynamic_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
                 else
@@ -1278,16 +1176,16 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments[0]->onlyNull())
-            return arguments[2];
+        if (!arguments[0]->onlyNull())
+        {
+            if (arguments[0]->isNullable())
+                return getReturnTypeImpl({
+                    removeNullable(arguments[0]), arguments[1], arguments[2]});
 
-        if (arguments[0]->isNullable())
-            return getReturnTypeImpl({
-                removeNullable(arguments[0]), arguments[1], arguments[2]});
-
-        if (!WhichDataType(arguments[0]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
-                "Must be UInt8.", arguments[0]->getName());
+            if (!WhichDataType(arguments[0]).isUInt8())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
+                    "Must be UInt8.", arguments[0]->getName());
+        }
 
         if (use_variant_when_no_common_type)
             return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});

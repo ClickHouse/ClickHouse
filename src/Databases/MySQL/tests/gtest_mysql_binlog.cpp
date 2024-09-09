@@ -1,4 +1,3 @@
-#include <Common/ThreadPool.h>
 #include <Databases/MySQL/MySQLBinlog.h>
 #include <Databases/MySQL/MySQLBinlogEventsDispatcher.h>
 #include <Databases/MySQL/MySQLBinlogClient.h>

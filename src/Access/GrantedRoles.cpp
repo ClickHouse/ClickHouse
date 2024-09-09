@@ -161,9 +161,9 @@ void GrantedRoles::makeUnion(const GrantedRoles & other)
 
 void GrantedRoles::makeIntersection(const GrantedRoles & other)
 {
-    boost::range::remove_erase_if(roles, [&other](const UUID & id) { return other.roles.find(id) == other.roles.end(); });
+    boost::range::remove_erase_if(roles, [&other](const UUID & id) { return other.roles.find(id) == other.roles.end(); }); // NOLINT
 
-    boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id)
+    boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id) // NOLINT
     {
         return other.roles_with_admin_option.find(id) == other.roles_with_admin_option.end();
     });

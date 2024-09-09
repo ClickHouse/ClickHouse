@@ -1,0 +1,7 @@
+<clickhouse>
+    <rocksdb>
+        <options>
+            <info_log_level>DEBUG_LEVEL</info_log_level>
+        </options>
+    </rocksdb>
+</clickhouse>

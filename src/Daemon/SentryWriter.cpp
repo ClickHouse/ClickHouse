@@ -72,6 +72,10 @@ SentryWriter * SentryWriter::getInstance()
 {
     return SentryWriter::instance.get();
 }
+void SentryWriter::resetInstance()
+{
+    SentryWriter::instance.reset();
+}
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
 {
@@ -254,6 +258,7 @@ void SentryWriter::sendError(Type type, int sig_or_error, const std::string & er
 
 void SentryWriter::initializeInstance(Poco::Util::LayeredConfiguration &) {}
 SentryWriter * SentryWriter::getInstance() { return nullptr; }
+void SentryWriter::resetInstance() {}
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration &) {}
 SentryWriter::~SentryWriter() = default;

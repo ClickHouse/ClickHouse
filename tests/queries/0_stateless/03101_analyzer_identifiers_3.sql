@@ -39,7 +39,7 @@ SELECT * GROUP BY *;
 -- not ok as every component of ORDER BY may contain ASC/DESC and COLLATE; though can be supported in some sense
 -- but it works
 SELECT * ORDER BY *;
-SELECT * WHERE *;  -- { serverError UNSUPPORTED_METHOD }
+SELECT * WHERE *; -- { serverError BAD_ARGUMENTS }
 
 SELECT '---';
 

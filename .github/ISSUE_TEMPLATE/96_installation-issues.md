@@ -7,6 +7,10 @@ assignees: ''
 
 ---
 
+**Company or project name**
+
+Put your company name or project description here
+
 **I have tried the following solutions**: https://clickhouse.com/docs/en/faq/troubleshooting/#troubleshooting-installation-errors
 
 **Installation type**

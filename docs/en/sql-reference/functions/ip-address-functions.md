@@ -147,13 +147,11 @@ IPv6StringToNum(string)
 
 **Argument**
 
-- `string` — IP address. [String](../../sql-reference/data-types/string.md).
+- `string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- IPv6 address in binary format.
-
-Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+- IPv6 address in binary format. [FixedString(16)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -248,7 +246,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 ## toIPv4(string)
 
-An alias to `IPv4StringToNum()` that takes a string form of IPv4 address and returns value of [IPv4](../../sql-reference/data-types/ipv4.md) type, which is binary equal to value returned by `IPv4StringToNum()`.
+An alias to `IPv4StringToNum()` that takes a string form of IPv4 address and returns value of [IPv4](../data-types/ipv4.md) type, which is binary equal to value returned by `IPv4StringToNum()`.
 
 ``` sql
 WITH
@@ -296,8 +294,8 @@ Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns null
 
 ## toIPv6
 
-Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
-Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
+Converts a string form of IPv6 address to [IPv6](../data-types/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
+Similar to [IPv6StringToNum](#ipv6stringtonum) function, which converts IPv6 address to binary format.
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 
@@ -309,13 +307,11 @@ toIPv6(string)
 
 **Argument**
 
-- `string` — IP address. [String](../../sql-reference/data-types/string.md)
+- `string` — IP address. [String](../data-types/string.md)
 
 **Returned value**
 
-- IP address.
-
-Type: [IPv6](../../sql-reference/data-types/ipv6.md).
+- IP address. [IPv6](../data-types/ipv6.md).
 
 **Examples**
 
@@ -370,13 +366,11 @@ isIPv4String(string)
 
 **Arguments**
 
-- `string` — IP address. [String](../../sql-reference/data-types/string.md).
+- `string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `1` if `string` is IPv4 address, `0` otherwise.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+- `1` if `string` is IPv4 address, `0` otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -408,13 +402,11 @@ isIPv6String(string)
 
 **Arguments**
 
-- `string` — IP address. [String](../../sql-reference/data-types/string.md).
+- `string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `1` if `string` is IPv6 address, `0` otherwise.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+- `1` if `string` is IPv6 address, `0` otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -449,14 +441,12 @@ This function accepts both IPv4 and IPv6 addresses (and networks) represented as
 
 **Arguments**
 
-- `address` — An IPv4 or IPv6 address. [String](../../sql-reference/data-types/string.md).
-- `prefix` — An IPv4 or IPv6 network prefix in CIDR. [String](../../sql-reference/data-types/string.md).
+- `address` — An IPv4 or IPv6 address. [String](../data-types/string.md).
+- `prefix` — An IPv4 or IPv6 network prefix in CIDR. [String](../data-types/string.md).
 
 **Returned value**
 
-- `1` or `0`.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+- `1` or `0`. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
