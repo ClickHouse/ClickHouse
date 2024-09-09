@@ -125,6 +125,26 @@ def started_cluster():
             use_old_analyzer=True,
         )
         cluster.add_instance(
+            "node1",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+        )
+        cluster.add_instance(
+            "node2",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+        )
+        cluster.add_instance(
             "instance_too_many_parts",
             user_configs=["configs/users.xml"],
             with_minio=True,
@@ -215,6 +235,7 @@ def create_table(
     auth=DEFAULT_AUTH,
     bucket=None,
     expect_error=False,
+    database_name = "default"
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -236,7 +257,7 @@ def create_table(
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
-        CREATE TABLE {table_name} ({format})
+        CREATE TABLE {database_name}.{table_name} ({format})
         ENGINE = {engine_def}
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
@@ -1870,3 +1891,50 @@ def test_commit_on_limit(started_cluster):
     for value in expected_failed:
         assert value not in processed
         assert value in failed
+
+
+def test_replicated(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_replicated"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')")
+    node2.query("CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')")
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+        database_name = "r",
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    for node in [node1, node2]:
+        assert "processing_threads_num = 16" in node.query(f"SHOW CREATE TABLE r.{table_name}")
+        node.restart_clickhouse()
+        assert "processing_threads_num = 16" in node.query(f"SHOW CREATE TABLE r.{table_name}")
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(node1.query(f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"))
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()

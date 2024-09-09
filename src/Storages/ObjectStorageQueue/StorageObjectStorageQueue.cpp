@@ -154,7 +154,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);
+    checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::SECONDARY_CREATE, log);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
