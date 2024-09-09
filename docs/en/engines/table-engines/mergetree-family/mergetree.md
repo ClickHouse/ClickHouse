@@ -1003,16 +1003,16 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
     [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
 
-- `count_min`
+- `CountMin`
 
-    [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+    [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
 
 ### Supported Data Types {#supported-data-types}
 
 |           | (U)Int* | Float* | Decimal(*) | Date* | Boolean | Enum* | (Fixed)String    |
 |-----------|---------|--------|------------|-------|---------|-------|------------------|
-| count_min | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✔                |
+| CountMin  | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✔                |
 | MinMax    | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✗                |
 | TDigest   | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✗                |
 | Uniq      | ✔       | ✔      | ✔          | ✔     | ✔       | ✔     | ✔                |
@@ -1022,7 +1022,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 |           | Equality filters (==) | Range filters (>, >=, <, <=) |
 |-----------|-----------------------|------------------------------|
-| count_min | ✔                     | ✗                            |
+| CountMin  | ✔                     | ✗                            |
 | MinMax    | ✗                     | ✔                            |
 | TDigest   | ✗                     | ✔                            |
 | Uniq      | ✔                     | ✗                            |
