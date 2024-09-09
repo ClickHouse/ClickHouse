@@ -355,7 +355,16 @@ void WriteBufferFromS3::allocateBuffer()
     /// First buffer was already allocated in BufferWithOwnMemory constructor with provided in constructor buffer size.
     /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
     if (buffer_allocation_policy->getBufferNumber() == 1)
+    {
+        /// Reduce memory size if initial size was larger then desired size from buffer_allocation_policy.
+        /// Usually it doesn't happen but we have it in unit tests.
+        if (memory.size() > buffer_allocation_policy->getBufferSize())
+        {
+            memory.resize(buffer_allocation_policy->getBufferSize());
+            WriteBuffer::set(memory.data(), memory.size());
+        }
         return;
+    }
 
     memory = Memory(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());
