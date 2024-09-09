@@ -171,7 +171,7 @@ public:
 
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
+    Statistics loadStatistics() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.

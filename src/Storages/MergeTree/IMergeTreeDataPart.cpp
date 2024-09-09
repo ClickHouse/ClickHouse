@@ -677,13 +677,13 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
     return *minimum_size_column;
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
+Statistics IMergeTreeDataPart::loadStatistics() const
 {
-    const auto & metadata_snaphost = storage.getInMemoryMetadata();
+    const auto & metadata_snapshot = storage.getInMemoryMetadata();
 
-    auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
+    auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot.getColumns());
 
-    ColumnsStatistics result;
+    Statistics result(rows_count);
     for (auto & stat : total_statistics)
     {
         String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
@@ -697,7 +697,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
         auto stat_file = metadata_manager->read(file_name);
         CompressedReadBuffer compressed_buffer(*stat_file);
         stat->deserialize(compressed_buffer);
-        result.push_back(stat);
+        result.addColumnStat(stat);
     }
     return result;
 }

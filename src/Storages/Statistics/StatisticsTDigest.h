@@ -12,6 +12,7 @@ public:
     explicit StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
     void update(const ColumnPtr & column) override;
+    void merge(const SingleStatisticsPtr & other) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;

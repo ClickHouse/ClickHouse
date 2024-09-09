@@ -27,6 +27,14 @@ void StatisticsTDigest::update(const ColumnPtr & column)
     }
 }
 
+void StatisticsTDigest::merge(const SingleStatisticsPtr & other)
+{
+    if (const auto * other_stat = dynamic_cast<const StatisticsTDigest *>(other.get()))
+        t_digest.merge(other_stat->t_digest);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to merge statistics of type {} to TDigest statistics", toString(other->getTypeName()));
+}
+
 void StatisticsTDigest::serialize(WriteBuffer & buf)
 {
     t_digest.serialize(buf);

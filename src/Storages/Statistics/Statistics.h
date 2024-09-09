@@ -19,6 +19,9 @@ struct StatisticsUtils
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
 };
 
+class ISingleStatistics;
+using SingleStatisticsPtr = std::shared_ptr<ISingleStatistics>;
+
 /// SingleTypeStatistics describe properties of the values in the column,
 /// e.g. how many unique values exist,
 /// what are the N most frequent values,
@@ -30,6 +33,7 @@ public:
     virtual ~ISingleStatistics() = default;
 
     virtual void update(const ColumnPtr & column) = 0;
+    virtual void merge(const SingleStatisticsPtr & other) = 0;
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf) = 0;
@@ -43,11 +47,12 @@ public:
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
 
+    String getTypeName() const { return stat.getTypeName(); }
+
 protected:
     SingleStatisticsDescription stat;
 };
 
-using SingleStatisticsPtr = std::shared_ptr<ISingleStatistics>;
 
 class ColumnStatistics
 {
@@ -63,6 +68,7 @@ public:
     UInt64 rowCount() const;
 
     void update(const ColumnPtr & column);
+    void merge(const ColumnStatistics & other);
 
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
@@ -80,6 +86,36 @@ struct ColumnDescription;
 class ColumnsDescription;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
+
+/**
+ * Statistics represent the statistics for a part, table or node in query plan.
+ * It is a computable data structure which means:
+ *   1. it can accumulate statistics for a dedicated column of multiple parts.
+ *   2. it can support more calculations which is needed in estimating complex predicates like `a > 1 and a < 100 or a in (1, 3, 500).
+ *      For example column 'a' has a minmax statistics with range [1, 100], after estimate 'a>50' the range is [51, 100].
+ */
+class Statistics
+{
+public:
+    explicit Statistics() : total_row_count(0) { }
+    explicit Statistics(Float64 total_row_count_) : total_row_count(total_row_count_) { }
+    explicit Statistics(Float64 total_row_count_, const std::unordered_map<String, ColumnStatisticsPtr> & column_stats_)
+        : total_row_count(total_row_count_), column_stats(column_stats_)
+    {
+    }
+
+    void merge(const Statistics & other);
+    void addColumnStat(const ColumnStatisticsPtr & column_stat_);
+
+    Float64 getTotalRowCount() const { return total_row_count; }
+    ColumnStatisticsPtr getColumnStat(const String & column_name) const;
+
+private:
+    Float64 total_row_count;
+    std::unordered_map<String, ColumnStatisticsPtr> column_stats;
+};
+
+using StatisticsPtr = std::shared_ptr<Statistics>;
 
 class MergeTreeStatisticsFactory : private boost::noncopyable
 {

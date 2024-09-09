@@ -35,6 +35,14 @@ void StatisticsUniq::update(const ColumnPtr & column)
     collector->addBatchSinglePlace(0, column->size(), data, &(raw_ptr), nullptr);
 }
 
+void StatisticsUniq::merge(const SingleStatisticsPtr & other)
+{
+    if (const auto * other_stat = dynamic_cast<const StatisticsUniq *>(other.get()))
+        collector->merge(other_stat->data, data, arena.get());
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to merge statistics of type {} to Uniq statistics", toString(other->getTypeName()));
+}
+
 void StatisticsUniq::serialize(WriteBuffer & buf)
 {
     collector->serialize(data, buf);

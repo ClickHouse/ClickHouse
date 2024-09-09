@@ -71,6 +71,18 @@ void ColumnStatistics::update(const ColumnPtr & column)
         stat.second->update(column);
 }
 
+void ColumnStatistics::merge(const ColumnStatistics & other)
+{
+    rows += other.rows;
+    for (const auto & [type, stat] : other.stats)
+    {
+        if (!stats.contains(type))
+            stats[type] = stat;
+        else
+            stats[type]->merge(stat);
+    }
+}
+
 UInt64 ISingleStatistics::estimateCardinality() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
@@ -193,6 +205,30 @@ const String & ColumnStatistics::columnName() const
 UInt64 ColumnStatistics::rowCount() const
 {
     return rows;
+}
+
+void Statistics::merge(const Statistics & other)
+{
+    total_row_count += other.total_row_count;
+    for (const auto & [column_name, column_stat] : other.column_stats)
+    {
+        if (!column_stats.contains(column_name))
+            column_stats[column_name]->merge(*column_stat);
+        else
+            column_stats[column_name]= column_stat;
+    }
+}
+
+void Statistics::addColumnStat(const ColumnStatisticsPtr & column_stat_)
+{
+    column_stats[column_stat_->columnName()] = column_stat_;
+}
+
+ColumnStatisticsPtr Statistics::getColumnStat(const String & column_name) const
+{
+    if (column_stats.contains(column_name))
+        return column_stats.at(column_name);
+    return nullptr;
 }
 
 void MergeTreeStatisticsFactory::registerCreator(SingleStatisticsType stats_type, Creator creator)

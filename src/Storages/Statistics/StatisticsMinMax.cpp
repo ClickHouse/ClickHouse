@@ -35,6 +35,18 @@ void StatisticsMinMax::update(const ColumnPtr & column)
     row_count += column->size();
 }
 
+void StatisticsMinMax::merge(const SingleStatisticsPtr & other)
+{
+    if (const auto * other_stat = dynamic_cast<const StatisticsMinMax *>(other.get()))
+    {
+        min = std::min(other_stat->min, min);
+        max = std::min(other_stat->max, max);
+        row_count += other_stat->row_count;
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to merge statistics of type {} to MinMax statistics", toString(other->getTypeName()));
+}
+
 void StatisticsMinMax::serialize(WriteBuffer & buf)
 {
     writeIntBinary(row_count, buf);

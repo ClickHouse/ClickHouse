@@ -9,47 +9,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ConditionSelectivityEstimator::ColumnSelectivityEstimator::merge(String part_name, ColumnStatisticsPtr stats)
-{
-    if (part_statistics.contains(part_name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
-    part_statistics[part_name] = stats;
-}
-
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows) const
-{
-    if (part_statistics.empty())
-        return default_cond_range_factor * rows;
-    Float64 result = 0;
-    Float64 part_rows = 0;
-    for (const auto & [key, estimator] : part_statistics)
-    {
-        result += estimator->estimateLess(val);
-        part_rows += estimator->rowCount();
-    }
-    return result * rows / part_rows;
-}
-
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows) const
-{
-    return rows - estimateLess(val, rows);
-}
-
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
-{
-    if (part_statistics.empty())
-    {
-        return default_cond_equal_factor * rows;
-    }
-    Float64 result = 0;
-    Float64 partial_cnt = 0;
-    for (const auto & [key, estimator] : part_statistics)
-    {
-        result += estimator->estimateEqual(val);
-        partial_cnt += estimator->rowCount();
-    }
-    return result * rows / partial_cnt;
-}
 
 /// second return value represents how many columns in the node.
 static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNode & node)
@@ -84,7 +43,7 @@ static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNod
     return result;
 }
 
-std::pair<String, Field> ConditionSelectivityEstimator::extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const
+static std::pair<String, Field> extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name)
 {
     if (!node.isFunction())
         return {};
@@ -126,24 +85,16 @@ std::pair<String, Field> ConditionSelectivityEstimator::extractBinaryOp(const RP
 Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node) const
 {
     auto result = tryToExtractSingleColumn(node);
+    auto total_rows = stats.getTotalRowCount();
+
     if (result.second != 1)
         return default_unknown_cond_factor * total_rows;
 
-    String col = result.first;
-    auto it = column_estimators.find(col);
-
-    /// If there the estimator of the column is not found or there are no data at all,
-    /// we use dummy estimation.
-    bool dummy = false;
-    ColumnSelectivityEstimator estimator;
-    if (it != column_estimators.end())
-        estimator = it->second;
-    else
-        dummy = true;
-
+    const String & col = result.first;
     auto [op, val] = extractBinaryOp(node, col);
 
-    if (dummy)
+    /// No statistics for column col
+    if (const auto column_stat = stats.getColumnStat(col); column_stat == nullptr)
     {
         if (op == "equals")
             return default_cond_equal_factor * total_rows;
@@ -152,21 +103,18 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         else
             return default_unknown_cond_factor * total_rows;
     }
-
-    if (op == "equals")
-        return estimator.estimateEqual(val, total_rows);
-    else if (op == "less" || op == "lessOrEquals")
-        return estimator.estimateLess(val, total_rows);
-    else if (op == "greater" || op == "greaterOrEquals")
-        return estimator.estimateGreater(val, total_rows);
     else
-        return default_unknown_cond_factor * total_rows;
-}
+    {
+        if (op == "equals")
+            return column_stat->estimateEqual(val);
+        else if (op == "less" || op == "lessOrEquals")
+            return column_stat->estimateLess(val);
+        else if (op == "greater" || op == "greaterOrEquals")
+            return column_stat->estimateGreater(val);
+        else
+            return default_unknown_cond_factor * total_rows;
+    }
 
-void ConditionSelectivityEstimator::merge(String part_name, ColumnStatisticsPtr column_stat)
-{
-    if (column_stat != nullptr)
-        column_estimators[column_stat->columnName()].merge(part_name, column_stat);
 }
 
 }

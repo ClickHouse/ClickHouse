@@ -63,6 +63,14 @@ void StatisticsCountMinSketch::update(const ColumnPtr & column)
     }
 }
 
+void StatisticsCountMinSketch::merge(const SingleStatisticsPtr & other)
+{
+    if (const auto * other_stat = dynamic_cast<const StatisticsCountMinSketch *>(other.get()))
+        sketch.merge(other_stat->sketch);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to merge statistics of type {} to CountMin statistics", toString(other->getTypeName()));
+}
+
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
     Sketch::vector_bytes bytes = sketch.serialize();
