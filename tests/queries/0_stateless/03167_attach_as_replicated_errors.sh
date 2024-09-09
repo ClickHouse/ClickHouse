@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Creation of a database with Ordinary engine emits a warning.
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="error"
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 ORDINARY_DB="ordinary_$CLICKHOUSE_DATABASE"
 ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -n -q "
