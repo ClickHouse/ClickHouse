@@ -24,7 +24,46 @@
 #include <Common/StackTrace.h>
 #include <base/scope_guard.h>
 
-class JobWithPriority;
+class JobWithPriority
+{
+public:
+    using Job = std::function<void()>;
+
+    Job job;
+    Priority priority;
+    CurrentMetrics::Increment metric_increment;
+    DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
+
+    /// Call stacks of all jobs' schedulings leading to this one
+    std::vector<StackTrace::FramePointers> frame_pointers;
+    bool enable_job_stack_trace = false;
+    Stopwatch job_create_time;
+
+    JobWithPriority(
+        Job job_, Priority priority_, CurrentMetrics::Metric metric,
+        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
+        bool capture_frame_pointers)
+        : job(job_), priority(priority_), metric_increment(metric),
+        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
+    {
+        if (!capture_frame_pointers)
+            return;
+        /// Save all previous jobs call stacks and append with current
+        frame_pointers = DB::Exception::getThreadFramePointers();
+        frame_pointers.push_back(StackTrace().getFramePointers());
+    }
+
+    bool operator<(const JobWithPriority & rhs) const
+    {
+        return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
+    }
+
+    UInt64 elapsedMicroseconds() const
+    {
+        return job_create_time.elapsedMicroseconds();
+    }
+
+};
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -42,6 +81,36 @@ class ThreadPoolImpl
 public:
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
+
+
+    // Subclass that encapsulates the thread and has the ability to remove itself from the pool.
+    class ThreadFromThreadPool
+    {
+    public:
+        // Constructor to initialize but not start the thread
+        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool_, bool defer_thread_starting = false);
+
+        // Starts the internal thread, and stores the new job - it will be pushed to the queue
+        // by the thread itself once it starts and takes the lock for the first time.
+        void startThread(JobWithPriority new_job);
+
+        // Destructor to join the thread if needed
+        ~ThreadFromThreadPool();
+
+    private:
+        std::mutex mutex;
+        ThreadPoolImpl& parent_pool;
+        std::optional<Thread> thread;
+        std::optional<JobWithPriority> new_job;
+
+        // remove itself from the parent pool
+        void removeSelfFromPoolNoPoolLock();
+
+        // Starts the internal thread
+        void startThreadNoLock();
+
+        void worker();
+    };
 
     /// Maximum number of threads is based on the number of physical cores.
     ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_);
@@ -132,14 +201,12 @@ private:
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
-    std::list<Thread> threads;
+    std::list<ThreadFromThreadPool> threads;
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
-
-    void worker(typename std::list<Thread>::iterator thread_it);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
     void startNewThreadsNoLock();
