@@ -77,7 +77,6 @@ private:
     std::map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::map<Int32, NamesAndTypesList> clickhouse_table_schemas_by_ids;
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
-    ActionsDag * current_actions_dag;
 
     NamesAndTypeList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
@@ -86,23 +85,10 @@ private:
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
         [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema);
 
-    // DataTypePtr getStructType(const Poco::JSON::Object::Ptr & node);
-    // DataTypePtr getListType(const Poco::JSON::Object::Ptr & node);
-    // DataTypePtr getMapType(const Poco::JSON::Object::Ptr & node);
-    // DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & node);
-    // DataTypePtr getSimpleType(const String & type);
-    // DataTypePtr getElementType(const Poco::JSON::Object::Ptr & node);
-    // DataTypePtr getKeyType(const)
-
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
     std::pair<const Node *, const Node *>
     getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
-
-    // NodeRawConstPtrs getRemappingForFields(
-    //     const Poco::JSON::Array::Ptr & old_fields,
-    //     const Poco::JSON::Array::Ptr & new_fields,
-    //     const NodeRawConstPtrs & input_action_dag_nodes);
 
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type_field);
 };
@@ -160,8 +146,7 @@ private:
     mutable DataFileInfos data_file_infos;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
-    mutable std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids;
-    mutable std::map<Int32, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+    mutable IcebergSchemaProcessor schema_processor{};
     LoggerPtr log;
 };
 
