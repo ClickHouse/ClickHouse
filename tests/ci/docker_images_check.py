@@ -399,9 +399,9 @@ def main():
     else:
         try:
             pr_info.fetch_changed_files()
-        except TypeError:
-            # If the event does not contain diff, nothing will be built
-            pass
+        except Exception as ex:
+            print(f"WARNING: Failed to fetch changed files [{ex}] - build all")
+            pr_info.changed_files = set(images_dict.keys())
 
     changed_images = get_changed_docker_images(pr_info, images_dict)
     if changed_images:
