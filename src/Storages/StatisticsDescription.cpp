@@ -35,23 +35,23 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
     if (this == &other)
         return *this;
 
-    type = std::exchange(other.type, StatisticsType{});
+    type = std::exchange(other.type, SingleStatisticsType{});
     ast = other.ast ? other.ast->clone() : nullptr;
     other.ast.reset();
 
     return *this;
 }
 
-static StatisticsType stringToStatisticsType(String type)
+static SingleStatisticsType stringToStatisticsType(String type)
 {
     if (type == "tdigest")
-        return StatisticsType::TDigest;
+        return SingleStatisticsType::TDigest;
     if (type == "uniq")
-        return StatisticsType::Uniq;
+        return SingleStatisticsType::Uniq;
     if (type == "count_min")
-        return StatisticsType::CountMinSketch;
+        return SingleStatisticsType::CountMinSketch;
     if (type == "minmax")
-        return StatisticsType::MinMax;
+        return SingleStatisticsType::MinMax;
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'count_min', 'minmax', 'tdigest' and 'uniq'.", type);
 }
 
@@ -59,20 +59,20 @@ String SingleStatisticsDescription::getTypeName() const
 {
     switch (type)
     {
-        case StatisticsType::TDigest:
+        case SingleStatisticsType::TDigest:
             return "TDigest";
-        case StatisticsType::Uniq:
+        case SingleStatisticsType::Uniq:
             return "Uniq";
-        case StatisticsType::CountMinSketch:
+        case SingleStatisticsType::CountMinSketch:
             return "count_min";
-        case StatisticsType::MinMax:
+        case SingleStatisticsType::MinMax:
             return "minmax";
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'count_min', 'minmax', 'tdigest' and 'uniq'.", type);
     }
 }
 
-SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_)
+SingleStatisticsDescription::SingleStatisticsDescription(SingleStatisticsType type_, ASTPtr ast_)
     : type(type_), ast(ast_)
 {}
 

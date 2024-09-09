@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class StatisticsTDigest : public IStatistics
+class StatisticsTDigest : public ISingleStatistics
 {
 public:
     explicit StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
@@ -25,6 +25,6 @@ private:
 };
 
 void tdigestStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+SingleStatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

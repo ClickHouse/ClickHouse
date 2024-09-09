@@ -2,8 +2,6 @@
 
 #include <Core/Block.h>
 #include <Core/Field.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
 
 #include <boost/core/noncopyable.hpp>
@@ -21,15 +19,15 @@ struct StatisticsUtils
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
 };
 
-/// Statistics describe properties of the values in the column,
+/// SingleTypeStatistics describe properties of the values in the column,
 /// e.g. how many unique values exist,
 /// what are the N most frequent values,
 /// how frequent is a value V, etc.
-class IStatistics
+class ISingleStatistics
 {
 public:
-    explicit IStatistics(const SingleStatisticsDescription & stat_);
-    virtual ~IStatistics() = default;
+    explicit ISingleStatistics(const SingleStatisticsDescription & stat_);
+    virtual ~ISingleStatistics() = default;
 
     virtual void update(const ColumnPtr & column) = 0;
 
@@ -49,7 +47,7 @@ protected:
     SingleStatisticsDescription stat;
 };
 
-using StatisticsPtr = std::shared_ptr<IStatistics>;
+using SingleStatisticsPtr = std::shared_ptr<ISingleStatistics>;
 
 class ColumnStatistics
 {
@@ -74,7 +72,7 @@ private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
     String column_name;
-    std::map<StatisticsType, StatisticsPtr> stats;
+    std::map<SingleStatisticsType, SingleStatisticsPtr> stats;
     UInt64 rows = 0; /// the number of rows in the column
 };
 
@@ -91,20 +89,20 @@ public:
     void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
-    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
+    using Creator = std::function<SingleStatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 
-    void registerValidator(StatisticsType type, Validator validator);
-    void registerCreator(StatisticsType type, Creator creator);
+    void registerValidator(SingleStatisticsType type, Validator validator);
+    void registerCreator(SingleStatisticsType type, Creator creator);
 
 protected:
     MergeTreeStatisticsFactory();
 
 private:
-    using Validators = std::unordered_map<StatisticsType, Validator>;
-    using Creators = std::unordered_map<StatisticsType, Creator>;
+    using Validators = std::unordered_map<SingleStatisticsType, Validator>;
+    using Creators = std::unordered_map<SingleStatisticsType, Creator>;
     Validators validators;
     Creators creators;
 };

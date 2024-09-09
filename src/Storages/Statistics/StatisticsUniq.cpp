@@ -12,7 +12,7 @@ namespace ErrorCodes
 }
 
 StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
-    : IStatistics(description)
+    : ISingleStatistics(description)
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
@@ -60,7 +60,7 @@ void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+SingleStatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
     return std::make_shared<StatisticsUniq>(description, data_type);
 }

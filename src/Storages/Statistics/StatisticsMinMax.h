@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class StatisticsMinMax : public IStatistics
+class StatisticsMinMax : public ISingleStatistics
 {
 public:
     StatisticsMinMax(const SingleStatisticsDescription & statistics_description, const DataTypePtr & data_type_);
@@ -28,6 +28,6 @@ private:
 };
 
 void minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+SingleStatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

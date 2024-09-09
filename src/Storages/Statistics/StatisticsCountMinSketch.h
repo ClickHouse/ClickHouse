@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class StatisticsCountMinSketch : public IStatistics
+class StatisticsCountMinSketch : public ISingleStatistics
 {
 public:
     StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
@@ -32,7 +32,7 @@ private:
 
 
 void countMinSketchStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+SingleStatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }
 

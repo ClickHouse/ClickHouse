@@ -10,7 +10,7 @@ extern const int ILLEGAL_STATISTICS;
 }
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
-    : IStatistics(description)
+    : ISingleStatistics(description)
     , data_type(data_type_)
 {
 }
@@ -61,7 +61,7 @@ void tdigestStatisticsValidator(const SingleStatisticsDescription & /*descriptio
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+SingleStatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
     return std::make_shared<StatisticsTDigest>(description, data_type);
 }

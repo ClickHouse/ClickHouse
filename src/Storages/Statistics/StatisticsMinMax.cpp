@@ -16,7 +16,7 @@ extern const int ILLEGAL_STATISTICS;
 }
 
 StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
-    : IStatistics(description)
+    : ISingleStatistics(description)
     , data_type(data_type_)
 {
 }
@@ -78,7 +78,7 @@ void minMaxStatisticsValidator(const SingleStatisticsDescription & /*description
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'minmax' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+SingleStatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
     return std::make_shared<StatisticsMinMax>(description, data_type);
 }

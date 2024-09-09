@@ -25,7 +25,7 @@ static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
 
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
-    : IStatistics(description)
+    : ISingleStatistics(description)
     , sketch(num_hashes, num_buckets)
     , data_type(data_type_)
 {
@@ -91,7 +91,7 @@ void countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*des
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
 
-StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+SingleStatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
     return std::make_shared<StatisticsCountMinSketch>(description, data_type);
 }

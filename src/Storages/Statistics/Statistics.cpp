@@ -54,7 +54,7 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     return {};
 }
 
-IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
+ISingleStatistics::ISingleStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
 }
@@ -71,17 +71,17 @@ void ColumnStatistics::update(const ColumnPtr & column)
         stat.second->update(column);
 }
 
-UInt64 IStatistics::estimateCardinality() const
+UInt64 ISingleStatistics::estimateCardinality() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateEqual(const Field & /*val*/) const
+Float64 ISingleStatistics::estimateEqual(const Field & /*val*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateLess(const Field & /*val*/) const
+Float64 ISingleStatistics::estimateLess(const Field & /*val*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
@@ -100,10 +100,10 @@ Float64 IStatistics::estimateLess(const Field & /*val*/) const
 
 Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
-    if (stats.contains(StatisticsType::TDigest))
-        return stats.at(StatisticsType::TDigest)->estimateLess(val);
-    if (stats.contains(StatisticsType::MinMax))
-        return stats.at(StatisticsType::MinMax)->estimateLess(val);
+    if (stats.contains(SingleStatisticsType::TDigest))
+        return stats.at(SingleStatisticsType::TDigest)->estimateLess(val);
+    if (stats.contains(SingleStatisticsType::MinMax))
+        return stats.at(SingleStatisticsType::MinMax)->estimateLess(val);
     return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
@@ -114,19 +114,19 @@ Float64 ColumnStatistics::estimateGreater(const Field & val) const
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
 {
-    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(SingleStatisticsType::Uniq) && stats.contains(SingleStatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
-            return stats.at(StatisticsType::TDigest)->estimateEqual(val);
+        if (stats.at(SingleStatisticsType::Uniq)->estimateCardinality() < 2048)
+            return stats.at(SingleStatisticsType::TDigest)->estimateEqual(val);
     }
 #if USE_DATASKETCHES
-    if (stats.contains(StatisticsType::CountMinSketch))
-        return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
+    if (stats.contains(SingleStatisticsType::CountMinSketch))
+        return stats.at(SingleStatisticsType::CountMinSketch)->estimateEqual(val);
 #endif
-    if (stats.contains(StatisticsType::Uniq))
+    if (stats.contains(SingleStatisticsType::Uniq))
     {
-        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+        UInt64 cardinality = stats.at(SingleStatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
         return 1.0 / cardinality * rows; /// assume uniform distribution
@@ -195,13 +195,13 @@ UInt64 ColumnStatistics::rowCount() const
     return rows;
 }
 
-void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)
+void MergeTreeStatisticsFactory::registerCreator(SingleStatisticsType stats_type, Creator creator)
 {
     if (!creators.emplace(stats_type, std::move(creator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics creator type {} is not unique", stats_type);
 }
 
-void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Validator validator)
+void MergeTreeStatisticsFactory::registerValidator(SingleStatisticsType stats_type, Validator validator)
 {
     if (!validators.emplace(stats_type, std::move(validator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
@@ -209,18 +209,18 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
-    registerValidator(StatisticsType::MinMax, minMaxStatisticsValidator);
-    registerCreator(StatisticsType::MinMax, minMaxStatisticsCreator);
+    registerValidator(SingleStatisticsType::MinMax, minMaxStatisticsValidator);
+    registerCreator(SingleStatisticsType::MinMax, minMaxStatisticsCreator);
 
-    registerValidator(StatisticsType::TDigest, tdigestStatisticsValidator);
-    registerCreator(StatisticsType::TDigest, tdigestStatisticsCreator);
+    registerValidator(SingleStatisticsType::TDigest, tdigestStatisticsValidator);
+    registerCreator(SingleStatisticsType::TDigest, tdigestStatisticsCreator);
 
-    registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
-    registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
+    registerValidator(SingleStatisticsType::Uniq, uniqStatisticsValidator);
+    registerCreator(SingleStatisticsType::Uniq, uniqStatisticsCreator);
 
 #if USE_DATASKETCHES
-    registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
-    registerCreator(StatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
+    registerValidator(SingleStatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
+    registerCreator(SingleStatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
 #endif
 }
 

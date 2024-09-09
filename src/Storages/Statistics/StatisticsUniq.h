@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class StatisticsUniq : public IStatistics
+class StatisticsUniq : public ISingleStatistics
 {
 public:
     StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
@@ -28,6 +28,6 @@ private:
 };
 
 void uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+SingleStatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }
