@@ -1456,45 +1456,6 @@ private:
     const time_t time_of_merge{0};
 };
 
-
-class MaterializingStep : public ITransformingStep
-{
-public:
-    explicit MaterializingStep(
-        const DataStream & input_stream_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-    {}
-
-    String getName() const override { return "Materializing"; }
-
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        pipeline.addTransform(std::make_shared<MaterializingTransform>(input_streams.front().header));
-    }
-
-    void updateOutputStream() override
-    {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-    }
-
-private:
-    static Traits getTraits()
-    {
-        return ITransformingStep::Traits
-        {
-            {
-                .returns_single_stream = true,
-                .preserves_number_of_streams = true,
-                .preserves_sorting = true,
-            },
-            {
-                .preserves_number_of_rows = true,
-            }
-        };
-    }
-};
-
-
 class TTLStep : public ITransformingStep
 {
 public:
@@ -1709,12 +1670,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (!global_ctx->merging_skip_indexes.empty())
     {
         auto indices_expression_dag = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
+        indices_expression_dag.addMaterializingOutputActions(); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentDataStream(),
             std::move(indices_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_indices_expression_step));
-        /// TODO: what is the purpose of MaterializingTransform in the original code?
-        merge_parts_query_plan.addStep(std::make_unique<MaterializingStep>(merge_parts_query_plan.getCurrentDataStream()));
     }
 
     if (!subqueries.empty())
