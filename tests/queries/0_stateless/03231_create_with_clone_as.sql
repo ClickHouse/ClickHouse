@@ -7,8 +7,12 @@ DROP TABLE IF EXISTS foo_file;
 DROP TABLE IF EXISTS clone_as_foo_file;
 DROP TABLE IF EXISTS foo_merge_tree;
 DROP TABLE IF EXISTS clone_as_foo_merge_tree;
+DROP TABLE IF EXISTS clone_as_foo_merge_tree_x;
+DROP TABLE IF EXISTS clone_as_foo_merge_tree_y;
 DROP TABLE IF EXISTS foo_replacing_merge_tree;
 DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree;
+DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree_x;
+DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree_y;
 DROP TABLE IF EXISTS foo_replicated_merge_tree;
 DROP TABLE IF EXISTS clone_as_foo_replicated_merge_tree;
 
@@ -39,6 +43,10 @@ SELECT * FROM foo_merge_tree;
 SELECT 'from clone_as_foo_merge_tree';
 SELECT * FROM clone_as_foo_merge_tree;
 
+-- Specify ENGINE
+CREATE TABLE clone_as_foo_merge_tree_p_x CLONE AS foo_merge_tree ENGINE=MergeTree PRIMARY KEY x; -- { serverError INCORRECT_QUERY }
+CREATE TABLE clone_as_foo_merge_tree_p_y CLONE AS foo_merge_tree ENGINE=MergeTree PRIMARY KEY y; -- { serverError INCORRECT_QUERY }
+
 -- CLONE AS with a table of ReplacingMergeTree engine
 CREATE TABLE foo_replacing_merge_tree (x Int8, y String) ENGINE=ReplacingMergeTree PRIMARY KEY x;
 SHOW CREATE TABLE foo_replacing_merge_tree;
@@ -51,6 +59,10 @@ SELECT 'from foo_replacing_merge_tree';
 SELECT * FROM foo_replacing_merge_tree;
 SELECT 'from clone_as_foo_replacing_merge_tree';
 SELECT * FROM clone_as_foo_replacing_merge_tree;
+
+-- Specify ENGINE
+CREATE TABLE clone_as_foo_replacing_merge_tree_x CLONE AS foo_replacing_merge_tree ENGINE=ReplacingMergeTree PRIMARY KEY x; -- { serverError INCORRECT_QUERY }
+CREATE TABLE clone_as_foo_replacing_merge_tree_y CLONE AS foo_replacing_merge_tree ENGINE=ReplacingMergeTree PRIMARY KEY y; -- { serverError INCORRECT_QUERY }
 
 -- CLONE AS with a table of ReplicatedMergeTree engine
 CREATE TABLE foo_replicated_merge_tree (x Int8, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/test_foo_replicated_merge_tree', 'r1') PRIMARY KEY x;
@@ -65,8 +77,12 @@ DROP TABLE IF EXISTS foo_file;
 DROP TABLE IF EXISTS clone_as_foo_file;
 DROP TABLE IF EXISTS foo_merge_tree;
 DROP TABLE IF EXISTS clone_as_foo_merge_tree;
+DROP TABLE IF EXISTS clone_as_foo_merge_tree_x;
+DROP TABLE IF EXISTS clone_as_foo_merge_tree_y;
 DROP TABLE IF EXISTS foo_replacing_merge_tree;
 DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree;
+DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree_x;
+DROP TABLE IF EXISTS clone_as_foo_replacing_merge_tree_y;
 DROP TABLE IF EXISTS foo_replicated_merge_tree;
 DROP TABLE IF EXISTS clone_as_foo_replicated_merge_tree;
 

@@ -1139,6 +1139,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.storage)
     {
+        /// When creating a table with CLONE AS, the structure of the new table must be copied from the source table's structure. So that the data could be cloned later.
+        if (create.is_clone_as)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot specify ENGINE when creating a table with CLONE AS");
+
         /// This table already has a storage definition.
         if (!create.storage->engine)
         {
