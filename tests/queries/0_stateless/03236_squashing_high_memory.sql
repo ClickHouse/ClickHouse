@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- reason: test requires too many rows to read
+
 DROP TABLE IF EXISTS id_values;
 
 DROP TABLE IF EXISTS test_table;
