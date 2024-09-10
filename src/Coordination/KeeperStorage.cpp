@@ -2169,7 +2169,14 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
     {
         Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*this->zk_request);
 
-        if (!storage.uncommitted_state.getNode(request.path))
+        StringRef path = request.path;
+        String encoded_path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(path.toView());
+            path = encoded_path;
+        }
+        if (!storage.uncommitted_state.getNode(path))
             return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
         return {};
@@ -2191,8 +2198,15 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
             }
         }
 
+        StringRef path = request.path;
+        String encoded_path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(path.toView());
+            path = encoded_path;
+        }
         auto & container = storage.container;
-        auto node_it = container.find(request.path);
+        auto node_it = container.find(path);
         if (node_it == container.end())
         {
             if constexpr (local)
@@ -2771,7 +2785,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
 
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
             {
-                auto responses = processWatchesImpl(delta.path, watches, list_watches, Coordination::Event::DELETED);
+                auto responses = processWatchesImpl(getDecodedKey<use_rocksdb>(delta.path), watches, list_watches, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
             }
         }
