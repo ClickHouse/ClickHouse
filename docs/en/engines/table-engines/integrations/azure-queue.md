@@ -27,7 +27,7 @@ CREATE TABLE test (name String, value UInt32)
 **Example**
 
 ```sql
-CREATE TABLE s3queue_engine_table (name String, value UInt32)
+CREATE TABLE azure_queue_engine_table (name String, value UInt32)
 ENGINE=AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/data/')
 SETTINGS
     mode = 'unordered'
