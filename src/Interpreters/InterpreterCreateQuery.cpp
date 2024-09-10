@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -811,10 +812,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-        if (create.is_clone_as && !endsWith(as_storage->getName(), "MergeTree"))
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
-        }
+
 
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
@@ -836,6 +834,43 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        if (create.is_clone_as)
+        {
+            if (!endsWith(as_storage->getName(), "MergeTree"))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS from tables of the MergeTree family");
+
+            if (create.storage)
+            {
+                if (!endsWith(create.storage->engine->name, "MergeTree"))
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
+
+                /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
+                auto query_to_string = [](const IAST * ast) { return ast ? queryToString(*ast) : ""; };
+
+                const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
+                const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());
+                const String as_storage_partition_key_str = query_to_string(as_storage_metadata->getPartitionKeyAST().get());
+
+                const String storage_sorting_key_str = query_to_string(create.storage->order_by);
+                const String storage_primary_key_str = query_to_string(create.storage->primary_key);
+                const String storage_partition_key_str = query_to_string(create.storage->partition_by);
+
+                if (as_storage_sorting_key_str != storage_sorting_key_str)
+                {
+                    /// It is possible that the storage only has primary key and an empty sorting key, and as_storage has both primary key and sorting key with the same value.
+                    if (as_storage_sorting_key_str != as_storage_primary_key_str || as_storage_sorting_key_str != storage_primary_key_str)
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
+                    }
+                }
+                if (as_storage_partition_key_str != storage_partition_key_str)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
+
+                if (as_storage_primary_key_str != storage_primary_key_str)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+            }
+        }
     }
     else if (create.select)
     {
@@ -1139,10 +1174,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.storage)
     {
-        /// When creating a table with CLONE AS, the structure of the new table must be copied from the source table's structure. So that the data could be cloned later.
-        if (create.is_clone_as)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot specify ENGINE when creating a table with CLONE AS");
-
         /// This table already has a storage definition.
         if (!create.storage->engine)
         {
@@ -1515,11 +1546,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "CREATE CLONE AS is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
-
-        if (is_storage_replicated)
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE CLONE AS is not supported with Replicated storages. Consider using separate CREATE and INSERT queries.");
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
