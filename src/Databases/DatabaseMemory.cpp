@@ -204,7 +204,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
         }
 
         chassert(storage);
-        storage->adjustCreateQueryForBackup(create_table_query, local_context);
+        storage->adjustCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

@@ -1783,7 +1783,7 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
 
 
 std::vector<std::pair<ASTPtr, StoragePtr>>
-DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
+DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const
 {
     waitDatabaseStarted();
 
@@ -1809,7 +1809,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
         {
             storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
             if (storage)
-                storage->adjustCreateQueryForBackup(create_table_query, local_context);
+                storage->adjustCreateQueryForBackup(create_table_query);
         }
 
         /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
