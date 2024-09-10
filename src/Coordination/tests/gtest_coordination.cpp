@@ -3792,6 +3792,70 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
     ASSERT_EQ(storage.list_watches.size(), 0);
 }
 
+TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int zxid = 0;
+
+    {
+        int new_zxid = ++zxid;
+        String user_auth_data = "test_user:test_password";
+
+        const auto auth_request = std::make_shared<ZooKeeperAuthRequest>();
+        auth_request->scheme = "digest";
+        auth_request->data = user_auth_data;
+
+        storage.preprocessRequest(auth_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(auth_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to add auth to session";
+    }
+
+    const auto create = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = path;
+        create_request->acls = {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
+
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
+    };
+
+    /// Add nodes with only Create ACL
+    create("/A");
+    create("/A/B");
+    create("/A/C");
+    create("/A/B/D");
+
+    {
+        int new_zxid = ++zxid;
+
+        auto remove_request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+        remove_request->path = "/A";
+        remove_request->remove_nodes_limit = 4;
+
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(remove_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+    }
+}
+
 /// INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
 ///     CoordinationTest,
 ///     ::testing::ValuesIn(std::initializer_list<CompressionParam>{CompressionParam{true, ".zstd"}, CompressionParam{false, ""}}));
