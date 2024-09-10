@@ -913,11 +913,15 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             table_info.database = DatabaseCatalog::instance().getDatabase(table_name.database);
         DatabasePtr database = table_info.database;
 
+        auto query_context = Context::createCopy(context);
+        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
+        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
             create_table_query,
-            context,
+            query_context,
             restore_coordination,
             std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
     }
