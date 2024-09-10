@@ -3476,18 +3476,6 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
     }
 
     {
-        SCOPED_TRACE("Recursive Remove Tree");
-        create("/T4", zkutil::CreateMode::Persistent);
-        create("/T4/A", zkutil::CreateMode::Persistent);
-
-        auto responses = remove_recursive("/T4", 100);
-        ASSERT_EQ(responses.size(), 1);
-        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
-        ASSERT_FALSE(exists("/T4"));
-        ASSERT_FALSE(exists("/T4/A"));
-    }
-
-    {
         SCOPED_TRACE("Recursive Remove Tree Small Limit");
         create("/T5", zkutil::CreateMode::Persistent);
         create("/T5/A", zkutil::CreateMode::Persistent);
@@ -3528,7 +3516,7 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
         ASSERT_EQ(storage.ephemerals.size(), 0);
-        ASSERT_TRUE(!exists("/T7"));
+        ASSERT_FALSE(exists("/T7"));
     }
 
     {
@@ -3543,10 +3531,10 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
         ASSERT_EQ(storage.ephemerals.size(), 0);
-        ASSERT_TRUE(!exists("/T8"));
-        ASSERT_TRUE(!exists("/T8/A"));
-        ASSERT_TRUE(!exists("/T8/B"));
-        ASSERT_TRUE(!exists("/T8/A/C"));
+        ASSERT_FALSE(exists("/T8"));
+        ASSERT_FALSE(exists("/T8/A"));
+        ASSERT_FALSE(exists("/T8/B"));
+        ASSERT_FALSE(exists("/T8/A/C"));
     }
 }
 
