@@ -152,6 +152,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+CKibana
 Clangd
 ClickBench
 ClickCat
@@ -248,6 +249,7 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
+ElasticSearch
 ETag
 Ecto
 EdgeAngle
@@ -473,6 +475,7 @@ KeeperMap
 KeeperOutstandingRequests
 Kerberos
 Khanna
+Kibana
 KittenHouse
 Klickhouse
 Kolmogorov
@@ -1370,6 +1373,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckibana
 ckman
 clangd
 cli
@@ -2587,6 +2591,7 @@ sqlinsert
 sqlite
 sqrt
 src
+dest
 srcReplicas
 sshkey
 stackoverflow
