@@ -108,8 +108,12 @@ private:
     }
 };
 
-ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, std::shared_ptr<ObjectStorageQueueSettings> settings_)
+ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
+    const fs::path & zookeeper_path_,
+    const ObjectStorageQueueTableMetadata & table_metadata_,
+    std::shared_ptr<ObjectStorageQueueSettings> settings_)
     : settings(settings_)
+    , table_metadata(table_metadata_)
     , zookeeper_path(zookeeper_path_)
     , buckets_num(getBucketsNum(*settings_))
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
@@ -214,13 +218,8 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-void ObjectStorageQueueMetadata::initialize(
-    const ConfigurationPtr & configuration,
-    const StorageInMemoryMetadata & storage_metadata,
-    bool processing_threads_num_from_cpu_cores)
+void ObjectStorageQueueMetadata::syncWithKeeper()
 {
-    auto metadata_from_table = ObjectStorageQueueTableMetadata(*configuration, *settings, storage_metadata, processing_threads_num_from_cpu_cores);
-    const auto & columns_from_table = storage_metadata.getColumns();
     const auto table_metadata_path = zookeeper_path / "metadata";
     const auto metadata_paths = settings->mode == ObjectStorageQueueMode::ORDERED
         ? ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num)
@@ -234,24 +233,14 @@ void ObjectStorageQueueMetadata::initialize(
         if (zookeeper->exists(table_metadata_path))
         {
             const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
-            const auto columns_from_zk = ColumnsDescription::parse(metadata_from_zk.columns);
-
-            metadata_from_table.adjustFromKeeper(metadata_from_zk, *settings);
-            metadata_from_table.checkEquals(metadata_from_zk);
-            if (columns_from_zk != columns_from_table)
-            {
-                throw Exception(
-                    ErrorCodes::INCOMPATIBLE_COLUMNS,
-                    "Table columns structure in ZooKeeper is different from local table structure. "
-                    "Local columns:\n{}\nZookeeper columns:\n{}",
-                    columns_from_table.toString(), columns_from_zk.toString());
-            }
+            table_metadata.adjustFromKeeper(metadata_from_zk, *settings);
+            table_metadata.checkEquals(metadata_from_zk);
             return;
         }
 
         Coordination::Requests requests;
         requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-        requests.emplace_back(zkutil::makeCreateRequest(table_metadata_path, metadata_from_table.toString(), zkutil::CreateMode::Persistent));
+        requests.emplace_back(zkutil::makeCreateRequest(table_metadata_path, table_metadata.toString(), zkutil::CreateMode::Persistent));
 
         for (const auto & path : metadata_paths)
         {

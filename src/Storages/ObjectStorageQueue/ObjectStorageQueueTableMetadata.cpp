@@ -31,12 +31,12 @@ namespace
 
 
 ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
-    const StorageObjectStorage::Configuration & configuration,
     const ObjectStorageQueueSettings & engine_settings,
-    const StorageInMemoryMetadata & storage_metadata,
+    const ColumnsDescription & columns_,
+    const std::string & format_,
     bool processing_threads_num_from_cpu_cores_)
-    : format_name(configuration.format)
-    , columns(storage_metadata.getColumns().toString())
+    : format_name(format_)
+    , columns(columns_.toString())
     , after_processing(engine_settings.after_processing.toString())
     , mode(engine_settings.mode.toString())
     , tracked_files_limit(engine_settings.tracked_files_limit)
@@ -187,6 +187,14 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 ObjectStorageQueueMetadata::getBucketsNum(from_zk), ObjectStorageQueueMetadata::getBucketsNum(*this));
         }
     }
+
+    if (columns != from_zk.columns)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in columns. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.columns,
+            columns);
 }
 
 }

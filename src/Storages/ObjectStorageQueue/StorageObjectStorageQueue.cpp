@@ -182,13 +182,14 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 
+    ObjectStorageQueueTableMetadata table_metadata(
+        *queue_settings, storage_metadata.getColumns(),
+        configuration_->format, processing_threads_num_from_cpu_cores);
+
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
         zk_path,
-        [&](){
-            auto metadata = std::make_shared<ObjectStorageQueueMetadata>(zk_path, queue_settings);
-            metadata->initialize(configuration_, storage_metadata, processing_threads_num_from_cpu_cores);
-            return metadata;
-        });
+        std::make_shared<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), queue_settings),
+        *queue_settings);
 
     if (processing_threads_num_from_cpu_cores)
     {

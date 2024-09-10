@@ -31,9 +31,9 @@ struct ObjectStorageQueueTableMetadata
     bool processing_threads_num_from_cpu_cores;
 
     ObjectStorageQueueTableMetadata(
-        const StorageObjectStorage::Configuration & configuration,
         const ObjectStorageQueueSettings & engine_settings,
-        const StorageInMemoryMetadata & storage_metadata,
+        const ColumnsDescription & columns_,
+        const std::string & format_,
         bool processing_threads_num_from_cpu_cores_);
 
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);

@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace fs = std::filesystem;
@@ -52,10 +53,15 @@ public:
     using Bucket = size_t;
     using Processor = std::string;
 
-    ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, std::shared_ptr<ObjectStorageQueueSettings> settings_);
+    ObjectStorageQueueMetadata(
+        const fs::path & zookeeper_path_,
+        const ObjectStorageQueueTableMetadata & table_metadata_,
+        std::shared_ptr<ObjectStorageQueueSettings> settings_);
+
     ~ObjectStorageQueueMetadata();
 
-    void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata, bool processing_threads_num_from_cpu_cores);
+    void syncWithKeeper();
+
     void shutdown();
 
     FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
@@ -71,11 +77,17 @@ public:
     static size_t getBucketsNum(const ObjectStorageQueueSettings & settings);
     static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & settings);
 
+    void checkTableMetadataEquals(const ObjectStorageQueueMetadata & other);
+
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
+    ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
     std::shared_ptr<ObjectStorageQueueSettings> settings;
+    ObjectStorageQueueTableMetadata table_metadata;
     const fs::path zookeeper_path;
     const size_t buckets_num;
 
@@ -87,5 +99,7 @@ private:
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
 };
+
+using ObjectStorageQueueMetadataPtr = std::shared_ptr<ObjectStorageQueueMetadata>;
 
 }
