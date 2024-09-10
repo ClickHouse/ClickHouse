@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -77,7 +78,7 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Reads All Data", always_read_till_end);
 }
 
-void LimitStep::serialize(WriteBuffer & out) const
+void LimitStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (always_read_till_end)
@@ -85,20 +86,19 @@ void LimitStep::serialize(WriteBuffer & out) const
     if (with_ties)
         flags |= 2;
 
-    writeIntBinary(flags, out);
+    writeIntBinary(flags, ctx.out);
 
-    writeVarUInt(limit, out);
-    writeVarUInt(offset, out);
+    writeVarUInt(limit, ctx.out);
+    writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, out);
+        serializeSortDescription(description, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &)
+std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
-    readIntBinary(flags, in);
+    readIntBinary(flags, ctx.in);
 
     bool always_read_till_end = bool(flags & 1);
     bool with_ties = bool(flags & 2);
@@ -106,14 +106,14 @@ std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(
     UInt64 limit;
     UInt64 offset;
 
-    readVarUInt(limit, in);
-    readVarUInt(offset, in);
+    readVarUInt(limit, ctx.in);
+    readVarUInt(offset, ctx.in);
 
     SortDescription description;
     if (with_ties)
-        deserializeSortDescription(description, in);
+        deserializeSortDescription(description, ctx.in);
 
-    return std::make_unique<LimitStep>(input_streams_.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
+    return std::make_unique<LimitStep>(ctx.input_streams.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }
 
 void registerLimitStep(QueryPlanStepRegistry & registry)

@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
@@ -499,7 +500,7 @@ void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) c
     sort_settings.updatePlanSettings(settings);
 }
 
-void SortingStep::serialize(WriteBuffer & out) const
+void SortingStep::serialize(Serialization & ctx) const
 {
     if (type != Type::Full)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of SortingStep is implemented only for Full sorting");
@@ -508,34 +509,33 @@ void SortingStep::serialize(WriteBuffer & out) const
 
     /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
 
-    serializeSortDescription(result_description, out);
+    serializeSortDescription(result_description, ctx.out);
 
     /// Later
     if (!partition_by_description.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
 
-    writeVarUInt(partition_by_description.size(), out);
+    writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> SortingStep::deserialize(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings)
+std::unique_ptr<IQueryPlanStep> SortingStep::deserialize(Deserialization & ctx)
 {
-    if (input_streams_.size() != 1)
+    if (ctx.input_streams.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "SortingStep must have one input stream");
 
-    SortingStep::Settings sort_settings(settings);
+    SortingStep::Settings sort_settings(ctx.settings);
 
     SortDescription result_description;
-    deserializeSortDescription(result_description, in);
+    deserializeSortDescription(result_description, ctx.in);
 
     UInt64 partition_desc_size;
-    readVarUInt(partition_desc_size, in);
+    readVarUInt(partition_desc_size, ctx.in);
 
     if (partition_desc_size)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
 
     return std::make_unique<SortingStep>(
-        input_streams_.front(), std::move(result_description), 0, std::move(sort_settings), true);
+        ctx.input_streams.front(), std::move(result_description), 0, std::move(sort_settings), true);
 }
 
 void registerSortingStep(QueryPlanStepRegistry & registry)

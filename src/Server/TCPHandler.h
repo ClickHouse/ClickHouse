@@ -42,6 +42,7 @@ namespace DB
 
 class Session;
 struct Settings;
+struct QueryPlanAndSets;
 class ColumnsDescription;
 struct ProfileInfo;
 class TCPServer;
@@ -76,7 +77,7 @@ struct QueryState
     Block block_for_insert;
 
     /// Query text.
-    QueryTextOrPlan query;
+    std::variant<String, std::shared_ptr<QueryPlanAndSets>> query;
     /// Parsed query
     ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.

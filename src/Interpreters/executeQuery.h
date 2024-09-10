@@ -5,7 +5,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryLog.h>
 #include <QueryPipeline/BlockIO.h>
-#include <Client/IServerConnection.h>
 
 #include <memory>
 #include <optional>
@@ -18,6 +17,7 @@ class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
+struct QueryPlanAndSets;
 
 struct QueryResultDetails
 {
@@ -65,7 +65,7 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const QueryTextOrPlan & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    const std::variant<String, std::shared_ptr<QueryPlanAndSets>> & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.

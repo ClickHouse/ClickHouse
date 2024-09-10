@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -13,6 +14,7 @@
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -3218,7 +3220,16 @@ const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
     return it->second;
 }
 
-void ActionsDAG::serialize(WriteBuffer & out) const
+static const ColumnSet * tryGetColumnSet(const ColumnPtr & colunm)
+{
+    const IColumn * maybe_set = colunm.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_set))
+        maybe_set = &column_const->getDataColumn();
+
+    return typeid_cast<const ColumnSet *>(maybe_set);
+}
+
+void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
     size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
@@ -3242,16 +3253,27 @@ void ActionsDAG::serialize(WriteBuffer & out) const
 
         /// Serialize column if it is present
         const bool has_column = node.column != nullptr;
+        const ColumnSet * column_set = nullptr;
         UInt8 column_flags = 0;
         if (has_column)
         {
             column_flags |= 1;
             if (node.is_deterministic_constant)
                 column_flags |= 2;
+
+            column_set = tryGetColumnSet(node.column);
+            if (column_set)
+                column_flags |= 4;
         }
 
         writeIntBinary(column_flags, out);
-        if (has_column)
+        if (column_set)
+        {
+            auto hash = column_set->getData()->getHash();
+            writeBinary(hash, out);
+            registry.sets.emplace(hash, column_set->getData());
+        }
+        else if (has_column)
         {
             const auto * const_column = typeid_cast<const ColumnConst *>(node.column.get());
             if (!const_column)
@@ -3297,7 +3319,7 @@ void ActionsDAG::serialize(WriteBuffer & out) const
         writeVarUInt(node_to_id.at(output), out);
 }
 
-ActionsDAG ActionsDAG::deserialize(ReadBuffer & in)
+ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry)
 {
     size_t nodes_size;
     readVarUInt(nodes_size, in);
@@ -3341,9 +3363,22 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in)
             if ((column_flags & 2) == 0)
                 node.is_deterministic_constant = false;
 
-            Field value;
-            node.result_type->getDefaultSerialization()->deserializeBinary(value, in, FormatSettings{});
-            node.column = node.result_type->createColumnConst(0, value);
+            if (column_flags & 4)
+            {
+                FutureSet::Hash hash;
+                readBinary(hash, in);
+
+                auto column_set = ColumnSet::create(0, nullptr);
+                registry.sets[hash].push_back(column_set.get());
+
+                node.column = std::move(column_set);
+            }
+            else
+            {
+                Field value;
+                node.result_type->getDefaultSerialization()->deserializeBinary(value, in, FormatSettings{});
+                node.column = node.result_type->createColumnConst(0, value);
+            }
         }
 
         if (node.type == ActionType::INPUT)

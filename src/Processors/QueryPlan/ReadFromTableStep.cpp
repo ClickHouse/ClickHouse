@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -35,9 +36,9 @@ static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
     return val;
 }
 
-void ReadFromTableStep::serialize(WriteBuffer & out) const
+void ReadFromTableStep::serialize(Serialization & ctx) const
 {
-    writeStringBinary(table_name, out);
+    writeStringBinary(table_name, ctx.out);
 
     UInt8 flags = 0;
     if (table_expression_modifiers.hasFinal())
@@ -47,21 +48,21 @@ void ReadFromTableStep::serialize(WriteBuffer & out) const
     if (table_expression_modifiers.hasSampleOffsetRatio())
         flags |= 4;
 
-    writeIntBinary(flags, out);
+    writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
-        serializeRational(*table_expression_modifiers.getSampleSizeRatio(), out);
+        serializeRational(*table_expression_modifiers.getSampleSizeRatio(), ctx.out);
 
     if (table_expression_modifiers.hasSampleOffsetRatio())
-        serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), out);
+        serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ReadFromTableStep::deserialize(ReadBuffer & in, const DataStreams &, const DataStream * output, QueryPlanSerializationSettings &)
+std::unique_ptr<IQueryPlanStep> ReadFromTableStep::deserialize(Deserialization & ctx)
 {
     String table_name;
-    readStringBinary(table_name, in);
+    readStringBinary(table_name, ctx.in);
 
     UInt8 flags = 0;
-    readIntBinary(flags, in);
+    readIntBinary(flags, ctx.in);
 
     bool has_final = false;
     std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
@@ -71,13 +72,13 @@ std::unique_ptr<IQueryPlanStep> ReadFromTableStep::deserialize(ReadBuffer & in, 
         has_final = true;
 
     if (flags & 2)
-        sample_size_ratio = deserializeRational(in);
+        sample_size_ratio = deserializeRational(ctx.in);
 
     if (flags & 4)
-        sample_offset_ratio = deserializeRational(in);
+        sample_offset_ratio = deserializeRational(ctx.in);
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(output->header, table_name, table_expression_modifiers);
+    return std::make_unique<ReadFromTableStep>(ctx.output_stream->header, table_name, table_expression_modifiers);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)

@@ -8,7 +8,7 @@ namespace DB
 class QueryPlanStepRegistry
 {
 public:
-    using StepCreateFunction = std::function<QueryPlanStepPtr(ReadBuffer &, const DataStreams &, const DataStream *, QueryPlanSerializationSettings &)>;
+    using StepCreateFunction = std::function<QueryPlanStepPtr(IQueryPlanStep::Deserialization &)>;
 
     QueryPlanStepRegistry() = default;
     QueryPlanStepRegistry(const QueryPlanStepRegistry &) = delete;
@@ -21,11 +21,8 @@ public:
     void registerStep(const std::string & name, StepCreateFunction && create_function);
 
     QueryPlanStepPtr createStep(
-        ReadBuffer & buf,
         const std::string & name,
-        const DataStreams & input_streams,
-        const DataStream * output_stream,
-        QueryPlanSerializationSettings & settings) const;
+        IQueryPlanStep::Deserialization & ctx) const;
 
 private:
     std::unordered_map<std::string, StepCreateFunction> steps;

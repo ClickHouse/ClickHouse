@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -84,33 +85,32 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Offset", group_offset);
 }
 
-void LimitByStep::serialize(WriteBuffer & out) const
+void LimitByStep::serialize(Serialization & ctx) const
 {
-    writeVarUInt(group_length, out);
-    writeVarUInt(group_offset, out);
+    writeVarUInt(group_length, ctx.out);
+    writeVarUInt(group_offset, ctx.out);
 
 
-    writeVarUInt(columns.size(), out);
+    writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, out);
+        writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &)
+std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
 {
     UInt64 group_length;
     UInt64 group_offset;
 
-    readVarUInt(group_length, in);
-    readVarUInt(group_offset, in);
+    readVarUInt(group_length, ctx.in);
+    readVarUInt(group_offset, ctx.in);
 
     UInt64 num_columns;
-    readVarUInt(num_columns, in);
+    readVarUInt(num_columns, ctx.in);
     Names columns(num_columns);
     for (auto & column : columns)
-        readStringBinary(column, in);
+        readStringBinary(column, ctx.in);
 
-    return std::make_unique<LimitByStep>(input_streams_.front(), group_length, group_offset, std::move(columns));
+    return std::make_unique<LimitByStep>(ctx.input_streams.front(), group_length, group_offset, std::move(columns));
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry)

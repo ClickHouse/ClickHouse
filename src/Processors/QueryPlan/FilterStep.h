@@ -26,6 +26,10 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
 private:
     void updateOutputStream() override;
 

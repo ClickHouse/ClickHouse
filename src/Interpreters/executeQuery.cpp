@@ -1389,7 +1389,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 static std::pair<ASTPtr, BlockIO> executeQueryImpl(
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryPlan & query_plan)
+    QueryPlanAndSets & plan_and_sets)
 {
     const bool internal = flags.internal;
     ASTPtr ast = std::make_shared<ASTIdentifier>("QueryPlan");
@@ -1552,7 +1552,11 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>("QueryPlan::execute()");
                     }
 
-                    query_plan.replaceStorages(context);
+                    auto query_plan = QueryPlan::resolveStorages(std::move(plan_and_sets), context);
+
+                    WriteBufferFromOwnString buf;
+                    query_plan.explainPlan(buf, {.header=true, .actions=true});
+                    std::cerr << buf.str() << std::endl;
 
                     auto pipeline = query_plan.buildQueryPipeline(
                             QueryPlanOptimizationSettings::fromContext(context),
@@ -1662,7 +1666,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 }
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const QueryTextOrPlan & query,
+    const std::variant<String, std::shared_ptr<QueryPlanAndSets>> & query,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
@@ -1673,7 +1677,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     if (const auto * query_text = std::get_if<String>(&query))
         std::tie(ast, res) = executeQueryImpl(query_text->data(), query_text->data() + query_text->size(), context, flags, stage, nullptr);
     else
-        std::tie(ast, res) = executeQueryImpl(context, flags, *std::get<std::shared_ptr<QueryPlan>>(query));
+        std::tie(ast, res) = executeQueryImpl(context, flags, *std::get<std::shared_ptr<QueryPlanAndSets>>(query));
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {

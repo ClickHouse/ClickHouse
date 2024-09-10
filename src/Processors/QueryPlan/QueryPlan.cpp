@@ -1,16 +1,20 @@
 #include <stack>
 
 #include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Storages/StorageSet.h>
+#include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/SetSerialization.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -609,9 +613,200 @@ static Block deserializeHeader(ReadBuffer & in)
     return Block(std::move(columns));
 }
 
+enum class SetSerializationKind : UInt8
+{
+    StorageSet = 1,
+    TupleValues = 2,
+    SubqueryPlan = 3,
+};
+
+static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out)
+{
+    writeVarUInt(registry.sets.size(), out);
+    for (const auto & [hash, set] : registry.sets)
+    {
+        writeBinary(hash, out);
+
+        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set.get()))
+        {
+            writeIntBinary(SetSerializationKind::StorageSet, out);
+            const auto & storage_id = from_storage->getStorageID();
+            if (!storage_id)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "FutureSetFromStorage without storage id");
+
+            auto storage_name = storage_id->getFullTableName();
+            writeStringBinary(storage_name, out);
+        }
+        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set.get()))
+        {
+            writeIntBinary(SetSerializationKind::TupleValues, out);
+
+            UInt8 flags = 0;
+            if (from_tuple->get()->transform_null_in)
+                flags |= 1;
+
+            writeIntBinary(flags, out);
+
+            auto types = from_tuple->getTypes();
+            auto columns = from_tuple->getKeyColumns();
+
+            if (columns.size() != types.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Invalid number of columns for Set. Expected {} got {}",
+                    columns.size(), types.size());
+
+            UInt64 num_columns = columns.size();
+            UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
+
+            writeVarUInt(num_columns, out);
+            writeVarUInt(num_rows, out);
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                if (columns[col]->size() != num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Invalid number of rows in column of Set. Expected {} got {}",
+                        num_rows, columns[col]->size());
+
+                encodeDataType(types[col], out);
+                auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
+                serialization->serializeBinaryBulk(*columns[col], out, 0, num_rows);
+            }
+        }
+        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
+        {
+            writeIntBinary(SetSerializationKind::SubqueryPlan, out);
+            const auto * plan = from_subquery->getQueryPlan();
+            if (!plan)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
+
+            auto not_filled = from_subquery->getNotFilled();
+
+            UInt8 flags = 0;
+            if (not_filled->transform_null_in)
+                flags |= 1;
+
+            writeIntBinary(flags, out);
+
+            const auto & limits = not_filled->limits;
+            SettingFieldOverflowMode mode(limits.overflow_mode);
+
+            writeVarUInt(limits.max_rows, out);
+            writeVarUInt(limits.max_bytes, out);
+            writeIntBinary(limits.overflow_mode, out);
+
+            writeVarUInt(not_filled->max_elements_to_fill, out);
+
+            plan->serialize(out);
+        }
+        else
+        {
+            const auto & set_ref = *set;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
+        }
+    }
+}
+
+QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in)
+{
+    UInt64 num_sets;
+    readVarUInt(num_sets, in);
+
+    QueryPlanAndSets res;
+    res.plan = std::move(plan);
+
+    for (size_t i = 0; i < num_sets; ++i)
+    {
+        PreparedSets::Hash hash;
+        readBinary(hash, in);
+
+        auto it = registry.sets.find(hash);
+        if (it == registry.sets.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is not registered", hash.low64, hash.high64);
+
+        auto & columns = it->second;
+        if (columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", hash.low64, hash.high64);
+
+        UInt8 kind;
+        readVarUInt(kind, in);
+        if (kind == UInt8(SetSerializationKind::StorageSet))
+        {
+            String storage_id;
+            readStringBinary(storage_id, in);
+            res.sets_from_storage.emplace_back(hash, std::move(storage_id), std::move(columns));
+        }
+        else if (kind == UInt8(SetSerializationKind::TupleValues))
+        {
+            UInt8 flags;
+            readIntBinary(flags, in);
+            bool transform_null_in = bool(flags & 1);
+
+            UInt64 num_columns;
+            UInt64 num_rows;
+            readVarUInt(num_columns, in);
+            readVarUInt(num_rows, in);
+
+            ColumnsWithTypeAndName set_columns;
+            set_columns.reserve(num_columns);
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                auto type = decodeDataType(in);
+                auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
+                auto column = type->createColumn();
+                serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
+
+                set_columns.emplace_back(std::move(column), std::move(type), String{});
+            }
+
+            SizeLimits size_limits;
+            auto set = std::make_shared<FutureSetFromTuple>(hash, std::move(set_columns), transform_null_in, size_limits);
+
+            for (auto * column : columns)
+                column->setData(set);
+        }
+        else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
+        {
+            UInt8 flags;
+            readIntBinary(flags, in);
+            bool transform_null_in = bool(flags & 1);
+
+            SizeLimits limits;
+            readVarUInt(limits.max_rows, in);
+            readVarUInt(limits.max_bytes, in);
+            readIntBinary(limits.overflow_mode, in);
+
+            if (limits.overflow_mode != OverflowMode::BREAK && limits.overflow_mode != OverflowMode::THROW)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect overflow mode {}", limits.overflow_mode);
+
+            UInt64 max_size_for_index;
+            readVarUInt(max_size_for_index, in);
+
+            auto plan_for_set = QueryPlan::deserialize(in);
+            auto set = std::make_shared<FutureSetFromSubquery>(
+                hash, std::make_unique<QueryPlan>(std::move(plan_for_set.plan)), nullptr, nullptr,
+                transform_null_in, limits, max_size_for_index);
+
+            for (auto * column : columns)
+                column->setData(set);
+
+            res.subqueries.emplace_back(std::move(set), std::move(plan_for_set.subqueries));
+            res.sets_from_storage.splice(res.sets_from_storage.end(), std::move(plan_for_set.sets_from_storage));
+        }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
+                hash.low64, hash.high64, int(kind));
+    }
+
+    return res;
+}
+
 void QueryPlan::serialize(WriteBuffer & out) const
 {
     checkInitialized();
+
+    SerializedSetsRegistry registry;
 
     struct Frame
     {
@@ -625,6 +820,13 @@ void QueryPlan::serialize(WriteBuffer & out) const
     {
         auto & frame = stack.top();
         auto * node = frame.node;
+
+        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        {
+            frame.node = node->children.front();
+            continue;
+        }
+
         if (frame.next_child == 0)
         {
             writeVarUInt(node->children.size(), out);
@@ -651,13 +853,19 @@ void QueryPlan::serialize(WriteBuffer & out) const
         node->step->serializeSettings(settings);
 
         settings.writeChangedBinary(out);
-        node->step->serialize(out);
+
+        IQueryPlanStep::Serialization ctx{out, registry};
+        node->step->serialize(ctx);
     }
+
+    serializeSets(registry, out);
 }
 
-QueryPlan QueryPlan::deserialize(ReadBuffer & in)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in)
 {
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
+
+    DeserializedSetsRegistry sets_registry;
 
     using NodePtr = Node *;
     struct Frame
@@ -705,7 +913,8 @@ QueryPlan QueryPlan::deserialize(ReadBuffer & in)
         for (const auto & child : frame.children)
             input_streams.push_back(child->step->getOutputStream());
 
-        auto step = step_registry.createStep(in, step_name, input_streams, &output_stream, settings);
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, input_streams, &output_stream, settings};
+        auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputStream())
         {
@@ -723,20 +932,42 @@ QueryPlan QueryPlan::deserialize(ReadBuffer & in)
         stack.pop();
     }
 
-    return plan;
+    return deserializeSets(std::move(plan), sets_registry, in);
 }
 
-static QueryPlanResourceHolder tryReplaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+static std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
+{
+    auto table_node_ptr = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, context);
+    if (!table_node_ptr)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
+
+    return table_node_ptr;
+}
+
+static void makeSetsFromStorageSet(QueryPlanAndSets::SetsFromStorage sets, const ContextPtr & context)
+{
+    for (auto & set : sets)
+    {
+        Identifier identifier(set.storage_name);
+        auto table_node = resolveTable(identifier, context);
+        const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
+        if (!storage_set)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
+
+        auto future_set = std::make_shared<FutureSetFromStorage>(set.hash, storage_set->getSet(), table_node->getStorageID());
+        for (auto * column : set.columns)
+            column->setData(future_set);
+    }
+}
+
+static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     if (!reading_from_table)
         return {};
 
     Identifier identifier(reading_from_table->getTable());
-    auto table_node_ptr = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, context);
-    if (!table_node_ptr)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
-    const auto * table_node = table_node_ptr->as<TableNode>();
+    auto table_node = resolveTable(identifier, context);
 
     SelectQueryInfo select_query_info;
     select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
@@ -779,10 +1010,10 @@ static QueryPlanResourceHolder tryReplaceReadingFromTable(QueryPlan::Node & node
     return std::move(nodes_and_resource.second);
 }
 
-void QueryPlan::replaceStorages(const ContextPtr & context)
+void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & context)
 {
     std::stack<QueryPlan::Node *> stack;
-    stack.push(getRootNode());
+    stack.push(plan.getRootNode());
     while (!stack.empty())
     {
         auto * node = stack.top();
@@ -792,9 +1023,40 @@ void QueryPlan::replaceStorages(const ContextPtr & context)
             stack.push(child);
 
         if (node->children.empty())
-            addResources(tryReplaceReadingFromTable(*node, nodes, context));
+            plan.addResources(replaceReadingFromTable(*node, plan.nodes, context));
     }
 }
 
+static void addSetsFromSubqueries(QueryPlan & plan, std::vector<QueryPlanAndSets::SubqueryAndSets> subqueries_and_sets, const ContextPtr & context)
+{
+    if (subqueries_and_sets.empty())
+        return;
+
+    PreparedSets::Subqueries subqueries;
+    subqueries.reserve(subqueries_and_sets.size());
+    for (auto & item : subqueries_and_sets)
+    {
+        auto & subquery_plan = *item.subquery->getQueryPlan();
+        QueryPlan::resolveReadFromTable(subquery_plan, context);
+        addSetsFromSubqueries(subquery_plan, std::move(item.sets), context);
+        subqueries.push_back(std::move(item.subquery));
+    }
+
+    addCreatingSetsStep(plan, std::move(subqueries), context);
+}
+
+QueryPlan QueryPlan::resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context)
+{
+    auto & plan = plan_and_sets.plan;
+
+    resolveReadFromTable(plan, context);
+
+    makeSetsFromStorageSet(plan_and_sets.sets_from_storage, context);
+
+    if (!plan_and_sets.subqueries.empty())
+        addSetsFromSubqueries(plan, std::move(plan_and_sets.subqueries), context);
+
+    return std::move(plan);
+}
 
 }

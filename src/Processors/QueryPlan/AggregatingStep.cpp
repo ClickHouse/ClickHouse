@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -719,7 +720,7 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings.max_size_to_preallocate_for_aggregation = params.stats_collecting_params.max_size_to_preallocate;
 }
 
-void AggregatingStep::serialize(WriteBuffer & out) const
+void AggregatingStep::serialize(Serialization & ctx) const
 {
     if (!sort_description_for_merging.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep optimized for in-order is not supported.");
@@ -751,43 +752,42 @@ void AggregatingStep::serialize(WriteBuffer & out) const
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 32;
 
-    writeIntBinary(flags, out);
+    writeIntBinary(flags, ctx.out);
 
     if (explicit_sorting_required_for_aggregation_in_order)
-        serializeSortDescription(group_by_sort_description, out);
+        serializeSortDescription(group_by_sort_description, ctx.out);
 
-    writeVarUInt(params.keys.size(), out);
+    writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, out);
+        writeStringBinary(key, ctx.out);
 
-    writeVarUInt(params.aggregates.size(), out);
+    writeVarUInt(params.aggregates.size(), ctx.out);
     for (const auto & aggregate : params.aggregates)
     {
-        writeStringBinary(aggregate.column_name, out);
+        writeStringBinary(aggregate.column_name, ctx.out);
 
-        writeVarUInt(aggregate.argument_names.size(), out);
+        writeVarUInt(aggregate.argument_names.size(), ctx.out);
         for (const auto & name : aggregate.argument_names)
-            writeStringBinary(name, out);
+            writeStringBinary(name, ctx.out);
 
-        writeStringBinary(aggregate.function->getName(), out);
+        writeStringBinary(aggregate.function->getName(), ctx.out);
 
-        writeVarUInt(aggregate.parameters.size(), out);
+        writeVarUInt(aggregate.parameters.size(), ctx.out);
         for (const auto & param : aggregate.parameters)
-            writeFieldBinary(param, out);
+            writeFieldBinary(param, ctx.out);
     }
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
-        writeIntBinary(params.stats_collecting_params.key, out);
+        writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings)
+std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & ctx)
 {
-    if (input_streams_.size() != 1)
+    if (ctx.input_streams.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "AggregatingStep must have one input stream");
 
     UInt8 flags;
-    readIntBinary(flags, in);
+    readIntBinary(flags, ctx.in);
 
     bool final = bool(flags & 1);
     bool overflow_row = bool(flags & 2);
@@ -801,41 +801,41 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(
 
     SortDescription group_by_sort_description;
     if (explicit_sorting_required_for_aggregation_in_order)
-        deserializeSortDescription(group_by_sort_description, in);
+        deserializeSortDescription(group_by_sort_description, ctx.in);
 
     UInt64 num_keys;
-    readVarUInt(num_keys, in);
+    readVarUInt(num_keys, ctx.in);
     Names keys(num_keys);
     for (auto & key : keys)
-        readStringBinary(key, in);
+        readStringBinary(key, ctx.in);
 
     UInt64 num_aggregates;
-    readVarUInt(num_aggregates, in);
+    readVarUInt(num_aggregates, ctx.in);
     AggregateDescriptions aggregates(num_aggregates);
     for (auto & aggregate : aggregates)
     {
-        readStringBinary(aggregate.column_name, in);
+        readStringBinary(aggregate.column_name, ctx.in);
 
         UInt64 num_args;
-        readVarUInt(num_args, in);
+        readVarUInt(num_args, ctx.in);
         aggregate.argument_names.resize(num_args);
         for (auto & arg_name : aggregate.argument_names)
-            readStringBinary(arg_name, in);
+            readStringBinary(arg_name, ctx.in);
 
         String function_name;
-        readStringBinary(function_name, in);
+        readStringBinary(function_name, ctx.in);
 
         UInt64 num_params;
-        readVarUInt(num_params, in);
+        readVarUInt(num_params, ctx.in);
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)
-            param = readFieldBinary(in);
+            param = readFieldBinary(ctx.in);
 
         DataTypes argument_types;
         argument_types.reserve(num_args);
         for (const auto & arg_name : aggregate.argument_names)
         {
-            const auto & arg = input_streams_.front().header.getByName(arg_name);
+            const auto & arg = ctx.input_streams.front().header.getByName(arg_name);
             argument_types.emplace_back(arg.type);
         }
 
@@ -847,35 +847,35 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(
 
     UInt64 stats_key = 0;
     if (has_stats_key)
-        readIntBinary(stats_key, in);
+        readIntBinary(stats_key, ctx.in);
 
     StatsCollectingParams stats_collecting_params(
         stats_key,
-        settings.collect_hash_table_stats_during_aggregation,
-        settings.max_entries_for_hash_table_stats,
-        settings.max_size_to_preallocate_for_aggregation);
+        ctx.settings.collect_hash_table_stats_during_aggregation,
+        ctx.settings.max_entries_for_hash_table_stats,
+        ctx.settings.max_size_to_preallocate_for_aggregation);
 
     Aggregator::Params params
     {
         keys,
         aggregates,
         overflow_row,
-        settings.max_rows_to_group_by,
-        settings.group_by_overflow_mode,
-        settings.group_by_two_level_threshold,
-        settings.group_by_two_level_threshold_bytes,
-        settings.max_bytes_before_external_group_by,
-        settings.empty_result_for_aggregation_by_empty_set,
+        ctx.settings.max_rows_to_group_by,
+        ctx.settings.group_by_overflow_mode,
+        ctx.settings.group_by_two_level_threshold,
+        ctx.settings.group_by_two_level_threshold_bytes,
+        ctx.settings.max_bytes_before_external_group_by,
+        ctx.settings.empty_result_for_aggregation_by_empty_set,
         Context::getGlobalContextInstance()->getTempDataOnDisk(),
         0, //settings.max_threads,
-        settings.min_free_disk_space_for_temporary_data,
-        settings.compile_aggregate_expressions,
-        settings.min_count_to_compile_aggregate_expression,
-        settings.max_block_size,
-        settings.enable_software_prefetch_in_aggregation,
+        ctx.settings.min_free_disk_space_for_temporary_data,
+        ctx.settings.compile_aggregate_expressions,
+        ctx.settings.min_count_to_compile_aggregate_expression,
+        ctx.settings.max_block_size,
+        ctx.settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
-        settings.optimize_group_by_constant_keys,
-        settings.min_hit_rate_to_use_consecutive_keys_optimization,
+        ctx.settings.optimize_group_by_constant_keys,
+        ctx.settings.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params
     };
 
@@ -883,20 +883,20 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(
     GroupingSetsParamsList grouping_sets_params;
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
-        input_streams_.front(),
+        ctx.input_streams.front(),
         std::move(params),
         std::move(grouping_sets_params),
         final,
-        settings.max_block_size,
-        settings.aggregation_in_order_max_block_bytes,
+        ctx.settings.max_block_size,
+        ctx.settings.aggregation_in_order_max_block_bytes,
         0, //merge_threads,
         0, //temporary_data_merge_threads,
         false, // storage_has_evenly_distributed_read, TODO: later
         group_by_use_nulls,
         std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
-        settings.aggregation_in_order_memory_bound_merging,
-        settings.aggregation_sort_result_by_bucket_number,
+        ctx.settings.aggregation_in_order_memory_bound_merging,
+        ctx.settings.aggregation_sort_result_by_bucket_number,
         explicit_sorting_required_for_aggregation_in_order);
 
     return aggregating_step;

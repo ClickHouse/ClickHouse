@@ -1890,7 +1890,7 @@ void TCPHandler::receiveQuery()
 
     if (state.stage == QueryProcessingStage::QueryPlan)
     {
-        state.query = std::make_shared<QueryPlan>(QueryPlan::deserialize(*in));
+        state.query = std::make_shared<QueryPlanAndSets>(QueryPlan::deserialize(*in));
     }
     else
     {

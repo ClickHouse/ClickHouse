@@ -33,11 +33,11 @@ public:
     void updateLimitHint(UInt64 hint);
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
-    void serialize(WriteBuffer & out) const override;
+    void serialize(Serialization & ctx) const override;
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings &, bool pre_distinct_);
-    static std::unique_ptr<IQueryPlanStep> deserializeNormal(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &);
-    static std::unique_ptr<IQueryPlanStep> deserializePre(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &);
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx, bool pre_distinct_);
+    static std::unique_ptr<IQueryPlanStep> deserializeNormal(Deserialization & ctx);
+    static std::unique_ptr<IQueryPlanStep> deserializePre(Deserialization & ctx);
 
 private:
     void updateOutputStream() override;

@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctSortedChunkTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
@@ -200,46 +201,43 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) 
     settings.distinct_overflow_mode = set_size_limits.overflow_mode;
 }
 
-void DistinctStep::serialize(WriteBuffer & out) const
+void DistinctStep::serialize(Serialization & ctx) const
 {
     /// Let's not serialzie limit_hint.
     /// Ideally, we can get if from a query plan optimization on the follower.
 
-    writeVarUInt(columns.size(), out);
+    writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, out);
+        writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(
-    ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings & settings, bool pre_distinct_)
+std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
 {
-    if (input_streams_.size() != 1)
+    if (ctx.input_streams.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
 
     size_t columns_size;
-    readVarUInt(columns_size, in);
+    readVarUInt(columns_size, ctx.in);
     Names column_names(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
-        readStringBinary(column_names[i], in);
+        readStringBinary(column_names[i], ctx.in);
 
     SizeLimits size_limits;
-    size_limits.max_rows = settings.max_rows_in_distinct;
-    size_limits.max_bytes = settings.max_bytes_in_distinct;
-    size_limits.overflow_mode = settings.distinct_overflow_mode;
+    size_limits.max_rows = ctx.settings.max_rows_in_distinct;
+    size_limits.max_bytes = ctx.settings.max_bytes_in_distinct;
+    size_limits.overflow_mode = ctx.settings.distinct_overflow_mode;
 
     return std::make_unique<DistinctStep>(
-        input_streams_.front(), size_limits, 0, column_names, pre_distinct_, false);
+        ctx.input_streams.front(), size_limits, 0, column_names, pre_distinct_, false);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings)
+std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(Deserialization & ctx)
 {
-    return DistinctStep::deserialize(in, input_streams_, settings, false);
+    return DistinctStep::deserialize(ctx, false);
 }
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings)
+std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(Deserialization & ctx)
 {
-    return DistinctStep::deserialize(in, input_streams_, settings, true);
+    return DistinctStep::deserialize(ctx, true);
 }
 
 void registerDistinctStep(QueryPlanStepRegistry & registry)

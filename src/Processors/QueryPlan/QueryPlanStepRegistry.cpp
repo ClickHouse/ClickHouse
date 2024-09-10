@@ -23,11 +23,8 @@ void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFun
 }
 
 QueryPlanStepPtr QueryPlanStepRegistry::createStep(
-    ReadBuffer & buf,
     const std::string & name,
-    const DataStreams & input_streams,
-    const DataStream * output_stream,
-    QueryPlanSerializationSettings & settings) const
+    IQueryPlanStep::Deserialization & ctx) const
 {
     StepCreateFunction create_function;
     {
@@ -36,7 +33,7 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown query plan step: {}", name);
         create_function = it->second;
     }
-    return create_function(buf, input_streams, output_stream, settings);
+    return create_function(ctx);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);
@@ -48,6 +45,7 @@ void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry);
+void registerFilterStep(QueryPlanStepRegistry & registry);
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 
@@ -64,6 +62,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerLimitByStep(registry);
     registerLimitStep(registry);
     registerOffsetStep(registry);
+    registerFilterStep(registry);
 
     registerReadFromTableStep(registry);
 }

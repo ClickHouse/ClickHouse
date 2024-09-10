@@ -2,7 +2,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
-#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -108,15 +108,14 @@ void UnionStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void UnionStep::serialize(WriteBuffer & out) const
+void UnionStep::serialize(Serialization & ctx) const
 {
-    (void)out;
+    (void)ctx;
 }
 
-std::unique_ptr<IQueryPlanStep> UnionStep::deserialize(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &)
+std::unique_ptr<IQueryPlanStep> UnionStep::deserialize(Deserialization & ctx)
 {
-    (void)in;
-    return std::make_unique<UnionStep>(input_streams_);
+    return std::make_unique<UnionStep>(ctx.input_streams);
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry)

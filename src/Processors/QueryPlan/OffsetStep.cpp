@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/OffsetTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -47,18 +48,17 @@ void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Offset", offset);
 }
 
-void OffsetStep::serialize(WriteBuffer & out) const
+void OffsetStep::serialize(Serialization & ctx) const
 {
-    writeVarUInt(offset, out);
+    writeVarUInt(offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> OffsetStep::deserialize(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &)
+std::unique_ptr<IQueryPlanStep> OffsetStep::deserialize(Deserialization & ctx)
 {
     UInt64 offset;
-    readVarUInt(offset, in);
+    readVarUInt(offset, ctx.in);
 
-    return std::make_unique<OffsetStep>(input_streams_.front(), offset);
+    return std::make_unique<OffsetStep>(ctx.input_streams.front(), offset);
 }
 
 void registerOffsetStep(QueryPlanStepRegistry & registry)

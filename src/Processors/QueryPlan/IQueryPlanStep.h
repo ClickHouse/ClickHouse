@@ -16,11 +16,6 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// Description of data stream.
 /// Single logical data stream may relate to many ports of pipeline.
 class DataStream
@@ -91,8 +86,11 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    struct Serialization;
+    struct Deserialization;
+
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
-    virtual void serialize(WriteBuffer & /*buf*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for {}", getName()); }
+    virtual void serialize(Serialization & /*ctx*/) const;
 
     struct FormatSettings
     {
@@ -142,7 +140,7 @@ public:
     virtual bool canUpdateInputStream() const { return false; }
 
 protected:
-    virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+    virtual void updateOutputStream();
 
     DataStreams input_streams;
     std::optional<DataStream> output_stream;

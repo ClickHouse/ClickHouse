@@ -63,6 +63,8 @@ public:
     ContextPtr getContext() const { return context; }
     PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
+    void serialize(Serialization &) const override {}
+
 private:
     PreparedSets::Subqueries subqueries;
     ContextPtr context;

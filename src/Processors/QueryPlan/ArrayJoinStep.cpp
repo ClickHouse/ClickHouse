@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -88,7 +89,7 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings)
     settings.max_block_size = max_block_size;
 }
 
-void ArrayJoinStep::serialize(WriteBuffer & out) const
+void ArrayJoinStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (is_left)
@@ -96,33 +97,32 @@ void ArrayJoinStep::serialize(WriteBuffer & out) const
     if (is_unaligned)
         flags |= 2;
 
-    writeIntBinary(flags, out);
+    writeIntBinary(flags, ctx.out);
 
-    writeVarUInt(columns.size(), out);
+    writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, out);
+        writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(
-    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings)
+std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
-    readIntBinary(flags, in);
+    readIntBinary(flags, ctx.in);
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
 
     UInt64 num_columns;
-    readVarUInt(num_columns, in);
+    readVarUInt(num_columns, ctx.in);
     NameSet columns;
     for (size_t i = 0; i < num_columns; ++i)
     {
         String column;
-        readStringBinary(column, in);
+        readStringBinary(column, ctx.in);
         columns.insert(std::move(column));
     }
 
-    return std::make_unique<ArrayJoinStep>(input_streams_.front(), std::move(columns), is_left, is_unaligned, settings.max_block_size);
+    return std::make_unique<ArrayJoinStep>(ctx.input_streams.front(), std::move(columns), is_left, is_unaligned, ctx.settings.max_block_size);
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
