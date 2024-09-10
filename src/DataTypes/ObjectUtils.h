@@ -6,7 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnObjectDeprecated.h>
+#include <Columns/ColumnObject.h>
 
 namespace DB
 {
@@ -26,9 +26,6 @@ size_t getNumberOfDimensions(const IColumn & column);
 
 /// Returns type of scalars of Array of arbitrary dimensions.
 DataTypePtr getBaseTypeOfArray(const DataTypePtr & type);
-
-/// The same as above but takes into account Tuples of Nested.
-DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements);
 
 /// Returns Array type with requested scalar type and number of dimensions.
 DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions);
@@ -88,7 +85,7 @@ DataTypePtr unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types);
 
-std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObjectDeprecated & column);
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column);
 
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
@@ -197,7 +194,7 @@ ColumnsDescription getConcreteObjectColumns(
     /// dummy column will be removed.
     for (const auto & column : storage_columns)
     {
-        if (column.type->hasDynamicSubcolumnsDeprecated())
+        if (column.type->hasDynamicSubcolumns())
             types_in_entries[column.name].push_back(createConcreteEmptyDynamicColumn(column.type));
     }
 
@@ -207,7 +204,7 @@ ColumnsDescription getConcreteObjectColumns(
         for (const auto & column : entry_columns)
         {
             auto storage_column = storage_columns.tryGetPhysical(column.name);
-            if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())
+            if (storage_column && storage_column->type->hasDynamicSubcolumns())
                 types_in_entries[column.name].push_back(column.type);
         }
     }

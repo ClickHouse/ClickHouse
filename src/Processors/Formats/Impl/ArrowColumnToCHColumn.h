@@ -19,6 +19,8 @@ class Chunk;
 class ArrowColumnToCHColumn
 {
 public:
+    using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
+
     ArrowColumnToCHColumn(
         const Block & header_,
         const std::string & format_name_,
@@ -28,14 +30,18 @@ public:
         bool case_insensitive_matching_ = false,
         bool is_stream_ = false);
 
-    Chunk arrowTableToCHChunk(const std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
+    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
-    /// Transform arrow schema to ClickHouse header
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
+
+    /// Transform arrow schema to ClickHouse header. If hint_header is provided,
+    /// we will skip columns in schema that are not in hint_header.
     static Block arrowSchemaToCHHeader(
         const arrow::Schema & schema,
         const std::string & format_name,
         bool skip_columns_with_unsupported_types = false,
-        bool allow_inferring_nullable_columns = true);
+        const Block * hint_header = nullptr,
+        bool ignore_case = false);
 
     struct DictionaryInfo
     {
@@ -46,16 +52,6 @@ public:
 
 
 private:
-    struct ArrowColumn
-    {
-        std::shared_ptr<arrow::ChunkedArray> column;
-        std::shared_ptr<arrow::Field> field;
-    };
-
-    using NameToArrowColumn = std::unordered_map<std::string, ArrowColumn>;
-
-    Chunk arrowColumnsToCHChunk(const NameToArrowColumn & name_to_arrow_column, size_t num_rows, BlockMissingValues * block_missing_values);
-
     const Block & header;
     const std::string format_name;
     /// If false, throw exception if some columns in header not exists in arrow table.

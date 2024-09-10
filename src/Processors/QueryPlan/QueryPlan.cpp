@@ -504,8 +504,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
-    if (optimization_settings.build_sets)
-        QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
 
     updateDataStreams(*root);
 }
@@ -521,6 +520,10 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
+
+        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
+        {
+        }
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;

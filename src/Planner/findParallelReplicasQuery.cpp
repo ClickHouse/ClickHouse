@@ -4,7 +4,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -413,16 +412,17 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get());
-    if (!table_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
+    ClusterProxy::SelectStreamFactory select_stream_factory =
+        ClusterProxy::SelectStreamFactory(
+            header,
+            {},
+            {},
+            processed_stage);
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        table_node->getStorageID(),
-        header,
-        processed_stage,
+        select_stream_factory,
         modified_query_ast,
         context,
         storage_limits);

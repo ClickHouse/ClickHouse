@@ -1,6 +1,5 @@
 #include <Server/ReplicasStatusHandler.h>
 
-#include <Core/ServerSettings.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
@@ -8,7 +7,6 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 
@@ -53,10 +51,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             if (!db.second->canContainMergeTreeTables())
                 continue;
 
-            // Note that in case `async_load_databases = true` we do not want replica status handler to be hanging
-            // and waiting (in getTablesIterator() call) for every table to be load, so we just skip not-yet-loaded tables.
-            // If they have some lag it will be reflected as soon as they are load.
-            for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 const auto & table = iterator->table();
                 if (!table)
@@ -89,7 +84,8 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        setResponseDefaultHeaders(response);
+        const auto & server_settings = getContext()->getServerSettings();
+        setResponseDefaultHeaders(response, server_settings.keep_alive_timeout.totalSeconds());
 
         if (!ok)
         {

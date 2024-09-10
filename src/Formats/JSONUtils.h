@@ -13,7 +13,6 @@
 namespace DB
 {
 
-class Block;
 struct JSONInferenceInfo;
 
 namespace JSONUtils
@@ -99,20 +98,8 @@ namespace JSONUtils
         WriteBuffer & out);
 
     void writeMetadata(const Names & names, const DataTypes & types, const FormatSettings & settings, WriteBuffer & out);
-    void writeCompactMetadata(const Names & names, const DataTypes & types, const FormatSettings & settings, WriteBuffer & out);
 
     void writeAdditionalInfo(
-        size_t rows,
-        size_t rows_before_limit,
-        bool applied_limit,
-        size_t rows_before_aggregation,
-        bool applied_aggregation,
-        const Stopwatch & watch,
-        const Progress & progress,
-        bool write_statistics,
-        WriteBuffer & out);
-
-    void writeCompactAdditionalInfo(
         size_t rows,
         size_t rows_before_limit,
         bool applied_limit,
@@ -127,7 +114,7 @@ namespace JSONUtils
     void skipComma(ReadBuffer & in);
     bool checkAndSkipComma(ReadBuffer & in);
 
-    String readFieldName(ReadBuffer & in, const FormatSettings::JSON & settings);
+    String readFieldName(ReadBuffer & in);
 
     void skipArrayStart(ReadBuffer & in);
     void skipArrayEnd(ReadBuffer & in);
@@ -139,13 +126,13 @@ namespace JSONUtils
     bool checkAndSkipObjectStart(ReadBuffer & in);
     bool checkAndSkipObjectEnd(ReadBuffer & in);
 
-    NamesAndTypesList readMetadata(ReadBuffer & in, const FormatSettings::JSON & settings);
-    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types, const FormatSettings::JSON & settings);
-    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header, const FormatSettings::JSON & settings);
+    NamesAndTypesList readMetadata(ReadBuffer & in);
+    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types);
+    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header);
     void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header);
 
-    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name, const FormatSettings::JSON & settings);
-    void skipTheRestOfObject(ReadBuffer & in, const FormatSettings::JSON & settings);
+    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name);
+    void skipTheRestOfObject(ReadBuffer & in);
 }
 
 }

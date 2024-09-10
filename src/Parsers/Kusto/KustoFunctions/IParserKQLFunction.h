@@ -28,7 +28,7 @@ private:
 class IParserKQLFunction
 {
 public:
-    enum class ArgumentState : uint8_t
+    enum class ArgumentState
     {
         Parsed,
         Raw
