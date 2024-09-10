@@ -23,6 +23,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -81,11 +82,14 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     : context(context_)
     , table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
+    , max_threads(context->getSettingsRef().max_threads > 0 ? std::min(slots, context->getSettingsRef().max_threads.value) : slots)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
-          slots))
+          /*max_threads_*/ max_threads,
+          /*max_free_threads_*/ max_threads,
+          /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
 {
     hash_joins.resize(slots);
