@@ -548,6 +548,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         createNewZooKeeperNodes();
         syncPinnedPartUUIDs();
 
+        if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
+            createTableSharedID();
+
+
     }
     catch (...)
     {
@@ -555,9 +559,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         dropIfEmpty();
         throw;
     }
-
-    if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
-        createTableSharedID();
 
     initialization_done = true;
 }
