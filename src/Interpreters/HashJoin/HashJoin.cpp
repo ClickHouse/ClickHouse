@@ -1429,7 +1429,7 @@ void HashJoin::tryRerangeRightTableData()
     /// 2. the join clauses size is greater than 1, like `...join on a.key1=b.key1 or a.key2=b.key2`, we can not rerange the right table on different set of keys.
     /// 3. the number of right table rows exceed the threshold, which may result in a significant cost for reranging and lead to performance degradation.
     /// 4. the keys of right table is very sparse, which may result in insignificant performance improvement after reranging by key.
-    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightTableRowsThreshold() ||  data->avgPerKeyRows() < table_join->sortRightPerkeyRowsThreshold())
+    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightMaximumTableRows() ||  data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
         return;
 
     if (data->keys_to_join == 0)
