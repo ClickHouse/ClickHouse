@@ -17,7 +17,7 @@ extern const int ILLEGAL_STATISTICS;
 }
 
 /// Constants chosen based on rolling dices.
-/// The values provides:
+/// The values provide:
 ///     1. an error tolerance of 0.1% (ε = 0.001)
 ///     2. a confidence level of 99.9% (δ = 0.001).
 /// And sketch the size is 152kb.

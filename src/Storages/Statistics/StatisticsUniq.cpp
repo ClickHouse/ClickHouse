@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_STATISTICS;
+    extern const int LOGICAL_ERROR;
 }
 
 StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

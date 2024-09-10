@@ -4,12 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 /// second return value represents how many columns in the node.
 static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNode & node)
 {
