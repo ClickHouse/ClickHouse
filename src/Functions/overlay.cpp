@@ -1,12 +1,12 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <Common/StringUtils.h>
-#include <Common/UTF8Helpers.h>
 
 namespace DB
 {
@@ -16,8 +16,8 @@ namespace
 
 /// If 'is_utf8' - measure offset and length in code points instead of bytes.
 /// Syntax:
-/// - overlay(input, replace, offset[, length])
-/// - overlayUTF8(input, replace, offset[, length]) - measure offset and length in code points instead of bytes
+/// - overlay(s, replace, offset[, length])
+/// - overlayUTF8(s, replace, offset[, length]) - measure offset and length in code points instead of bytes
 template <bool is_utf8>
 class FunctionOverlay : public IFunction
 {
@@ -34,7 +34,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
             {"replace", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
             {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"},
         };
@@ -99,7 +99,6 @@ public:
         {
             res_data.reserve(col_input_string->getChars().size());
         }
-
 
 #define OVERLAY_EXECUTE_CASE(HAS_FOUR_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST) \
     if (input_is_const && replace_is_const) \
@@ -186,7 +185,6 @@ public:
         return res_col;
     }
 
-
 private:
     /// input offset is 1-based, maybe negative
     /// output result is 0-based valid offset, within [0, input_size]
@@ -229,6 +227,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
+        /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
             constantConstant<true, offset_is_const, false>(
@@ -343,6 +342,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
+        /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
             vectorConstant<true, offset_is_const, false>(
@@ -461,6 +461,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
+        /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
             constantVector<true, offset_is_const, false>(
@@ -577,6 +578,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
+        /// Free us from handling negative length in the code below
         if (has_four_args && length_is_const && const_length < 0)
         {
             vectorVector<true, offset_is_const, false>(

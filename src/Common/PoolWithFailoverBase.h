@@ -122,12 +122,18 @@ public:
         return result.entry.isNull() || !result.is_usable || (skip_read_only_replicas && result.is_readonly);
     }
 
-    void checkTryResultIsValid(const TryResult & result, bool skip_read_only_replicas) const
+    TryResult getValidTryResult(const std::vector<TryResult> & results, bool skip_read_only_replicas) const
     {
+        if (results.empty())
+            throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get any valid connection because all connection tries failed");
+
+        auto result = results.front();
         if (isTryResultInvalid(result, skip_read_only_replicas))
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
                 "Got an invalid connection result: entry.isNull {}, is_usable {}, is_up_to_date {}, delay {}, is_readonly {}, skip_read_only_replicas {}",
                 result.entry.isNull(), result.is_usable, result.is_up_to_date, result.delay, result.is_readonly, skip_read_only_replicas);
+
+        return result;
     }
 
     size_t getPoolSize() const { return nested_pools.size(); }
