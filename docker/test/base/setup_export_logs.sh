@@ -184,7 +184,12 @@ function setup_logs_replication
             /^TTL /d
             ')
 
-        echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
+        echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
+        echo "::group::${table}"
+        cat >&2 <<EOF
+$statement
+EOF
+        echo "::endgroup::"
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
