@@ -22,7 +22,7 @@ namespace DB
   */
 
 /// Specifies how many connections to return from ConnectionPoolWithFailover::getMany() method.
-enum class PoolMode : uint8_t
+enum class PoolMode
 {
     /// Return exactly one connection.
     GET_ONE = 0,
@@ -42,7 +42,7 @@ public:
             size_t max_error_cap = DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT);
 
     using Entry = IConnectionPool::Entry;
-    using PoolWithFailoverBase<IConnectionPool>::checkTryResultIsValid;
+    using PoolWithFailoverBase<IConnectionPool>::isTryResultInvalid;
 
     /** Allocates connection to work. */
     Entry get(const ConnectionTimeouts & timeouts) override;

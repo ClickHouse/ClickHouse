@@ -38,7 +38,6 @@ public:
 
     /// TODO: remove context somehow.
     void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
-    void setQueryParameters(const NameToNameMap & parameters);
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
@@ -50,7 +49,7 @@ private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
 
-    enum class ParserType : uint8_t
+    enum class ParserType
     {
         Streaming,
         BatchTemplate,

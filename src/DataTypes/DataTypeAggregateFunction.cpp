@@ -15,7 +15,6 @@
 #include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -31,21 +30,6 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
-}
-
-
-DataTypeAggregateFunction::DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                            const Array & parameters_, std::optional<size_t> version_)
-    : function(std::move(function_))
-    , argument_types(argument_types_)
-    , parameters(parameters_)
-    , version(version_)
-{
-}
-
-String DataTypeAggregateFunction::getFunctionName() const
-{
-    return function->getName();
 }
 
 
@@ -68,25 +52,6 @@ size_t DataTypeAggregateFunction::getVersion() const
     return function->getDefaultVersion();
 }
 
-DataTypePtr DataTypeAggregateFunction::getReturnType() const
-{
-    return function->getResultType();
-}
-
-DataTypePtr DataTypeAggregateFunction::getReturnTypeToPredict() const
-{
-    return function->getReturnTypeToPredict();
-}
-
-bool DataTypeAggregateFunction::isVersioned() const
-{
-    return function->isVersioned();
-}
-
-void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
-{
-    setVersion(function->getVersionFromRevision(revision), if_empty);
-}
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
@@ -129,7 +94,7 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 Field DataTypeAggregateFunction::getDefault() const
 {
     Field field = AggregateFunctionStateData();
-    field.safeGet<AggregateFunctionStateData &>().name = getName();
+    field.get<AggregateFunctionStateData &>().name = getName();
 
     AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
@@ -138,7 +103,7 @@ Field DataTypeAggregateFunction::getDefault() const
 
     try
     {
-        WriteBufferFromString buffer_from_field(field.safeGet<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
         function->serialize(place, buffer_from_field, version);
     }
     catch (...)
@@ -267,8 +232,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected AST element {} passed as aggregate function name for data type AggregateFunction. "
-                        "Must be identifier or function", data_type_ast->getID());
+                        "Unexpected AST element passed as aggregate function name for data type AggregateFunction. "
+                        "Must be identifier or function.");
 
     for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));

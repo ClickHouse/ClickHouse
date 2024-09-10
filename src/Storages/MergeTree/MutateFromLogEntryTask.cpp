@@ -2,7 +2,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <cmath>
 
@@ -117,7 +116,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
+    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
     future_mutated_part->updatePath(storage, reserved_space.get());
 
     table_lock_holder = storage.lockForShare(
@@ -205,9 +204,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContextForMutate(*storage.getSettings());
+    task_context->makeQueryContext();
     task_context->setCurrentQueryId(getQueryId());
-    task_context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
 
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -254,7 +252,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
                            "We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
-            mutate_task->updateProfileEvents();
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
@@ -282,7 +279,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
          */
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
-    mutate_task->updateProfileEvents();
     write_part_log({});
 
     return true;

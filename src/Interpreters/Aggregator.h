@@ -39,10 +39,9 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <Interpreters/AggregationMethod.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregatedDataVariants.h>
-#include <Interpreters/AggregationMethod.h>
-#include <Interpreters/HashTablesStatistics.h>
 
 namespace DB
 {
@@ -58,18 +57,6 @@ using ColumnsHashing::LastElementCacheStats;
 class CompiledAggregateFunctionsHolder;
 class NativeWriter;
 struct OutputBlockColumns;
-
-struct GroupingSetsParams
-{
-    GroupingSetsParams() = default;
-
-    GroupingSetsParams(Names used_keys_, Names missing_keys_) : used_keys(std::move(used_keys_)), missing_keys(std::move(missing_keys_)) { }
-
-    Names used_keys;
-    Names missing_keys;
-};
-
-using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -140,6 +127,24 @@ public:
         bool optimize_group_by_constant_keys;
 
         const double min_hit_rate_to_use_consecutive_keys_optimization;
+
+        struct StatsCollectingParams
+        {
+            StatsCollectingParams();
+
+            StatsCollectingParams(
+                const ASTPtr & select_query_,
+                bool collect_hash_table_stats_during_aggregation_,
+                size_t max_entries_for_hash_table_stats_,
+                size_t max_size_to_preallocate_for_aggregation_);
+
+            bool isCollectionAndUseEnabled() const { return key != 0; }
+            void disable() { key = 0; }
+
+            UInt64 key = 0;
+            const size_t max_entries_for_hash_table_stats = 0;
+            const size_t max_size_to_preallocate_for_aggregation = 0;
+        };
 
         StatsCollectingParams stats_collecting_params;
 
@@ -261,10 +266,7 @@ public:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Used for aggregate projection.
-    bool mergeOnBlock(Block block,
-        AggregatedDataVariants & result,
-        bool & no_more_keys,
-        std::atomic<bool> & is_cancelled) const;
+    bool mergeOnBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys) const;
 
     void mergeOnBlockSmall(
         AggregatedDataVariants & result,
@@ -277,8 +279,7 @@ public:
         AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
-        const AggregateColumnsConstData & aggregate_columns_data,
-        std::atomic<bool> & is_cancelled) const;
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
@@ -293,13 +294,13 @@ public:
 
     using BucketToBlocks = std::map<Int32, BlocksList>;
     /// Merge partially aggregated blocks separated to buckets into one data structure.
-    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads, std::atomic<bool> & is_cancelled);
+    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads);
 
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
     /// (either all blocks are from overflow data or none blocks are).
     /// The resulting block has the same value of is_overflows flag.
-    Block mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool> & is_cancelled);
+    Block mergeBlocks(BlocksList & blocks, bool final);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
@@ -485,8 +486,7 @@ private:
         Arena * arena) const;
 
     void mergeWithoutKeyDataImpl(
-        ManyAggregatedDataVariants & non_empty_data,
-        std::atomic<bool> & is_cancelled) const;
+        ManyAggregatedDataVariants & non_empty_data) const;
 
     template <typename Method>
     void mergeSingleLevelDataImpl(
@@ -541,7 +541,7 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> * is_cancelled = nullptr) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
@@ -597,19 +597,17 @@ private:
 
     void mergeBlockWithoutKeyStreamsImpl(
         Block block,
-        AggregatedDataVariants & result,
-        std::atomic<bool> & is_cancelled) const;
+        AggregatedDataVariants & result) const;
 
     void mergeWithoutKeyStreamsImpl(
         AggregatedDataVariants & result,
         size_t row_begin,
         size_t row_end,
-        const AggregateColumnsConstData & aggregate_columns_data,
-        std::atomic<bool> & is_cancelled) const;
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     template <typename Method>
     void mergeBucketImpl(
-        ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> & is_cancelled) const;
+        ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> * is_cancelled = nullptr) const;
 
     template <typename Method>
     void convertBlockToTwoLevelImpl(
@@ -669,7 +667,6 @@ private:
         Arena * arena);
 };
 
-UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
@@ -681,4 +678,13 @@ APPLY_FOR_AGGREGATED_VARIANTS(M)
 
 #undef M
 
+
+struct HashTablesCacheStatistics
+{
+    size_t entries = 0;
+    size_t hits = 0;
+    size_t misses = 0;
+};
+
+std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 }

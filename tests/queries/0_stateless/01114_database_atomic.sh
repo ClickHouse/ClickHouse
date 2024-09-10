@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-parallel, no-fasttest
 # Tag no-fasttest: 45 seconds running
 
 # Creation of a database with Ordinary engine emits a warning.
@@ -51,8 +51,8 @@ $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW
 $CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='${DATABASE_2}'" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 
 RANDOM_COMMENT="$RANDOM"
-$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(3) AS col FROM ${DATABASE_1}.mt) -- ${RANDOM_COMMENT}" &     # 66s (3s * 22 rows per partition [Using 5 threads in parallel]), result: 110, 5995
-$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + sleepEachRow(2.2) FROM numbers(30) -- ${RANDOM_COMMENT}" &                # 66s (2.2s * 30 rows)
+$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 60000000 -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(1.5) AS col FROM ${DATABASE_1}.mt) -- ${RANDOM_COMMENT}" &     # 33s (1.5s * 22 rows per partition [Using 5 threads in parallel]), result: 110, 5995
+$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 60000000 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + sleepEachRow(1.5) FROM numbers(30) -- ${RANDOM_COMMENT}" &                  # 45s (1.5s * 30 rows)
 
 it=0
 while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_COMMENT}%'") -ne 2 ]]; do
@@ -87,7 +87,7 @@ SELECT count() FROM ${DATABASE_1}.mt
 " # result: 5
 
 RANDOM_TUPLE="${RANDOM}_tuple"
-$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 60000000 -q "SELECT tuple(s, sleepEachRow(4)) FROM ${DATABASE_1}.mt -- ${RANDOM_TUPLE}" > /dev/null &    # 20s (4s * 5 rows)
+$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 60000000 -q "SELECT tuple(s, sleepEachRow(3)) FROM ${DATABASE_1}.mt -- ${RANDOM_TUPLE}" > /dev/null &    # 15s (3s * 5 rows)
 it=0
 while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_TUPLE}%'") -ne 1 ]]; do
     it=$((it+1))
