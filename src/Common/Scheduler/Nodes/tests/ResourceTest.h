@@ -14,10 +14,12 @@
 
 #include <atomic>
 #include <barrier>
+#include <functional>
 #include <unordered_map>
 #include <mutex>
 #include <set>
 #include <sstream>
+#include <utility>
 
 namespace DB
 {
@@ -37,10 +39,17 @@ struct ResourceTestBase
         Poco::AutoPtr config{new Poco::Util::XMLConfiguration(stream)};
         String config_prefix = "node";
 
+        return add<TClass>(event_queue, root_node, path, std::ref(*config), config_prefix);
+    }
+
+    template <class TClass, class... Args>
+    static TClass * add(EventQueue * event_queue, SchedulerNodePtr & root_node, const String & path, Args... args)
+    {
+
         if (path == "/")
         {
             EXPECT_TRUE(root_node.get() == nullptr);
-            root_node.reset(new TClass(event_queue, *config, config_prefix));
+            root_node.reset(new TClass(event_queue, std::forward<Args>(args)...));
             return static_cast<TClass *>(root_node.get());
         }
 
@@ -65,7 +74,7 @@ struct ResourceTestBase
         }
 
         EXPECT_TRUE(!child_name.empty()); // wrong path
-        SchedulerNodePtr node = std::make_shared<TClass>(event_queue, *config, config_prefix);
+        SchedulerNodePtr node = std::make_shared<TClass>(event_queue, std::forward<Args>(args)...);
         node->basename = child_name;
         parent->attachChild(node);
         return static_cast<TClass *>(node.get());
@@ -124,6 +133,12 @@ public:
     void add(const String & path, const String & xml = {})
     {
         ResourceTestBase::add<TClass>(&event_queue, root_node, path, xml);
+    }
+
+    template <class TClass, class... Args>
+    void addCustom(const String & path, Args... args)
+    {
+        ResourceTestBase::add<TClass>(&event_queue, root_node, path, std::forward<Args>(args)...);
     }
 
     void enqueue(const String & path, const std::vector<ResourceCost> & costs)
