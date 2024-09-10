@@ -708,6 +708,7 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
+PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
