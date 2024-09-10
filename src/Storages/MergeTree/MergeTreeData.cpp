@@ -486,10 +486,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         return {};
     }
 
-    ASTPtr expression_ast;
-
     PartitionPruner partition_pruner(storage_snapshot->metadata, filter_dag, local_context);
-
     Statistics merged_stats;
 
     if (partition_pruner.isUseless())

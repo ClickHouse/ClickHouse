@@ -691,7 +691,7 @@ Statistics IMergeTreeDataPart::loadStatistics() const
 
         if (!metadata_manager->exists(file_name))
         {
-            LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+            LOG_ERROR(storage.log, "Cannot find stats file {}, will skip it.", file_path);
             continue;
         }
         auto stat_file = metadata_manager->read(file_name);
