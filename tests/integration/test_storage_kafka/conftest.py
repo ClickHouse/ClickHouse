@@ -1,8 +1,9 @@
+from typing import Iterator
 import pytest
 import logging
 import time
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from test_storage_kafka.kafka_tests_utils import get_admin_client
 
 pytestmark = pytest.mark.skip
@@ -47,7 +48,7 @@ def init_cluster_and_instance():
 
 
 @pytest.fixture(scope="module")
-def kafka_cluster():
+def kafka_cluster() -> "Iterator[ClickHouseCluster]":
     try:
         init_cluster_and_instance()
         conftest_cluster.start()
@@ -60,7 +61,7 @@ def kafka_cluster():
 
 # kafka_cluster is requested here to ensure the cluster is initialized before we yield the instance
 @pytest.fixture()
-def instance(kafka_cluster):
+def instance(kafka_cluster) -> "Iterator[ClickHouseInstance]":
     yield conftest_instance
 
 
