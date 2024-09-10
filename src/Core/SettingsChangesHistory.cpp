@@ -76,12 +76,14 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
             {"output_format_always_quote_identifiers", false, false, "New setting."},
-            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."}
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
+            {"database_replicated_allow_replicated_engine_arguments", 1, 0, "Don't allow explicit arguments by default"},
+            {"database_replicated_allow_explicit_uuid", 0, 0, "Added a new setting to disallow explicitly specifying table UUID"},
         }
     },
     {"24.8",
         {
-            {"rows_before_aggregation", true, true, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
+            {"rows_before_aggregation", false, false, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
             {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
             {"restore_replace_external_engines_to_null", false, false, "New setting."},
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
@@ -93,8 +95,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
-            {"local_create_new_file_on_insert", false, false, "Enabled creating a new file on each insert in local object storage engine tables"},
-            {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"allow_experimental_json_type", false, false, "Add new experimental JSON type"},
             {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
             {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
