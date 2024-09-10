@@ -21,7 +21,6 @@
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/TablesDependencyGraph.h>
-#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -441,8 +440,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
         bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
 
         String replica_host_id;
-        bool replica_exists_in_zk = current_zookeeper->tryGet(replica_path, replica_host_id);
-        if (replica_exists_in_zk)
+        if (current_zookeeper->tryGet(replica_path, replica_host_id))
         {
             if (replica_host_id == DROPPED_MARK && !is_create_query)
             {
@@ -455,7 +453,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
             String host_id_default = getHostID(getContext(), db_uuid, false);
 
-            if (replica_host_id != host_id && replica_host_id != host_id_default)
+            if (is_create_query || (replica_host_id != host_id && replica_host_id != host_id_default))
             {
                 throw Exception(
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
@@ -485,20 +483,13 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 current_zookeeper->set(replica_path + "/replica_group", replica_group_name, -1);
                 createEmptyLogEntry(current_zookeeper);
             }
-
-            /// Needed to mark all the queries
-            /// in the range (max log ptr at replica ZooKeeper nodes creation, max log ptr after replica recovery] as successful.
-            String max_log_ptr_at_creation_str;
-            if (current_zookeeper->tryGet(replica_path + "/max_log_ptr_at_creation", max_log_ptr_at_creation_str))
-                max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_at_creation_str);
         }
-
-        if (is_create_query)
+        else if (is_create_query)
         {
-            /// Create replica nodes in ZooKeeper. If newly initialized nodes already exist, reuse them.
+            /// Create new replica. Throws if replica with the same name already exists
             createReplicaNodesInZooKeeper(current_zookeeper);
         }
-        else if (!replica_exists_in_zk)
+        else
         {
             /// It's not CREATE query, but replica does not exist. Probably it was dropped.
             /// Do not create anything, continue as readonly.
@@ -614,84 +605,37 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
                         "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    const auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
-
-    const std::vector<String> check_paths = {
-        replica_path,
-        replica_path + "/replica_group",
-        replica_path + "/digest",
-    };
-    bool nodes_exist = true;
-    auto check_responses = current_zookeeper->tryGet(check_paths);
-    for (size_t i = 0; i < check_responses.size(); ++i)
-    {
-        const auto response = check_responses[i];
-
-        if (response.error == Coordination::Error::ZNONODE)
-        {
-            nodes_exist = false;
-            break;
-        } else if (response.error != Coordination::Error::ZOK)
-        {
-            throw zkutil::KeeperException::fromPath(response.error, check_paths[i]);
-        }
-    }
-
-    if (nodes_exist)
-    {
-        const std::vector<String> expected_data = {
-            host_id,
-            replica_group_name,
-            "0",
-        };
-        for (size_t i = 0; i != expected_data.size(); ++i)
-        {
-            if (check_responses[i].data != expected_data[i])
-            {
-                throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica node {} in ZooKeeper already exists and contains unexpected value: {}",
-                    quoteString(check_paths[i]), quoteString(check_responses[i].data));
-            }
-        }
-
-        LOG_DEBUG(log, "Newly initialized replica nodes found in ZooKeeper, reusing them");
-        createEmptyLogEntry(current_zookeeper);
-        return;
-    }
+    auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
 
     for (int attempts = 10; attempts > 0; --attempts)
     {
         Coordination::Stat stat;
-        const String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
+        String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
 
-        const Coordination::Requests ops = {
-            zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent),
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent));
+        /// In addition to creating the replica nodes, we record the max_log_ptr at the instant where
+        /// we declared ourself as an existing replica. We'll need this during recoverLostReplica to
+        /// notify other nodes that issued new queries while this node was recovering.
+        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version));
 
-            /// Previously, this method was not idempotent and max_log_ptr_at_creation could be stored in memory.
-            /// we need to store max_log_ptr_at_creation in ZooKeeper to make this method idempotent during replica creation.
-            zkutil::makeCreateRequest(replica_path + "/max_log_ptr_at_creation", max_log_ptr_str, zkutil::CreateMode::Persistent),
-            zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version),
-        };
-
-        Coordination::Responses ops_responses;
-        const auto code = current_zookeeper->tryMulti(ops, ops_responses);
-
+        Coordination::Responses responses;
+        const auto code = current_zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZOK)
         {
             max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_str);
-            createEmptyLogEntry(current_zookeeper);
-            return;
+            break;
         }
-
-        if (attempts == 1)
+        else if (code == Coordination::Error::ZNODEEXISTS || attempts == 1)
         {
-            zkutil::KeeperMultiException::check(code, ops, ops_responses);
+            /// If its our last attempt, or if the replica already exists, fail immediately.
+            zkutil::KeeperMultiException::check(code, ops, responses);
         }
     }
+    createEmptyLogEntry(current_zookeeper);
 }
 
 void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode)
@@ -907,6 +851,18 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     bool maybe_replica_macros = info.expanded_other;
     bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
 
+    if (!enable_functional_tests_helper)
+    {
+        if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
+            LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "It's not allowed to specify explicit zookeeper_path and replica_name "
+                            "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
+                            "specify them explicitly, enable setting "
+                            "database_replicated_allow_replicated_engine_arguments.");
+    }
+
     if (maybe_shard_macros && maybe_replica_macros)
         return;
 
@@ -919,9 +875,7 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
         return;
     }
 
-    /// We will replace it with default arguments if the setting is 2
-    if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments != 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
                     "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
                     "If you really want to specify it explicitly, then you should use some macros "
                     "to distinguish different shards and replicas");
@@ -1188,10 +1142,39 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
-        enableAllExperimentalSettings(query_context);
+        query_context->setSetting("allow_experimental_inverted_index", 1);
+        query_context->setSetting("allow_experimental_full_text_index", 1);
+        query_context->setSetting("allow_experimental_codecs", 1);
+        query_context->setSetting("allow_experimental_live_view", 1);
+        query_context->setSetting("allow_experimental_window_view", 1);
+        query_context->setSetting("allow_experimental_funnel_functions", 1);
+        query_context->setSetting("allow_experimental_nlp_functions", 1);
+        query_context->setSetting("allow_experimental_hash_functions", 1);
+        query_context->setSetting("allow_experimental_object_type", 1);
+        query_context->setSetting("allow_experimental_variant_type", 1);
+        query_context->setSetting("allow_experimental_dynamic_type", 1);
+        query_context->setSetting("allow_experimental_json_type", 1);
+        query_context->setSetting("allow_experimental_vector_similarity_index", 1);
+        query_context->setSetting("allow_experimental_bigint_types", 1);
+        query_context->setSetting("allow_experimental_window_functions", 1);
+        query_context->setSetting("allow_experimental_geo_types", 1);
+        query_context->setSetting("allow_experimental_map_type", 1);
+        query_context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
-        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
-        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+        query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
+        query_context->setSetting("allow_suspicious_fixed_string_types", 1);
+        query_context->setSetting("allow_suspicious_indices", 1);
+        query_context->setSetting("allow_suspicious_codecs", 1);
+        query_context->setSetting("allow_hyperscan", 1);
+        query_context->setSetting("allow_simdjson", 1);
+        query_context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
+        query_context->setSetting("allow_suspicious_primary_key", 1);
+        query_context->setSetting("allow_suspicious_ttl_expressions", 1);
+        query_context->setSetting("allow_suspicious_variant_types", 1);
+        query_context->setSetting("enable_deflate_qpl_codec", 1);
+        query_context->setSetting("enable_zstd_qat_codec", 1);
+        query_context->setSetting("allow_create_index_without_type", 1);
+        query_context->setSetting("allow_experimental_s3queue", 1);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);

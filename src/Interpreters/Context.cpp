@@ -893,12 +893,6 @@ ContextData::ContextData(const ContextData &o) :
 {
 }
 
-void ContextData::resetSharedContext()
-{
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    shared = nullptr;
-}
-
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
 
@@ -918,6 +912,14 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
+}
+
+void Context::initGlobal()
+{
+    assert(!global_context_instance);
+    global_context_instance = shared_from_this();
+    DatabaseCatalog::init(shared_from_this());
+    EventNotifier::init();
 }
 
 SharedContextHolder Context::createShared()
@@ -2690,11 +2692,7 @@ void Context::makeSessionContext()
 
 void Context::makeGlobalContext()
 {
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
-
+    initGlobal();
     global_context = shared_from_this();
 }
 
@@ -2959,9 +2957,6 @@ ProgressCallback Context::getProgressCallback() const
 
 void Context::setProcessListElement(QueryStatusPtr elem)
 {
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have process list element");
-
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
     has_process_list_elem = elem.get();
@@ -4090,13 +4085,8 @@ void Context::initializeTraceCollector()
 }
 
 /// Call after unexpected crash happen.
-void Context::handleCrash() const
+void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    if (!shared)
-        return;
-
-    SharedLockGuard lock2(shared->mutex);
     if (shared->system_logs)
         shared->system_logs->handleCrash();
 }

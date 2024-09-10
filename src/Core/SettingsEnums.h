@@ -10,7 +10,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Parsers/ASTSQLSecurity.h>
-#include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
 
@@ -312,7 +311,6 @@ enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
     DROP,
-    REBUILD,
 };
 
 DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
@@ -351,8 +349,6 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
-
-DECLARE_SETTING_ENUM(IdentifierQuotingStyle)
 
 enum class GroupArrayActionWhenLimitReached : uint8_t
 {

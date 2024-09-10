@@ -1381,7 +1381,7 @@ Default value: `2`.
 
 Close connection before returning connection to the pool.
 
-Default value: false.
+Default value: true.
 
 ## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
 
@@ -2855,23 +2855,13 @@ The minimum chunk size in bytes, which each thread will parse in parallel.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Minimum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
 - Any positive integer.
 
 Default value: `5000`.
-
-## max_merge_selecting_sleep_ms
-
-Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
-
-Possible values:
-
-- Any positive integer.
-
-Default value: `60000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -3226,7 +3216,7 @@ Default value: `0`.
 
 ## lightweight_deletes_sync {#lightweight_deletes_sync}
 
-The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
+The same as 'mutation_sync', but controls only execution of lightweight deletes.
 
 Possible values:
 
@@ -5676,9 +5666,3 @@ Possible values:
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 
 Default value: `0`.
-
-## create_if_not_exists
-
-Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
-
-Default value: `false`.

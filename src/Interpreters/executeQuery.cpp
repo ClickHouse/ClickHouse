@@ -90,7 +90,6 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
-    extern const Event RealTimeMicroseconds;
 }
 
 namespace DB
@@ -399,14 +398,9 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
-        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
-        QueryStatusInfo info = process_list_elem->getInfo(true, true);
-        if (context->getSettingsRef().log_profile_events)
-            profile_counters = info.profile_counters;
-        else
-            profile_counters.swap(info.profile_counters);
-
+        QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
         elem.type = QueryLogElementType::QUERY_FINISH;
+
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
@@ -425,7 +419,6 @@ void logQueryFinish(
         {
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
-            p.incrementRealTimeMicroseconds((*profile_counters)[ProfileEvents::RealTimeMicroseconds]);
             progress_callback(p);
         }
 
@@ -478,8 +471,6 @@ void logQueryFinish(
                     processor_elem.parent_ids = std::move(parents);
 
                     processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
-                    processor_elem.plan_step_name = processor->getPlanStepName();
-                    processor_elem.plan_step_description = processor->getPlanStepDescription();
                     processor_elem.plan_group = processor->getQueryPlanStepGroup();
 
                     processor_elem.processor_name = processor->getName();
@@ -795,7 +786,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -820,7 +811,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,

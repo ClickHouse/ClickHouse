@@ -11,6 +11,7 @@
 #include <Common/Throttler.h>
 #include <Interpreters/Cache/FileCache.h>
 
+#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
@@ -557,11 +558,12 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
         auto & request = std::get<0>(*worker_data);
 
-        CurrentThread::IOScope io_scope(write_settings.io_scheduling);
-
+        ResourceCost cost = request.GetContentLength();
+        ResourceGuard rlock(write_settings.resource_link, cost);
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
         watch.stop();
+        rlock.unlock(); // Avoid acquiring other locks under resource lock
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
@@ -575,6 +577,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         if (!outcome.IsSuccess())
         {
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         }
 
@@ -712,11 +715,12 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
-            CurrentThread::IOScope io_scope(write_settings.io_scheduling);
-
+            ResourceCost cost = request.GetContentLength();
+            ResourceGuard rlock(write_settings.resource_link, cost);
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);
             watch.stop();
+            rlock.unlock();
 
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
             if (blob_log)
@@ -730,6 +734,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             }
 
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
 
             if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
             {

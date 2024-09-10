@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tag-type",
         type=str,
-        choices=("head", "release", "release-latest"),
+        choices=("head", "release", "latest-release"),
         default="head",
         help="defines required tags for resulting docker image. "
         "head - for master image (tag: head) "

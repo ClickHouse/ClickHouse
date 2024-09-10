@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_AVRO
+#if USE_AWS_S3 && USE_AVRO
 
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>

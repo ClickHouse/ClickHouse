@@ -264,11 +264,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOwnString str_buf;
-                        bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
-                        settings.show_secrets = true;
-                        settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(settings);
+                        formatAST(*res, str_buf, hilite, oneline || approx_query_length < max_line_length);
 
                         if (insert_query_payload)
                         {
@@ -311,11 +307,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     else
                     {
                         WriteBufferFromOwnString str_buf;
-                        bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
-                        settings.show_secrets = true;
-                        settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(settings);
+                        formatAST(*res, str_buf, hilite, oneline);
 
                         auto res_string = str_buf.str();
                         WriteBufferFromOStream res_cout(std::cout, 4096);

@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS sticking_mutations"
 
 function check_sticky_mutations()
 {
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE sticking_mutations (
+    $CLICKHOUSE_CLIENT -n --query "CREATE TABLE sticking_mutations (
       date Date,
       key UInt64,
       value1 String,

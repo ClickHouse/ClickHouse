@@ -1598,9 +1598,6 @@ ColumnPtr FunctionArrayElement::executeTuple(const ColumnsWithTypeAndName & argu
     const auto & tuple_columns = col_nested->getColumns();
     size_t tuple_size = tuple_columns.size();
 
-    if (tuple_size == 0)
-        return ColumnTuple::create(input_rows_count);
-
     const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(
         *typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType()).getElements();
 

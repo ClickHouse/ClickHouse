@@ -175,8 +175,7 @@ IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGU
 
 IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", LightweightMutationProjectionMode::THROW},
-     {"drop", LightweightMutationProjectionMode::DROP},
-     {"rebuild", LightweightMutationProjectionMode::REBUILD}})
+     {"drop", LightweightMutationProjectionMode::DROP}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", DeduplicateMergeProjectionMode::THROW},
@@ -244,10 +243,4 @@ IMPLEMENT_SETTING_ENUM(
     GroupArrayActionWhenLimitReached,
     ErrorCodes::BAD_ARGUMENTS,
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
-
-IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", IdentifierQuotingStyle::None},
-     {"Backticks", IdentifierQuotingStyle::Backticks},
-     {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
-     {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
 }

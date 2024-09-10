@@ -9,7 +9,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
-#include <Interpreters/Squashing.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -73,7 +72,6 @@ public:
         std::unique_ptr<MergeListElement> projection_merge_list_element_,
         time_t time_of_merge_,
         ContextPtr context_,
-        TableLockHolder & holder,
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
@@ -98,7 +96,6 @@ public:
                 = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get() : (*global_ctx->merge_entry)->ptr();
             global_ctx->time_of_merge = std::move(time_of_merge_);
             global_ctx->context = std::move(context_);
-            global_ctx->holder = &holder;
             global_ctx->space_reservation = std::move(space_reservation_);
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
@@ -154,7 +151,6 @@ private:
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
     {
-        TableLockHolder * holder;
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
@@ -166,7 +162,6 @@ private:
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
-        std::vector<AlterConversionsPtr> alter_conversions;
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
@@ -185,10 +180,6 @@ private:
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
-
-        std::vector<ProjectionDescriptionRawPtr> projections_to_rebuild{};
-        std::vector<ProjectionDescriptionRawPtr> projections_to_merge{};
-        std::map<String, MergeTreeData::DataPartsVector> projections_to_merge_parts{};
 
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
@@ -237,14 +228,6 @@ private:
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
 
-        /// For projections to rebuild
-        using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
-        ProjectionNameToItsBlocks projection_parts;
-        std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
-        std::vector<Squashing> projection_squashes;
-        size_t projection_block_num = 0;
-        ExecutableTaskPtr merge_projection_parts_task_ptr;
-
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
@@ -274,22 +257,15 @@ private:
         void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 2>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
             &ExecuteAndFinalizeHorizontalPart::prepare,
-            &ExecuteAndFinalizeHorizontalPart::executeImpl,
-            &ExecuteAndFinalizeHorizontalPart::executeMergeProjections
+            &ExecuteAndFinalizeHorizontalPart::executeImpl
         };
 
         ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
-
-        void prepareProjectionsToMergeAndRebuild() const;
-        void calculateProjections(const Block & block) const;
-        void finalizeProjections() const;
-        void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections();
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();

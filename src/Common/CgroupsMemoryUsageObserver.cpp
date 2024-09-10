@@ -144,6 +144,31 @@ private:
 /// - I did not test what happens if a host has v1 and v2 simultaneously enabled. I believe such
 ///   systems existed only for a short transition period.
 
+std::optional<std::string> getCgroupsV2Path()
+{
+    if (!cgroupsV2Enabled())
+        return {};
+
+    if (!cgroupsV2MemoryControllerEnabled())
+        return {};
+
+    fs::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
+        return {};
+
+    /// Return the bottom-most nested current memory file. If there is no such file at the current
+    /// level, try again at the parent level as memory settings are inherited.
+    while (current_cgroup != default_cgroups_mount.parent_path())
+    {
+        const auto current_path = current_cgroup / "memory.current";
+        const auto stat_path = current_cgroup / "memory.stat";
+        if (fs::exists(current_path) && fs::exists(stat_path))
+            return {current_cgroup};
+        current_cgroup = current_cgroup.parent_path();
+    }
+    return {};
+}
+
 std::optional<std::string> getCgroupsV1Path()
 {
     auto path = default_cgroups_mount / "memory/memory.stat";
@@ -154,7 +179,7 @@ std::optional<std::string> getCgroupsV1Path()
 
 std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPath()
 {
-    auto v2_path = getCgroupsV2PathContainingFile("memory.current");
+    auto v2_path = getCgroupsV2Path();
     if (v2_path.has_value())
         return {*v2_path, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
 

@@ -44,7 +44,7 @@ namespace ErrorCodes
 namespace zkutil
 {
 
-/// Preferred size of multi command (in the number of operations)
+/// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
 struct ShuffleHost
