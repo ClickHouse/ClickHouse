@@ -122,6 +122,7 @@ Int32 ReplicatedMergeTreeAttachThread::fixReplicaMetadataVersionIfNeeded(zkutil:
 {
     const String & zookeeper_path = storage.zookeeper_path;
     const String & replica_path = storage.replica_path;
+    const bool replica_readonly = storage.is_readonly;
 
     for (size_t i = 0; i != 2; ++i)
     {
@@ -132,7 +133,7 @@ Int32 ReplicatedMergeTreeAttachThread::fixReplicaMetadataVersionIfNeeded(zkutil:
 
         const Int32 metadata_version = parse<Int32>(replica_metadata_version_str);
 
-        if (metadata_version != 0)
+        if (metadata_version != 0 || replica_readonly)
         {
             /// No need to fix anything
             return metadata_version;
