@@ -28,7 +28,7 @@ inline String format(const SecretHidingFormatSettings & settings)
 
     IdentifierQuotingRule identifier_quoting_rule = settings.ctx->getSettingsRef().output_format_always_quote_identifiers
         ? IdentifierQuotingRule::AlwaysQuote
-        : IdentifierQuotingRule::WhenNecessary;
+        : IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity;
     return settings.query.formatWithPossiblyHidingSensitiveData(
         settings.max_length,
         settings.one_line,

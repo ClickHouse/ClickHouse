@@ -218,9 +218,11 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name) const
+void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
 {
-    auto always_quote_identifiers = (identifier_quoting_rule == IdentifierQuotingRule::AlwaysQuote);
+    auto always_quote_identifiers
+        = (identifier_quoting_rule == IdentifierQuotingRule::AlwaysQuote
+           || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity));
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
@@ -255,34 +257,6 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
                 writeBackQuotedStringMySQL(name, ostr);
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);
-            break;
-        }
-    }
-}
-
-
-void IAST::FormatSettings::quoteIdentifier(const String & name) const
-{
-    switch (identifier_quoting_style)
-    {
-        case IdentifierQuotingStyle::None:
-        {
-            writeBackQuotedString(name, ostr);
-            break;
-        }
-        case IdentifierQuotingStyle::Backticks:
-        {
-            writeBackQuotedString(name, ostr);
-            break;
-        }
-        case IdentifierQuotingStyle::DoubleQuotes:
-        {
-            writeDoubleQuotedString(name, ostr);
-            break;
-        }
-        case IdentifierQuotingStyle::BackticksMySQL:
-        {
-            writeBackQuotedStringMySQL(name, ostr);
             break;
         }
     }

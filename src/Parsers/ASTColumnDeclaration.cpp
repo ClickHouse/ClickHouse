@@ -67,15 +67,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
 {
     frame.need_parens = false;
 
-    if (format_settings.identifier_quoting_rule == IdentifierQuotingRule::WhenNecessaryAndAvoidAmbiguity)
-    {
-        /// We have to always quote column names to avoid ambiguity with INDEX and other declarations in CREATE query.
-        format_settings.quoteIdentifier(name);
-    }
-    else
-    {
-        format_settings.writeIdentifier(name);
-    }
+    format_settings.writeIdentifier(name, true);
 
     if (type)
     {
