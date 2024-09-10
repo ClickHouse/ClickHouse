@@ -3640,7 +3640,7 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         auto ops = prepare_create_tree();
 
         ops.push_back(zkutil::makeRemoveRequest("/A/C", -1));
-        ops.push_back(zkutil::makeRemoveRecursiveRequest("/A", 4));
+        ops.push_back(zkutil::makeRemoveRecursiveRequest("/A", 3));
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
 
         storage.preprocessRequest(request, 1, 0, new_zxid);
