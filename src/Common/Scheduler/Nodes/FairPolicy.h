@@ -48,6 +48,10 @@ public:
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
+    FairPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : ISchedulerNode(event_queue_, info_)
+    {}
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))

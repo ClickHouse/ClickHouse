@@ -57,7 +57,13 @@ struct SchedulerNodeInfo
 
     SchedulerNodeInfo() = default;
 
-    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit SchedulerNodeInfo(double weight_, Priority priority_ = {})
+    {
+        setWeight(weight_);
+        setPriority(priority_);
+    }
+
+    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config, const String & config_prefix = {})
     {
         setWeight(config.getDouble(config_prefix + ".weight", weight));
         setPriority(config.getInt64(config_prefix + ".priority", priority));
@@ -76,6 +82,11 @@ struct SchedulerNodeInfo
     void setPriority(Int64 value)
     {
         priority.value = value;
+    }
+
+    void setPriority(Priority value)
+    {
+        priority = value;
     }
 
     // To check if configuration update required
@@ -123,6 +134,11 @@ public:
         , info(config, config_prefix)
     {}
 
+    ISchedulerNode(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : event_queue(event_queue_)
+        , info(info_)
+    {}
+
     virtual ~ISchedulerNode() = default;
 
     /// Checks if two nodes configuration is equal
@@ -134,10 +150,11 @@ public:
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;
 
-    /// Detach and destroy child
+    /// Detach child
+    /// NOTE: child might be destroyed if the only reference was stored in parent
     virtual void removeChild(ISchedulerNode * child) = 0;
 
-    /// Get attached child by name
+    /// Get attached child by name (for tests only)
     virtual ISchedulerNode * getChild(const String & child_name) = 0;
 
     /// Activation of child due to the first pending request
@@ -147,7 +164,7 @@ public:
     /// Returns true iff node is active
     virtual bool isActive() = 0;
 
-    /// Returns number of active children
+    /// Returns number of active children (for introspection only).
     virtual size_t activeChildren() = 0;
 
     /// Returns the first request to be executed as the first component of resulting pair.
@@ -155,10 +172,10 @@ public:
     virtual std::pair<ResourceRequest *, bool> dequeueRequest() = 0;
 
     /// Returns full path string using names of every parent
-    String getPath()
+    String getPath() const
     {
         String result;
-        ISchedulerNode * ptr = this;
+        const ISchedulerNode * ptr = this;
         while (ptr->parent)
         {
             result = "/" + ptr->basename + result;

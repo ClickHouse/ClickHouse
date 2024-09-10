@@ -21,6 +21,10 @@ public:
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
+    ISchedulerQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : ISchedulerNode(event_queue_, info_)
+    {}
+
     // Wrapper for `enqueueRequest()` that should be used to account for available resource budget
     void enqueueRequestUsingBudget(ResourceRequest * request)
     {

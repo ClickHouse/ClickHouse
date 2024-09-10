@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/Scheduler/ISchedulerNode.h"
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <mutex>
@@ -22,6 +23,12 @@ public:
         : ISchedulerConstraint(event_queue_, config, config_prefix)
         , max_requests(config.getInt64(config_prefix + ".max_requests", default_max_requests))
         , max_cost(config.getInt64(config_prefix + ".max_cost", config.getInt64(config_prefix + ".max_bytes", default_max_cost)))
+    {}
+
+    SemaphoreConstraint(EventQueue * event_queue_, const SchedulerNodeInfo & info_, Int64 max_requests_, Int64 max_cost_)
+        : ISchedulerConstraint(event_queue_, info_)
+        , max_requests(max_requests_)
+        , max_cost(max_cost_)
     {}
 
     bool equals(ISchedulerNode * other) override

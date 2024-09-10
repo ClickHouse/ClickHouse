@@ -30,6 +30,10 @@ public:
         : ISchedulerQueue(event_queue_, config, config_prefix)
     {}
 
+    FifoQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : ISchedulerQueue(event_queue_, info_)
+    {}
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))

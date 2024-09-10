@@ -28,6 +28,14 @@ public:
         , tokens(max_burst)
     {}
 
+    ThrottlerConstraint(EventQueue * event_queue_, const SchedulerNodeInfo & info_, double max_speed_, double max_burst_)
+        : ISchedulerConstraint(event_queue_, info_)
+        , max_speed(max_speed_)
+        , max_burst(max_burst_)
+        , last_update(event_queue_->now())
+        , tokens(max_burst)
+    {}
+
     ~ThrottlerConstraint() override
     {
         // We should cancel event on destruction to avoid dangling references from event queue

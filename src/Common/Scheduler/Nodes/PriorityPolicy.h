@@ -39,6 +39,10 @@ public:
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
+    explicit PriorityPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & node_info)
+        : ISchedulerNode(event_queue_, node_info)
+    {}
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
