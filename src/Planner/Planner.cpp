@@ -198,6 +198,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     auto & result_query_plan = planner.getQueryPlan();
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
+    optimization_settings.build_sets = false; // no need to build sets to collect filters
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;
