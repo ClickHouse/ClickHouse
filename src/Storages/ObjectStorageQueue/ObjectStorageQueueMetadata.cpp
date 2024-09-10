@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
-    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace

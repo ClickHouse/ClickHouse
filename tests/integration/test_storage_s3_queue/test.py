@@ -1376,8 +1376,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 300
-    row_num = 300
+    files_to_generate = 1000
+    row_num = 500
     total_rows = row_num * files_to_generate
     shards_num = 2
 
