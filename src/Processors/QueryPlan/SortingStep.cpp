@@ -6,7 +6,6 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/VirtualRowTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -14,9 +13,6 @@
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Storages/MergeTree/MergeTreeSource.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
 #include <memory>
 
@@ -247,69 +243,11 @@ void SortingStep::finishSorting(
         });
 }
 
-void SortingStep::enableVirtualRow(const QueryPipelineBuilder & pipeline) const
-{
-    /// We check every step of this pipeline, to make sure virtual row can work correctly.
-    /// Currently ExpressionTransform is supported, should add other processors if possible.
-    const auto& pipe = pipeline.getPipe();
-    bool enable_virtual_row = true;
-    std::vector<std::shared_ptr<MergeTreeSource>> merge_tree_sources;
-    for (const auto & processor : pipe.getProcessors())
-    {
-        if (auto merge_tree_source = std::dynamic_pointer_cast<MergeTreeSource>(processor))
-        {
-            merge_tree_sources.push_back(merge_tree_source);
-        }
-        else if (!std::dynamic_pointer_cast<ExpressionTransform>(processor) && !std::dynamic_pointer_cast<VirtualRowTransform>(processor))
-        {
-            enable_virtual_row = false;
-            break;
-        }
-    }
-
-    /// If everything is okay, enable virtual row in MergeTreeSelectProcessor.
-    if (enable_virtual_row && merge_tree_sources.size() >= 2)
-    {
-        auto extractNameAfterDot = [](const String & name)
-        {
-            size_t pos = name.find_last_of('.');
-            return (pos != String::npos) ? name.substr(pos + 1) : name;
-        };
-
-        const ColumnWithTypeAndName & type_and_name = pipeline.getHeader().getByPosition(0);
-        String column_name = extractNameAfterDot(type_and_name.name);
-        for (const auto & merge_tree_source : merge_tree_sources)
-        {
-            const auto & merge_tree_select_processor = merge_tree_source->getProcessor();
-
-            /// Check pk is not func based, as we only check type and name in filling in primary key of virtual row.
-            const auto & primary_key = merge_tree_select_processor->getPrimaryKey();
-            const auto & actions = primary_key.expression->getActions();
-            bool is_okay = true;
-            for (const auto & action : actions)
-            {
-                if (action.node->type != ActionsDAG::ActionType::INPUT)
-                {
-                    is_okay = false;
-                    break;
-                }
-            }
-
-            /// We have to check further in the case of fixed prefix, for example,
-            /// primary key ab, query SELECT a, b FROM t WHERE a = 1 ORDER BY b,
-            /// merge sort would sort based on b, leading to wrong result in comparison.
-            if (is_okay && primary_key.column_names[0] == column_name && primary_key.data_types[0] == type_and_name.type)
-                merge_tree_select_processor->enableVirtualRow();
-        }
-    }
-}
-
 void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
-
         if (use_buffering && sort_settings.read_in_order_use_buffering)
         {
             pipeline.addSimpleTransform([&](const Block & header)
@@ -317,8 +255,6 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
                 return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
             });
         }
-
-        enableVirtualRow(pipeline);
 
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),

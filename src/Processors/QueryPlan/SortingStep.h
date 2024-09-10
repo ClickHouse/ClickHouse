@@ -118,8 +118,6 @@ private:
         UInt64 limit_,
         bool skip_partial_sort = false);
 
-    void enableVirtualRow(const QueryPipelineBuilder & pipeline) const;
-
     Type type;
 
     SortDescription prefix_description;

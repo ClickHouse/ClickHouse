@@ -36,7 +36,6 @@ public:
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
-        const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
@@ -60,17 +59,12 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
-    void enableVirtualRow() { enable_virtual_row = true; }
-
-    const KeyDescription & getPrimaryKey() const { return storage_snapshot->metadata->primary_key; }
-
 private:
     /// Sets up range readers corresponding to data readers
     void initializeRangeReaders();
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
-    const StorageSnapshotPtr storage_snapshot;
 
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
@@ -88,12 +82,6 @@ private:
 
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
-
-    /// Should we add a virtual row as the single first chunk.
-    /// Virtual row is useful for read-in-order optimization when multiple parts exist.
-    bool enable_virtual_row = false;
-    /// PK index used in virtual row.
-    IMergeTreeDataPart::Index index;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
