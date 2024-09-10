@@ -42,7 +42,7 @@ public:
             size_t max_error_cap = DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT);
 
     using Entry = IConnectionPool::Entry;
-    using PoolWithFailoverBase<IConnectionPool>::isTryResultInvalid;
+    using PoolWithFailoverBase<IConnectionPool>::checkTryResultIsValid;
 
     /** Allocates connection to work. */
     Entry get(const ConnectionTimeouts & timeouts) override;

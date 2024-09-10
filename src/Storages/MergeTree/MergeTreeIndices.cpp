@@ -127,15 +127,21 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("hypothesis", hypothesisIndexCreator);
 
     registerValidator("hypothesis", hypothesisIndexValidator);
-#ifdef ENABLE_ANNOY
-    registerCreator("annoy", annoyIndexCreator);
-    registerValidator("annoy", annoyIndexValidator);
-#endif
 
-#ifdef ENABLE_USEARCH
-    registerCreator("usearch", usearchIndexCreator);
-    registerValidator("usearch", usearchIndexValidator);
+#if USE_USEARCH
+    registerCreator("vector_similarity", vectorSimilarityIndexCreator);
+    registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
+    /// ------
+    /// TODO: remove this block at the end of 2024.
+    /// Index types 'annoy' and 'usearch' are no longer supported as of June 2024. Their successor is index type 'vector_similarity'.
+    /// To support loading tables with old indexes during a transition period, register dummy indexes which allow load/attaching but
+    /// throw an exception when the user attempts to use them.
+    registerCreator("annoy", legacyVectorSimilarityIndexCreator);
+    registerValidator("annoy", legacyVectorSimilarityIndexValidator);
+    registerCreator("usearch", legacyVectorSimilarityIndexCreator);
+    registerValidator("usearch", legacyVectorSimilarityIndexValidator);
+    /// ------
 
     registerCreator("inverted", fullTextIndexCreator);
     registerValidator("inverted", fullTextIndexValidator);

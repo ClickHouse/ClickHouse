@@ -21,8 +21,8 @@ class IQueryPlanStep;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class RowsBeforeLimitCounter;
-using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+class RowsBeforeStepCounter;
+using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -162,7 +162,7 @@ public:
         ExpandPipeline,
     };
 
-    static std::string statusToName(Status status);
+    static std::string statusToName(std::optional<Status> status);
 
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
@@ -311,14 +311,12 @@ public:
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
     /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
-    {
-        query_plan_step = step;
-        query_plan_step_group = group;
-    }
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
+    const String & getPlanStepName() const { return plan_step_name; }
+    const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
@@ -377,7 +375,11 @@ public:
 
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
-    virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
+    virtual void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /* counter */) { }
+
+    /// Set rows_before_aggregation counter for current processor.
+    /// This counter is used to calculate the number of rows right before AggregatingTransform.
+    virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
 protected:
     virtual void onCancel() noexcept {}
@@ -406,6 +408,8 @@ private:
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
+    String plan_step_name;
+    String plan_step_description;
 };
 
 

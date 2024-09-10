@@ -100,6 +100,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -619,7 +620,7 @@ struct ContextSharedPart : boost::noncopyable
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        SHUTDOWN(log, "system logs", system_logs, shutdown());
+        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
@@ -893,6 +894,12 @@ ContextData::ContextData(const ContextData &o) :
 {
 }
 
+void ContextData::resetSharedContext()
+{
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    shared = nullptr;
+}
+
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
 
@@ -912,14 +919,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
-}
-
-void Context::initGlobal()
-{
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
 }
 
 SharedContextHolder Context::createShared()
@@ -2692,7 +2691,11 @@ void Context::makeSessionContext()
 
 void Context::makeGlobalContext()
 {
-    initGlobal();
+    assert(!global_context_instance);
+    global_context_instance = shared_from_this();
+    DatabaseCatalog::init(shared_from_this());
+    EventNotifier::init();
+
     global_context = shared_from_this();
 }
 
@@ -2957,6 +2960,9 @@ ProgressCallback Context::getProgressCallback() const
 
 void Context::setProcessListElement(QueryStatusPtr elem)
 {
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have process list element");
+
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
     has_process_list_elem = elem.get();
@@ -3225,12 +3231,12 @@ QueryCachePtr Context::getQueryCache() const
     return shared->query_cache;
 }
 
-void Context::clearQueryCache() const
+void Context::clearQueryCache(const std::optional<String> & tag) const
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->query_cache)
-        shared->query_cache->clear();
+        shared->query_cache->clear(tag);
 }
 
 void Context::clearCaches() const
@@ -4085,8 +4091,13 @@ void Context::initializeTraceCollector()
 }
 
 /// Call after unexpected crash happen.
-void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
+void Context::handleCrash() const
 {
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    if (!shared)
+        return;
+
+    SharedLockGuard lock2(shared->mutex);
     if (shared->system_logs)
         shared->system_logs->handleCrash();
 }
@@ -4256,7 +4267,7 @@ std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->s3_queue_log;
+    return shared->system_logs->s3queue_log;
 }
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
@@ -4313,13 +4324,13 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
-std::vector<ISystemLog *> Context::getSystemLogs() const
+SystemLogs Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-    return shared->system_logs->logs;
+    return *shared->system_logs;
 }
 
 std::optional<Context::Dashboards> Context::getDashboards() const

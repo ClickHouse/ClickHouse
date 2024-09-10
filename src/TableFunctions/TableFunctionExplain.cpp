@@ -83,7 +83,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
             getName(), queryToString(kind_arg));
 
-    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.get<String>());
+    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
     auto explain_query = std::make_shared<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
@@ -92,7 +92,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a serialized string settings argument, got '{}'",
             getName(), queryToString(function->arguments->children[1]));
 
-    const auto & settings_str = settings_arg->value.get<String>();
+    const auto & settings_str = settings_arg->value.safeGet<String>();
     if (!settings_str.empty())
     {
         const Settings & settings = context->getSettingsRef();

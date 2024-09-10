@@ -80,7 +80,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
 Specifying a sorting key (using `ORDER BY` clause) implicitly specifies a primary key.
-It is usually not necessary to specify the primary key in addition to the primary key.
+It is usually not necessary to specify the primary key in addition to the sorting key.
 
 #### SAMPLE BY
 
@@ -989,19 +989,52 @@ ALTER TABLE tab DROP STATISTICS a;
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
 They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
-#### Available Types of Column Statistics {#available-types-of-column-statistics}
+### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+- `MinMax`
+
+    The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
+
+    Syntax: `minmax`
 
 - `TDigest`
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
+    Syntax: `tdigest`
+
 - `Uniq`
 
     [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
 
-- `count_min`
+    Syntax: `uniq`
 
-    [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+- `CountMin`
+
+    [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+
+    Syntax `countmin`
+
+
+### Supported Data Types {#supported-data-types}
+
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
+|-----------|----------------------------------------------------|-----------------------|
+| CountMin  | ✔                                                  | ✔                     |
+| MinMax    | ✔                                                  | ✗                     |
+| TDigest   | ✔                                                  | ✗                     |
+| Uniq      | ✔                                                  | ✔                     |
+
+
+### Supported Operations {#supported-operations}
+
+|           | Equality filters (==) | Range filters (>, >=, <, <=) |
+|-----------|-----------------------|------------------------------|
+| CountMin  | ✔                     | ✗                            |
+| MinMax    | ✗                     | ✔                            |
+| TDigest   | ✗                     | ✔                            |
+| Uniq      | ✔                     | ✗                            |
+
 
 ## Column-level Settings {#column-level-settings}
 

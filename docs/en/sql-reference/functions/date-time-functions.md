@@ -1617,8 +1617,19 @@ The calculation is performed relative to specific points in time:
 
 If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
-**See Also**
+**Syntax**
 
+```sql
+toStartOfInterval(value, INTERVAL x unit[, time_zone])
+toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
+```
+
+The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function, e.g.
+
+``` SQL
+SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));
+```
+**See Also**
 - [date_trunc](#date_trunc)
 
 ## toTime
@@ -2019,7 +2030,7 @@ Alias: `dateTrunc`.
 
     `unit` argument is case-insensitive.
 
-- `value` — Date and time. [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
+- `value` — Date and time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md).
 
 **Returned value**
@@ -3884,19 +3895,29 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## timeSlots(StartTime, Duration,\[, Size\])
+## timeSlots
 
 For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
 This is necessary, for example, when searching for pageviews in the corresponding session.
 Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
 Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
 
-Example:
+**Syntax**
+
+```sql
+timeSlots(StartTime, Duration,\[, Size\])
+```
+
+**Example**
+
 ```sql
 SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
 SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
 SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
 ```
+
+Result:
+
 ``` text
 ┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
 │ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
@@ -4287,7 +4308,7 @@ Result:
 
 ## fromModifiedJulianDay
 
-Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
+Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973483` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
 
 **Syntax**
 
