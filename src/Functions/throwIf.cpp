@@ -152,7 +152,7 @@ private:
         return nullptr;
     }
 
-    const bool allow_custom_error_code_argument;
+    bool allow_custom_error_code_argument;
 };
 
 }

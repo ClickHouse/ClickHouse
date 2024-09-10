@@ -37,7 +37,6 @@
 #include <base/defines.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/Pipe.h>
-#include <Common/ProfileEventsScope.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Parsers/SyncReplicaMode.h>
 
@@ -160,7 +159,7 @@ public:
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
@@ -933,7 +932,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
+    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
 
@@ -1014,18 +1013,6 @@ private:
         DataPartsVector::const_iterator it;
     };
 
-    const String TMP_PREFIX_REPLACE_PARTITION_FROM = "tmp_replace_from_";
-    std::unique_ptr<ReplicatedMergeTreeLogEntryData> replacePartitionFromImpl(
-        const Stopwatch & watch,
-        ProfileEventsScope & profile_events_scope,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeData & src_data,
-        const String & partition_id,
-        const zkutil::ZooKeeperPtr & zookeeper,
-        bool replace,
-        const bool & zero_copy_enabled,
-        const bool & always_use_copy_instead_of_hardlinks,
-        const ContextPtr & query_context);
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

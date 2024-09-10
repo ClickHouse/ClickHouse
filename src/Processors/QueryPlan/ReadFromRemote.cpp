@@ -21,7 +21,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -362,6 +362,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
     ClusterPtr cluster_,
     const StorageID & storage_id_,
+    ParallelReplicasReadingCoordinatorPtr coordinator_,
     Block header_,
     QueryProcessingStage::Enum stage_,
     ContextMutablePtr context_,
@@ -374,6 +375,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , cluster(cluster_)
     , query_ast(query_ast_)
     , storage_id(storage_id_)
+    , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , context(context_)
     , throttler(throttler_)
@@ -435,9 +437,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         auto priority_func = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
         shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
     }
-
-    coordinator
-        = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use, current_settings.parallel_replicas_mark_segment_size);
 
     for (size_t i=0; i < max_replicas_to_use; ++i)
     {

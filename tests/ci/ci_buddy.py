@@ -1,52 +1,28 @@
 import argparse
 import json
 import os
-from typing import Union, Dict, List
+from typing import Union, Dict
 
 import boto3
 import requests
 from botocore.exceptions import ClientError
 
 from pr_info import PRInfo
-from ci_config import CI
-from ci_utils import WithIter
-
-
-class Channels(metaclass=WithIter):
-    # Channel names must match json keys in ParameterStore
-    ALERTS = "alerts-channel"
-    INFO = "info-channel"
-    DRY_RUN = "dry-ryn-channel"
-    DEFAULT = "default"
+from ci_utils import Shell, GHActions
 
 
 class CIBuddy:
-    Channels = Channels
     _HEADERS = {"Content-Type": "application/json"}
 
     def __init__(self, dry_run=False):
         self.repo = os.getenv("GITHUB_REPOSITORY", "")
         self.dry_run = dry_run
         res = self._get_webhooks()
-        self.channels = {}
+        self.test_channel = ""
+        self.dev_ci_channel = ""
         if res:
-            channels = json.loads(res)
-            for channel in Channels:
-                if channel in channels:
-                    self.channels[channel] = channels[channel]
-
-            for channel in Channels:
-                if channel not in self.channels:
-                    if Channels.DEFAULT in self.channels:
-                        print(
-                            f"ERROR: missing config for channel [{channel}] - will use default channel instead"
-                        )
-                        self.channels[channel] = self.channels[Channels.DEFAULT]
-                    else:
-                        print(
-                            f"ERROR: missing config for channel [{channel}] - will disable notification"
-                        )
-                        self.channels[channel] = ""
+            self.test_channel = json.loads(res)["test_channel"]
+            self.dev_ci_channel = json.loads(res)["ci_channel"]
         self.job_name = os.getenv("CHECK_NAME", "unknown")
         pr_info = PRInfo()
         self.pr_number = pr_info.number
@@ -55,19 +31,10 @@ class CIBuddy:
         self.sha = pr_info.sha[:10]
 
     def check_workflow(self):
-        CI.GH.print_workflow_results()
-        if CI.Envs.GITHUB_WORKFLOW == CI.WorkFlowNames.CreateRelease:
-            if not CI.GH.is_workflow_ok():
-                self.post_job_error(
-                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-                )
-        else:
-            res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
-            if res != CI.GH.ActionStatuses.SUCCESS:
-                print(f"ERROR: RunConfig status is [{res}] - post report to slack")
-                self.post_job_error(
-                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-                )
+        GHActions.print_workflow_results()
+        res = GHActions.get_workflow_job_result(GHActions.ActionsNames.RunConfig)
+        if res != GHActions.ActionStatuses.SUCCESS:
+            self.post_job_error("Workflow Configuration Failed", critical=True)
 
     @staticmethod
     def _get_webhooks():
@@ -87,93 +54,61 @@ class CIBuddy:
 
         return json_string
 
-    def post(self, message: str, channels: List[str]) -> None:
-        print(f"Posting slack message, dry_run [{self.dry_run}]")
-        if self.dry_run:
-            urls = [self.channels[Channels.DRY_RUN]]
+    def post(self, message, dry_run=None):
+        if dry_run is None:
+            dry_run = self.dry_run
+        print(f"Posting slack message, dry_run [{dry_run}]")
+        if dry_run:
+            url = self.test_channel
         else:
-            urls = []
-            for channel in channels:
-                url = self.channels[channel]
-                if url:
-                    urls.append(url)
-                else:
-                    print(f"WARNING: no channel config for [{channel}] - skip")
+            url = self.dev_ci_channel
         data = {"text": message}
         try:
-            for url in urls:
-                requests.post(
-                    url, headers=self._HEADERS, data=json.dumps(data), timeout=10
-                )
+            requests.post(url, headers=self._HEADERS, data=json.dumps(data), timeout=10)
         except Exception as e:
             print(f"ERROR: Failed to post message, ex {e}")
 
     def _post_formatted(
-        self,
-        title: str,
-        body: Union[Dict, str],
-        with_wf_link: bool,
-        channels: Union[List[str], str],
+        self, title: str, body: Union[Dict, str], with_wf_link: bool
     ) -> None:
         message = title
         if isinstance(body, dict):
             for name, value in body.items():
-                if "sha" in name and value and len(value) == 40:
+                if "commit_sha" in name:
                     value = (
                         f"<https://github.com/{self.repo}/commit/{value}|{value[:8]}>"
                     )
-                elif isinstance(value, str) and value.startswith("https://github.com/"):
-                    value_shorten = value.split("/")[-1]
-                    value = f"<{value}|{value_shorten}>"
                 message += f"      *{name}*:    {value}\n"
         else:
             message += body + "\n"
         run_id = os.getenv("GITHUB_RUN_ID", "")
         if with_wf_link and run_id:
             message += f"      *workflow*: <https://github.com/{self.repo}/actions/runs/{run_id}|{run_id}>\n"
-        self.post(
-            message, channels=[channels] if isinstance(channels, str) else channels
-        )
+        self.post(message)
 
     def post_info(
-        self,
-        title: str,
-        body: Union[Dict, str],
-        with_wf_link: bool = True,
-        channels: Union[List[str], str] = Channels.INFO,
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":white_circle:    *{title}*\n\n"
-        self._post_formatted(title_extended, body, with_wf_link, channels=channels)
+        self._post_formatted(title_extended, body, with_wf_link)
 
     def post_done(
-        self,
-        title: str,
-        body: Union[Dict, str],
-        with_wf_link: bool = True,
-        channels: Union[List[str], str] = Channels.INFO,
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":white_check_mark:    *{title}*\n\n"
-        self._post_formatted(title_extended, body, with_wf_link, channels=channels)
+        self._post_formatted(title_extended, body, with_wf_link)
 
     def post_warning(
-        self,
-        title: str,
-        body: Union[Dict, str],
-        with_wf_link: bool = True,
-        channels: Union[List[str], str] = Channels.ALERTS,
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":warning:    *{title}*\n\n"
-        self._post_formatted(title_extended, body, with_wf_link, channels=channels)
+        self._post_formatted(title_extended, body, with_wf_link)
 
     def post_critical(
-        self,
-        title: str,
-        body: Union[Dict, str],
-        with_wf_link: bool = True,
-        channels: Union[List[str], str] = Channels.ALERTS,
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":black_circle:    *{title}*\n\n"
-        self._post_formatted(title_extended, body, with_wf_link, channels=channels)
+        self._post_formatted(title_extended, body, with_wf_link)
 
     def post_job_error(
         self,
@@ -182,16 +117,11 @@ class CIBuddy:
         with_instance_info: bool = True,
         with_wf_link: bool = True,
         critical: bool = False,
-        channel: Union[List[str], str] = Channels.ALERTS,
     ) -> None:
         instance_id, instance_type = "unknown", "unknown"
         if with_instance_info:
-            instance_id = (
-                CI.Shell.get_output("ec2metadata --instance-id") or instance_id
-            )
-            instance_type = (
-                CI.Shell.get_output("ec2metadata --instance-type") or instance_type
-            )
+            instance_id = Shell.run("ec2metadata --instance-id") or instance_id
+            instance_type = Shell.run("ec2metadata --instance-type") or instance_type
         if not job_name:
             job_name = os.getenv("CHECK_NAME", "unknown")
         sign = ":red_circle:" if not critical else ":black_circle:"
@@ -213,7 +143,7 @@ class CIBuddy:
         run_id = os.getenv("GITHUB_RUN_ID", "")
         if with_wf_link and run_id:
             message += f"      *workflow*: <https://github.com/{self.repo}/actions/runs/{run_id}|{run_id}>\n"
-        self.post(message, channels=[channel] if isinstance(channel, str) else channel)
+        self.post(message)
 
 
 def parse_args():

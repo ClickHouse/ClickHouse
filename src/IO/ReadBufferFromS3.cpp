@@ -6,6 +6,7 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
@@ -310,15 +311,15 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
+size_t ReadBufferFromS3::getFileSize()
 {
     if (file_size)
-        return file_size;
+        return *file_size;
 
     auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
 
     file_size = object_size;
-    return file_size;
+    return *file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()
@@ -422,13 +423,22 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
-    CurrentThread::IOScope io_scope(read_settings.io_scheduling);
+    constexpr ResourceCost estimated_cost = 1;
+    ResourceGuard rlock(read_settings.resource_link, estimated_cost);
+
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
+    rlock.unlock();
+
     if (outcome.IsSuccess())
+    {
+        ResourceCost bytes_read = outcome.GetResult().GetContentLength();
+        read_settings.resource_link.adjust(estimated_cost, bytes_read);
         return outcome.GetResultWithOwnership();
+    }
     else
     {
+        read_settings.resource_link.accumulate(estimated_cost);
         const auto & error = outcome.GetError();
         throw S3Exception(error.GetMessage(), error.GetErrorType());
     }

@@ -23,7 +23,7 @@ namespace postgres
 {
 
 PoolWithFailover::PoolWithFailover(
-    const ReplicasConfigurationByPriority & configurations_by_priority,
+    const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
     size_t pool_size,
     size_t pool_wait_timeout_,
     size_t max_tries_,

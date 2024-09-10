@@ -26,16 +26,16 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=0) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1,
+SETTINGS allow_experimental_analyzer=1,
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_prefer_local_join=0"
 
-$CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
+$CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=0) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, send_logs_level='trace',
+SETTINGS allow_experimental_analyzer=1, send_logs_level='trace',
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_prefer_local_join=0" 2>&1 |
 grep "executeQuery\|<Debug>.*Coordinator: Coordination done" |
@@ -51,16 +51,16 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=1) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1,
+SETTINGS allow_experimental_analyzer=1,
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_prefer_local_join=0"
 
-$CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
+$CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=1) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, send_logs_level='trace',
+SETTINGS allow_experimental_analyzer=1, send_logs_level='trace',
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_prefer_local_join=0" 2>&1 |
 grep "executeQuery\|<Debug>.*Coordinator: Coordination done" |
@@ -77,16 +77,16 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, parallel_replicas_prefer_local_join=0,
+SETTINGS allow_experimental_analyzer=1, parallel_replicas_prefer_local_join=0,
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', join_algorithm='full_sorting_merge'"
 
-$CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
+$CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, parallel_replicas_prefer_local_join=0, send_logs_level='trace',
+SETTINGS allow_experimental_analyzer=1, parallel_replicas_prefer_local_join=0, send_logs_level='trace',
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', join_algorithm='full_sorting_merge'" 2>&1 |
 grep "executeQuery\|<Debug>.*Coordinator: Coordination done" |
@@ -102,16 +102,16 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='hash') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, parallel_replicas_prefer_local_join=0,
+SETTINGS allow_experimental_analyzer=1, parallel_replicas_prefer_local_join=0,
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', join_algorithm='full_sorting_merge'"
 
-$CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
+$CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='hash') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, parallel_replicas_prefer_local_join=0, send_logs_level='trace',
+SETTINGS allow_experimental_analyzer=1, parallel_replicas_prefer_local_join=0, send_logs_level='trace',
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', join_algorithm='full_sorting_merge'" 2>&1 |
 grep "executeQuery\|<Debug>.*Coordinator: Coordination done" |
@@ -127,16 +127,16 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, parallel_replicas_prefer_local_join=0,
+SETTINGS allow_experimental_analyzer=1, parallel_replicas_prefer_local_join=0,
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', join_algorithm='hash'"
 
-$CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
+$CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, parallel_replicas_prefer_local_join=0, send_logs_level='trace',
+SETTINGS allow_experimental_analyzer=1, parallel_replicas_prefer_local_join=0, send_logs_level='trace',
 allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
 cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', join_algorithm='hash'" 2>&1 |
 grep "executeQuery\|<Debug>.*Coordinator: Coordination done" |

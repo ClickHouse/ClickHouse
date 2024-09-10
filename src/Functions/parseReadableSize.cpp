@@ -217,10 +217,7 @@ private:
         }
 
         Float64 num_bytes_with_decimals = base * iter->second;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
         if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
-#pragma clang diagnostic pop
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

@@ -23,7 +23,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeIndexGranularityInfo * index_granularity_info)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
-    const auto & global_settings = data_part->storage.getContext()->getSettingsRef();
+    const auto & global_settings = data_part->storage.getContext()->getSettings();
 
     MergeTreeWriterSettings writer_settings(
         global_settings,

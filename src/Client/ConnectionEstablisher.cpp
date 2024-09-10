@@ -33,12 +33,12 @@ ConnectionEstablisher::ConnectionEstablisher(
 {
 }
 
-void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::string & fail_message, bool force_connected)
+void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::string & fail_message)
 {
     try
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
-        result.entry = pool->get(*timeouts, settings, force_connected);
+        result.entry = pool->get(*timeouts, settings, /* force_connected = */ false);
         AsyncCallbackSetter async_setter(&*result.entry, std::move(async_callback));
 
         UInt64 server_revision = 0;

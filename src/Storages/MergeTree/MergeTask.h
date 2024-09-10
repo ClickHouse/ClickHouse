@@ -3,13 +3,11 @@
 #include <list>
 #include <memory>
 
-#include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
-#include <Interpreters/Squashing.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -28,12 +26,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
-namespace ProfileEvents
-{
-    extern const Event MergeHorizontalStageTotalMilliseconds;
-    extern const Event MergeVerticalStageTotalMilliseconds;
-    extern const Event MergeProjectionStageTotalMilliseconds;
-}
 
 namespace DB
 {
@@ -73,7 +65,6 @@ public:
         std::unique_ptr<MergeListElement> projection_merge_list_element_,
         time_t time_of_merge_,
         ContextPtr context_,
-        TableLockHolder & holder,
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
@@ -98,7 +89,6 @@ public:
                 = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get() : (*global_ctx->merge_entry)->ptr();
             global_ctx->time_of_merge = std::move(time_of_merge_);
             global_ctx->context = std::move(context_);
-            global_ctx->holder = &holder;
             global_ctx->space_reservation = std::move(space_reservation_);
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
@@ -144,7 +134,6 @@ private:
     {
         virtual void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) = 0;
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
-        virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
         virtual ~IStage() = default;
     };
@@ -154,7 +143,6 @@ private:
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
     {
-        TableLockHolder * holder;
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
@@ -166,7 +154,6 @@ private:
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
-        std::vector<AlterConversionsPtr> alter_conversions;
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
@@ -185,10 +172,6 @@ private:
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
-
-        std::vector<ProjectionDescriptionRawPtr> projections_to_rebuild{};
-        std::vector<ProjectionDescriptionRawPtr> projections_to_merge{};
-        std::map<String, MergeTreeData::DataPartsVector> projections_to_merge_parts{};
 
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
@@ -212,7 +195,6 @@ private:
         bool need_prefix;
 
         scope_guard temporary_directory_lock;
-        UInt64 prev_elapsed_ms{0};
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
@@ -237,14 +219,6 @@ private:
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
 
-        /// For projections to rebuild
-        using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
-        ProjectionNameToItsBlocks projection_parts;
-        std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
-        std::vector<Squashing> projection_squashes;
-        size_t projection_block_num = 0;
-        ExecutableTaskPtr merge_projection_parts_task_ptr;
-
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
@@ -259,7 +233,6 @@ private:
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool need_sync{false};
-        UInt64 elapsed_execute_ns{0};
     };
 
     using ExecuteAndFinalizeHorizontalPartRuntimeContextPtr = std::shared_ptr<ExecuteAndFinalizeHorizontalPartRuntimeContext>;
@@ -271,25 +244,18 @@ private:
 
         bool prepare();
         bool executeImpl();
-        void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 2>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
             &ExecuteAndFinalizeHorizontalPart::prepare,
-            &ExecuteAndFinalizeHorizontalPart::executeImpl,
-            &ExecuteAndFinalizeHorizontalPart::executeMergeProjections
+            &ExecuteAndFinalizeHorizontalPart::executeImpl
         };
 
         ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
-        void prepareProjectionsToMergeAndRebuild() const;
-        void calculateProjections(const Block & block) const;
-        void finalizeProjections() const;
-        void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections();
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
@@ -302,7 +268,6 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeHorizontalStageTotalMilliseconds; }
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -342,7 +307,6 @@ private:
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
         std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
-        UInt64 elapsed_execute_ns{0};
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -357,7 +321,6 @@ private:
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
 
         bool prepareVerticalMergeForAllColumns() const;
         bool executeVerticalMergeForAllColumns() const;
@@ -398,7 +361,6 @@ private:
         MergeTasks::iterator projections_iterator;
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
-        UInt64 elapsed_execute_ns{0};
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
@@ -406,15 +368,12 @@ private:
     struct MergeProjectionsStage : public IStage
     {
         bool execute() override;
-
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<MergeProjectionsRuntimeContext>(local);
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
-
-        StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
+        StageRuntimeContextPtr getContextForNextStage() override { return nullptr; }
 
         bool mergeMinMaxIndexAndPrepareProjections() const;
         bool executeProjections() const;

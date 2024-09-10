@@ -2,9 +2,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from time import sleep
 from retry import retry
-from multiprocessing.dummy import Pool
-import helpers.keeper_utils as keeper_utils
-from minio.deleteobjects import DeleteObject
 
 from kazoo.client import KazooClient
 
@@ -78,18 +75,7 @@ def wait_node(node):
         raise Exception("Can't wait node", node.name, "to become ready")
 
 
-def delete_keeper_snapshots_logs(nodex):
-    nodex.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "rm -rf /var/lib/clickhouse/coordination/log /var/lib/clickhouse/coordination/snapshots",
-        ]
-    )
-
-
 def test_s3_upload(started_cluster):
-
     node1_zk = get_fake_zk(node1.name)
 
     # we defined in configs snapshot_distance as 50
@@ -102,11 +88,6 @@ def test_s3_upload(started_cluster):
             obj.object_name
             for obj in list(cluster.minio_client.list_objects("snapshots"))
         ]
-
-    def delete_s3_snapshots():
-        snapshots = cluster.minio_client.list_objects("snapshots")
-        for s in snapshots:
-            cluster.minio_client.remove_object("snapshots", s.object_name)
 
     # Keeper sends snapshots asynchornously, hence we need to retry.
     @retry(AssertionError, tries=10, delay=2)
@@ -144,26 +125,3 @@ def test_s3_upload(started_cluster):
     )
 
     destroy_zk_client(node2_zk)
-    node2.stop_clickhouse()
-    delete_keeper_snapshots_logs(node2)
-    node3.stop_clickhouse()
-    delete_keeper_snapshots_logs(node3)
-    delete_keeper_snapshots_logs(node1)
-    p = Pool(3)
-    waiters = []
-
-    def start_clickhouse(node):
-        node.start_clickhouse()
-
-    waiters.append(p.apply_async(start_clickhouse, args=(node1,)))
-    waiters.append(p.apply_async(start_clickhouse, args=(node2,)))
-    waiters.append(p.apply_async(start_clickhouse, args=(node3,)))
-
-    delete_s3_snapshots()  # for next iteration
-
-    for waiter in waiters:
-        waiter.wait()
-
-    keeper_utils.wait_until_connected(cluster, node1)
-    keeper_utils.wait_until_connected(cluster, node2)
-    keeper_utils.wait_until_connected(cluster, node3)

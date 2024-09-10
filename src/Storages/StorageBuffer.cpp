@@ -1,7 +1,3 @@
-#include <Storages/StorageBuffer.h>
-
-#include <Analyzer/TableNode.h>
-#include <Analyzer/Utils.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -27,6 +23,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -235,12 +232,6 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     return QueryProcessingStage::FetchColumns;
 }
 
-bool StorageBuffer::isRemote() const
-{
-    auto destination = getDestinationTable();
-    return destination && destination->isRemote();
-}
-
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -251,29 +242,6 @@ void StorageBuffer::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    bool allow_experimental_analyzer = local_context->getSettingsRef().allow_experimental_analyzer;
-
-    if (allow_experimental_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
-    {
-        /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
-          * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
-          * In that case, we will execute this query separately for the destination table and for the buffer, resulting in incorrect results.
-          */
-        const auto & current_storage_id = getStorageID();
-        auto table_nodes = extractAllTableReferences(query_info.query_tree);
-        size_t count_of_current_storage = 0;
-        for (const auto & node : table_nodes)
-        {
-            const auto & table_node = node->as<TableNode &>();
-            if (table_node.getStorageID().getFullNameNotQuoted() == current_storage_id.getFullNameNotQuoted())
-            {
-                count_of_current_storage++;
-                if (count_of_current_storage > 1)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageBuffer over Distributed does not support using the same table more than once in the query");
-            }
-        }
-    }
-
     const auto & metadata_snapshot = storage_snapshot->metadata;
 
     if (auto destination = getDestinationTable())
@@ -345,32 +313,29 @@ void StorageBuffer::read(
                     if (src_table_query_info.prewhere_info->row_level_filter)
                     {
                         src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
-                            actions_dag.clone(),
+                            std::move(*actions_dag->clone()),
                             std::move(*src_table_query_info.prewhere_info->row_level_filter));
 
                         src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
                     }
 
+                    if (src_table_query_info.prewhere_info->prewhere_actions)
                     {
                         src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            actions_dag.clone(),
-                            std::move(src_table_query_info.prewhere_info->prewhere_actions));
+                            std::move(*actions_dag->clone()),
+                            std::move(*src_table_query_info.prewhere_info->prewhere_actions));
 
-                        src_table_query_info.prewhere_info->prewhere_actions.removeUnusedActions();
+                        src_table_query_info.prewhere_info->prewhere_actions->removeUnusedActions();
                     }
                 }
 
-                src_table_query_info.merge_storage_snapshot = storage_snapshot;
                 destination->read(
                         query_plan, columns_intersection, destination_snapshot, src_table_query_info,
                         local_context, processed_stage, max_block_size, num_streams);
 
-                if (query_plan.isInitialized() && processed_stage <= QueryProcessingStage::FetchColumns)
+                if (query_plan.isInitialized())
                 {
-                    /** The code below converts columns from metadata_snapshot to columns from destination_metadata_snapshot.
-                      * This conversion is not applicable for processed_stage > FetchColumns.
-                      * Instead, we rely on the converting actions at the end of this function.
-                      */
+
                     auto actions = addMissingDefaults(
                             query_plan.getCurrentDataStream().header,
                             header_after_adding_defaults.getNamesAndTypesList(),
@@ -389,7 +354,7 @@ void StorageBuffer::read(
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
-                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag);
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -433,7 +398,7 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        if (allow_experimental_analyzer)
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
         {
             auto storage = std::make_shared<StorageValues>(
                     getStorageID(),
@@ -464,23 +429,21 @@ void StorageBuffer::read(
 
             if (query_info.prewhere_info->row_level_filter)
             {
-                auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->clone(), actions_settings);
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            actions,
+                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter, actions_settings),
                             query_info.prewhere_info->row_level_column_name,
                             false);
                 });
             }
 
-            auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
             pipe_from_buffers.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<FilterTransform>(
                         header,
-                        actions,
+                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions, actions_settings),
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });
@@ -510,7 +473,7 @@ void StorageBuffer::read(
                 result_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
-        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(convert_actions_dag));
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
         query_plan.addStep(std::move(converting));
     }
 

@@ -147,7 +147,6 @@ ColumnDependencies getAllColumnDependencies(
 
 bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context)
@@ -155,7 +154,7 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
     bool all_commands_can_be_skipped = true;
 
     for (const auto & command : commands)
@@ -220,7 +219,7 @@ bool isStorageTouchedByMutations(
     Block tmp_block;
     while (executor.pull(tmp_block));
 
-    auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
+    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
 }
 
@@ -286,13 +285,8 @@ MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(st
 {
 }
 
-MutationsInterpreter::Source::Source(
-    MergeTreeData & storage_,
-    MergeTreeData::DataPartPtr source_part_,
-    AlterConversionsPtr alter_conversions_)
-    : data(&storage_)
-    , part(std::move(source_part_))
-    , alter_conversions(std::move(alter_conversions_))
+MutationsInterpreter::Source::Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_)
+    : data(&storage_), part(std::move(source_part_))
 {
 }
 
@@ -392,14 +386,13 @@ MutationsInterpreter::MutationsInterpreter(
 MutationsInterpreter::MutationsInterpreter(
     MergeTreeData & storage_,
     MergeTreeData::DataPartPtr source_part_,
-    AlterConversionsPtr alter_conversions_,
     StorageMetadataPtr metadata_snapshot_,
     MutationCommands commands_,
     Names available_columns_,
     ContextPtr context_,
     Settings settings_)
     : MutationsInterpreter(
-        Source(storage_, std::move(source_part_), std::move(alter_conversions_)),
+        Source(storage_, std::move(source_part_)),
         std::move(metadata_snapshot_), std::move(commands_),
         std::move(available_columns_), std::move(context_), std::move(settings_))
 {
@@ -506,12 +499,6 @@ static void validateUpdateColumns(
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
-        }
-        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
-        {
-            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
-                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
         }
     }
 }
@@ -1212,7 +1199,7 @@ void MutationsInterpreter::Source::read(
         const auto & names = first_stage.filter_column_names;
         size_t num_filters = names.size();
 
-        std::optional<ActionsDAG> filter;
+        ActionsDAGPtr filter;
         if (!first_stage.filter_column_names.empty())
         {
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
@@ -1225,8 +1212,8 @@ void MutationsInterpreter::Source::read(
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot,
-            part, alter_conversions, required_columns,
-            apply_deleted_mask_, std::move(filter), context_,
+            part, required_columns,
+            apply_deleted_mask_, filter, context_,
             getLogger("MutationsInterpreter"));
     }
     else
@@ -1295,17 +1282,17 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), dag, stage.filter_column_names[i], false));
             }
             else
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), dag));
             }
         }
 

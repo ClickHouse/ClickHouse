@@ -99,20 +99,8 @@ namespace JSONUtils
         WriteBuffer & out);
 
     void writeMetadata(const Names & names, const DataTypes & types, const FormatSettings & settings, WriteBuffer & out);
-    void writeCompactMetadata(const Names & names, const DataTypes & types, const FormatSettings & settings, WriteBuffer & out);
 
     void writeAdditionalInfo(
-        size_t rows,
-        size_t rows_before_limit,
-        bool applied_limit,
-        size_t rows_before_aggregation,
-        bool applied_aggregation,
-        const Stopwatch & watch,
-        const Progress & progress,
-        bool write_statistics,
-        WriteBuffer & out);
-
-    void writeCompactAdditionalInfo(
         size_t rows,
         size_t rows_before_limit,
         bool applied_limit,
