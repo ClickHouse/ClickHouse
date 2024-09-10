@@ -1789,12 +1789,12 @@ void Planner::buildPlanForQueryNode()
 
         if (query_node.hasLimitInrangeFrom() || query_node.hasLimitInrangeTo())
         {
-            const auto & limit_inrange_analysis_result = expression_analysis_result.getLimitInRange();
+            auto & limit_inrange_analysis_result = expression_analysis_result.getLimitInRange();
             addExpressionStep(
                 query_plan,
                 limit_inrange_analysis_result.combined_limit_inrange_actions,
                 "LIMIT INRANGE expressions",
-                result_actions_to_execute);
+                useful_sets);
             addLimitInRangeStep(query_plan, limit_inrange_analysis_result, "LIMIT INRANGE");
         }
 

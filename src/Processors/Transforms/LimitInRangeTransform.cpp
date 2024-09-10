@@ -86,6 +86,7 @@ LimitInRangeTransform::LimitInRangeTransform(
         to_filter_column_position = transformed_header.getPositionByName(to_filter_column_name);
 
     std::cerr << "Constructor header ending structure: " << transformed_header.dumpStructure() << '\n';
+    std::cerr << on_totals << '\n';
 }
 
 IProcessor::Status LimitInRangeTransform::prepare()

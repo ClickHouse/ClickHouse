@@ -1731,12 +1731,12 @@ bool SelectQueryExpressionAnalyzer::appendLimitInrangeFrom(ExpressionActionsChai
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns); // // maybe other argument for lastStep?
 
-    getRootActions(select_query->limitInRangeFrom(), only_types, step.actions());
+    getRootActions(select_query->limitInRangeFrom(), only_types, step.actions()->dag);
 
     auto limit_inrange_from_column_name = select_query->limitInRangeFrom()->getColumnName();
     step.addRequiredOutput(limit_inrange_from_column_name);
 
-    const auto & node = step.actions()->findInOutputs(limit_inrange_from_column_name);
+    const auto & node = step.actions()->dag.findInOutputs(limit_inrange_from_column_name);
     auto filter_type = node.result_type;
 
     if (!filter_type->canBeUsedInBooleanContext())
@@ -1754,11 +1754,11 @@ bool SelectQueryExpressionAnalyzer::appendLimitInrangeTo(ExpressionActionsChain 
         return false;
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns); // maybe other argument for lastStep?
-    getRootActions(select_query->limitInRangeTo(), only_types, step.actions());
+    getRootActions(select_query->limitInRangeTo(), only_types, step.actions()->dag);
 
     auto limit_inrange_to_column_name = select_query->limitInRangeTo()->getColumnName();
     step.addRequiredOutput(limit_inrange_to_column_name);
-    const auto & node = step.actions()->findInOutputs(limit_inrange_to_column_name);
+    const auto & node = step.actions()->dag.findInOutputs(limit_inrange_to_column_name);
     auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in LIMIT INRANGE TO: {}",
@@ -2452,12 +2452,12 @@ std::string ExpressionAnalysisResult::dump() const
 
     if (before_limit_inrange_from)
     {
-        ss << "before_limit_inrange_from " << before_limit_inrange_from->dumpDAG() << "\n";
+        ss << "before_limit_inrange_from " << before_limit_inrange_from->dag.dumpDAG() << "\n";
     }
 
     if (before_limit_inrange_to)
     {
-        ss << "before_limit_inrange_to " << before_limit_inrange_to->dumpDAG() << "\n";
+        ss << "before_limit_inrange_to " << before_limit_inrange_to->dag.dumpDAG() << "\n";
     }
 
     if (before_limit_by)

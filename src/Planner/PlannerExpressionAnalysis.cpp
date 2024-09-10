@@ -1,3 +1,4 @@
+#include <memory>
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>
@@ -80,29 +81,33 @@ LimitInRangeAnalysisResult analyzeLimitInRange(
     {
         auto first_dag = buildActionsDAGFromExpressionNode(from_filter_expression_node, input_columns, planner_context);
         auto second_dag = buildActionsDAGFromExpressionNode(to_filter_expression_node, input_columns, planner_context);
-        result.from_filter_column_name = first_dag->getOutputs().at(0)->result_name;
-        result.to_filter_column_name = second_dag->getOutputs().at(0)->result_name;
+        result.from_filter_column_name = first_dag.getOutputs().at(0)->result_name;
+        result.to_filter_column_name = second_dag.getOutputs().at(0)->result_name;
 
-        auto last_node_name = second_dag->getNodes().back().result_name;
-        first_dag->mergeNodes(std::move(*second_dag));
+        auto last_node_name = second_dag.getNodes().back().result_name;
+        first_dag.mergeNodes(std::move(second_dag));
 
-        for (const auto & node : first_dag->getNodes())
+        for (const auto & node : first_dag.getNodes())
             if (last_node_name == node.result_name)
-                first_dag->addOrReplaceInOutputs(node);
+                first_dag.addOrReplaceInOutputs(node);
 
-        result.combined_limit_inrange_actions = first_dag;
+        result.combined_limit_inrange_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        result.combined_limit_inrange_actions->dag = std::move(first_dag);
     }
     else if (from_filter_expression_node)
     {
-        result.combined_limit_inrange_actions
+        result.combined_limit_inrange_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        result.combined_limit_inrange_actions->dag
             = buildActionsDAGFromExpressionNode(from_filter_expression_node, input_columns, planner_context);
-        result.from_filter_column_name = result.combined_limit_inrange_actions->getOutputs().at(0)->result_name;
+
+        result.from_filter_column_name = result.combined_limit_inrange_actions->dag.getOutputs().at(0)->result_name;
     }
     else if (to_filter_expression_node)
     {
-        result.combined_limit_inrange_actions
+        result.combined_limit_inrange_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        result.combined_limit_inrange_actions->dag
             = buildActionsDAGFromExpressionNode(to_filter_expression_node, input_columns, planner_context);
-        result.to_filter_column_name = result.combined_limit_inrange_actions->getOutputs().at(0)->result_name;
+        result.to_filter_column_name = result.combined_limit_inrange_actions->dag.getOutputs().at(0)->result_name;
     }
 
     actions_chain.addStep(std::make_unique<ActionsChainStep>(result.combined_limit_inrange_actions));

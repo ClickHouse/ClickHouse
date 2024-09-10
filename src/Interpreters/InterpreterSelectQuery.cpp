@@ -2087,16 +2087,22 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 if (expressions.before_limit_inrange_from && expressions.before_limit_inrange_to)
                 {
-                    ActionsDAGPtr first_dag = expressions.before_limit_inrange_from->clone();
-                    ActionsDAGPtr second_dag = expressions.before_limit_inrange_to->clone();
+                    ActionsAndProjectInputsFlagPtr first_flag = std::make_shared<ActionsAndProjectInputsFlag>();
+                    first_flag->dag = expressions.before_limit_inrange_from->dag.clone();
+                    ActionsAndProjectInputsFlagPtr second_flag = std::make_shared<ActionsAndProjectInputsFlag>();
+                    second_flag->dag = expressions.before_limit_inrange_to->dag.clone();
 
-                    first_dag->mergeNodes(std::move(*second_dag));
-                    auto last_node_name = expressions.before_limit_inrange_to->getNodes().back().result_name;
-                    for (const auto & node : first_dag->getNodes())
+                    first_flag->dag.mergeNodes(std::move(second_flag->dag));
+                    auto last_node_name = expressions.before_limit_inrange_to->dag.getNodes().back().result_name;
+                    for (const auto & node : first_flag->dag.getNodes())
                         if (last_node_name == node.result_name)
-                            first_dag->addOrReplaceInOutputs(node);
+                            first_flag->dag.addOrReplaceInOutputs(node);
 
-                    executeExpression(query_plan, first_dag, "LIMIT INRANGE FROM expr TO expr");
+                    // TODO case when there are same expressions in FROM and TO sections:
+                    // SELECT * FROM my_first_table LIMIT INRANGE FROM metric > 2 TO metric > 2
+                    // dag.addNode method?
+
+                    executeExpression(query_plan, first_flag, "LIMIT INRANGE FROM expr TO expr");
                 }
                 else if (expressions.before_limit_inrange_from)
                 {
