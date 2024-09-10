@@ -120,6 +120,7 @@ CMPLNT
 CMake
 CMakeLists
 CODECS
+CountMin
 COVID
 CPUFrequencyMHz
 CPUs
@@ -421,6 +422,7 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
+JSONCompactWithProgress
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -975,6 +977,7 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+TimescaleDB's
 TimeSeries
 Timeunit
 TinyLog
@@ -1915,6 +1918,7 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
+jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
