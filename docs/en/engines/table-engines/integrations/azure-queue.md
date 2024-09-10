@@ -50,7 +50,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 Example:
 
 ``` sql
-  CREATE TABLE s3queue_engine_table (name String, value UInt32)
+  CREATE TABLE azure_queue_engine_table (name String, value UInt32)
     ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
     SETTINGS
         mode = 'unordered';
@@ -59,7 +59,7 @@ Example:
     ENGINE = MergeTree() ORDER BY name;
 
   CREATE MATERIALIZED VIEW consumer TO stats
-    AS SELECT name, value FROM s3queue_engine_table;
+    AS SELECT name, value FROM azure_queue_engine_table;
 
   SELECT * FROM stats ORDER BY name;
 ```
