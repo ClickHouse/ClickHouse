@@ -566,6 +566,7 @@ public:
         void rollback(int64_t rollback_zxid);
 
         std::shared_ptr<Node> getNode(StringRef path) const;
+        const Node * getActualNodeView(StringRef path, const Node & storage_node) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
         void applyDelta(const Delta & delta);

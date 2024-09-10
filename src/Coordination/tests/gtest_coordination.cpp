@@ -3563,11 +3563,15 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     Storage storage{500, "", this->keeper_context};
     int zxid = 0;
 
-    Coordination::Requests ops;
-    ops.push_back(zkutil::makeCreateRequest("/A", "A", zkutil::CreateMode::Persistent));
-    ops.push_back(zkutil::makeCreateRequest("/A/B", "B", zkutil::CreateMode::Persistent));
-    ops.push_back(zkutil::makeCreateRequest("/A/C", "C", zkutil::CreateMode::Ephemeral));
-    ops.push_back(zkutil::makeCreateRequest("/A/B/D", "D", zkutil::CreateMode::Ephemeral));
+    auto prepare_create_tree = []()
+    {
+        return Coordination::Requests{
+            zkutil::makeCreateRequest("/A", "A", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/B", "B", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/C", "C", zkutil::CreateMode::Ephemeral),
+            zkutil::makeCreateRequest("/A/B/D", "D", zkutil::CreateMode::Ephemeral),
+        };
+    };
 
     const auto exists = [&](const String & path)
     {
@@ -3597,6 +3601,7 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     {
         SCOPED_TRACE("Remove In Multi Tx");
         int new_zxid = ++zxid;
+        auto ops = prepare_create_tree();
 
         ops.push_back(zkutil::makeRemoveRequest("/A", -1));
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
@@ -3612,6 +3617,7 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     {
         SCOPED_TRACE("Recursive Remove In Multi Tx");
         int new_zxid = ++zxid;
+        auto ops = prepare_create_tree();
 
         ops.push_back(zkutil::makeRemoveRecursiveRequest("/A", 4));
         const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
@@ -3622,6 +3628,67 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 
         ASSERT_EQ(responses.size(), 1);
         ASSERT_TRUE(is_multi_ok(responses[0].response));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/C"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove With Regular In Multi Tx");
+        int new_zxid = ++zxid;
+        auto ops = prepare_create_tree();
+
+        ops.push_back(zkutil::makeRemoveRequest("/A/C", -1));
+        ops.push_back(zkutil::makeRemoveRecursiveRequest("/A", 4));
+        const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+
+        storage.preprocessRequest(request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ops.pop_back();
+        ops.pop_back();
+
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(responses[0].response));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/C"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove From Committed and Uncommitted states");
+        int create_zxid = ++zxid;
+        auto ops = prepare_create_tree();
+
+        /// First create nodes
+        const auto create_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(create_request, 1, 0, create_zxid);
+        auto create_responses = storage.processRequest(create_request, 1, create_zxid);
+        ASSERT_EQ(create_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(create_responses[0].response));
+        ASSERT_TRUE(exists("/A"));
+        ASSERT_TRUE(exists("/A/C"));
+        ASSERT_TRUE(exists("/A/B"));
+        ASSERT_TRUE(exists("/A/B/D"));
+
+        /// Remove node A/C as a single remove request.
+        /// Remove all other as remove recursive request.
+        /// In this case we should list storage to understand the tree topology
+        /// but ignore already deleted nodes in uncommitted state.
+
+        int remove_zxid = ++zxid;
+        ops = {
+            zkutil::makeRemoveRequest("/A/C", -1),
+            zkutil::makeRemoveRecursiveRequest("/A", 3),
+        };
+        const auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        auto remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(remove_responses[0].response));
         ASSERT_FALSE(exists("/A"));
         ASSERT_FALSE(exists("/A/C"));
         ASSERT_FALSE(exists("/A/B"));

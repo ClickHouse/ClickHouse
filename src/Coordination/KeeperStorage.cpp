@@ -833,6 +833,15 @@ std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedS
 }
 
 template<typename Container>
+const typename Container::Node * KeeperStorage<Container>::UncommittedState::getActualNodeView(StringRef path, const Node & storage_node) const
+{
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
+        return node_it->second.node.get();
+
+    return &storage_node;
+}
+
+template<typename Container>
 Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(StringRef path) const
 {
     if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
@@ -1686,7 +1695,7 @@ private:
         {
             std::deque<Step> steps;
 
-            if (checkLimits(root_node))
+            if (checkLimits(&root_node))
                 return true;
 
             steps.push_back(Step{root_path.toString(), &root_node, 0});
@@ -1698,17 +1707,20 @@ private:
 
                 StringRef path = step.path;
                 uint32_t level = step.level;
-                const SNode * node = nullptr;
+                const SNode * node_ptr = nullptr;
 
                 if (auto * rdb = std::get_if<SNode>(&step.node))
-                    node = rdb;
+                    node_ptr = rdb;
                 else
-                    node = std::get<const SNode *>(step.node);
+                    node_ptr = std::get<const SNode *>(step.node);
 
                 chassert(!path.empty());
-                chassert(node != nullptr);
+                chassert(node_ptr != nullptr);
 
-                if (visitRocksDBNode(steps, path, level) || visitMemNode(steps, path, level) || visitRootAndUncommitted(steps, path, *node, level))
+                const auto & node = *node_ptr;
+                chassert(storage.uncommitted_state.getActualNodeView(path, node) != nullptr); /// explicitly check that node is not deleted
+
+                if (visitRocksDBNode(steps, path, level) || visitMemNode(steps, path, level) || visitRootAndUncommitted(steps, path, node, level))
                     return true;
             }
 
@@ -1736,13 +1748,18 @@ private:
                 std::filesystem::path root_fs_path(root_path.toString());
                 auto children = storage.container.getChildren(root_path.toString());
 
-                for (auto && [child_name, node] : children)
+                for (auto && [child_name, child_node] : children)
                 {
-                    if (checkLimits(node))
+                    auto child_path = (root_fs_path / child_name).generic_string();
+                    const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
+
+                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                        continue;
+
+                    if (checkLimits(actual_child_node_ptr))
                         return true;
 
-                    auto child_path = (root_fs_path / child_name).generic_string();
-                    steps.push_back(Step{std::move(child_path), std::move(node), level + 1});
+                    steps.push_back(Step{std::move(child_path), std::move(child_node), level + 1});
                 }
             }
 
@@ -1753,25 +1770,30 @@ private:
         {
             if constexpr (!Storage::use_rocksdb)
             {
-                std::filesystem::path root_fs_path(root_path.toString());
-
                 auto node_it = storage.container.find(root_path);
                 if (node_it == storage.container.end())
                     return false;
 
-
+                std::filesystem::path root_fs_path(root_path.toString());
                 const auto & children = node_it->value.getChildren();
-                for (auto && child_name : children)
+
+                for (const auto & child_name : children)
                 {
                     auto child_path = (root_fs_path / child_name.toView()).generic_string();
 
                     auto child_it = storage.container.find(child_path);
                     chassert(child_it != storage.container.end());
+                    const auto & child_node = child_it->value;
 
-                    if (checkLimits(child_it->value))
+                    const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
+
+                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                        continue;
+
+                    if (checkLimits(actual_child_node_ptr))
                         return true;
 
-                    steps.push_back(Step{std::move(child_path), child_it->value, level + 1});
+                    steps.push_back(Step{std::move(child_path), &child_node, level + 1});
                 }
             }
 
@@ -1787,14 +1809,18 @@ private:
 
             for (; it != nodes.end() && parentNodePath(it->first) == root_path; ++it)
             {
-                chassert(it->second.node);
-                const String & path = it->first;
-                const SNode & node = *it->second.node;
+                const auto actual_child_node_ptr = it->second.node.get();
 
-                if (checkLimits(node))
+                if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                    continue;
+
+                if (checkLimits(actual_child_node_ptr))
                     return true;
 
-                steps.push_back(Step{path, &node, level + 1});
+                const String & child_path = it->first;
+                const SNode & child_node = *it->second.node;
+
+                steps.push_back(Step{child_path, &child_node, level + 1});
             }
 
             addDelta(root_path, root_node, level);
@@ -1820,9 +1846,10 @@ private:
             by_level_deltas[level].emplace_back(root_path.toString(), zxid, typename Storage::RemoveNodeDelta{root_node.version, root_node.ephemeralOwner()});
         }
 
-        bool checkLimits(const SNode & node)
+        bool checkLimits(const SNode * node)
         {
-            nodes_observed += node.numChildren();
+            chassert(node != nullptr);
+            nodes_observed += node->numChildren();
             return nodes_observed > limit;
         }
     };
