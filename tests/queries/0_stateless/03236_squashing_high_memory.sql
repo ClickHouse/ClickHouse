@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS test_table;
 CREATE TABLE id_values ENGINE MergeTree ORDER BY id1 AS
     SELECT arrayJoin(range(500000)) AS id1, arrayJoin(range(1000)) AS id2;
 
-SET max_memory_usage = 1G;
+SET max_memory_usage = '1G';
 
 CREATE TABLE test_table ENGINE MergeTree ORDER BY id AS
 SELECT id_values.id1             AS id,
