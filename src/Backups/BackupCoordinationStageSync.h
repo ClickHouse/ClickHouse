@@ -43,7 +43,7 @@ private:
         bool started = false;
         bool connected = false;
         std::optional<std::chrono::time_point<std::chrono::system_clock>> last_time_connected;
-        std::unordered_map<String, Sring> stage_results;
+        std::unordered_map<String, String> stage_results;
     };
 
     struct HostAndError
