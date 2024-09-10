@@ -1896,6 +1896,21 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         /// Temporarily apply query settings to context.
         std::optional<Settings> old_settings;
         SCOPE_EXIT_SAFE({
+            try
+            {
+                /// We need to park ParallelFormating threads,
+                /// because they can use settings from global context
+                /// and it can lead to data race with `setSettings`
+                resetOutput();
+            }
+            catch (...)
+            {
+                if (!have_error)
+                {
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+                    have_error = true;
+                }
+            }
             if (old_settings)
                 client_context->setSettings(*old_settings);
         });
@@ -2698,14 +2713,6 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
-
-    if (!getClientConfiguration().has("log_comment"))
-    {
-        Settings settings = client_context->getSettingsCopy();
-        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
-        settings.log_comment = fs::absolute(fs::path(file_name));
-        client_context->setSettings(settings);
-    }
 
     return executeMultiQuery(queries_from_file);
 }

@@ -18,4 +18,4 @@ target_compile_options (_poco_util
         -Wno-zero-as-null-pointer-constant
 )
 target_include_directories (_poco_util SYSTEM PUBLIC "include")
-target_link_libraries (_poco_util PUBLIC Poco::JSON Poco::XML)
+target_link_libraries (_poco_util PUBLIC Poco::JSON Poco::XML Poco::Net)
