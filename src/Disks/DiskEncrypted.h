@@ -350,7 +350,8 @@ public:
         return delegate;
     }
 
-    UInt32 getRefCount(const String & path) const override {
+    UInt32 getRefCount(const String & path) const override
+    {
         auto wrapped_path = wrappedPath(path);
         return delegate->getRefCount(wrapped_path);
     }
