@@ -276,7 +276,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
         {},
-        {},
         query_info_.prewhere_info)}, all_column_names_, query_info_, storage_snapshot_, context_)
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
@@ -1733,13 +1732,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
 
-    Block lazily_read_header;
-    if (lazily_read_info)
-        lazily_read_header = storage_snapshot->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names);
-
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_header,
         lazily_read_info,
         prewhere_info_value)};
 
@@ -1756,8 +1750,11 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
 {
     lazily_read_info = lazily_read_info_value;
 
-    NameSet names_set(lazily_read_info->lazily_read_columns_names.begin(),
-                      lazily_read_info->lazily_read_columns_names.end());
+    NameSet names_set;
+
+    for (const auto & column : lazily_read_info->lazily_read_columns) {
+        names_set.insert(column.name);
+    }
     std::erase_if(all_column_names, [&names_set] (const String & column_name)
     {
         return names_set.contains(column_name);
@@ -1772,7 +1769,6 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
 
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        storage_snapshot->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names),
         lazily_read_info,
         prewhere_info)};
 }

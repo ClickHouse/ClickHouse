@@ -19,9 +19,6 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     if (reading->getLazilyReadInfo())
        return false;
 
-    if (reading->hasAnalyzedResult())
-       return false;
-
     if (reading->isQueryWithFinal())
         return false;
 
@@ -111,18 +108,21 @@ static void removeUsedColumnNames(
 
 static void collectLazilyReadColumnNames(
     const StepStack & steps,
-    Names & lazily_read_column_names,
+    ColumnsWithTypeAndName & lazily_read_columns,
     AliasToNamePtr & alias_index)
 {
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(steps.back());
     const Names & all_column_names = read_from_merge_tree->getAllColumnNames();
     auto storage_snapshot = read_from_merge_tree->getStorageSnapshot();
-    const auto & storage_columns = storage_snapshot->getMetadataForQuery()->getColumns();
     NameSet lazily_read_column_name_set;
+
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withExtendedObjects()
+        .withSubcolumns(storage_snapshot->storage.supportsSubcolumns());
 
     for (const auto & column_name : all_column_names)
     {
-        if (storage_columns.has(column_name))
+        if (storage_snapshot->tryGetColumn(options, column_name))
             lazily_read_column_name_set.insert(column_name);
     }
 
@@ -171,9 +171,15 @@ static void collectLazilyReadColumnNames(
         }
     }
 
-    lazily_read_column_names.insert(lazily_read_column_names.end(),
-                                    lazily_read_column_name_set.begin(),
-                                    lazily_read_column_name_set.end());
+    lazily_read_columns.reserve(lazily_read_column_name_set.size());
+
+    for (const auto & column_name : lazily_read_column_name_set) {
+        auto name_and_type = storage_snapshot->tryGetColumn(options, column_name);
+        lazily_read_columns.emplace_back(
+            name_and_type->type->createColumn(),
+            name_and_type->type,
+            name_and_type->name);
+    }
 }
 
 static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
@@ -243,9 +249,9 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
 
     LazilyReadInfoPtr lazily_read_info = std::make_shared<LazilyReadInfo>();
     AliasToNamePtr alias_index = std::make_shared<AliasToName>();
-    collectLazilyReadColumnNames(steps_to_update, lazily_read_info->lazily_read_columns_names, alias_index);
+    collectLazilyReadColumnNames(steps_to_update, lazily_read_info->lazily_read_columns, alias_index);
 
-    if (lazily_read_info->lazily_read_columns_names.empty())
+    if (lazily_read_info->lazily_read_columns.empty())
         return;
 
     lazily_read_info->data_parts_info = std::make_shared<DataPartsInfo>();

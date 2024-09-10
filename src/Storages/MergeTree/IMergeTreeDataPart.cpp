@@ -2462,7 +2462,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     Columns result;
     result.resize(1);
-    reader->readRows(0, 1, false, 0, result);
+    reader->readRows(0, 1, false, 0, 0, result);
     return result[0];
 }
 

@@ -107,7 +107,7 @@ struct FilterDAGInfo
 
 struct LazilyReadInfo
 {
-    Names lazily_read_columns_names;
+    ColumnsWithTypeAndName lazily_read_columns;
     bool do_remove_column;
     DataPartsInfoPtr data_parts_info;
     ColumnLazyHelperPtr column_lazy_helper;

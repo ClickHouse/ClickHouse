@@ -46,7 +46,6 @@ public:
 
     static Block transformHeader(
         Block block,
-        Block lazily_read_block,
         const LazilyReadInfoPtr & lazily_read_info,
         const PrewhereInfoPtr & prewhere_info);
 
@@ -69,7 +68,6 @@ private:
     static void injectLazilyReadColumns(
         size_t rows,
         Block & block,
-        Block & lazily_read_block,
         MergeTreeReadTask * task,
         const LazilyReadInfoPtr & lazily_read_info);
 
@@ -94,8 +92,6 @@ private:
     PrewhereExprStepPtr lightweight_delete_filter_step;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
-    /// This header is used for lazily reading.
-    Block lazily_read_header;
 
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;

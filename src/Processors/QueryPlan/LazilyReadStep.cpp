@@ -47,13 +47,13 @@ void LazilyReadStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Lazily read columns: ";
 
     bool first = true;
-    for (const auto & column_name : lazily_read_info->lazily_read_columns_names)
+    for (const auto & column : lazily_read_info->lazily_read_columns)
     {
         if (!first)
             settings.out << ", ";
         first = false;
 
-        settings.out << column_name;
+        settings.out << column.name;
     }
 
     settings.out << '\n';
@@ -63,8 +63,8 @@ void LazilyReadStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     auto json_array = std::make_unique<JSONBuilder::JSONArray>();
 
-    for (const auto & column_name : lazily_read_info->lazily_read_columns_names)
-        json_array->add(column_name);
+    for (const auto & column : lazily_read_info->lazily_read_columns)
+        json_array->add(column.name);
 
     map.add("Lazily read columns", std::move(json_array));
 }

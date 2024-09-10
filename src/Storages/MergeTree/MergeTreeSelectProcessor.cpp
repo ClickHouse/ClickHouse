@@ -40,7 +40,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
     , block_size_params(block_size_params_)
-    , result_header(transformHeader(pool->getHeader(), {}, {}, prewhere_info))
+    , result_header(transformHeader(pool->getHeader(), {}, prewhere_info))
 {
     if (reader_settings.apply_deleted_mask)
     {
@@ -58,10 +58,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     }
 
     if (lazily_read_info)
-    {
-        lazily_read_header = storage_snapshot_->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names);
-        injectLazilyReadColumns(0, result_header, lazily_read_header, nullptr, lazily_read_info);
-    }
+        injectLazilyReadColumns(0, result_header, nullptr, lazily_read_info);
 
     if (!prewhere_actions.steps.empty())
         LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
@@ -146,7 +143,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (res.row_count)
         {
             injectLazilyReadColumns(
-                res.row_count, res.block, lazily_read_header,
+                res.row_count, res.block,
                 task.get(), lazily_read_info);
 
             /// Reorder the columns according to result_header
@@ -188,14 +185,13 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
 void MergeTreeSelectProcessor::injectLazilyReadColumns(
     size_t rows,
     Block & block,
-    Block & lazily_read_block,
     MergeTreeReadTask * task,
     const LazilyReadInfoPtr & lazily_read_info)
 {
     if (!lazily_read_info)
         return;
 
-    const auto & lazily_read_columns = lazily_read_info->lazily_read_columns_names;
+    const auto & lazily_read_columns = lazily_read_info->lazily_read_columns;
     if (rows)
     {
         ColumnPtr row_num_column =  block.getByName("_part_offset").column;
@@ -204,9 +200,8 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
         columns[0] = row_num_column;
         columns[1] = part_num_column;
         bool create_empty_column_lazy = false;
-        for (const auto & column_name : lazily_read_columns)
+        for (auto column_with_type_and_name : lazily_read_columns)
         {
-            auto column_with_type_and_name = lazily_read_block.getByName(column_name);
             if (create_empty_column_lazy)
                 column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
             else
@@ -225,9 +220,8 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
         Columns columns(2);
         columns[0] = row_num_column;
         columns[1] = part_num_column;
-        for (const auto & column_name : lazily_read_columns)
+        for (auto column_with_type_and_name : lazily_read_columns)
         {
-            auto column_with_type_and_name = lazily_read_block.getByName(column_name);
             if (create_empty_column_lazy)
                 column_with_type_and_name.column = ColumnLazy::create();
             else
@@ -245,12 +239,11 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
 
 Block MergeTreeSelectProcessor::transformHeader(
     Block block,
-    Block lazily_read_block,
     const LazilyReadInfoPtr & lazily_read_info,
     const PrewhereInfoPtr & prewhere_info)
 {
     auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
-    injectLazilyReadColumns(0, transformed, lazily_read_block, nullptr, lazily_read_info);
+    injectLazilyReadColumns(0, transformed, nullptr, lazily_read_info);
     return transformed;
 }
 

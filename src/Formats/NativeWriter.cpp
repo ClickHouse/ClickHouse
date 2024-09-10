@@ -56,7 +56,7 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
 
-    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(*full_column))
+    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
     {
         const auto & columns = column_lazy->getColumns();
         full_column = ColumnTuple::create(columns);

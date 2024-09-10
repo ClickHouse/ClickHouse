@@ -23,8 +23,11 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     , storage_snapshot(storage_snapshot_)
     , use_uncompressed_cache(context_->getSettings().use_uncompressed_cache)
 {
-    NameSet columns_name_set(lazily_read_info_->lazily_read_columns_names.begin(),
-                             lazily_read_info_->lazily_read_columns_names.end());
+    NameSet columns_name_set;
+
+    for (const auto & column_name : lazily_read_info_->lazily_read_columns)
+        columns_name_set.insert(column_name.name);
+
     for (const auto & it : header_)
     {
         const auto & requested_column_name = (*alias_index_)[it.name];
