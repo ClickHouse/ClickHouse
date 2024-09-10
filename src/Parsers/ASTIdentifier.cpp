@@ -108,7 +108,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     auto format_element = [&](const String & elem_name)
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(elem_name);
+        settings.writeIdentifier(elem_name, false);
         settings.ostr << (settings.hilite ? hilite_none : "");
     };
 

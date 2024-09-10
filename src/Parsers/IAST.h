@@ -202,6 +202,7 @@ public:
         char nl_or_ws; /// Newline or whitespace.
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
+        bool display_for_users;
 
         explicit FormatSettings(
             WriteBuffer & ostr_,
@@ -211,7 +212,8 @@ public:
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
-            bool print_pretty_type_names_ = false)
+            bool print_pretty_type_names_ = false,
+            bool display_for_users_ = false)
             : ostr(ostr_)
             , one_line(one_line_)
             , hilite(hilite_)
@@ -221,6 +223,7 @@ public:
             , nl_or_ws(one_line ? ' ' : '\n')
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
+            , display_for_users(display_for_users_)
         {
         }
 
@@ -234,13 +237,11 @@ public:
             , nl_or_ws(other.nl_or_ws)
             , literal_escaping_style(other.literal_escaping_style)
             , print_pretty_type_names(other.print_pretty_type_names)
+            , display_for_users(other.display_for_users)
         {
         }
 
-        void writeIdentifier(const String & name) const;
-        // Quote identifier `name` even when `always_quote_identifiers` is false.
-        // If `identifier_quoting_style` is `IdentifierQuotingStyle::None`, quote it with `IdentifierQuotingStyle::Backticks`
-        void quoteIdentifier(const String & name) const;
+        void writeIdentifier(const String & name, bool ambiguous) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.

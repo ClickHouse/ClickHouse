@@ -384,10 +384,13 @@ String transformQueryForExternalDatabaseImpl(
 
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(
-            out, /*one_line*/ true, /*hilite*/ false,
-            /*always_quote_identifiers*/ identifier_quoting_style != IdentifierQuotingStyle::None,
-            /*identifier_quoting_style*/ identifier_quoting_style, /*show_secrets_*/ true,
-            /*literal_escaping_style*/ literal_escaping_style);
+        out,
+        /*one_line=*/true,
+        /*hilite=*/false,
+        /*always_quote_identifiers=*/identifier_quoting_style != IdentifierQuotingStyle::None,
+        /*identifier_quoting_style=*/identifier_quoting_style,
+        /*show_secrets_=*/true,
+        /*literal_escaping_style=*/literal_escaping_style);
 
     select->format(settings);
 
