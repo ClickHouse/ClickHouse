@@ -2,7 +2,6 @@
 
 #if USE_HDFS
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
@@ -142,11 +141,11 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
 {
     auto pos = url_.find("//");
     if (pos == std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}", url_);
 
     pos = url_.find('/', pos + 2);
     if (pos == std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}", url_);
 
     path = url_.substr(pos + 1);
     if (!path.starts_with('/'))
@@ -155,7 +154,7 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     url = url_.substr(0, pos);
     paths = {path};
 
-    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path);
+    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using url: {}, path: {}", url, path);
 }
 
 void StorageHDFSConfiguration::addStructureAndFormatToArgs(

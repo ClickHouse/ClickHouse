@@ -1,7 +1,6 @@
 #include "DirectDictionary.h"
 
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
 #include <Functions/FunctionHelpers.h>
 

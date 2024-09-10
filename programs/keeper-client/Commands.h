@@ -266,32 +266,4 @@ class GetAllChildrenNumberCommand : public IKeeperClientCommand
     }
 };
 
-class CPCommand : public IKeeperClientCommand
-{
-    String getName() const override { return "cp"; }
-
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
-
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
-
-    String getHelpMessage() const override
-    {
-        return "{} <src> <dest> -- Copies 'src' node to 'dest' path.";
-    }
-};
-
-class MVCommand : public IKeeperClientCommand
-{
-    String getName() const override { return "mv"; }
-
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
-
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
-
-    String getHelpMessage() const override
-    {
-        return "{} <src> <dest> -- Moves 'src' node to the 'dest' path.";
-    }
-};
-
 }

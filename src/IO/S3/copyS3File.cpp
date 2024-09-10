@@ -98,6 +98,7 @@ namespace
             size_t part_size;
             String tag;
             bool is_finished = false;
+            std::exception_ptr exception;
         };
 
         size_t num_parts;
@@ -110,7 +111,6 @@ namespace
         size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         size_t num_finished_parts TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);
         std::mutex bg_tasks_mutex;
         std::condition_variable bg_tasks_condvar;
 
@@ -273,7 +273,7 @@ namespace
             }
             catch (...)
             {
-                tryLogCurrentException(log, fmt::format("While performing multipart upload of {}", dest_key));
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 // Multipart upload failed because it wasn't possible to schedule all the tasks.
                 // To avoid execution of already scheduled tasks we abort MultipartUpload.
                 abortMultipartUpload();
@@ -290,9 +290,9 @@ namespace
             if (!total_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
-            UInt64 max_part_number = request_settings.max_part_number;
-            UInt64 min_upload_part_size = request_settings.min_upload_part_size;
-            UInt64 max_upload_part_size = request_settings.max_upload_part_size;
+            auto max_part_number = request_settings.max_part_number;
+            auto min_upload_part_size = request_settings.min_upload_part_size;
+            auto max_upload_part_size = request_settings.max_upload_part_size;
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
@@ -385,12 +385,7 @@ namespace
                         }
                         catch (...)
                         {
-                            std::lock_guard lock(bg_tasks_mutex);
-                            if (!bg_exception)
-                            {
-                                tryLogCurrentException(log, fmt::format("While writing part #{}", task->part_number));
-                                bg_exception = std::current_exception(); /// The exception will be rethrown after all background tasks stop working.
-                            }
+                            task->exception = std::current_exception();
                         }
                         task_finish_notify();
                     }, Priority{});
@@ -440,21 +435,22 @@ namespace
             /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
             bg_tasks_condvar.wait(lock, [this]() {return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
 
-            auto exception = TSA_SUPPRESS_WARNING_FOR_READ(bg_exception);
-            if (exception)
+            auto & tasks = TSA_SUPPRESS_WARNING_FOR_WRITE(bg_tasks);
+            for (auto & task : tasks)
             {
-                /// abortMultipartUpload() might be called already, see processUploadPartRequest().
-                /// However if there were concurrent uploads at that time, those part uploads might or might not succeed.
-                /// As a result, it might be necessary to abort a given multipart upload multiple times in order to completely free
-                /// all storage consumed by all parts.
-                abortMultipartUpload();
+                if (task.exception)
+                {
+                    /// abortMultipartUpload() might be called already, see processUploadPartRequest().
+                    /// However if there were concurrent uploads at that time, those part uploads might or might not succeed.
+                    /// As a result, it might be necessary to abort a given multipart upload multiple times in order to completely free
+                    /// all storage consumed by all parts.
+                    abortMultipartUpload();
 
-                std::rethrow_exception(exception);
-            }
+                    std::rethrow_exception(task.exception);
+                }
 
-            const auto & tasks = TSA_SUPPRESS_WARNING_FOR_READ(bg_tasks);
-            for (const auto & task : tasks)
                 part_tags.push_back(task.tag);
+            }
         }
     };
 

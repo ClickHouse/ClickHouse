@@ -119,9 +119,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.base_backup_info,
                 reader,
                 params.context,
-                params.is_internal_backup,
-                params.use_same_s3_credentials_for_base_backup,
-                params.use_same_password_for_base_backup);
+                params.use_same_s3_credentials_for_base_backup);
         }
         else
         {
@@ -145,8 +143,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.backup_coordination,
                 params.backup_uuid,
                 params.deduplicate_files,
-                params.use_same_s3_credentials_for_base_backup,
-                params.use_same_password_for_base_backup);
+                params.use_same_s3_credentials_for_base_backup);
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");

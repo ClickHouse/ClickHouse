@@ -72,11 +72,10 @@ public:
     template <typename Column>
     void gather(Column & column_res);
 
-    MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
+    UInt64 getMergedRows() const { return merged_rows; }
+    UInt64 getMergedBytes() const { return merged_bytes; }
 
 private:
-    void updateStats(const IColumn & column);
-
     /// Cache required fields
     struct Source
     {
@@ -106,7 +105,6 @@ private:
     ssize_t next_required_source = -1;
     UInt64 merged_rows = 0;
     UInt64 merged_bytes = 0;
-    UInt64 merged_blocks = 0;
 };
 
 class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStream>
@@ -122,8 +120,12 @@ public:
 
     String getName() const override { return "ColumnGathererTransform"; }
 
+    void work() override;
+
 protected:
     void onFinish() override;
+    UInt64 elapsed_ns = 0;
+
     LoggerPtr log;
 };
 

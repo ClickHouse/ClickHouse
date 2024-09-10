@@ -1,43 +1,34 @@
 #pragma once
 
 #include <Columns/ColumnObject.h>
-#include <DataTypes/DataTypeObject.h>
-#include <list>
+#include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <Common/ObjectPool.h>
 
 namespace DB
 {
 
-class SerializationObjectDynamicPath;
-class SerializationSubObject;
-
-/// Class for binary serialization/deserialization of an Object type (currently only JSON).
+/** Serialization for data type Object.
+  * Supported only text serialization/deserialization.
+  * and binary bulk serialization/deserialization without position independent
+  * encoding, i.e. serialization/deserialization into Native format.
+  */
+template <typename Parser>
 class SerializationObject : public ISerialization
 {
 public:
-    /// Serialization can change in future. Let's introduce serialization version.
-    struct ObjectSerializationVersion
-    {
-        enum Value
-        {
-            BASIC = 0,
-        };
-
-        Value value;
-
-        static void checkVersion(UInt64 version);
-
-        explicit ObjectSerializationVersion(UInt64 version);
-    };
-
-    SerializationObject(
-        std::unordered_map<String, SerializationPtr> typed_path_serializations_,
-        const std::unordered_set<String> & paths_to_skip_,
-        const std::vector<String> & path_regexps_to_skip_);
-
-    void enumerateStreams(
-        EnumerateStreamsSettings & settings,
-        const StreamCallback & callback,
-        const SubstreamData & data) const override;
+    /** In Native format ColumnObject can be serialized
+      * in two formats: as Tuple or as String.
+      * The format is the following:
+      *
+      * <serialization_kind> 1 byte -- 0 if Tuple, 1 if String.
+      * [type_name] -- Only for tuple serialization.
+      * ... data of internal column ...
+      *
+      * ClickHouse client serializazes objects as tuples.
+      * String serialization exists for clients, which cannot
+      * do parsing by themselves and they can send raw data as
+      * string. It will be parsed on the server side.
+      */
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,
@@ -72,55 +63,59 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const override;
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
 private:
-    friend SerializationObjectDynamicPath;
-    friend SerializationSubObject;
-
-    /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
-    struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
+    enum class BinarySerializationKind : UInt8
     {
-        ObjectSerializationVersion structure_version;
-        size_t max_dynamic_paths;
-        std::vector<String> sorted_dynamic_paths;
-        std::unordered_set<String> dynamic_paths;
-        /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
-        ColumnObject::StatisticsPtr statistics;
-
-        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 structure_version_) : structure_version(structure_version_) {}
+        TUPLE = 0,
+        STRING = 1,
     };
 
-    static DeserializeBinaryBulkStatePtr deserializeObjectStructureStatePrefix(
+    struct SerializeStateObject;
+    struct DeserializeStateObject;
+
+    void deserializeBinaryBulkFromString(
+        ColumnObject & column_object,
+        size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        SubstreamsDeserializeStatesCache * cache);
+        DeserializeStateObject & state,
+        SubstreamsCache * cache) const;
 
-    /// Shared data has type Array(Tuple(String, String)).
-    static const DataTypePtr & getTypeOfSharedData();
+    void deserializeBinaryBulkFromTuple(
+        ColumnObject & column_object,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeStateObject & state,
+        SubstreamsCache * cache) const;
 
-    struct TypedPathSubcolumnCreator : public ISubcolumnCreator
-    {
-        String path;
+    template <typename TSettings>
+    void checkSerializationIsSupported(const TSettings & settings) const;
 
-        explicit TypedPathSubcolumnCreator(const String & path_) : path(path_) {}
+    template <typename Reader>
+    void deserializeTextImpl(IColumn & column, Reader && reader) const;
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override;
-    };
+    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
-protected:
-    bool shouldSkipPath(const String & path) const;
+    template <bool pretty_json = false>
+    void serializeTextFromSubcolumn(const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent = 0) const;
 
-    std::unordered_map<String, SerializationPtr> typed_path_serializations;
-    std::unordered_set<String> paths_to_skip;
-    std::vector<String> sorted_paths_to_skip;
-    std::list<re2::RE2> path_regexps_to_skip;
-    SerializationPtr dynamic_serialization;
-
-private:
-    std::vector<String> sorted_typed_paths;
-    SerializationPtr shared_data_serialization;
+    /// Pool of parser objects to make SerializationObject thread safe.
+    mutable SimpleObjectPool<Parser> parsers_pool;
 };
+
+SerializationPtr getObjectSerialization(const String & schema_format);
 
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <condition_variable>
+#include <stdatomic.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <rocksdb/db.h>
 #include <rocksdb/status.h>
@@ -32,7 +34,7 @@ public:
 
     ~EmbeddedRocksDBBulkSink() override;
 
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
 
     void onFinish() override;
 
@@ -47,7 +49,6 @@ private:
     bool isEnoughSize(const std::vector<Chunk> & input_chunks) const;
     bool isEnoughSize(const Chunk & chunk) const;
     /// Serialize chunks to rocksdb key-value pairs
-    template<bool with_timestamp>
     std::pair<ColumnString::Ptr, ColumnString::Ptr> serializeChunks(std::vector<Chunk> && input_chunks) const;
 
     StorageEmbeddedRocksDB & storage;

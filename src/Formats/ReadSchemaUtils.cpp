@@ -7,7 +7,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -164,7 +163,7 @@ try
                         return {*iterator_data.cached_columns, *format_name};
                     }
 
-                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFileName());
                     continue;
                 }
 
@@ -250,7 +249,7 @@ try
 
                     if (!names_and_types.empty())
                         read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
                 }
                 catch (...)
                 {
@@ -411,7 +410,7 @@ try
                         throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
                     read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
                 }
 
                 if (format_name && mode == SchemaInferenceMode::DEFAULT)
@@ -527,9 +526,9 @@ try
 }
 catch (Exception & e)
 {
-    auto file_path = read_buffer_iterator.getLastFilePath();
-    if (!file_path.empty())
-        e.addMessage(fmt::format("(in file/uri {})", file_path));
+    auto file_name = read_buffer_iterator.getLastFileName();
+    if (!file_name.empty())
+        e.addMessage(fmt::format("(in file/uri {})", file_name));
     throw;
 }
 

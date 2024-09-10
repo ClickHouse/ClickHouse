@@ -78,7 +78,6 @@ private:
         WriteBuffer * out_maybe_delayed_and_compressed = nullptr;
 
         bool finalized = false;
-        bool canceled = false;
 
         bool exception_is_written = false;
         std::function<void(WriteBuffer &, const String &)> exception_writer;
@@ -98,24 +97,6 @@ private:
                 out_compressed_holder->finalize();
             if (out)
                 out->finalize();
-        }
-
-        void cancel()
-        {
-            if (canceled)
-                return;
-            canceled = true;
-
-            if (out_compressed_holder)
-                out_compressed_holder->cancel();
-            if (out)
-                out->cancel();
-        }
-
-
-        bool isCanceled() const
-        {
-            return canceled;
         }
 
         bool isFinalized() const
@@ -168,6 +149,12 @@ private:
 
     void trySendExceptionToClient(
         const std::string & s,
+        int exception_code,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
+        Output & used_output);
+
+    void formatExceptionForClient(
         int exception_code,
         HTTPServerRequest & request,
         HTTPServerResponse & response,
