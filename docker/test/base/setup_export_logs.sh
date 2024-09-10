@@ -124,6 +124,8 @@ function setup_logs_replication
     check_logs_credentials || return 0
     __set_connection_args
 
+    echo "My hostname is ${HOSTNAME}"
+
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
 
