@@ -148,8 +148,9 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
 
 def kafka_consume(kafka_cluster, topic, need_decode=True, timestamp=0):
     consumer = KafkaConsumer(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
+        bootstrap_servers=f"localhost:{kafka_cluster.kafka_port}",
         auto_offset_reset="earliest",
+        session_timeout_ms=1000,
     )
     consumer.subscribe(topics=(topic))
     for toppar, messages in list(consumer.poll(5000).items()):
