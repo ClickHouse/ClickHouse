@@ -381,13 +381,20 @@ String transformQueryForExternalDatabaseImpl(
 
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
-
+    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::WhenNecessary;
+    if (identifier_quoting_style != IdentifierQuotingStyle::None)
+    {
+        identifier_quoting_rule = IdentifierQuotingRule::Always;
+    }
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(
-            out, /*one_line*/ true, /*hilite*/ false,
-            /*always_quote_identifiers*/ identifier_quoting_style != IdentifierQuotingStyle::None,
-            /*identifier_quoting_style*/ identifier_quoting_style, /*show_secrets_*/ true,
-            /*literal_escaping_style*/ literal_escaping_style);
+        /*ostr_=*/out,
+        /*one_line=*/true,
+        /*hilite=*/false,
+        /*identifier_quoting_rule=*/identifier_quoting_rule,
+        /*identifier_quoting_style=*/identifier_quoting_style,
+        /*show_secrets_=*/true,
+        /*literal_escaping_style=*/literal_escaping_style);
 
     select->format(settings);
 

@@ -125,198 +125,309 @@ LIFETIME(2628000000);
 
 
 -- Show tables, views, dictionaries with default settings
+SELECT('Settings: default');
 SHOW CREATE TABLE uk_price_paid;
-
 SHOW CREATE VIEW prices_by_year_view;
-
 SHOW CREATE uk_prices_aggs_dest;
-
 SHOW CREATE VIEW uk_prices_aggs_view;
-
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict;
 
 
--- Show tables, views, dictionaries with output_format_always_quote_identifiers=false, output_format_identifier_quoting_style='None' 
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessary', output_format_identifier_quoting_style='None'
+SELECT('Settings: WhenNecessary & None');
 SHOW CREATE TABLE uk_price_paid
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='None'; -- { serverError BAD_ARGUMENTS}
+
+SHOW CREATE VIEW prices_by_year_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='None'; -- { serverError BAD_ARGUMENTS}
+
+SHOW CREATE uk_prices_aggs_dest
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='None'; -- { serverError BAD_ARGUMENTS}
+
+SHOW CREATE VIEW uk_prices_aggs_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='None'; -- { serverError BAD_ARGUMENTS}
+
+SHOW CREATE DICTIONARY uk_mortgage_rates_dict
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='None'; -- { serverError BAD_ARGUMENTS}
+
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay', output_format_identifier_quoting_style='None'
+SELECT('Settings: WhenNecessaryForUserDisplay & None');
+SHOW CREATE TABLE uk_price_paid
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='None';
 
 SHOW CREATE VIEW prices_by_year_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='None';
 
 SHOW CREATE uk_prices_aggs_dest
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='None';
 
 SHOW CREATE VIEW uk_prices_aggs_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='None';
 
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='None';
 
--- Show tables, views, dictionaries with output_format_always_quote_identifiers=true, output_format_identifier_quoting_style='Backticks' 
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='Always', output_format_identifier_quoting_style='Backticks'
+SELECT('Settings: Always & Backticks');
 SHOW CREATE TABLE uk_price_paid
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE VIEW prices_by_year_view
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE uk_prices_aggs_dest
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE VIEW uk_prices_aggs_view
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='Backticks';
 
--- Show tables, views, dictionaries with output_format_always_quote_identifiers=false, output_format_identifier_quoting_style='Backticks' 
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay', output_format_identifier_quoting_style='Backticks'
+SELECT('Settings: WhenNecessaryForUserDisplay & Backticks');
 SHOW CREATE TABLE uk_price_paid
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE VIEW prices_by_year_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE uk_prices_aggs_dest
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE VIEW uk_prices_aggs_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='Backticks';
 
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='Backticks';
 
--- Show tables, views, dictionaries with output_format_always_quote_identifiers=true, output_format_identifier_quoting_style='DoubleQuotes' 
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessary', output_format_identifier_quoting_style='Backticks'
+SELECT('Settings: WhenNecessary & Backticks');
 SHOW CREATE TABLE uk_price_paid
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='Backticks';
+
+SHOW CREATE VIEW prices_by_year_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='Backticks';
+
+SHOW CREATE uk_prices_aggs_dest
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='Backticks';
+
+SHOW CREATE VIEW uk_prices_aggs_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='Backticks';
+
+SHOW CREATE DICTIONARY uk_mortgage_rates_dict
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='Backticks';
+
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='Always', output_format_identifier_quoting_style='DoubleQuotes'
+SELECT('Settings: Always & DoubleQuotes');
+SHOW CREATE TABLE uk_price_paid
+SETTINGS
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE VIEW prices_by_year_view
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE uk_prices_aggs_dest
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE VIEW uk_prices_aggs_view
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='DoubleQuotes';
 
--- Show tables, views, dictionaries with output_format_always_quote_identifiers=false, output_format_identifier_quoting_style='DoubleQuotes' 
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay', output_format_identifier_quoting_style='DoubleQuotes'
+SELECT('Settings: WhenNecessaryForUserDisplay & DoubleQuotes');
 SHOW CREATE TABLE uk_price_paid
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE VIEW prices_by_year_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE uk_prices_aggs_dest
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE VIEW uk_prices_aggs_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='DoubleQuotes';
 
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='DoubleQuotes';
 
-
--- Show tables, views, dictionaries with output_format_always_quote_identifiers=true, output_format_identifier_quoting_style='BackticksMySQL' 
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessary', output_format_identifier_quoting_style='DoubleQuotes'
+SELECT('Settings: WhenNecessary & DoubleQuotes');
 SHOW CREATE TABLE uk_price_paid
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='DoubleQuotes';
+
+SHOW CREATE VIEW prices_by_year_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='DoubleQuotes';
+
+SHOW CREATE uk_prices_aggs_dest
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='DoubleQuotes';
+
+SHOW CREATE VIEW uk_prices_aggs_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='DoubleQuotes';
+
+SHOW CREATE DICTIONARY uk_mortgage_rates_dict
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='DoubleQuotes';
+
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='Always', output_format_identifier_quoting_style='BackticksMySQL'
+SELECT('Settings: Always & BackticksMySQL');
+SHOW CREATE TABLE uk_price_paid
+SETTINGS
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE VIEW prices_by_year_view
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE uk_prices_aggs_dest
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE VIEW uk_prices_aggs_view
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict
 SETTINGS
-    output_format_always_quote_identifiers=true,
+    output_format_identifier_quoting_rule='Always',
     output_format_identifier_quoting_style='BackticksMySQL';
 
--- Show tables, views, dictionaries with output_format_always_quote_identifiers=false, output_format_identifier_quoting_style='BackticksMySQL' 
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay', output_format_identifier_quoting_style='BackticksMySQL'
+SELECT('Settings: WhenNecessaryForUserDisplay & BackticksMySQL');
 SHOW CREATE TABLE uk_price_paid
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE VIEW prices_by_year_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE uk_prices_aggs_dest
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE VIEW uk_prices_aggs_view
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 SHOW CREATE DICTIONARY uk_mortgage_rates_dict
 SETTINGS
-    output_format_always_quote_identifiers=false,
+    output_format_identifier_quoting_rule='WhenNecessaryForUserDisplay',
+    output_format_identifier_quoting_style='BackticksMySQL';
+
+-- Show tables, views, dictionaries with output_format_identifier_quoting_rule='WhenNecessary', output_format_identifier_quoting_style='BackticksMySQL'
+SELECT('Settings: WhenNecessary & BackticksMySQL');
+SHOW CREATE TABLE uk_price_paid
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='BackticksMySQL';
+
+SHOW CREATE VIEW prices_by_year_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='BackticksMySQL';
+
+SHOW CREATE uk_prices_aggs_dest
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='BackticksMySQL';
+
+SHOW CREATE VIEW uk_prices_aggs_view
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
+    output_format_identifier_quoting_style='BackticksMySQL';
+
+SHOW CREATE DICTIONARY uk_mortgage_rates_dict
+SETTINGS
+    output_format_identifier_quoting_rule='WhenNecessary',
     output_format_identifier_quoting_style='BackticksMySQL';
 
 DROP DICTIONARY uk_mortgage_rates_dict;

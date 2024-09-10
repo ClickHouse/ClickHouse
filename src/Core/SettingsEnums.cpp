@@ -250,4 +250,9 @@ IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
      {"Backticks", IdentifierQuotingStyle::Backticks},
      {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
      {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
+
+IMPLEMENT_SETTING_ENUM(IdentifierQuotingRule, ErrorCodes::BAD_ARGUMENTS,
+    {{"Always", IdentifierQuotingRule::Always},
+     {"WhenNecessaryForUserDisplay", IdentifierQuotingRule::WhenNecessaryForUserDisplay},
+     {"WhenNecessary", IdentifierQuotingRule::WhenNecessary}})
 }

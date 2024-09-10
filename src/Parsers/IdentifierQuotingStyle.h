@@ -14,4 +14,10 @@ enum class IdentifierQuotingStyle : uint8_t
     BackticksMySQL,  /// `mysql` style, most same as Backticks, but it uses '``' to escape '`'
 };
 
+enum class IdentifierQuotingRule : uint8_t
+{
+    Always, /// Always quote identifiers
+    WhenNecessaryForUserDisplay, /// When the identifiers is one of the certain keywords defined in `writeProbablyQuotedStringImpl`
+    WhenNecessary, /// Same as `WhenNecessaryForUserDisplay`, and ambiguous identifiers passed to `writeIdentifier`
+};
 }
