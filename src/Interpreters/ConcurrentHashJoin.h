@@ -70,7 +70,6 @@ private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
-    size_t max_threads;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 

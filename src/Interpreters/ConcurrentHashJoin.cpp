@@ -82,13 +82,12 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     : context(context_)
     , table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
-    , max_threads(context->getSettingsRef().max_threads > 0 ? std::min(slots, context->getSettingsRef().max_threads.value) : slots)
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
-          /*max_threads_*/ max_threads,
-          /*max_free_threads_*/ max_threads,
+          /*max_threads_*/ slots,
+          /*max_free_threads_*/ 0,
           /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
 {
