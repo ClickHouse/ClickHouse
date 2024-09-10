@@ -6,6 +6,62 @@
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
 #include <cstring>
+#include <optional>
+
+namespace {
+    std::unordered_map<std::string, unsigned> is_adjustable_of_scale = {
+        {"send_timeout", 1},
+        {"receive_timeout", 1},
+	{"connect_timeout", 1},
+	{"http_send_timeout", 1},
+	{"http_receive_timeout", 1},
+	{"http_connection_timeout", 1},
+	{"lock_acquire_timeout", 1},
+
+	{"receive_data_timeout_ms", 1000},
+	{"hedged_connection_timeout_ms", 1000},
+	{"replication_alter_columns_timeout", 1000},
+	{"insert_quorum_timeout", 1000},
+	{"insert_distributed_timeout", 1000},
+	{"distributed_ddl_task_timeout", 1000},
+	{"postgresql_connection_pool_wait_timeout", 1000}
+    };
+ 
+    void adjustSettings(DB::Settings& settings) {
+        std::optional<DB::Field> opt_max_execution_time_value;
+	for(const auto& setting : settings.all()) {
+	    if(setting.getName() == "max_execution_time" && !setting.getValue().isNull()) {
+		opt_max_execution_time_value = setting.getValue();
+	    } else if(setting.getName() == "max_execution_time" && !setting.getDefaultValue().isNull()) {
+		opt_max_execution_time_value = setting.getDefaultValue();
+	    }
+	}
+        if (!opt_max_execution_time_value.has_value())
+	    return;
+	
+	double max_execution_time_seconds;
+	if(!opt_max_execution_time_value->tryGet(max_execution_time_seconds)) {
+	    return;
+	}
+
+	for(auto& adjustable_setting : settings.all()) {
+		if( !is_adjustable_of_scale.contains(adjustable_setting.getName()) )
+			continue;
+		double setting_value;
+                if(!adjustable_setting.getValue().tryGet(setting_value) && ! adjustable_setting.getDefaultValue().tryGet(setting_value)) { 
+			continue;
+		}
+		auto scale = is_adjustable_of_scale[adjustable_setting.getName()];
+		double setting_seconds = setting_value / scale;
+
+		if (setting_seconds > max_execution_time_seconds) 
+			continue;
+
+		adjustable_setting.setValue(DB::Field(static_cast<unsigned long long>(max_execution_time_seconds * scale)));
+	}
+    }
+    
+};
 
 namespace DB
 {
@@ -128,6 +184,7 @@ void Settings::set(std::string_view name, const Field & value)
         settings_changed_by_compatibility_setting.erase(name);
 
     BaseSettings::set(name, value);
+    adjustSettings(*this);
 }
 
 void Settings::applyCompatibilitySetting(const String & compatibility_value)
