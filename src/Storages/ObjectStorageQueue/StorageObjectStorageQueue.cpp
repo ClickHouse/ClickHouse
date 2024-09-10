@@ -118,7 +118,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args,
+    ASTStorage * /* engine_args */,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
