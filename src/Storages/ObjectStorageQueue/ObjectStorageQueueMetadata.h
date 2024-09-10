@@ -56,7 +56,7 @@ public:
     ObjectStorageQueueMetadata(
         const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
-        std::shared_ptr<ObjectStorageQueueSettings> settings_);
+        const ObjectStorageQueueSettings & settings_);
 
     ~ObjectStorageQueueMetadata();
 
@@ -86,7 +86,7 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
-    std::shared_ptr<ObjectStorageQueueSettings> settings;
+    ObjectStorageQueueSettings settings;
     ObjectStorageQueueTableMetadata table_metadata;
     const fs::path zookeeper_path;
     const size_t buckets_num;

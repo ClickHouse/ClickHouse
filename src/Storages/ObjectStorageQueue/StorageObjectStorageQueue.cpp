@@ -188,7 +188,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
         zk_path,
-        std::make_shared<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), queue_settings),
+        std::make_shared<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), *queue_settings),
         *queue_settings);
 
     if (processing_threads_num_from_cpu_cores)
