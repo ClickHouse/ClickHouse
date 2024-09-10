@@ -47,7 +47,7 @@ size_t chooseSegmentSize(
     /// Here we take max of two numbers:
     /// * (min_marks_per_task * threads) = the number of marks we request from the coordinator each time - there is no point to have segments smaller than one unit of work for a replica
     /// * (sum_marks / number_of_replicas^2) - we use consistent hashing for work distribution (including work stealing). If we have a really slow replica
-    ///   everything up to (1/number_of_replicas) portion of its work will be stolen by other replicas. And it owns (1/number_of_replicas) share of total number of marks.
+    ///   everything except (1/number_of_replicas) portion of its work will be stolen by other replicas. And it owns (1/number_of_replicas) share of total number of marks.
     ///   Also important to note here that sum_marks is calculated after PK analysis, it means in particular that different segment sizes might be used for the
     ///   same table for different queries (it is intentional).
     ///
