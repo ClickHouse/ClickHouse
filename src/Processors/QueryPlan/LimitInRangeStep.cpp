@@ -50,7 +50,7 @@ void LimitInRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
             pipeline.getHeader().getColumnsWithTypeAndName(),
             output_stream->header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
+        auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
     }

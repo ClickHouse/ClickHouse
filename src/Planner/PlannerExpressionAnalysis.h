@@ -59,7 +59,7 @@ struct LimitByAnalysisResult
 
 struct LimitInRangeAnalysisResult
 {
-    ActionsDAGPtr combined_limit_inrange_actions;
+    ActionsAndProjectInputsFlagPtr combined_limit_inrange_actions;
     std::string from_filter_column_name;
     std::string to_filter_column_name;
     bool remove_filter_column = true; // need to configure
@@ -187,7 +187,7 @@ public:
         return limit_inrange_analysis_result.combined_limit_inrange_actions != nullptr;
     }
 
-    const LimitInRangeAnalysisResult & getLimitInRange() const
+    LimitInRangeAnalysisResult & getLimitInRange()
     {
         return limit_inrange_analysis_result;
     }
