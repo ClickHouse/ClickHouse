@@ -1766,7 +1766,7 @@ private:
                     return false;
 
 
-                auto children = node_it->value.getChildren();
+                const auto & children = node_it->value.getChildren();
                 for (auto && child_name : children)
                 {
                     auto child_path = (root_fs_path / child_name.toView()).generic_string();

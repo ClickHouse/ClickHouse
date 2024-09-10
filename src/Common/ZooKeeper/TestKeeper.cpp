@@ -362,9 +362,13 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
 
     std::vector<std::pair<std::string, Coordination::TestKeeper::Node>> children;
 
-    for (const auto & [child_path, child_node] : container)
+    for (auto it = std::next(root_it); it != container.end(); ++it)
+    {
+        const auto & [child_path, child_node] = *it;
+
         if (child_path.starts_with(path))
             children.emplace_back(child_path, child_node);
+    }
 
     if (children.size() > remove_nodes_limit)
     {
