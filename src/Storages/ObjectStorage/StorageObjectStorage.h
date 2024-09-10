@@ -39,7 +39,7 @@ public:
             String relative_path_,
             std::optional<ObjectMetadata> metadata_ = std::nullopt,
             std::shared_ptr<NamesAndTypesList> initial_schema_ = nullptr,
-            std::shared_ptr<ActionsDAG> schema_transformer_ = nullptr)
+            std::shared_ptr<const ActionsDAG> schema_transformer_ = nullptr)
             : RelativePathWithMetadata(std::move(relative_path_), std::move(metadata_))
             , initial_schema(std::move(initial_schema_))
             , schema_transformer(std::move(schema_transformer_))
@@ -50,7 +50,7 @@ public:
 
     public:
         std::shared_ptr<NamesAndTypesList> initial_schema;
-        std::shared_ptr<ActionsDAG> schema_transformer;
+        std::shared_ptr<const ActionsDAG> schema_transformer;
     };
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;

@@ -369,7 +369,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /*Temporary desicion. Need better anstraction here.*/
         Block initial_header = read_from_format_info.format_header;
 
-        if (object_info->schema_transformer)
+        if (object_info->initial_schema)
         {
             Block sample_header;
             for (const auto & [name, type] : *object_info->initial_schema)

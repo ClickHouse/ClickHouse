@@ -63,34 +63,39 @@ namespace DB
  * }
  */
 
-bool operator==(const Poco::JSON::Object::Ptr & first, const Poco::JSON::Object::Ptr & second);
+// bool operator==(const Poco::JSON::Object::Ptr & first, const Poco::JSON::Object::Ptr & second);
 
 
 class IcebergSchemaProcessor
 {
+    using Node = ActionsDAG::Node;
+
 public:
-    void addIcebergTableSchema(const Poco::JSON::Object::Ptr & ptr);
-    NamesAndTypesList getClickhouseTableSchemaById(Int32 id);
-    std::shared_ptr<const ActionsDAG> getTransformationDagByIds(Int32 old_id, Int32 new_id);
+    void addIcebergTableSchema(Poco::JSON::Object::Ptr ptr);
+    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
+    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
 
 private:
     std::map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
-    std::map<Int32, NamesAndTypesList> clickhouse_table_schemas_by_ids;
+    std::map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
 
-    NamesAndTypeList getSchemaType(const Poco::JSON::Object::Ptr & schema);
+    NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
     DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
     DataTypePtr getSimpleType(const String & type_name);
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
         [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema);
 
+    bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
-    std::pair<const Node *, const Node *>
-    getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
+    Int32 current_old_id = -1;
+    Int32 current_new_id = -1;
 
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type_field);
+    // std::pair<const Node *, const Node *>
+    // getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
 };
 
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
@@ -108,8 +113,7 @@ public:
         Int32 format_version_,
         String manifest_list_file_,
         Int32 current_schema_id_,
-        NamesAndTypesList schema_,
-        std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids_);
+        IcebergSchemaProcessor schema_processor);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
@@ -142,11 +146,11 @@ private:
     Int32 format_version;
     String manifest_list_file;
     const Int32 current_schema_id;
-    NamesAndTypesList schema;
     mutable DataFileInfos data_file_infos;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
-    mutable IcebergSchemaProcessor schema_processor{};
+    mutable IcebergSchemaProcessor schema_processor;
+    NamesAndTypesList schema;
     LoggerPtr log;
 };
 
