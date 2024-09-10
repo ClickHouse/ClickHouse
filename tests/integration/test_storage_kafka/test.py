@@ -7,40 +7,57 @@ import time
 import logging
 import io
 import string
-import ast
 import math
-
+import pytest
 import avro.schema
 import avro.io
 import avro.datafile
 from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
 )
-from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
-
 import kafka.errors
-import pytest
-from google.protobuf.internal.encoder import _VarintBytes
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
+from kafka import KafkaAdminClient, KafkaProducer, BrokerConnection
 from kafka.protocol.admin import DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
-from kafka.admin import NewTopic
-from contextlib import contextmanager
+from google.protobuf.internal.encoder import _VarintBytes
 
 
-# protoc --version
-# libprotoc 3.0.0
-# # to create kafka_pb2.py
-# protoc --python_out=. kafka.proto
+from helpers.client import QueryRuntimeException
+from helpers.cluster import is_arm
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV
+from test_storage_kafka.kafka_tests_utils import (
+    kafka_create_topic,
+    kafka_delete_topic,
+    get_kafka_producer,
+    generate_old_create_table_query,
+    generate_new_create_table_query,
+    kafka_produce,
+    producer_serializer,
+    avro_message,
+    avro_confluent_message,
+    get_admin_client,
+    kafka_produce_protobuf_messages,
+    kafka_produce_protobuf_social,
+    kafka_produce_protobuf_messages_no_delimiters,
+    kafka_topic,
+    existing_kafka_topic,
+    must_use_thread_per_consumer,
+    get_topic_postfix,
+    kafka_consume_with_retry,
+)
+from test_storage_kafka.conftest import (
+    conftest_cluster,
+    init_cluster_and_instance,
+    KAFKA_TOPIC_OLD,
+    KAFKA_CONSUMER_GROUP_OLD,
+    KAFKA_TOPIC_NEW,
+    KAFKA_CONSUMER_GROUP_NEW,
+)
 
-from . import kafka_pb2
-from . import social_pb2
-from . import message_with_repeated_pb2
+from test_storage_kafka import message_with_repeated_pb2
 
+# Skip all tests on ARM
 if is_arm():
     pytestmark = pytest.mark.skip
 
@@ -48,407 +65,14 @@ if is_arm():
 # TODO: add test for SELECT LIMIT is working.
 
 
-KAFKA_TOPIC_OLD = "old_t"
-KAFKA_CONSUMER_GROUP_OLD = "old_cg"
-KAFKA_TOPIC_NEW = "new_t"
-KAFKA_CONSUMER_GROUP_NEW = "new_cg"
-
-
-cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance(
-    "instance",
-    main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
-    user_configs=["configs/users.xml"],
-    with_kafka=True,
-    with_zookeeper=True,  # For Replicated Table
-    macros={
-        "kafka_broker": "kafka1",
-        "kafka_topic_old": KAFKA_TOPIC_OLD,
-        "kafka_group_name_old": KAFKA_CONSUMER_GROUP_OLD,
-        "kafka_topic_new": KAFKA_TOPIC_NEW,
-        "kafka_group_name_new": KAFKA_CONSUMER_GROUP_NEW,
-        "kafka_client_id": "instance",
-        "kafka_format_json_each_row": "JSONEachRow",
-    },
-    clickhouse_path_dir="clickhouse_path",
-)
-
-
-def get_kafka_producer(port, serializer, retries):
-    errors = []
-    for _ in range(retries):
-        try:
-            producer = KafkaProducer(
-                bootstrap_servers="localhost:{}".format(port),
-                value_serializer=serializer,
-            )
-            logging.debug("Kafka Connection establised: localhost:{}".format(port))
-            return producer
-        except Exception as e:
-            errors += [str(e)]
-            time.sleep(1)
-
-    raise Exception("Connection not establised, {}".format(errors))
-
-
-def producer_serializer(x):
-    return x.encode() if isinstance(x, str) else x
-
-
-def kafka_create_topic(
-    admin_client,
-    topic_name,
-    num_partitions=1,
-    replication_factor=1,
-    max_retries=50,
-    config=None,
-):
-    logging.debug(
-        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
-    )
-    topics_list = [
-        NewTopic(
-            name=topic_name,
-            num_partitions=num_partitions,
-            replication_factor=replication_factor,
-            topic_configs=config,
-        )
-    ]
-    retries = 0
-    while True:
-        try:
-            admin_client.create_topics(new_topics=topics_list, validate_only=False)
-            logging.debug("Admin client succeed")
-            return
-        except Exception as e:
-            retries += 1
-            time.sleep(0.5)
-            if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
-            else:
-                raise
-
-
-def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
-
-    retries = 0
-    while True:
-        topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
-        if topic not in topics_listed:
-            return
-        else:
-            retries += 1
-            time.sleep(0.5)
-            if retries > max_retries:
-                raise Exception(f"Failed to delete topics {topic}, {result}")
-
-
-@contextmanager
-def kafka_topic(
-    admin_client,
-    topic_name,
-    num_partitions=1,
-    replication_factor=1,
-    max_retries=50,
-    config=None,
-):
-    kafka_create_topic(
-        admin_client,
-        topic_name,
-        num_partitions,
-        replication_factor,
-        max_retries,
-        config,
-    )
-    try:
-        yield None
-    finally:
-        # Code to release resource, e.g.:
-        kafka_delete_topic(admin_client, topic_name, max_retries)
-
-
-@contextmanager
-def existing_kafka_topic(admin_client, topic_name, max_retries=50):
-    try:
-        yield None
-    finally:
-        kafka_delete_topic(admin_client, topic_name, max_retries)
-
-
-def get_admin_client(kafka_cluster):
-    return KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
-
-
-def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
-    logging.debug(
-        "kafka_produce server:{}:{} topic:{}".format(
-            "localhost", kafka_cluster.kafka_port, topic
-        )
-    )
-    producer = get_kafka_producer(
-        kafka_cluster.kafka_port, producer_serializer, retries
-    )
-    for message in messages:
-        producer.send(topic=topic, value=message, timestamp_ms=timestamp)
-        producer.flush()
-
-
-## just to ensure the python client / producer is working properly
-def kafka_producer_send_heartbeat_msg(max_retries=50):
-    kafka_produce(kafka_cluster, "test_heartbeat_topic", ["test"], retries=max_retries)
-
-
-def kafka_consume(kafka_cluster, topic, need_decode=True, timestamp=0):
-    consumer = KafkaConsumer(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
-        auto_offset_reset="earliest",
-    )
-    consumer.subscribe(topics=(topic))
-    for toppar, messages in list(consumer.poll(5000).items()):
-        if toppar.topic == topic:
-            for message in messages:
-                assert timestamp == 0 or message.timestamp / 1000 == timestamp
-                if need_decode:
-                    yield message.value.decode()
-                else:
-                    yield message.value
-    consumer.unsubscribe()
-    consumer.close()
-
-
-def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messages):
-    data = b""
-    for i in range(start_index, start_index + num_messages):
-        msg = kafka_pb2.KeyValuePair()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    producer = KafkaProducer(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
-        value_serializer=producer_serializer,
-    )
-    producer.send(topic=topic, value=data)
-    producer.flush()
-    logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
-
-
-def kafka_consume_with_retry(
-    kafka_cluster,
-    topic,
-    expected_messages,
-    need_decode=True,
-    timestamp=0,
-    retry_count=20,
-    sleep_time=0.1,
-):
-    messages = []
-    try_count = 0
-    while try_count < retry_count:
-        try_count += 1
-        messages.extend(
-            kafka_consume(
-                kafka_cluster, topic, need_decode=need_decode, timestamp=timestamp
-            )
-        )
-        if len(messages) == expected_messages:
-            break
-        time.sleep(sleep_time)
-    if len(messages) != expected_messages:
-        raise Exception(f"Got only {len(messages)} messages")
-    return messages
-
-
-def kafka_produce_protobuf_messages_no_delimiters(
-    kafka_cluster, topic, start_index, num_messages
-):
-    data = ""
-    producer = KafkaProducer(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
-    for i in range(start_index, start_index + num_messages):
-        msg = kafka_pb2.KeyValuePair()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        producer.send(topic=topic, value=serialized_msg)
-    producer.flush()
-    logging.debug("Produced {} messages for topic {}".format(num_messages, topic))
-
-
-def kafka_produce_protobuf_social(kafka_cluster, topic, start_index, num_messages):
-    data = b""
-    for i in range(start_index, start_index + num_messages):
-        msg = social_pb2.User()
-        msg.username = "John Doe {}".format(i)
-        msg.timestamp = 1000000 + i
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    producer = KafkaProducer(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
-        value_serializer=producer_serializer,
-    )
-    producer.send(topic=topic, value=data)
-    producer.flush()
-    logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
-
-
-def avro_message(value):
-    schema = avro.schema.make_avsc_object(
-        {
-            "name": "row",
-            "type": "record",
-            "fields": [
-                {"name": "id", "type": "long"},
-                {"name": "blockNo", "type": "int"},
-                {"name": "val1", "type": "string"},
-                {"name": "val2", "type": "float"},
-                {"name": "val3", "type": "int"},
-            ],
-        }
-    )
-    bytes_writer = io.BytesIO()
-    # writer = avro.io.DatumWriter(schema)
-    # encoder = avro.io.BinaryEncoder(bytes_writer)
-    # writer.write(value, encoder)
-
-    # DataFileWrite seems to be mandatory to get schema encoded
-    writer = avro.datafile.DataFileWriter(bytes_writer, avro.io.DatumWriter(), schema)
-    if isinstance(value, list):
-        for v in value:
-            writer.append(v)
-    else:
-        writer.append(value)
-    writer.flush()
-    raw_bytes = bytes_writer.getvalue()
-
-    writer.close()
-    bytes_writer.close()
-    return raw_bytes
-
-
-def avro_confluent_message(schema_registry_client, value):
-    # type: (CachedSchemaRegistryClient, dict) -> str
-
-    serializer = MessageSerializer(schema_registry_client)
-    schema = avro.schema.make_avsc_object(
-        {
-            "name": "row",
-            "type": "record",
-            "fields": [
-                {"name": "id", "type": "long"},
-                {"name": "blockNo", "type": "int"},
-                {"name": "val1", "type": "string"},
-                {"name": "val2", "type": "float"},
-                {"name": "val3", "type": "int"},
-            ],
-        }
-    )
-    return serializer.encode_record_with_schema("test_subject", schema, value)
-
-
-def create_settings_string(settings):
-    if settings is None:
-        return ""
-
-    def format_value(value):
-        if isinstance(value, str):
-            return f"'{value}'"
-        elif isinstance(value, bool):
-            return str(int(value))
-        return str(value)
-
-    settings_string = "SETTINGS "
-    keys = settings.keys()
-    first_key = next(iter(settings))
-    settings_string += str(first_key) + " = " + format_value(settings[first_key])
-    for key in keys:
-        if key == first_key:
-            continue
-        settings_string += ", " + str(key) + " = " + format_value(settings[key])
-    return settings_string
-
-
-def generate_old_create_table_query(
-    table_name,
-    columns_def,
-    database="test",
-    brokers="{kafka_broker}:19092",
-    topic_list="{kafka_topic_new}",
-    consumer_group="{kafka_group_name_new}",
-    format="{kafka_format_json_each_row}",
-    row_delimiter="\\n",
-    keeper_path=None,  # it is not used, but it is easier to handle keeper_path and replica_name like this
-    replica_name=None,
-    settings=None,
-):
-    settings_string = create_settings_string(settings)
-    query = f"""CREATE TABLE {database}.{table_name} ({columns_def}) ENGINE = Kafka('{brokers}', '{topic_list}', '{consumer_group}', '{format}', '{row_delimiter}')
-{settings_string}"""
-    logging.debug(f"Generated old create query: {query}")
-    return query
-
-
-def generate_new_create_table_query(
-    table_name,
-    columns_def,
-    database="test",
-    brokers="{kafka_broker}:19092",
-    topic_list="{kafka_topic_new}",
-    consumer_group="{kafka_group_name_new}",
-    format="{kafka_format_json_each_row}",
-    row_delimiter="\\n",
-    keeper_path=None,
-    replica_name=None,
-    settings=None,
-):
-    if settings is None:
-        settings = {}
-    if keeper_path is None:
-        keeper_path = f"/clickhouse/{{database}}/{table_name}"
-    if replica_name is None:
-        replica_name = "r1"
-    settings["kafka_keeper_path"] = keeper_path
-    settings["kafka_replica_name"] = replica_name
-    settings_string = create_settings_string(settings)
-    query = f"""CREATE TABLE {database}.{table_name} ({columns_def}) ENGINE = Kafka('{brokers}', '{topic_list}', '{consumer_group}', '{format}', '{row_delimiter}')
-{settings_string}
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1"""
-    logging.debug(f"Generated new create query: {query}")
-    return query
-
-
-def must_use_thread_per_consumer(generator):
-    if generator == generate_old_create_table_query:
-        return False
-    if generator == generate_new_create_table_query:
-        return True
-    raise Exception("Unexpected generator")
-
-
-def get_topic_postfix(generator):
-    if generator == generate_old_create_table_query:
-        return "old"
-    if generator == generate_new_create_table_query:
-        return "new"
-    raise Exception("Unexpected generator")
-
-
 # Tests
 @pytest.mark.parametrize(
     "create_query_generator, do_direct_read",
     [(generate_old_create_table_query, True), (generate_new_create_table_query, False)],
 )
-def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_read):
+def test_kafka_column_types(
+    kafka_cluster, instance, create_query_generator, do_direct_read
+):
     def assert_returned_exception(e):
         assert e.value.returncode == 36
         assert (
@@ -512,7 +136,7 @@ def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_rea
         instance.query("DROP TABLE test.kafka SYNC")
 
 
-def test_kafka_settings_old_syntax(kafka_cluster):
+def test_kafka_settings_old_syntax(kafka_cluster, instance):
     assert TSV(
         instance.query(
             "SELECT * FROM system.macros WHERE macro like 'kafka%' ORDER BY macro",
@@ -557,7 +181,7 @@ kafka_topic_old	old_t
     # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
 
-def test_kafka_settings_new_syntax(kafka_cluster):
+def test_kafka_settings_new_syntax(kafka_cluster, instance):
     instance.query(
         """
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -599,7 +223,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     assert members[0]["client_id"] == "instance test 1234"
 
 
-def test_kafka_settings_predefined_macros(kafka_cluster):
+def test_kafka_settings_predefined_macros(kafka_cluster, instance):
     instance.query(
         """
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -627,7 +251,7 @@ def test_kafka_settings_predefined_macros(kafka_cluster):
     assert members[0]["client_id"] == "test_kafka test 1234"
 
 
-def test_kafka_json_as_string(kafka_cluster):
+def test_kafka_json_as_string(kafka_cluster, instance):
     kafka_produce(
         kafka_cluster,
         "kafka_json_as_string",
@@ -641,7 +265,7 @@ def test_kafka_json_as_string(kafka_cluster):
 
     # 'tombstone' record (null value) = marker of deleted record
     producer = KafkaProducer(
-        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         value_serializer=producer_serializer,
         key_serializer=producer_serializer,
     )
@@ -677,7 +301,7 @@ def test_kafka_json_as_string(kafka_cluster):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_formats(kafka_cluster, create_query_generator):
+def test_kafka_formats(kafka_cluster, instance, create_query_generator):
     schema_registry_client = CachedSchemaRegistryClient(
         {"url": f"http://localhost:{kafka_cluster.schema_registry_port}"}
     )
@@ -1145,50 +769,8 @@ def describe_consumer_group(kafka_cluster, name):
     return res
 
 
-# Fixtures
-
-
-@pytest.fixture(scope="module")
-def kafka_cluster():
-    try:
-        cluster.start()
-        kafka_id = instance.cluster.kafka_docker_id
-        print(("kafka_id is {}".format(kafka_id)))
-        yield cluster
-    finally:
-        cluster.shutdown()
-
-
-@pytest.fixture(autouse=True)
-def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
-    yield  # run test
-
-
 # Tests
-def test_kafka_issue11308(kafka_cluster):
+def test_kafka_issue11308(kafka_cluster, instance):
     # Check that matview does respect Kafka SETTINGS
     kafka_produce(
         kafka_cluster,
@@ -1247,7 +829,7 @@ def test_kafka_issue11308(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
 
-def test_kafka_issue4116(kafka_cluster):
+def test_kafka_issue4116(kafka_cluster, instance):
     # Check that format_csv_delimiter parameter works now - as part of all available format settings.
     kafka_produce(
         kafka_cluster,
@@ -1282,7 +864,7 @@ def test_kafka_issue4116(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
 
-def test_kafka_consumer_hang(kafka_cluster):
+def test_kafka_consumer_hang(kafka_cluster, instance):
     admin_client = get_admin_client(kafka_cluster)
 
     topic_name = "consumer_hang"
@@ -1362,7 +944,7 @@ def test_kafka_consumer_hang(kafka_cluster):
     kafka_delete_topic(admin_client, topic_name)
 
 
-def test_kafka_consumer_hang2(kafka_cluster):
+def test_kafka_consumer_hang2(kafka_cluster, instance):
     admin_client = get_admin_client(kafka_cluster)
 
     topic_name = "consumer_hang2"
@@ -1423,7 +1005,7 @@ def test_kafka_consumer_hang2(kafka_cluster):
 
 # sequential read from different consumers leads to breaking lot of kafka invariants
 # (first consumer will get all partitions initially, and may have problems in doing polls every 60 sec)
-def test_kafka_read_consumers_in_parallel(kafka_cluster):
+def test_kafka_read_consumers_in_parallel(kafka_cluster, instance):
     admin_client = get_admin_client(kafka_cluster)
 
     topic_name = "read_consumers_in_parallel"
@@ -1489,7 +1071,7 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
     kafka_delete_topic(admin_client, topic_name)
 
 
-def test_kafka_csv_with_delimiter(kafka_cluster):
+def test_kafka_csv_with_delimiter(kafka_cluster, instance):
     messages = []
     for i in range(50):
         messages.append("{i}, {i}".format(i=i))
@@ -1516,7 +1098,7 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
     kafka_check_result(result, True)
 
 
-def test_kafka_tsv_with_delimiter(kafka_cluster):
+def test_kafka_tsv_with_delimiter(kafka_cluster, instance):
     messages = []
     for i in range(50):
         messages.append("{i}\t{i}".format(i=i))
@@ -1543,7 +1125,7 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
     kafka_check_result(result, True)
 
 
-def test_kafka_select_empty(kafka_cluster):
+def test_kafka_select_empty(kafka_cluster, instance):
     admin_client = get_admin_client(kafka_cluster)
     topic_name = "empty"
     kafka_create_topic(admin_client, topic_name)
@@ -1565,7 +1147,7 @@ def test_kafka_select_empty(kafka_cluster):
     kafka_delete_topic(admin_client, topic_name)
 
 
-def test_kafka_json_without_delimiter(kafka_cluster):
+def test_kafka_json_without_delimiter(kafka_cluster, instance):
     messages = ""
     for i in range(25):
         messages += json.dumps({"key": i, "value": i}) + "\n"
@@ -1597,7 +1179,7 @@ def test_kafka_json_without_delimiter(kafka_cluster):
     kafka_check_result(result, True)
 
 
-def test_kafka_protobuf(kafka_cluster):
+def test_kafka_protobuf(kafka_cluster, instance):
     kafka_produce_protobuf_messages(kafka_cluster, "pb", 0, 20)
     kafka_produce_protobuf_messages(kafka_cluster, "pb", 20, 1)
     kafka_produce_protobuf_messages(kafka_cluster, "pb", 21, 29)
@@ -1624,7 +1206,7 @@ def test_kafka_protobuf(kafka_cluster):
     kafka_check_result(result, True)
 
 
-def test_kafka_string_field_on_first_position_in_protobuf(kafka_cluster):
+def test_kafka_string_field_on_first_position_in_protobuf(kafka_cluster, instance):
     # https://github.com/ClickHouse/ClickHouse/issues/12615
     kafka_produce_protobuf_social(
         kafka_cluster, "string_field_on_first_position_in_protobuf", 0, 20
@@ -1708,7 +1290,7 @@ John Doe 49	1000049
     assert TSV(result) == TSV(expected)
 
 
-def test_kafka_protobuf_no_delimiter(kafka_cluster):
+def test_kafka_protobuf_no_delimiter(kafka_cluster, instance):
     instance.query(
         """
         CREATE TABLE test.kafka (key UInt64, value String)
@@ -1773,7 +1355,7 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_materialized_view(kafka_cluster, create_query_generator):
+def test_kafka_materialized_view(kafka_cluster, instance, create_query_generator):
     topic_name = "mv"
 
     instance.query(
@@ -1825,7 +1407,9 @@ def test_kafka_materialized_view(kafka_cluster, create_query_generator):
         ),
     ],
 )
-def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_line):
+def test_kafka_recreate_kafka_table(
+    kafka_cluster, instance, create_query_generator, log_line
+):
     """
     Checks that materialized view work properly after dropping and recreating the Kafka table.
     """
@@ -1911,7 +1495,9 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         ),
     ],
 )
-def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line):
+def test_librdkafka_compression(
+    kafka_cluster, instance, create_query_generator, log_line
+):
     """
     Regression for UB in snappy-c (that is used in librdkafka),
     backport pr is [1].
@@ -1992,7 +1578,9 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
     "create_query_generator",
     [generate_new_create_table_query, generate_old_create_table_query],
 )
-def test_kafka_materialized_view_with_subquery(kafka_cluster, create_query_generator):
+def test_kafka_materialized_view_with_subquery(
+    kafka_cluster, instance, create_query_generator
+):
     topic_name = "mysq"
     logging.debug(f"Using topic {topic_name}")
 
@@ -2044,7 +1632,7 @@ def test_kafka_materialized_view_with_subquery(kafka_cluster, create_query_gener
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
+def test_kafka_many_materialized_views(kafka_cluster, instance, create_query_generator):
     topic_name = f"mmv-{get_topic_postfix(create_query_generator)}"
     create_query = create_query_generator(
         "kafka",
@@ -2103,7 +1691,7 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_flush_on_big_message(kafka_cluster, create_query_generator):
+def test_kafka_flush_on_big_message(kafka_cluster, instance, create_query_generator):
     # Create batches of messages of size ~100Kb
     kafka_messages = 1000
     batch_messages = 1000
@@ -2166,7 +1754,7 @@ def test_kafka_flush_on_big_message(kafka_cluster, create_query_generator):
         ), "ClickHouse lost some messages: {}".format(result)
 
 
-def test_kafka_virtual_columns(kafka_cluster):
+def test_kafka_virtual_columns(kafka_cluster, instance):
     topic_config = {
         # default retention, since predefined timestamp_ms is used.
         "retention.ms": "-1",
@@ -2211,7 +1799,7 @@ def test_kafka_virtual_columns(kafka_cluster):
     [generate_old_create_table_query, generate_new_create_table_query],
 )
 def test_kafka_virtual_columns_with_materialized_view(
-    kafka_cluster, create_query_generator
+    kafka_cluster, instance, create_query_generator
 ):
     topic_config = {
         # default retention, since predefined timestamp_ms is used.
@@ -2282,7 +1870,7 @@ def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_insert(kafka_cluster, create_query_generator):
+def test_kafka_insert(kafka_cluster, instance, create_query_generator):
     topic_name = "insert1" + get_topic_postfix(create_query_generator)
 
     instance.query(
@@ -2313,7 +1901,7 @@ def test_kafka_insert(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_produce_consume(kafka_cluster, create_query_generator):
+def test_kafka_produce_consume(kafka_cluster, instance, create_query_generator):
     topic_name = "insert2" + get_topic_postfix(create_query_generator)
 
     create_query = create_query_generator(
@@ -2382,7 +1970,7 @@ def test_kafka_produce_consume(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
+def test_kafka_commit_on_block_write(kafka_cluster, instance, create_query_generator):
     topic_name = "block" + get_topic_postfix(create_query_generator)
     create_query = create_query_generator(
         "kafka",
@@ -2464,7 +2052,9 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
         ),
     ],
 )
-def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line):
+def test_kafka_virtual_columns2(
+    kafka_cluster, instance, create_query_generator, log_line
+):
     admin_client = get_admin_client(kafka_cluster)
 
     topic_config = {
@@ -2500,7 +2090,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
             )
 
             producer = KafkaProducer(
-                bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+                bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
                 value_serializer=producer_serializer,
                 key_serializer=producer_serializer,
             )
@@ -2617,7 +2207,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
     [(generate_old_create_table_query, True), (generate_new_create_table_query, False)],
 )
 def test_kafka_producer_consumer_separate_settings(
-    kafka_cluster, create_query_generator, do_direct_read
+    kafka_cluster, instance, create_query_generator, do_direct_read
 ):
     instance.rotate_logs()
     instance.query(
@@ -2700,7 +2290,9 @@ def test_kafka_producer_consumer_separate_settings(
         (generate_old_create_table_query, "Committed offset 5"),
     ],
 )
-def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_line):
+def test_kafka_produce_key_timestamp(
+    kafka_cluster, instance, create_query_generator, log_line
+):
     topic_name = "insert3"
     topic_config = {
         # default retention, since predefined timestamp_ms is used.
@@ -2780,7 +2372,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_insert_avro(kafka_cluster, create_query_generator):
+def test_kafka_insert_avro(kafka_cluster, instance, create_query_generator):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -2835,7 +2427,7 @@ def test_kafka_insert_avro(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_produce_consume_avro(kafka_cluster, create_query_generator):
+def test_kafka_produce_consume_avro(kafka_cluster, instance, create_query_generator):
     topic_name = "insert_avro" + get_topic_postfix(create_query_generator)
     with kafka_topic(get_admin_client(kafka_cluster), topic_name):
         num_rows = 75
@@ -2895,7 +2487,7 @@ def test_kafka_produce_consume_avro(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
+def test_kafka_flush_by_time(kafka_cluster, instance, create_query_generator):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -2964,7 +2556,7 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
+def test_kafka_flush_by_block_size(kafka_cluster, instance, create_query_generator):
     topic_name = "flush_by_block_size" + get_topic_postfix(create_query_generator)
 
     cancel = threading.Event()
@@ -3042,7 +2634,7 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
     [generate_old_create_table_query, generate_new_create_table_query],
 )
 def test_kafka_lot_of_partitions_partial_commit_of_bulk(
-    kafka_cluster, create_query_generator
+    kafka_cluster, instance, create_query_generator
 ):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -3108,7 +2700,7 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(
         (generate_new_create_table_query, "{}.*Saved offset"),
     ],
 )
-def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
+def test_kafka_rebalance(kafka_cluster, instance, create_query_generator, log_line):
     NUMBER_OF_CONSURRENT_CONSUMERS = 11
 
     instance.query(
@@ -3283,7 +2875,9 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
         # generate_new_create_table_query,
     ],
 )
-def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_generator):
+def test_kafka_no_holes_when_write_suffix_failed(
+    kafka_cluster, instance, create_query_generator
+):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -3357,7 +2951,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         assert TSV(result) == TSV("22\t22\t22")
 
 
-def test_exception_from_destructor(kafka_cluster):
+def test_exception_from_destructor(kafka_cluster, instance):
     instance.query(
         """
         CREATE TABLE test.kafka (key UInt64, value String)
@@ -3404,7 +2998,9 @@ def test_exception_from_destructor(kafka_cluster):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_generator):
+def test_commits_of_unprocessed_messages_on_drop(
+    kafka_cluster, instance, create_query_generator
+):
     topic_name = "commits_of_unprocessed_messages_on_drop" + get_topic_postfix(
         create_query_generator
     )
@@ -3517,7 +3113,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_gen
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_bad_reschedule(kafka_cluster, create_query_generator):
+def test_bad_reschedule(kafka_cluster, instance, create_query_generator):
     topic_name = "test_bad_reschedule" + get_topic_postfix(create_query_generator)
 
     messages = [json.dumps({"key": j + 1, "value": j + 1}) for j in range(20000)]
@@ -3563,7 +3159,7 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
     )
 
 
-def test_kafka_duplicates_when_commit_failed(kafka_cluster):
+def test_kafka_duplicates_when_commit_failed(kafka_cluster, instance):
     messages = [json.dumps({"key": j + 1, "value": "x" * 300}) for j in range(22)]
     kafka_produce(kafka_cluster, "duplicates_when_commit_failed", messages)
 
@@ -3642,7 +3238,7 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_premature_flush_on_eof(kafka_cluster, create_query_generator):
+def test_premature_flush_on_eof(kafka_cluster, instance, create_query_generator):
     topic_name = "premature_flush_on_eof" + get_topic_postfix(create_query_generator)
     create_query = create_query_generator(
         "kafka",
@@ -3723,7 +3319,9 @@ def test_premature_flush_on_eof(kafka_cluster, create_query_generator):
     "create_query_generator, do_direct_read",
     [(generate_old_create_table_query, True), (generate_new_create_table_query, False)],
 )
-def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read):
+def test_kafka_unavailable(
+    kafka_cluster, instance, create_query_generator, do_direct_read
+):
     number_of_messages = 20000
     topic_name = "test_bad_reschedule" + get_topic_postfix(create_query_generator)
     messages = [
@@ -3780,7 +3378,7 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_issue14202(kafka_cluster, create_query_generator):
+def test_kafka_issue14202(kafka_cluster, instance, create_query_generator):
     """
     INSERT INTO Kafka Engine from an empty SELECT sub query was leading to failure
     """
@@ -3819,7 +3417,7 @@ def test_kafka_issue14202(kafka_cluster, create_query_generator):
     )
 
 
-def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
+def test_kafka_csv_with_thread_per_consumer(kafka_cluster, instance):
     instance.query(
         """
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -3857,7 +3455,9 @@ def random_string(size=8):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator):
+def test_kafka_engine_put_errors_to_stream(
+    kafka_cluster, instance, create_query_generator
+):
     topic_name = "kafka_engine_put_errors_to_stream" + get_topic_postfix(
         create_query_generator
     )
@@ -3951,7 +3551,7 @@ def gen_message_with_jsons(jsons=10, malformed=0):
     [generate_old_create_table_query, generate_new_create_table_query],
 )
 def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
-    kafka_cluster, create_query_generator
+    kafka_cluster, instance, create_query_generator
 ):
     topic_name = (
         "kafka_engine_put_errors_to_stream_with_random_malformed_json"
@@ -4020,7 +3620,9 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator):
+def test_kafka_formats_with_broken_message(
+    kafka_cluster, instance, create_query_generator
+):
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
     admin_client = KafkaAdminClient(
@@ -4356,7 +3958,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         generate_new_create_table_query,
     ],
 )
-def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
+def test_kafka_consumer_failover(kafka_cluster, instance, create_query_generator):
     topic_name = "kafka_consumer_failover" + get_topic_postfix(create_query_generator)
 
     with kafka_topic(get_admin_client(kafka_cluster), topic_name, num_partitions=2):
@@ -4405,7 +4007,7 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
         )
 
         producer = KafkaProducer(
-            bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+            bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
             value_serializer=producer_serializer,
             key_serializer=producer_serializer,
         )
@@ -4548,7 +4150,7 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
         )
 
 
-def test_kafka_predefined_configuration(kafka_cluster):
+def test_kafka_predefined_configuration(kafka_cluster, instance):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -4579,7 +4181,7 @@ def test_kafka_predefined_configuration(kafka_cluster):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_issue26643(kafka_cluster, create_query_generator):
+def test_issue26643(kafka_cluster, instance, create_query_generator):
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         value_serializer=producer_serializer,
@@ -4699,7 +4301,7 @@ def test_issue26643(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_num_consumers_limit(kafka_cluster, create_query_generator):
+def test_num_consumers_limit(kafka_cluster, instance, create_query_generator):
     instance.query("DROP TABLE IF EXISTS test.kafka")
 
     thread_per_consumer = must_use_thread_per_consumer(create_query_generator)
@@ -4733,7 +4335,7 @@ def test_num_consumers_limit(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_format_with_prefix_and_suffix(kafka_cluster, create_query_generator):
+def test_format_with_prefix_and_suffix(kafka_cluster, instance, create_query_generator):
     topic_name = "custom" + get_topic_postfix(create_query_generator)
 
     with kafka_topic(get_admin_client(kafka_cluster), topic_name):
@@ -4770,7 +4372,7 @@ def test_format_with_prefix_and_suffix(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_max_rows_per_message(kafka_cluster, create_query_generator):
+def test_max_rows_per_message(kafka_cluster, instance, create_query_generator):
     topic_name = "custom_max_rows_per_message" + get_topic_postfix(
         create_query_generator
     )
@@ -4828,7 +4430,7 @@ def test_max_rows_per_message(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_row_based_formats(kafka_cluster, create_query_generator):
+def test_row_based_formats(kafka_cluster, instance, create_query_generator):
     admin_client = get_admin_client(kafka_cluster)
 
     for format_name in [
@@ -4904,7 +4506,7 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_block_based_formats_1(kafka_cluster, create_query_generator):
+def test_block_based_formats_1(kafka_cluster, instance, create_query_generator):
     topic_name = "pretty_space" + get_topic_postfix(create_query_generator)
 
     with kafka_topic(get_admin_client(kafka_cluster), topic_name):
@@ -4950,7 +4552,7 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_block_based_formats_2(kafka_cluster, create_query_generator):
+def test_block_based_formats_2(kafka_cluster, instance, create_query_generator):
     admin_client = get_admin_client(kafka_cluster)
     num_rows = 100
     message_count = 9
@@ -5009,7 +4611,7 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
             assert result == expected
 
 
-def test_system_kafka_consumers(kafka_cluster):
+def test_system_kafka_consumers(kafka_cluster, instance):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -5085,14 +4687,14 @@ is_currently_used:          0
     kafka_delete_topic(admin_client, topic)
 
 
-def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
+def test_system_kafka_consumers_rebalance(kafka_cluster, instance):
     # based on test_kafka_consumer_hang2
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
     producer = KafkaProducer(
-        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         value_serializer=producer_serializer,
         key_serializer=producer_serializer,
     )
@@ -5204,13 +4806,13 @@ is_currently_used:          0
     kafka_delete_topic(admin_client, topic)
 
 
-def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
+def test_system_kafka_consumers_rebalance_mv(kafka_cluster, instance, max_retries=15):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
     producer = KafkaProducer(
-        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         value_serializer=producer_serializer,
         key_serializer=producer_serializer,
     )
@@ -5295,7 +4897,7 @@ JSONExtractString(rdkafka_stat, 'type'): consumer
     kafka_delete_topic(admin_client, topic)
 
 
-def test_formats_errors(kafka_cluster):
+def test_formats_errors(kafka_cluster, instance):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -5390,7 +4992,9 @@ def test_formats_errors(kafka_cluster):
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_multiple_read_in_materialized_views(kafka_cluster, create_query_generator):
+def test_multiple_read_in_materialized_views(
+    kafka_cluster, instance, create_query_generator
+):
     topic_name = "multiple_read_from_mv" + get_topic_postfix(create_query_generator)
 
     with kafka_topic(get_admin_client(kafka_cluster), topic_name):
@@ -5468,7 +5072,7 @@ def test_multiple_read_in_materialized_views(kafka_cluster, create_query_generat
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
 )
-def test_kafka_null_message(kafka_cluster, create_query_generator):
+def test_kafka_null_message(kafka_cluster, instance, create_query_generator):
     topic_name = "null_message"
 
     instance.query(
@@ -5525,6 +5129,7 @@ def test_kafka_null_message(kafka_cluster, create_query_generator):
 
 
 if __name__ == "__main__":
-    cluster.start()
+    init_cluster_and_instance()
+    conftest_cluster.start()
     input("Cluster created, press any key to destroy...")
-    cluster.shutdown()
+    conftest_cluster.shutdown()

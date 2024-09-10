@@ -1,109 +1,21 @@
-import time
 import logging
-
 import pytest
-from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.test_tools import TSV
-from kafka import KafkaAdminClient
-from kafka.admin import NewTopic
 
+from helpers.cluster import is_arm
+from helpers.test_tools import TSV
+from kafka.admin import KafkaAdminClient
+from test_storage_kafka.kafka_tests_utils import (
+    kafka_create_topic,
+    kafka_delete_topic,
+)
+from test_storage_kafka.conftest import conftest_cluster, init_cluster_and_instance
+
+# Skip all tests on ARM
 if is_arm():
     pytestmark = pytest.mark.skip
 
-cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance(
-    "instance",
-    main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
-    user_configs=["configs/users.xml"],
-    with_kafka=True,
-    with_zookeeper=True,  # For Replicated Table
-    macros={
-        "kafka_broker": "kafka1",
-        "kafka_topic_old": "old",
-        "kafka_group_name_old": "old",
-        "kafka_topic_new": "new",
-        "kafka_group_name_new": "new",
-        "kafka_client_id": "instance",
-        "kafka_format_json_each_row": "JSONEachRow",
-    },
-    clickhouse_path_dir="clickhouse_path",
-)
 
-
-@pytest.fixture(scope="module")
-def kafka_cluster():
-    try:
-        cluster.start()
-        kafka_id = instance.cluster.kafka_docker_id
-        print(("kafka_id is {}".format(kafka_id)))
-        yield cluster
-    finally:
-        cluster.shutdown()
-
-
-@pytest.fixture(autouse=True)
-def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
-    # logging.debug("kafka is available - running test")
-    yield  # run test
-
-
-def kafka_create_topic(
-    admin_client,
-    topic_name,
-    num_partitions=1,
-    replication_factor=1,
-    max_retries=50,
-    config=None,
-):
-    logging.debug(
-        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
-    )
-    topics_list = [
-        NewTopic(
-            name=topic_name,
-            num_partitions=num_partitions,
-            replication_factor=replication_factor,
-            topic_configs=config,
-        )
-    ]
-    retries = 0
-    while True:
-        try:
-            admin_client.create_topics(new_topics=topics_list, validate_only=False)
-            logging.debug("Admin client succeed")
-            return
-        except Exception as e:
-            retries += 1
-            time.sleep(0.5)
-            if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
-            else:
-                raise
-
-
-def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
-
-    retries = 0
-    while True:
-        topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
-        if topic not in topics_listed:
-            return
-        else:
-            retries += 1
-            time.sleep(0.5)
-            if retries > max_retries:
-                raise Exception(f"Failed to delete topics {topic}, {result}")
-
-
-def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
+def test_kafka_produce_http_interface_row_based_format(kafka_cluster, instance):
     # reproduction of #61060 with validating the written messages
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -238,6 +150,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
 
 
 if __name__ == "__main__":
-    cluster.start()
+    init_cluster_and_instance()
+    conftest_cluster.start()
     input("Cluster created, press any key to destroy...")
-    cluster.shutdown()
+    conftest_cluster.shutdown()
