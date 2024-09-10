@@ -1124,15 +1124,9 @@ struct KeeperStorageRequestProcessor
     }
 
     virtual KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/) const
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/) const
     {
         return {};
-    }
-
-    virtual KeeperStorageBase::ResponsesForSessions
-    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const
-    {
-        return processWatches(watches, list_watches);
     }
 
     virtual bool checkAuth(Storage & /*storage*/, int64_t /*session_id*/, bool /*is_local*/) const { return true; }
@@ -1247,7 +1241,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
 
     KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
     {
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
     }
@@ -1564,7 +1558,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
     }
 
     KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
     {
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
     }
@@ -1985,7 +1979,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     KeeperStorageBase::ResponsesForSessions
-    processWatches(typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
     {
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
