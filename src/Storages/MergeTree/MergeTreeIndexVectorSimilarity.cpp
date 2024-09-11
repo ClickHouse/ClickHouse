@@ -17,7 +17,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-
 namespace ProfileEvents
 {
     extern const Event USearchAddCount;
