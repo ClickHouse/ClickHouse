@@ -3,12 +3,11 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Core/ServerSettings.h>
+#include <Common/StatusFile.h>
+#include <Common/InterruptListener.h>
+#include <Loggers/Loggers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Loggers/Loggers.h>
-#include <Common/InterruptListener.h>
-#include <Common/StatusFile.h>
 
 #include <filesystem>
 #include <memory>
@@ -31,16 +30,13 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-
-    Poco::Util::LayeredConfiguration & getClientConfiguration() override;
-
     void connect() override;
 
     void processError(const String & query) const override;
 
     String getName() const override { return "local"; }
 
-    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
+    void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addOptions(OptionsDescription & options_description) override;
 
@@ -67,12 +63,8 @@ private:
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
 
-    ServerSettings server_settings;
-
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
-
-    std::unique_ptr<ReadBufferFromFile> input;
 };
 
 }

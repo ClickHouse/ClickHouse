@@ -4,7 +4,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -113,13 +112,13 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
     return res;
 }
 
-class ReplaceTableNodeToDummyVisitor : public InDepthQueryTreeVisitor<ReplaceTableNodeToDummyVisitor, true>
+class ReplaceTableNodeToDummyVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceTableNodeToDummyVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<ReplaceTableNodeToDummyVisitor, true>;
+    using Base = InDepthQueryTreeVisitorWithContext<ReplaceTableNodeToDummyVisitor>;
     using Base::Base;
 
-    void visitImpl(const QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * table_node = node->as<TableNode>();
         auto * table_function_node = node->as<TableFunctionNode>();
@@ -134,21 +133,19 @@ public:
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
                 storage_snapshot);
 
-            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
+            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
 
             dummy_table_node->setAlias(node->getAlias());
             replacement_map.emplace(node.get(), std::move(dummy_table_node));
         }
     }
 
-    ContextPtr context;
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
 };
 
-QueryTreeNodePtr replaceTablesWithDummyTables(const QueryTreeNodePtr & query, const ContextPtr & context)
+QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
 {
-    ReplaceTableNodeToDummyVisitor visitor;
-    visitor.context = context;
+    ReplaceTableNodeToDummyVisitor visitor(context);
     visitor.visit(query);
 
     return query->cloneAndReplace(visitor.replacement_map);
@@ -415,16 +412,17 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get());
-    if (!table_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
+    ClusterProxy::SelectStreamFactory select_stream_factory =
+        ClusterProxy::SelectStreamFactory(
+            header,
+            {},
+            {},
+            processed_stage);
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        table_node->getStorageID(),
-        header,
-        processed_stage,
+        select_stream_factory,
         modified_query_ast,
         context,
         storage_limits);

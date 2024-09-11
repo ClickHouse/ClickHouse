@@ -9,7 +9,6 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>

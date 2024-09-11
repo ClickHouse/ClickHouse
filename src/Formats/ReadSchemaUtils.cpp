@@ -7,7 +7,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
-#include <Core/Settings.h>
 
 namespace DB
 {

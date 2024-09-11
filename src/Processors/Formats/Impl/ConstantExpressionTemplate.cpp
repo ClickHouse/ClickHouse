@@ -2,7 +2,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -228,12 +227,7 @@ private:
                         return true;
             }
 
-            /// When generating placeholder names, ensure that we use names
-            /// requiring quotes to be valid identifiers. This prevents the
-            /// tuple() function from generating named tuples. Otherwise,
-            /// inserting named tuples with different names into another named
-            /// tuple will result in only default values being inserted.
-            String column_name = "-dummy-" + std::to_string(replaced_literals.size());
+            String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             setDataType(replaced_literals.back());
             ast = std::make_shared<ASTIdentifier>(column_name);

@@ -25,6 +25,8 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
+    extern const Event ReadBufferFromS3ResetSessions;
+    extern const Event ReadBufferFromS3PreservedSessions;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
@@ -49,7 +51,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & bucket_,
     const String & key_,
     const String & version_id_,
-    const S3::RequestSettings & request_settings_,
+    const S3Settings::RequestSettings & request_settings_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
@@ -316,7 +318,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, request_settings, /* for_disk_s3= */ read_settings.for_object_storage);
 
     file_size = object_size;
     return *file_size;
@@ -417,7 +419,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     }
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (client_ptr->isClientForDisk())
+    if (read_settings.for_object_storage)
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);

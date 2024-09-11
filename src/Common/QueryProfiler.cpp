@@ -1,17 +1,17 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <base/defines.h>
-#include <base/errnoToString.h>
-#include <base/phdr_cache.h>
+#include <Common/TraceSender.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
-#include <Common/TraceSender.h>
-#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/logger_useful.h>
+#include <base/defines.h>
+#include <base/phdr_cache.h>
+#include <base/errnoToString.h>
 
+#include <random>
 
 namespace CurrentMetrics
 {
@@ -24,7 +24,6 @@ namespace ProfileEvents
     extern const Event QueryProfilerSignalOverruns;
     extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
-    extern const Event QueryProfilerErrors;
 }
 
 namespace DB
@@ -33,7 +32,7 @@ namespace DB
 namespace
 {
 #if defined(OS_LINUX)
-    //thread_local size_t write_trace_iteration = 0;
+    thread_local size_t write_trace_iteration = 0;
 #endif
     /// Even after timer_delete() the signal can be delivered,
     /// since it does not do anything with pending signals.
@@ -57,7 +56,7 @@ namespace
 
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-#if defined(OS_LINUX) && false //asdqwe
+#if defined(OS_LINUX)
         if (info)
         {
             int overrun_count = info->si_overrun;
@@ -84,29 +83,11 @@ namespace
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
-        std::optional<StackTrace> stack_trace;
+        const StackTrace stack_trace(signal_context);
 
-#if defined(SANITIZER)
-        constexpr bool sanitizer = true;
-#else
-        constexpr bool sanitizer = false;
-#endif
-
-        //asdqwe asynchronous_stack_unwinding = true;
-        if (sanitizer || 0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
-        {
-            stack_trace.emplace(signal_context);
-        }
-        else
-        {
-            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
-        }
-        asynchronous_stack_unwinding = false;
-
-        if (stack_trace)
-            TraceSender::send(trace_type, *stack_trace, {});
-
+        TraceSender::send(trace_type, stack_trace, {});
         ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
+
         errno = saved_errno;
     }
 
@@ -170,7 +151,8 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 void Timer::set(UInt32 period)
 {
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
-    period = std::max<UInt32>(period, 1000000);
+    if (period < 1000000)
+        period = 1000000;
     /// Randomize offset as uniform random value from 0 to period - 1.
     /// It will allow to sample short queries even if timer period is large.
     /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
@@ -228,13 +210,23 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
-    [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
-    : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
+    : log(getLogger("QueryProfiler"))
+    , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif defined(__APPLE__)
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     /// Sanity check.
@@ -266,20 +258,6 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
         throw;
     }
 #endif
-}
-
-
-template <typename ProfilerImpl>
-void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt32 period_)
-{
-#if defined(SANITIZER)
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif defined(__APPLE__)
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
-#else
-    timer.set(period_);
-#endif
-
 }
 
 template <typename ProfilerImpl>

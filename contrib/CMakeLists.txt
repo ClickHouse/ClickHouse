@@ -37,7 +37,11 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-add_contrib (openssl-cmake openssl)
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
+    add_contrib (openssl-cmake openssl)
+else ()
+    add_contrib (boringssl-cmake boringssl)
+endif ()
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (pocketfft-cmake pocketfft)
@@ -219,16 +223,12 @@ endif ()
 
 add_contrib (xxHash-cmake xxHash)
 
-add_contrib (expected-cmake expected)
-
 add_contrib (libbcrypt-cmake libbcrypt)
 
 add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
-
-add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

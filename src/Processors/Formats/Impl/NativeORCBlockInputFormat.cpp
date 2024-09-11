@@ -269,12 +269,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
             case orc::SHORT:
             case orc::INT:
             case orc::LONG: {
-                /// May throw exception.
-                ///
-                /// In particular, it'll throw if we request the column as unsigned, like this:
-                ///   SELECT * FROM file('t.orc', ORC, 'x UInt8') WHERE x > 10
-                /// We have to reject this, otherwise it would miss values > 127 (because
-                /// they're treated as negative by ORC).
+                /// May throw exception
                 auto val = field.get<Int64>();
                 return orc::Literal(val);
             }
@@ -900,11 +895,6 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
 
     orc::RowReaderOptions row_reader_options;
     row_reader_options.includeTypes(include_indices);
-    if (format_settings.orc.read_use_writer_time_zone)
-    {
-        String writer_time_zone = current_stripe_info->getWriterTimezone();
-        row_reader_options.setTimezoneName(writer_time_zone);
-    }
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
     if (format_settings.orc.filter_push_down && sarg)
     {
@@ -1558,7 +1548,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                         if (pos)
                             nested_type_hint = tuple_type_hint->getElement(*pos);
                     }
-                    else if (i < tuple_type_hint->getElements().size())
+                    else if (size_t(i) < tuple_type_hint->getElements().size())
                         nested_type_hint = tuple_type_hint->getElement(i);
                 }
 

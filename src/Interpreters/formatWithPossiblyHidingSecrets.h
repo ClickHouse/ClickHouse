@@ -2,8 +2,6 @@
 #include "Access/ContextAccess.h"
 #include "Interpreters/Context.h"
 
-#include <Core/Settings.h>
-
 namespace DB
 {
 struct SecretHidingFormatSettings

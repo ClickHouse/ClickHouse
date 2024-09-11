@@ -10,7 +10,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -537,7 +536,7 @@ public:
         const auto & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
-        if (const auto * col_in = checkAndGetColumn<ColumnIPv4>(&*column))
+        if (const auto * col_in = checkAndGetColumn<ColumnIPv4>(*column))
         {
             auto col_res = ColumnIPv6::create();
 
@@ -552,7 +551,7 @@ public:
             return col_res;
         }
 
-        if (const auto * col_in = checkAndGetColumn<ColumnUInt32>(&*column))
+        if (const auto * col_in = checkAndGetColumn<ColumnUInt32>(*column))
         {
             auto col_res = ColumnFixedString::create(IPV6_BINARY_LENGTH);
 
@@ -786,7 +785,7 @@ private:
 
 #include <emmintrin.h>
 
-    static void applyCIDRMask(const char * __restrict src, char * __restrict dst_lower, char * __restrict dst_upper, UInt8 bits_to_keep)
+    static inline void applyCIDRMask(const char * __restrict src, char * __restrict dst_lower, char * __restrict dst_upper, UInt8 bits_to_keep)
     {
         __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(getCIDRMaskIPv6(bits_to_keep).data()));
         __m128i lower = _mm_and_si128(_mm_loadu_si128(reinterpret_cast<const __m128i *>(src)), mask);
@@ -917,7 +916,7 @@ public:
 class FunctionIPv4CIDRToRange : public IFunction
 {
 private:
-    static std::pair<UInt32, UInt32> applyCIDRMask(UInt32 src, UInt8 bits_to_keep)
+    static inline std::pair<UInt32, UInt32> applyCIDRMask(UInt32 src, UInt8 bits_to_keep)
     {
         if (bits_to_keep >= 8 * sizeof(UInt32))
             return { src, src };
@@ -1169,10 +1168,10 @@ REGISTER_FUNCTION(Coding)
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Null>>();
 
     /// MySQL compatibility aliases:
-    factory.registerAlias("INET_ATON", FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("INET6_NTOA", FunctionIPv6NumToString::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("INET6_ATON", FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("INET_NTOA", NameFunctionIPv4NumToString::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("INET_ATON", FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET6_NTOA", FunctionIPv6NumToString::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET6_ATON", FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET_NTOA", NameFunctionIPv4NumToString::name, FunctionFactory::CaseInsensitive);
 }
 
 }

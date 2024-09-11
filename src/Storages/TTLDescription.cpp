@@ -1,7 +1,6 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -172,7 +171,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     /// with subqueries it's possible that new analyzer will be enabled in ::read method
     /// of underlying storage when all other parts of infra are not ready for it
     /// (built with old analyzer).
-    context_copy->setSetting("allow_experimental_analyzer", false);
+    context_copy->setSetting("allow_experimental_analyzer", Field{0});
     auto syntax_analyzer_result = TreeRewriter(context_copy).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context_copy);
     auto dag = analyzer.getActionsDAG(false);
@@ -433,7 +432,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
 
     ParserTTLExpressionList parser;
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    FunctionNameNormalizer::visit(ast.get());
+    FunctionNameNormalizer().visit(ast.get());
 
     return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
 }

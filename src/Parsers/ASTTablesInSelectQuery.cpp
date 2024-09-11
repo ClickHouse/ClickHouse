@@ -243,7 +243,7 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
 void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     formatImplBeforeTable(settings, state, frame);
-    settings.ostr << " ...";
+    settings.ostr << " ... ";
     formatImplAfterTable(settings, state, frame);
 }
 
@@ -285,6 +285,8 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
 
 void ASTTablesInSelectQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
     for (const auto & child : children)
         child->formatImpl(settings, state, frame);
 }

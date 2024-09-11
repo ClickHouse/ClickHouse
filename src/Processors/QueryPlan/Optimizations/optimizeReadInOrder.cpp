@@ -22,10 +22,8 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -177,6 +175,8 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
+
+    dag->projectInput(false);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -332,7 +332,8 @@ InputOrderInfoPtr buildInputOrderInfo(
     const FixedColumns & fixed_columns,
     const ActionsDAGPtr & dag,
     const SortDescription & description,
-    const KeyDescription & sorting_key,
+    const ActionsDAG & sorting_key_dag,
+    const Names & sorting_key_columns,
     size_t limit)
 {
     //std::cerr << "------- buildInputOrderInfo " << std::endl;
@@ -341,8 +342,6 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
-
-    const auto & sorting_key_dag = sorting_key.expression->getActionsDAG();
 
     if (dag)
     {
@@ -372,20 +371,14 @@ InputOrderInfoPtr buildInputOrderInfo(
     size_t next_description_column = 0;
     size_t next_sort_key = 0;
 
-    while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
+    while (next_description_column < description.size() && next_sort_key < sorting_key_columns.size())
     {
-        const auto & sorting_key_column = sorting_key.column_names[next_sort_key];
+        const auto & sorting_key_column = sorting_key_columns[next_sort_key];
         const auto & sort_column_description = description[next_description_column];
 
         /// If required order depend on collation, it cannot be matched with primary key order.
         /// Because primary keys cannot have collations.
         if (sort_column_description.collator)
-            break;
-
-        /// Since sorting key columns are always sorted with NULLS LAST, reading in order
-        /// supported only for ASC NULLS LAST ("in order"), and DESC NULLS FIRST ("reverse")
-        const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable();
-        if (column_is_nullable && sort_column_description.nulls_direction != 1)
             break;
 
         /// Direction for current sort key.
@@ -698,11 +691,12 @@ InputOrderInfoPtr buildInputOrderInfo(
     size_t limit)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderInfo(
         fixed_columns,
         dag, description,
-        sorting_key,
+        sorting_key.expression->getActionsDAG(), sorting_key_columns,
         limit);
 }
 
@@ -720,14 +714,15 @@ InputOrderInfoPtr buildInputOrderInfo(
     {
         auto storage = std::get<StoragePtr>(table);
         const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+        const auto & sorting_key_columns = sorting_key.column_names;
 
-        if (sorting_key.column_names.empty())
+        if (sorting_key_columns.empty())
             return nullptr;
 
         auto table_order_info = buildInputOrderInfo(
             fixed_columns,
             dag, description,
-            sorting_key,
+            sorting_key.expression->getActionsDAG(), sorting_key_columns,
             limit);
 
         if (!table_order_info)
@@ -920,23 +915,15 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         auto & union_node = node.children.front();
 
-        bool use_buffering = false;
-        const SortDescription * max_sort_descr = nullptr;
-
         std::vector<InputOrderInfoPtr> infos;
+        const SortDescription * max_sort_descr = nullptr;
         infos.reserve(node.children.size());
-
         for (auto * child : union_node->children)
         {
             infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
 
-            if (infos.back())
-            {
-                if (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size())
-                    max_sort_descr = &infos.back()->sort_description_for_merging;
-
-                use_buffering |= infos.back()->limit == 0;
-            }
+            if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
+                max_sort_descr = &infos.back()->sort_description_for_merging;
         }
 
         if (!max_sort_descr || max_sort_descr->empty())
@@ -981,13 +968,12 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             }
         }
 
-        sorting->convertToFinishSorting(*max_sort_descr, use_buffering);
+        sorting->convertToFinishSorting(*max_sort_descr);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
-        /// Use buffering only if have filter or don't have limit.
-        bool use_buffering = order_info->limit == 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+        /// update data stream's sorting properties
         updateStepsDataStreams(steps_to_update);
     }
 }
@@ -1101,7 +1087,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
     }
 
     return 0;

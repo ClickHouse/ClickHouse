@@ -18,7 +18,10 @@ query="SELECT a, b FROM test_s3"
 query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
 ${CLICKHOUSE_CLIENT} -nm --query "
-SELECT ProfileEvents['DiskConnectionsPreserved'] > 0
+WITH
+    ProfileEvents['DiskConnectionsReset'] AS reset,
+    ProfileEvents['DiskConnectionsPreserved'] AS preserved
+SELECT preserved > reset
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND current_database = currentDatabase()

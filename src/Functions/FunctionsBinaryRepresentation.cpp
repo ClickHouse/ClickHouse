@@ -728,10 +728,10 @@ public:
 
 REGISTER_FUNCTION(BinaryRepr)
 {
-    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

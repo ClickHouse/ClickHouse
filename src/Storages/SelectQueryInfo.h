@@ -140,9 +140,6 @@ class IMergeTreeDataPart;
 
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
-
 /** Query along with some additional data,
   *  that can be used during query processing
   *  inside storage engines.
@@ -166,7 +163,7 @@ struct SelectQueryInfo
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     QueryTreeNodePtr table_expression;
 
-    bool current_table_chosen_for_reading_with_parallel_replicas = false;
+    bool analyzer_can_use_parallel_replicas_on_follower = false;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -175,13 +172,6 @@ struct SelectQueryInfo
 
     /// Local storage limits
     StorageLimits local_storage_limits;
-
-    /// This is a leak of abstraction.
-    /// StorageMerge replaces storage into query_tree. However, column types may be changed for inner table.
-    /// So, resolved query tree might have incompatible types.
-    /// StorageDistributed uses this query tree to calculate a header, throws if we use storage snapshot.
-    /// To avoid this, we use initial merge_storage_snapshot.
-    StorageSnapshotPtr merge_storage_snapshot;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -221,6 +211,12 @@ struct SelectQueryInfo
     /// If query has aggregate functions
     bool has_aggregates = false;
 
+    /// If query has any filter and no arrayJoin before filter. Used by skipping FINAL
+    /// Skipping FINAL algorithm will output the original chunk and a column indices of
+    /// selected rows. If query has filter and doesn't have array join before any filter,
+    /// we can merge the indices with the first filter in FilterTransform later.
+    bool has_filters_and_no_array_join_before_filter = false;
+
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
@@ -229,21 +225,12 @@ struct SelectQueryInfo
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
-    // If not 0, that means it's a trivial limit query.
-    UInt64 trivial_limit = 0;
+    // If limit is not 0, that means it's a trivial limit query.
+    UInt64 limit = 0;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
-    /// During read from MergeTree parts will be removed from snapshot after they are not needed
-    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
-
     bool isFinal() const;
-
-    /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
-    /// while key analysis still requires unqualified column names.
-    /// This function generates a map that maps the unique names to table column names,
-    /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

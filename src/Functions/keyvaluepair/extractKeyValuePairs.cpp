@@ -1,6 +1,5 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnMap.h>
-#include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -241,7 +240,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             └──────────────────┘
             ```)"}
     );
-    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("mapFromString", NameExtractKeyValuePairs::name);
 }
 

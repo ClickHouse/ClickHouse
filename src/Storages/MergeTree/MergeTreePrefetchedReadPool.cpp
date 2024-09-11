@@ -14,7 +14,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
-#include <Core/Settings.h>
 
 
 namespace ProfileEvents
@@ -47,30 +46,49 @@ bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other
 }
 
 
+MergeTreePrefetchedReadPool::PrefetchedReaders::~PrefetchedReaders()
+{
+    for (auto & prefetch_future : prefetch_futures)
+        if (prefetch_future.valid())
+            prefetch_future.wait();
+}
+
 MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
-    ThreadPool & pool,
     MergeTreeReadTask::Readers readers_,
     Priority priority_,
-    MergeTreePrefetchedReadPool & read_prefetch)
+    MergeTreePrefetchedReadPool & pool_)
     : is_valid(true)
     , readers(std::move(readers_))
-    , prefetch_runner(pool, "ReadPrepare")
 {
-    prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
-
-    for (const auto & reader : readers.prewhere)
-        prefetch_runner(read_prefetch.createPrefetchedTask(reader.get(), priority_));
-
-    fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
+    try
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefetched reader enabled");
-    });
+        prefetch_futures.reserve(1 + readers.prewhere.size());
+
+        prefetch_futures.push_back(pool_.createPrefetchedFuture(readers.main.get(), priority_));
+
+        for (const auto & reader : readers.prewhere)
+            prefetch_futures.push_back(pool_.createPrefetchedFuture(reader.get(), priority_));
+
+        fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefetched reader enabled");
+        });
+    }
+    catch (...) /// in case of memory exceptions we have to wait
+    {
+        for (auto & prefetch_future : prefetch_futures)
+            if (prefetch_future.valid())
+                prefetch_future.wait();
+
+        throw;
+    }
 }
 
 void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
-    prefetch_runner.waitForAllToFinish();
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.wait();
 }
 
 MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
@@ -78,7 +96,13 @@ MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
 
-    prefetch_runner.waitForAllToFinishAndRethrowFirstError();
+    /// First wait for completion of all futures.
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.wait();
+
+    /// Then rethrow first exception if any.
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.get();
 
     return std::move(readers);
 }
@@ -115,7 +139,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     fillPerThreadTasks(pool_settings.threads, pool_settings.sum_marks);
 }
 
-std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTreeReader * reader, Priority priority)
+std::future<void> MergeTreePrefetchedReadPool::createPrefetchedFuture(IMergeTreeReader * reader, Priority priority)
 {
     /// In order to make a prefetch we need to wait for marks to be loaded. But we just created
     /// a reader (which starts loading marks in its constructor), then if we do prefetch right
@@ -123,12 +147,14 @@ std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTr
     /// only inside this MergeTreePrefetchedReadPool, where read tasks are created and distributed,
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the thread task. When a thread calls getTask(), it will wait for it is not ready yet.
-    return [=, context = getContext()]() mutable
+    auto task = [=, context = getContext()]() mutable
     {
         /// For async read metrics in system.query_log.
         PrefetchIncrement watch(context->getAsyncReadCounters());
         reader->prefetchBeginOfRange(priority);
     };
+
+    return scheduleFromThreadPool<void>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);
 }
 
 void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & task)
@@ -138,7 +164,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges);
-    task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
+    task.readers_future = std::make_unique<PrefetchedReaders>(std::move(readers), task.priority, *this);
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches()
@@ -358,15 +384,6 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
     }
 }
 
-namespace
-{
-ALWAYS_INLINE inline String getPartNameForLogging(const DataPartPtr & part)
-{
-    return part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPartName()) : part->name;
-}
-}
-
-
 void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_marks)
 {
     if (per_part_infos.empty())
@@ -379,6 +396,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
     for (const auto & part : per_part_statistics)
         total_size_approx += part.sum_marks * part.approx_size_of_mark;
 
+    size_t min_prefetch_step_marks = pool_settings.min_marks_for_concurrent_read;
     for (size_t i = 0; i < per_part_infos.size(); ++i)
     {
         auto & part_stat = per_part_statistics[i];
@@ -393,12 +411,34 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                 1, static_cast<size_t>(std::round(static_cast<double>(settings.filesystem_prefetch_step_bytes) / part_stat.approx_size_of_mark)));
         }
 
-        part_stat.prefetch_step_marks = std::max(part_stat.prefetch_step_marks, per_part_infos[i]->min_marks_per_task);
+        /// This limit is important to avoid spikes of slow aws getObject requests when parallelizing within one file.
+        /// (The default is taken from here https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html).
+        if (part_stat.approx_size_of_mark
+            && settings.filesystem_prefetch_min_bytes_for_single_read_task
+            && part_stat.approx_size_of_mark < settings.filesystem_prefetch_min_bytes_for_single_read_task)
+        {
+            const size_t min_prefetch_step_marks_by_total_cols = static_cast<size_t>(
+                std::ceil(static_cast<double>(settings.filesystem_prefetch_min_bytes_for_single_read_task) / part_stat.approx_size_of_mark));
+
+            /// At least one task to start working on it right now and another one to prefetch in the meantime.
+            const size_t new_min_prefetch_step_marks = std::min<size_t>(min_prefetch_step_marks_by_total_cols, sum_marks / threads / 2);
+            if (min_prefetch_step_marks < new_min_prefetch_step_marks)
+            {
+                LOG_DEBUG(log, "Increasing min prefetch step from {} to {}", min_prefetch_step_marks, new_min_prefetch_step_marks);
+                min_prefetch_step_marks = new_min_prefetch_step_marks;
+            }
+        }
+
+        if (part_stat.prefetch_step_marks < min_prefetch_step_marks)
+        {
+            LOG_DEBUG(log, "Increasing prefetch step from {} to {}", part_stat.prefetch_step_marks, min_prefetch_step_marks);
+            part_stat.prefetch_step_marks = min_prefetch_step_marks;
+        }
 
         LOG_DEBUG(
             log,
             "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
-            getPartNameForLogging(parts_ranges[i].data_part),
+            parts_ranges[i].data_part->name,
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
             settings.filesystem_prefetch_step_bytes,
@@ -410,10 +450,11 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
     LOG_DEBUG(
         log,
-        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, prefetches limit: {}, total_size_approx: {}",
+        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, min prefetch step marks: {}, prefetches limit: {}, total_size_approx: {}",
         sum_marks,
         threads,
         min_marks_per_thread,
+        min_prefetch_step_marks,
         settings.filesystem_prefetches_limit,
         total_size_approx);
 
@@ -481,9 +522,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Requested {} marks from part {}, but part has only {} marks",
-                        marks_to_get_from_part,
-                        getPartNameForLogging(per_part_infos[part_idx]->data_part),
-                        part_stat.sum_marks);
+                        marks_to_get_from_part, per_part_infos[part_idx]->data_part->name, part_stat.sum_marks);
                 }
 
                 size_t num_marks_to_get = marks_to_get_from_part;
@@ -559,7 +598,7 @@ std::string MergeTreePrefetchedReadPool::dumpTasks(const TasksPerThread & tasks)
                 result << '\t';
                 result << ++no << ": ";
                 result << "reader future: " << task->isValidReadersFuture() << ", ";
-                result << "part: " << getPartNameForLogging(task->read_info->data_part) << ", ";
+                result << "part: " << task->read_info->data_part->name << ", ";
                 result << "ranges: " << toString(task->ranges);
             }
         }

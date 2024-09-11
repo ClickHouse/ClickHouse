@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-ubsan, no-batch
+-- Tags: no-parallel, no-fasttest
 -- no-parallel because we want to run this test when most of the other tests already passed
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
@@ -20,8 +20,6 @@ SELECT
                 length(message_format_string) = 0
               AND message not like '% Received from %clickhouse-staging.com:9440%'
               AND source_file not like '%/AWSLogger.cpp%'
-              AND source_file not like '%/BaseDaemon.cpp%'
-              AND logger_name not in ('RaftInstance')
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
@@ -101,6 +99,8 @@ create temporary table known_short_messages (s String) as select * from (select 
     'Found part {}',
     'Host is empty in S3 URI.',
     'INTO OUTFILE is not allowed',
+    'Illegal type {} of argument of function {}. Should be DateTime or DateTime64',
+    'Illegal UTF-8 sequence, while processing \'{}\'',
     'Invalid cache key hex: {}',
     'Invalid date: {}',
     'Invalid mode: {}',
@@ -126,12 +126,10 @@ create temporary table known_short_messages (s String) as select * from (select 
     'Sending part {}',
     'Sent handshake',
     'Starting {}',
+    'String size is too big ({}), maximum: {}',
     'Substitution {} is not set',
     'Table {} does not exist',
-    'Table {} doesn\'t exist',
     'Table {}.{} doesn\'t exist',
-    'Table {} doesn\'t exist',
-    'Table {} is not empty',
     'There are duplicate id {}',
     'There is no cache by name: {}',
     'Too large node state size',
@@ -141,11 +139,9 @@ create temporary table known_short_messages (s String) as select * from (select 
     'Unknown BSON type: {}',
     'Unknown explain kind \'{}\'',
     'Unknown format {}',
-    'Unknown geometry type {}',
     'Unknown identifier: \'{}\'',
     'Unknown input format {}',
     'Unknown setting {}',
-    'Unknown setting \'{}\'',
     'Unknown statistic column: {}',
     'Unknown table function {}',
     'User has been dropped',
@@ -194,7 +190,7 @@ select 'exceptions shorter than 30',
     (uniqExact(message_format_string) as c) <= max_messages,
     c <= max_messages ? [] : groupUniqArray(message_format_string)
     from logs
-    where message ilike '%DB::Exception%' and if(length(extract(toValidUTF8(message), '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(toValidUTF8(message))) < 30 + 26 and message_format_string not in known_short_messages;
+    where message ilike '%DB::Exception%' and if(length(extract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
 WITH 0.30 as threshold
@@ -207,7 +203,7 @@ select
 with 0.16 as threshold
 select
     'noisy Trace messages',
-    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}', 'Query to stage {}{}', 'Query from stage {} to stage {}{}')
+    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}', 'Query {} to stage {}{}', 'Query {} from stage {} to stage {}{}')
                         group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
     r <= threshold ? '' : top_message.1;
 
@@ -220,10 +216,7 @@ select 'noisy Debug messages',
 -- Same as above for Info
 WITH 0.05 as threshold
 select 'noisy Info messages',
-       greatest(coalesce(((select message_format_string, count() from logs
-            where level = 'Information'
-              and message_format_string not in ('Sorting and writing part of data into temporary file {}', 'Done writing part of data into temporary file {}, compressed {}, uncompressed {}')
-            group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+       greatest(coalesce(((select message_format_string, count() from logs where level = 'Information' group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
        r <= threshold ? '' : top_message.1;
 
 -- Same as above for Warning
@@ -252,7 +245,7 @@ select 'number of noisy messages',
 -- Each message matches its pattern (returns 0 rows)
 -- Note: maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
 select 'incorrect patterns', greatest(uniqExact(message_format_string), 15) from (
-    select message_format_string, any(toValidUTF8(message)) as any_message from logs
+    select message_format_string, any(message) as any_message from logs
     where ((rand() % 8) = 0)
     and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
     and message not like (s || ' (skipped % similar messages)')

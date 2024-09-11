@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/MaskOperations.h>
-#include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -149,6 +148,11 @@ public:
         bool condition_always_true = false;
         bool condition_is_nullable = false;
         bool source_is_constant = false;
+
+        bool condition_is_short = false;
+        bool source_is_short = false;
+        size_t condition_index = 0;
+        size_t source_index = 0;
     };
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -194,7 +198,7 @@ public:
                 if (cond_col->onlyNull())
                     continue;
 
-                if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*cond_col))
+                if (const auto * column_const = checkAndGetColumn<ColumnConst>(*cond_col))
                 {
                     Field value = column_const->getField();
 
@@ -210,9 +214,12 @@ public:
                     instruction.condition = cond_col;
                     instruction.condition_is_nullable = instruction.condition->isNullable();
                 }
+
+                instruction.condition_is_short = cond_col->size() < arguments[0].column->size();
             }
 
             const ColumnWithTypeAndName & source_col = arguments[source_idx];
+            instruction.source_is_short = source_col.column->size() < arguments[0].column->size();
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column;
@@ -243,8 +250,19 @@ public:
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
 
+        bool contains_short = false;
+        for (const auto & instruction : instructions)
+        {
+            if (instruction.condition_is_short || instruction.source_is_short)
+            {
+                contains_short = true;
+                break;
+            }
+        }
+
         const WhichDataType which(removeNullable(result_type));
-        bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()
+        bool execute_multiif_columnar = allow_execute_multiif_columnar && !contains_short
+            && instructions.size() <= std::numeric_limits<UInt8>::max()
             && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
                 || which.isEnum() || which.isIPv4() || which.isIPv6());
 
@@ -321,23 +339,25 @@ private:
             {
                 bool insert = false;
 
+                size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : i;
                 if (instruction.condition_always_true)
                     insert = true;
                 else if (!instruction.condition_is_nullable)
-                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
+                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[condition_index];
                 else
                 {
                     const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
                     const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
                     const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
-                    insert = !condition_null_map[i] && condition_nested.getData()[i];
+                    insert = !condition_null_map[condition_index] && condition_nested.getData()[condition_index];
                 }
 
                 if (insert)
                 {
+                    size_t source_index = instruction.source_is_short ? instruction.source_index++ : i;
                     if (!instruction.source_is_constant)
-                        res->insertFrom(*instruction.source, i);
+                        res->insertFrom(*instruction.source, source_index);
                     else
                         res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
 

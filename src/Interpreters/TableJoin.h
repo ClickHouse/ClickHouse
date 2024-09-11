@@ -2,13 +2,13 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -28,7 +28,6 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryJoinAdapter;
-class ExpressionActions;
 class StorageJoin;
 class StorageDictionary;
 class IKeyValueEntity;
@@ -140,8 +139,6 @@ private:
     SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
-    const UInt64 cross_join_min_rows_to_compress = 1000;
-    const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
@@ -156,8 +153,6 @@ private:
     ASTs key_asts_right;
 
     Clauses clauses;
-    /// Originally used for inequal join. If there is no any inequal join condition, it will be nullptr.
-    std::shared_ptr<ExpressionActions> mixed_join_expression = nullptr;
 
     ASTTableJoin table_join;
 
@@ -187,8 +182,6 @@ private:
     std::unordered_map<String, String> right_key_aliases;
 
     VolumePtr tmp_volume;
-
-    TemporaryDataOnDiskScopePtr tmp_data;
 
     std::shared_ptr<StorageJoin> right_storage_join;
 
@@ -235,7 +228,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -250,18 +243,13 @@ public:
         table_join.strictness = strictness;
     }
 
-    TableJoin(const TableJoin & rhs) = default;
-
     JoinKind kind() const { return table_join.kind; }
-    void setKind(JoinKind kind) { table_join.kind = kind; }
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     size_t getMaxMemoryUsage() const;
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
-
-    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
 
     ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
 
@@ -280,10 +268,6 @@ public:
     bool allowParallelHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
-
-    UInt64 crossJoinMinRowsToCompress() const { return cross_join_min_rows_to_compress; }
-
-    UInt64 crossJoinMinBytesToCompress() const { return cross_join_min_bytes_to_compress; }
 
     bool forceNullableRight() const
     {
@@ -313,9 +297,6 @@ public:
 
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
-
-    const std::shared_ptr<ExpressionActions> & getMixedJoinExpression() const { return mixed_join_expression; }
-    std::shared_ptr<ExpressionActions> & getMixedJoinExpression() { return mixed_join_expression; }
 
     Names getAllNames(JoinTableSide side) const;
 

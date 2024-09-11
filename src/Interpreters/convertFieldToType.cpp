@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeDynamic.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -214,6 +213,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
+        /// Bool is not represented in which_type, so we need to type it separately
+        if (isInt64OrUInt64orBoolFieldType(src.getType()) && type.getName() == "Bool")
+            return bool(src.safeGet<bool>());
+
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
         if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);
@@ -505,7 +508,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
         /// If we have type hint and Variant contains such type, no need to convert field.
-        if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
+        if (from_type_hint && type_variant->tryGetVariantDiscriminator(*from_type_hint))
             return src;
 
         /// Create temporary column and check if we can insert this field to the variant.
@@ -513,11 +516,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         auto col = type_variant->createColumn();
         if (col->tryInsert(src))
             return src;
-    }
-    else if (isDynamic(type))
-    {
-        /// We can insert any field to Dynamic column.
-        return src;
     }
 
     /// Conversion from string by parsing.
@@ -545,7 +543,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.get<String>(), type.getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;
@@ -615,9 +613,9 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
     return decimal_to_float == float_value;
 }
 
-std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type)
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type)
 {
-    Field result_value = convertFieldToType(from_value, to_type, &from_type);
+    Field result_value = convertFieldToType(from_value, to_type);
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {

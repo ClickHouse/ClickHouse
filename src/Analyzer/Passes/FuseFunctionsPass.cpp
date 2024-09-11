@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
 #include <Common/iota.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>

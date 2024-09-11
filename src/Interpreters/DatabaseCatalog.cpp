@@ -1,7 +1,5 @@
-#include <algorithm>
 #include <string>
 #include <mutex>
-#include <utility>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableNameHints.h>
@@ -28,10 +26,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
-#include <base/scope_guard.h>
-
-#include <base/isSharedPtrUnique.h>
-#include <boost/range/adaptor/map.hpp>
 
 #include "config.h"
 
@@ -67,7 +61,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
-    extern const int INFINITE_LOOP;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -194,7 +187,6 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
     unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
     unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
     drop_error_cooldown_sec = getContext()->getConfigRef().getInt64("database_catalog_drop_error_cooldown_sec", drop_error_cooldown_sec);
-    drop_table_concurrency = getContext()->getConfigRef().getInt64("database_catalog_drop_table_concurrency", drop_table_concurrency);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
@@ -279,12 +271,10 @@ void DatabaseCatalog::shutdownImpl()
         database->shutdown();
     }
 
-    TablesMarkedAsDropped tables_marked_dropped_to_destroy;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        tables_marked_dropped.swap(tables_marked_dropped_to_destroy);
+        tables_marked_dropped.clear();
     }
-    tables_marked_dropped_to_destroy.clear();
 
     std::lock_guard lock(databases_mutex);
     for (const auto & db : databases)
@@ -996,7 +986,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
+    String path = getContext()->getPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -1051,11 +1041,10 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
-        fmt::format("{}.{}.{}.sql",
-            escapeForFileName(table_id.getDatabaseName()),
-            escapeForFileName(table_id.getTableName()),
-            toString(table_id.uuid));
+    return getContext()->getPath() + "metadata_dropped/" +
+           escapeForFileName(table_id.getDatabaseName()) + "." +
+           escapeForFileName(table_id.getTableName()) + "." +
+           toString(table_id.uuid) + ".sql";
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1148,7 +1137,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::undropTable(StorageID table_id)
+void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
 {
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1202,7 +1191,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
-    while (!isSharedPtrUnique(dropped_table.table))
+    while (!dropped_table.table.unique())
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     dropped_table.table.reset();
 
@@ -1223,162 +1212,91 @@ void DatabaseCatalog::undropTable(StorageID table_id)
     LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
 }
 
-std::tuple<size_t, size_t> DatabaseCatalog::getDroppedTablesCountAndInuseCount()
-{
-    std::lock_guard lock(tables_marked_dropped_mutex);
-
-    size_t in_use_count = 0;
-    for (const auto & item : tables_marked_dropped)
-    {
-        bool in_use = item.table && !isSharedPtrUnique(item.table);
-        in_use_count += in_use;
-    }
-    return {tables_marked_dropped.size(), in_use_count};
-}
-
-time_t DatabaseCatalog::getMinDropTime()
-{
-    time_t min_drop_time = std::numeric_limits<time_t>::max();
-    for (const auto & item : tables_marked_dropped)
-    {
-        min_drop_time = std::min(min_drop_time, item.drop_time);
-    }
-    return min_drop_time;
-}
-
-std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> DatabaseCatalog::getTablesToDrop()
-{
-    time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    decltype(getTablesToDrop()) result;
-
-    std::lock_guard lock(tables_marked_dropped_mutex);
-
-    for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
-    {
-        bool in_use = it->table && !isSharedPtrUnique(it->table);
-        bool old_enough = it->drop_time <= current_time;
-        if (!in_use && old_enough)
-            result.emplace_back(it);
-    }
-
-    return result;
-}
-
-void DatabaseCatalog::rescheduleDropTableTask()
-{
-    std::lock_guard lock(tables_marked_dropped_mutex);
-
-    if (tables_marked_dropped.empty())
-        return;
-
-    if (first_async_drop_in_queue != tables_marked_dropped.begin())
-    {
-        (*drop_task)->scheduleAfter(0);
-        return;
-    }
-
-    time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    auto min_drop_time = getMinDropTime();
-    time_t schedule_after_ms = min_drop_time > current_time ? (min_drop_time - current_time) * 1000 : 0;
-
-    (*drop_task)->scheduleAfter(schedule_after_ms);
-}
-
-void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> tables_to_drop)
-{
-    if (tables_to_drop.empty())
-        return;
-
-    ThreadPool pool(
-        CurrentMetrics::DatabaseCatalogThreads,
-        CurrentMetrics::DatabaseCatalogThreadsActive,
-        CurrentMetrics::DatabaseCatalogThreadsScheduled,
-        /* max_threads */drop_table_concurrency,
-        /* max_free_threads */0,
-        /* queue_size */tables_to_drop.size());
-
-    for (const auto & item : tables_to_drop)
-    {
-        auto job = [&, table_iterator = item] ()
-        {
-            try
-            {
-                dropTableFinally(*table_iterator);
-
-                TableMarkedAsDropped table_to_delete_without_lock;
-                {
-                    std::lock_guard lock(tables_marked_dropped_mutex);
-
-                    if (first_async_drop_in_queue == table_iterator)
-                        ++first_async_drop_in_queue;
-
-                    [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
-                    chassert(removed);
-
-                    table_to_delete_without_lock = std::move(*table_iterator);
-                    tables_marked_dropped.erase(table_iterator);
-
-                    wait_table_finally_dropped.notify_all();
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Cannot drop table " + table_iterator->table_id.getNameForLogs() +
-                                            ". Will retry later.");
-                {
-                    std::lock_guard lock(tables_marked_dropped_mutex);
-
-                    if (first_async_drop_in_queue == table_iterator)
-                        ++first_async_drop_in_queue;
-
-                    tables_marked_dropped.splice(tables_marked_dropped.end(), tables_marked_dropped, table_iterator);
-                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
-
-                    if (first_async_drop_in_queue == tables_marked_dropped.end())
-                        --first_async_drop_in_queue;
-                }
-            }
-        };
-
-        try
-        {
-            pool.scheduleOrThrowOnError(std::move(job));
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
-            break;
-        }
-    }
-
-    try
-    {
-        pool.wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
-    }
-}
-
 void DatabaseCatalog::dropTableDataTask()
 {
     /// Background task that removes data of tables which were marked as dropped by Atomic databases.
     /// Table can be removed when it's not used by queries and drop_delay_sec elapsed since it was marked as dropped.
 
-    auto [drop_tables_count, drop_tables_in_use_count] = getDroppedTablesCountAndInuseCount();
-
-    auto tables_to_drop = getTablesToDrop();
-
-    if (!tables_to_drop.empty())
+    bool need_reschedule = true;
+    /// Default reschedule time for the case when we are waiting for reference count to become 1.
+    size_t schedule_after_ms = reschedule_time_ms;
+    TableMarkedAsDropped table;
+    try
     {
-        LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {} tables",
-            drop_tables_count, drop_tables_in_use_count, tables_to_drop.size());
-
-        dropTablesParallel(tables_to_drop);
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        if (tables_marked_dropped.empty())
+            return;
+        time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        time_t min_drop_time = std::numeric_limits<time_t>::max();
+        size_t tables_in_use_count = 0;
+        auto it = std::find_if(tables_marked_dropped.begin(), tables_marked_dropped.end(), [&](const auto & elem)
+        {
+            bool not_in_use = !elem.table || elem.table.unique();
+            bool old_enough = elem.drop_time <= current_time;
+            min_drop_time = std::min(min_drop_time, elem.drop_time);
+            tables_in_use_count += !not_in_use;
+            return not_in_use && old_enough;
+        });
+        if (it != tables_marked_dropped.end())
+        {
+            table = std::move(*it);
+            LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {}",
+                     tables_marked_dropped.size(), tables_in_use_count, table.table_id.getNameForLogs());
+            if (first_async_drop_in_queue == it)
+                ++first_async_drop_in_queue;
+            tables_marked_dropped.erase(it);
+            /// Schedule the task as soon as possible, while there are suitable tables to drop.
+            schedule_after_ms = 0;
+        }
+        else if (current_time < min_drop_time)
+        {
+            /// We are waiting for drop_delay_sec to exceed, no sense to wakeup until min_drop_time.
+            /// If new table is added to the queue with ignore_delay flag, schedule() is called to wakeup the task earlier.
+            schedule_after_ms = (min_drop_time - current_time) * 1000;
+            LOG_TRACE(log, "Not found any suitable tables to drop, still have {} tables in drop queue ({} of them are in use). "
+                           "Will check again after {} seconds", tables_marked_dropped.size(), tables_in_use_count, min_drop_time - current_time);
+        }
+        need_reschedule = !tables_marked_dropped.empty();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    rescheduleDropTableTask();
+    if (table.table_id)
+    {
+        try
+        {
+            dropTableFinally(table);
+            std::lock_guard lock(tables_marked_dropped_mutex);
+            [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
+            assert(removed);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot drop table " + table.table_id.getNameForLogs() +
+                                        ". Will retry later.");
+            {
+                table.drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
+                std::lock_guard lock(tables_marked_dropped_mutex);
+                tables_marked_dropped.emplace_back(std::move(table));
+                if (first_async_drop_in_queue == tables_marked_dropped.end())
+                    --first_async_drop_in_queue;
+                /// If list of dropped tables was empty, schedule a task to retry deletion.
+                if (tables_marked_dropped.size() == 1)
+                {
+                    need_reschedule = true;
+                    schedule_after_ms = drop_error_cooldown_sec * 1000;
+                }
+            }
+        }
+
+        wait_table_finally_dropped.notify_all();
+    }
+
+    /// Do not schedule a task if there is no tables to drop
+    if (need_reschedule)
+        (*drop_task)->scheduleAfter(schedule_after_ms);
 }
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
@@ -1517,7 +1435,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
@@ -1550,114 +1468,6 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     if (!from_other_databases.empty())
         throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
                         removing_table, fmt::join(from_other_databases, ", "));
-}
-
-void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
-    const QualifiedTableName & table_name,
-    const TableNamesSet & new_referential_dependencies,
-    const TableNamesSet & new_loading_dependencies)
-{
-    std::lock_guard lock{databases_mutex};
-
-    StorageID table_id = StorageID{table_name};
-
-    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet & new_dependencies)
-    {
-        auto old_dependencies = dependencies.removeDependencies(table_id);
-        dependencies.addDependencies(table_name, new_dependencies);
-        auto restore_dependencies = [&]()
-        {
-            dependencies.removeDependencies(table_id);
-            if (!old_dependencies.empty())
-                dependencies.addDependencies(table_id, old_dependencies);
-        };
-
-        if (dependencies.hasCyclicDependencies())
-        {
-            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            restore_dependencies();
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot add dependencies for '{}', because it will lead to cyclic dependencies: {}",
-                table_name.getFullName(),
-                cyclic_dependencies_description);
-        }
-
-        restore_dependencies();
-    };
-
-    check(referential_dependencies, new_referential_dependencies);
-    check(loading_dependencies, new_loading_dependencies);
-}
-
-void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
-{
-    std::lock_guard lock{databases_mutex};
-
-    auto check = [&](TablesDependencyGraph & dependencies)
-    {
-        auto old_dependencies = dependencies.removeDependencies(from_table_id);
-        dependencies.addDependencies(to_table_id, old_dependencies);
-        auto restore_dependencies = [&]()
-        {
-            dependencies.removeDependencies(to_table_id);
-            dependencies.addDependencies(from_table_id, old_dependencies);
-        };
-
-        if (dependencies.hasCyclicDependencies())
-        {
-            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            restore_dependencies();
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot rename '{}' to '{}', because it will lead to cyclic dependencies: {}",
-                from_table_id.getFullTableName(),
-                to_table_id.getFullTableName(),
-                cyclic_dependencies_description);
-        }
-
-        restore_dependencies();
-    };
-
-    check(referential_dependencies);
-    check(loading_dependencies);
-}
-
-void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2)
-{
-    std::lock_guard lock{databases_mutex};
-
-    auto check = [&](TablesDependencyGraph & dependencies)
-    {
-        auto old_dependencies_1 = dependencies.removeDependencies(table_id_1);
-        auto old_dependencies_2 = dependencies.removeDependencies(table_id_2);
-        dependencies.addDependencies(table_id_1, old_dependencies_2);
-        dependencies.addDependencies(table_id_2, old_dependencies_1);
-        auto restore_dependencies = [&]()
-        {
-            dependencies.removeDependencies(table_id_1);
-            dependencies.removeDependencies(table_id_2);
-            dependencies.addDependencies(table_id_1, old_dependencies_1);
-            dependencies.addDependencies(table_id_2, old_dependencies_2);
-        };
-
-        if (dependencies.hasCyclicDependencies())
-        {
-            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            restore_dependencies();
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot exchange '{}' and '{}', because it will lead to cyclic dependencies: {}",
-                table_id_1.getFullTableName(),
-                table_id_2.getFullTableName(),
-                cyclic_dependencies_description);
-        }
-
-        restore_dependencies();
-    };
-
-    check(referential_dependencies);
-    check(loading_dependencies);
 }
 
 void DatabaseCatalog::cleanupStoreDirectoryTask()
@@ -1792,9 +1602,6 @@ void DatabaseCatalog::reloadDisksTask()
 
     for (auto & database : getDatabases())
     {
-        // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
-        // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
-        // TODO: We can split this task by table or by database to make loaded table operate as usual.
         auto it = database.second->getTablesIterator(getContext());
         while (it->isValid())
         {
@@ -1932,9 +1739,10 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
+    Names result;
     if (database)
-        return database->getAllTableNames(context);
-    return {};
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            result.emplace_back(table_it->name());
+    return result;
 }
-
 }

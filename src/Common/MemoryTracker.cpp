@@ -192,7 +192,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
 {
     /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
     /// Let's find them.
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
     if (size < 0)
         return;
 

@@ -15,7 +15,7 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
-enum class JoinTableSide : uint8_t;
+enum class JoinTableSide;
 
 class MergeJoin : public IJoin
 {

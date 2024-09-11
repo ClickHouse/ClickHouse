@@ -516,9 +516,6 @@
     /// Save query in history only if it is different.
     let previous_query = '';
 
-    /// Start of the last query
-    let last_query_start = 0;
-
     const current_url = new URL(window.location);
     const opened_locally = location.protocol == 'file:';
 
@@ -570,8 +567,6 @@
             '&password=' + encodeURIComponent(password)
         }
 
-        last_query_start = performance.now();
-
         const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
@@ -584,8 +579,7 @@
             if (posted_request_num != request_num) {
                 return;
             } else if (this.readyState === XMLHttpRequest.DONE) {
-                const elapsed_msec = performance.now() - last_query_start;
-                renderResponse(this.status, this.response, elapsed_msec);
+                renderResponse(this.status, this.response);
 
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
@@ -593,8 +587,7 @@
                     const state = {
                         query: query,
                         status: this.status,
-                        response: this.response.length > 100000 ? null : this.response, /// Lower than the browser's limit.
-                        elapsed_msec: elapsed_msec,
+                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
                     const title = "ClickHouse Query: " + query;
 
@@ -624,7 +617,7 @@
         xhr.send(query);
     }
 
-    function renderResponse(status, response, elapsed_msec) {
+    function renderResponse(status, response) {
         document.getElementById('hourglass').style.display = 'none';
 
         if (status === 200) {
@@ -639,7 +632,6 @@
                 renderChart(json);
             } else {
                 renderUnparsedResult(response);
-                stats.innerText = `Elapsed (client-side): ${(elapsed_msec / 1000).toFixed(3)} sec.`;
             }
             document.getElementById('check-mark').style.display = 'inline';
         } else {
@@ -659,7 +651,7 @@
             clear();
             return;
         }
-        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
+        renderResponse(event.state.status, event.state.response);
     };
 
     if (window.location.hash) {

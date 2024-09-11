@@ -7,7 +7,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <Core/Settings.h>
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -35,7 +34,7 @@ namespace ErrorCodes
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
   */
 
-enum class FunctionSleepVariant : uint8_t
+enum class FunctionSleepVariant
 {
     PerBlock,
     PerRow

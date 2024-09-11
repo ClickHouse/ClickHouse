@@ -218,7 +218,7 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const;
+    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 

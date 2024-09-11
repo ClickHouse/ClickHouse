@@ -162,8 +162,7 @@ WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
     try
     {
-        if (!canceled)
-            finalize();
+        finalize();
     }
     catch (...)
     {

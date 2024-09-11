@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage, no-tsan
+# Tags: long, no-s3-storage
 # no-s3 because read FileOpen metric
 
 set -e
@@ -31,6 +31,6 @@ $CLICKHOUSE_CLIENT $settings -q "$touching_many_parts_query" &> /dev/null
 
 $CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
 
-$CLICKHOUSE_CLIENT $settings -q "SELECT ProfileEvents['FileOpen'] as opened_files FROM system.query_log WHERE query = '$touching_many_parts_query' AND current_database = currentDatabase() AND event_date >= yesterday() ORDER BY event_time DESC, opened_files DESC LIMIT 1;"
+$CLICKHOUSE_CLIENT $settings -q "SELECT ProfileEvents['FileOpen'] as opened_files FROM system.query_log WHERE query='$touching_many_parts_query' and current_database = currentDatabase() ORDER BY event_time DESC, opened_files DESC LIMIT 1;"
 
 $CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS merge_tree_table;"

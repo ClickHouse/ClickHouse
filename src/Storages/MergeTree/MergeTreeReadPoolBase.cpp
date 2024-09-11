@@ -1,10 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
-
-#include <Core/Settings.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-
-#include <cmath>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
@@ -38,58 +34,10 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
 {
-    fillPerPartInfos(context_->getSettingsRef());
+    fillPerPartInfos();
 }
 
-static size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & columns_to_read)
-{
-    ColumnSize columns_size{};
-    for (const auto & col_name : columns_to_read)
-        columns_size.add(part.getColumnSize(col_name));
-    /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
-    return columns_size.data_compressed ? columns_size.data_compressed : part.getBytesOnDisk();
-}
-
-static size_t calculateMinMarksPerTask(
-    const RangesInDataPart & part,
-    const Names & columns_to_read,
-    PrewhereInfoPtr prewhere_info,
-    const MergeTreeReadPoolBase::PoolSettings & pool_settings,
-    const Settings & settings)
-{
-    size_t min_marks_per_task = pool_settings.min_marks_for_concurrent_read;
-    const size_t part_marks_count = part.getMarksCount();
-    if (part_marks_count && part.data_part->isStoredOnRemoteDisk())
-    {
-        /// We assume that most of the time prewhere does it's job good meaning that lion's share of the rows is filtered out.
-        /// Which means in turn that for most of the rows we will read only the columns from prewhere clause.
-        /// So it makes sense to use only them for the estimation.
-        const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
-            ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
-            : columns_to_read;
-        const size_t part_compressed_bytes = getApproxSizeOfPart(*part.data_part, columns);
-
-        const auto avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
-        const auto min_bytes_per_task = settings.merge_tree_min_bytes_per_task_for_remote_reading;
-        /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
-        /// We also create at least two tasks per thread to have something to steal from a slow thread.
-        const auto heuristic_min_marks
-            = std::min<size_t>(pool_settings.sum_marks / pool_settings.threads / 2, min_bytes_per_task / avg_mark_bytes);
-        if (heuristic_min_marks > min_marks_per_task)
-        {
-            LOG_TEST(
-                &Poco::Logger::get("MergeTreeReadPoolBase"),
-                "Increasing min_marks_per_task from {} to {} based on columns size heuristic",
-                min_marks_per_task,
-                heuristic_min_marks);
-            min_marks_per_task = heuristic_min_marks;
-        }
-    }
-    LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
-    return min_marks_per_task;
-}
-
-void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
+void MergeTreeReadPoolBase::fillPerPartInfos()
 {
     per_part_infos.reserve(parts_ranges.size());
     is_part_on_remote_disk.reserve(parts_ranges.size());
@@ -153,8 +101,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         }
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
-        read_task_info.min_marks_per_task
-            = calculateMinMarksPerTask(part_with_ranges, column_names, prewhere_info, pool_settings, settings);
         per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 }

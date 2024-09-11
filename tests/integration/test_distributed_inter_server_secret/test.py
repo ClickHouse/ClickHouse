@@ -12,16 +12,12 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-def make_instance(name, *args, **kwargs):
-    main_configs = kwargs.pop("main_configs", [])
-    main_configs.append("configs/remote_servers.xml")
-    user_configs = kwargs.pop("user_configs", [])
-    user_configs.append("configs/users.xml")
+def make_instance(name, cfg, *args, **kwargs):
     return cluster.add_instance(
         name,
         with_zookeeper=True,
-        main_configs=main_configs,
-        user_configs=user_configs,
+        main_configs=["configs/remote_servers.xml", cfg],
+        user_configs=["configs/users.xml"],
         *args,
         **kwargs,
     )
@@ -96,12 +92,6 @@ def bootstrap():
             0, /* min_bytes  */
             0  /* max_bytes  */
         )
-        """
-        )
-        n.query(
-            """
-        CREATE TABLE dist_over_dist_secure AS data
-        Engine=Distributed(secure, currentDatabase(), dist_secure, key)
         """
         )
 

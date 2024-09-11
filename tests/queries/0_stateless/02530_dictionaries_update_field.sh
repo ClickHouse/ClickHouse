@@ -35,7 +35,7 @@ for layout in "${layouts[@]}"; do
             echo "$layout"
         fi
 
-        $CLICKHOUSE_CLIENT --multiquery "
+        $CLICKHOUSE_CLIENT -nm -q "
             TRUNCATE TABLE table_for_update_field_dictionary;
 
             CREATE DICTIONARY $dictionary_name
@@ -49,31 +49,24 @@ for layout in "${layouts[@]}"; do
             LAYOUT($layout())
             LIFETIME(1);
 
-            INSERT INTO table_for_update_field_dictionary VALUES (1, 'First', now());"
+            -- { echoOn }
+            INSERT INTO table_for_update_field_dictionary VALUES (1, 'First', now());
+            SELECT key, value FROM $dictionary_name ORDER BY key ASC;
 
-        while true
-        do
-            $CLICKHOUSE_CLIENT --query "SELECT key, value FROM $dictionary_name ORDER BY key ASC" | grep -A10 -B10 'First' && break;
-            sleep .1;
-        done
+            INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
+            SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 
-        $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());"
+            SELECT key, value FROM $dictionary_name ORDER BY key ASC;
 
-        while true
-        do
-            $CLICKHOUSE_CLIENT --query "SELECT key, value FROM $dictionary_name ORDER BY key ASC" | grep -A10 -B10 'Second' && break;
-            sleep .1;
-        done
+            INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
+            INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
+            SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 
-        $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now()), (3, 'Third', now())"
+            SELECT key, value FROM $dictionary_name ORDER BY key ASC;
+            -- { echoOff }
 
-        while true
-        do
-            $CLICKHOUSE_CLIENT --query "SELECT key, value FROM $dictionary_name ORDER BY key ASC" | grep -A10 -B10 'SecondUpdated' && break;
-            sleep .1;
-        done
-
-        $CLICKHOUSE_CLIENT --query "DROP DICTIONARY $dictionary_name"
+            DROP DICTIONARY $dictionary_name;
+        "
 
     done
 done

@@ -38,8 +38,8 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
-#include <Storages/ObjectStorage/HDFS/AsynchronousReadBufferFromHDFS.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -321,7 +321,7 @@ public:
 
     Chunk generateChunkFromMetadata()
     {
-        size_t num_rows = std::min(current_file_remained_rows, UInt64(getContext()->getSettingsRef().max_block_size));
+        size_t num_rows = std::min(current_file_remained_rows, UInt64(getContext()->getSettings().max_block_size));
         current_file_remained_rows -= num_rows;
 
         Block source_block;
@@ -921,7 +921,9 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     }
 
     sources_info->hive_files = std::move(*hive_files);
-    num_streams = std::min(num_streams, sources_info->hive_files.size());
+
+    if (num_streams > sources_info->hive_files.size())
+        num_streams = sources_info->hive_files.size();
 
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)
@@ -964,7 +966,7 @@ HiveFiles StorageHive::collectHiveFiles(
     /// Hive files to collect
     HiveFiles hive_files;
     Int64 hit_parttions_num = 0;
-    Int64 hive_max_query_partitions = context_->getSettingsRef().max_partitions_to_read;
+    Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
     ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, CurrentMetrics::StorageHiveThreadsScheduled, max_threads};

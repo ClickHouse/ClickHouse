@@ -98,17 +98,9 @@ public:
 
     bool tryInsert(const Field & x) override;
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t index) override;
-#else
-    void doInsertFrom(const IColumn & src_, size_t index) override;
-#endif
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#else
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#endif
 
     void insertData(const char * pos, size_t length) override;
 
@@ -137,11 +129,7 @@ public:
 
     void updateHashFast(SipHash & hash) const override;
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
-#else
-    int doCompareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
-#endif
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
         chassert(this->n == rhs.n);
@@ -154,13 +142,7 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
 
-    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#endif
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 

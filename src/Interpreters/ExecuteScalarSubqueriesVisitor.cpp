@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
@@ -113,7 +112,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
 
-    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter;
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;
     bool hit = false;
     bool is_local = false;
 

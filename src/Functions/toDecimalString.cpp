@@ -43,7 +43,7 @@ public:
             {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}
         };
 
-        validateFunctionArguments(*this, arguments, mandatory_args, {});
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, {});
 
         return std::make_shared<DataTypeString>();
     }
@@ -273,7 +273,7 @@ second argument is the desired number of digits in fractional part. Returns Stri
         )",
             .examples{{"toDecimalString", "SELECT toDecimalString(2.1456,2)", ""}},
             .categories{"String"}
-        }, FunctionFactory::Case::Insensitive);
+        }, FunctionFactory::CaseInsensitive);
 }
 
 }

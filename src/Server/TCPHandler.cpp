@@ -1,48 +1,48 @@
+#include "Interpreters/AsynchronousInsertQueue.h"
+#include "Interpreters/SquashingTransform.h"
+#include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <mutex>
-#include <string_view>
 #include <vector>
-#include <Access/AccessControl.h>
-#include <Access/Credentials.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
-#include <Core/ExternalTable.h>
-#include <Core/ServerSettings.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/Progress.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/Session.h>
-#include <Interpreters/Squashing.h>
-#include <Interpreters/TablesStatus.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Server/TCPServer.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <string_view>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/NetException.h>
-#include <Common/OpenSSLHelpers.h>
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
+#include <Common/NetException.h>
 #include <Common/setThreadName.h>
+#include <Common/OpenSSLHelpers.h>
+#include <IO/Progress.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/TablesStatus.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/Session.h>
+#include <Server/TCPServer.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
+#include <Access/AccessControl.h>
+#include <Access/Credentials.h>
+#include <Compression/CompressionFactory.h>
+#include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
+#include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -60,8 +60,6 @@
 #include "TCPHandler.h"
 
 #include <Common/config_version.h>
-
-#include <fmt/format.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -102,7 +100,6 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -247,6 +244,7 @@ TCPHandler::~TCPHandler()
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     extractConnectionSettingsFromContext(server.context());
 
@@ -349,7 +347,6 @@ void TCPHandler::runImpl()
          */
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
-        bool user_expired = false;
         bool query_duration_already_logged = false;
         auto log_query_duration = [this, &query_duration_already_logged]()
         {
@@ -385,11 +382,11 @@ void TCPHandler::runImpl()
                 query_context->getClientInfo().client_trace_context,
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
-            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+            thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
 
             query_scope.emplace(query_context, /* fatal_error_callback */ [this]
             {
-                std::lock_guard lock(out_mutex);
+                std::lock_guard lock(fatal_error_mutex);
                 sendLogs();
             });
 
@@ -415,9 +412,6 @@ void TCPHandler::runImpl()
                 state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
-
-            if (!is_interserver_mode)
-                session->checkIfUserIsStillValid();
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
@@ -477,7 +471,7 @@ void TCPHandler::runImpl()
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
 
-                std::scoped_lock lock(out_mutex, task_callback_mutex);
+                std::lock_guard lock(task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return {};
@@ -493,7 +487,7 @@ void TCPHandler::runImpl()
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
-                std::scoped_lock lock(out_mutex, task_callback_mutex);
+                std::lock_guard lock(task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
@@ -507,7 +501,7 @@ void TCPHandler::runImpl()
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
-                std::scoped_lock lock(out_mutex, task_callback_mutex);
+                std::lock_guard lock(task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return std::nullopt;
@@ -555,7 +549,7 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this]()
                         {
-                            std::scoped_lock lock(out_mutex, task_callback_mutex);
+                            std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
 
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                                 return true;
@@ -574,7 +568,7 @@ void TCPHandler::runImpl()
 
                 finish_or_cancel();
 
-                std::lock_guard lock(out_mutex);
+                std::lock_guard lock(task_callback_mutex);
 
                 /// Send final progress after calling onFinish(), since it will update the progress.
                 ///
@@ -597,7 +591,7 @@ void TCPHandler::runImpl()
                 break;
 
             {
-                std::lock_guard lock(out_mutex);
+                std::lock_guard lock(task_callback_mutex);
                 sendLogs();
                 sendEndOfStream();
             }
@@ -643,10 +637,7 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
 
-            if (e.code() == ErrorCodes::USER_EXPIRED)
-                user_expired = true;
-
-            if (network_error || user_expired)
+            if (network_error)
                 LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
@@ -668,7 +659,7 @@ void TCPHandler::runImpl()
 // Server should die on std logic errors in debug, like with assert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
 // tests.
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         catch (const std::logic_error & e)
         {
             state.io.onException();
@@ -756,7 +747,7 @@ void TCPHandler::runImpl()
             session.reset();
         }
 
-        if (network_error || user_expired)
+        if (network_error)
             break;
     }
 }
@@ -802,8 +793,6 @@ bool TCPHandler::readDataNext()
 
             /// We accept and process data.
             read_ok = receivePacket();
-            /// Reset the timeout on Ping packet (NOTE: there is no Ping for INSERT queries yet).
-            watch.restart();
             break;
         }
 
@@ -886,15 +875,13 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
+    SquashingTransform squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
 
     while (readDataNext())
     {
-        squashing.setHeader(state.block_for_insert.cloneEmpty());
-        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
-        if (result_chunk)
+        auto result = squashing.add(std::move(state.block_for_insert));
+        if (result)
         {
-            auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -903,13 +890,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    Chunk result_chunk = Squashing::squash(squashing.flush());
-    if (!result_chunk)
-    {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), query_context);
-    }
-
-    auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
+    auto result = squashing.add({});
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
@@ -963,8 +944,8 @@ void TCPHandler::processInsertQuery()
         if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
             settings.deduplicate_blocks_in_dependent_materialized_views)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Deduplication in dependent materialized view cannot work together with async inserts. "\
-                    "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+                    "Deduplication is dependent materialized view cannot work together with async inserts. "\
+                    "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1016,7 +997,7 @@ void TCPHandler::processOrdinaryQuery()
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
     {
-        std::lock_guard lock(out_mutex);
+        std::lock_guard lock(task_callback_mutex);
         sendPartUUIDs();
     }
 
@@ -1026,28 +1007,17 @@ void TCPHandler::processOrdinaryQuery()
 
         if (header)
         {
-            std::lock_guard lock(out_mutex);
+            std::lock_guard lock(task_callback_mutex);
             sendData(header);
         }
     }
 
     /// Defer locking to cover a part of the scope below and everything after it
-    std::unique_lock out_lock(out_mutex, std::defer_lock);
+    std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
-
-        /// The following may happen:
-        /// * current thread is holding the lock
-        /// * because of the exception we unwind the stack and call the destructor of `executor`
-        /// * the destructor calls cancel() and waits for all query threads to finish
-        /// * at the same time one of the query threads is trying to acquire the lock, e.g. inside `merge_tree_read_task_callback`
-        /// * deadlock
-        SCOPE_EXIT({
-            if (out_lock.owns_lock())
-                out_lock.unlock();
-        });
 
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
@@ -1069,9 +1039,6 @@ void TCPHandler::processOrdinaryQuery()
                 executor.cancelReading();
             }
 
-            lock.unlock();
-            out_lock.lock();
-
             if (after_send_progress.elapsed() / 1000 >= interactive_delay)
             {
                 /// Some time passed and there is a progress.
@@ -1087,13 +1054,12 @@ void TCPHandler::processOrdinaryQuery()
                 if (!state.io.null_format)
                     sendData(block);
             }
-
-            out_lock.unlock();
         }
 
         /// This lock wasn't acquired before and we make .lock() call here
-        /// so everything under this line is covered.
-        out_lock.lock();
+        /// so everything under this line is covered even together
+        /// with sendProgress() out of the scope
+        progress_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
@@ -1119,7 +1085,6 @@ void TCPHandler::processOrdinaryQuery()
         last_sent_snapshots.clear();
     }
 
-    out_lock.lock();
     sendProgress();
 }
 
@@ -1132,7 +1097,7 @@ void TCPHandler::processTablesStatusRequest()
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
-        /// In the interserver mode session context does not exist, because authentication is done for each query.
+        /// In interserver mode session context does not exists, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
         ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
@@ -1268,7 +1233,6 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
-    Stopwatch stopwatch;
     Block block;
     ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -1280,11 +1244,6 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
-
-        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
-        if (elapsed_milliseconds > 100)
-            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
-                block.rows(), block.bytes(), elapsed_milliseconds);
     }
 }
 
@@ -1412,6 +1371,17 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
+[[ maybe_unused ]] String createChallenge()
+{
+#if USE_SSL
+    pcg64_fast rng(randomSeed());
+    UInt64 rand = rng();
+    return encodeSHA256(&rand, sizeof(rand));
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
+#endif
+}
+
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1427,6 +1397,16 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     res->setClientInterface(interface);
 
     return res;
+}
+
+String TCPHandler::prepareStringForSshValidation(String username, String challenge)
+{
+    String output;
+    output.append(std::to_string(client_tcp_protocol_version));
+    output.append(default_database);
+    output.append(username);
+    output.append(challenge);
+    return output;
 }
 
 void TCPHandler::receiveHello()
@@ -1486,9 +1466,11 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
-        user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
+    {
+        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
+    }
 
     session = makeSession();
     const auto & client_info = session->getClientInfo();
@@ -1503,7 +1485,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
+                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
                     getClientAddress(client_info));
                 return;
             }
@@ -1516,9 +1498,7 @@ void TCPHandler::receiveHello()
             }
         }
     }
-#endif
 
-#if USE_SSH
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
@@ -1532,14 +1512,7 @@ void TCPHandler::receiveHello()
         if (packet_type != Protocol::Client::SSHChallengeRequest)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
 
-        auto create_challenge = []()
-        {
-            pcg64_fast rng(randomSeed());
-            UInt64 rand = rng();
-            return encodeSHA256(&rand, sizeof(rand));
-        };
-
-        String challenge = create_challenge();
+        auto challenge = createChallenge();
         writeVarUInt(Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
         out->next();
@@ -1550,17 +1523,7 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
         readStringBinary(signature, *in);
 
-        auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
-        {
-            String output;
-            output.append(std::to_string(client_tcp_protocol_version));
-            output.append(default_database);
-            output.append(username);
-            output.append(challenge_);
-            return output;
-        };
-
-        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
+        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
         return;
     }
@@ -1897,7 +1860,7 @@ void TCPHandler::receiveQuery()
     if (state.part_uuids_to_ignore)
         query_context->getIgnoredPartUUIDs()->add(*state.part_uuids_to_ignore);
 
-    query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
+    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
     query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
 
     ///
@@ -2120,7 +2083,6 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2135,7 +2097,6 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2150,7 +2111,6 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }

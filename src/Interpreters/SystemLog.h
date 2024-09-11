@@ -2,7 +2,6 @@
 
 #include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
-#include <Parsers/IAST.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -40,7 +39,6 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class CrashLog;
-class ErrorLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
@@ -53,7 +51,7 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
 class BackupLog;
-class ObjectStorageQueueLog;
+class S3QueueLog;
 class BlobStorageLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
@@ -73,11 +71,9 @@ struct SystemLogs
     std::shared_ptr<CrashLog> crash_log;                /// Used to log server crashes.
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
-    std::shared_ptr<ErrorLog> error_log;                /// Used to log errors.
     std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
     std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
-    std::shared_ptr<ObjectStorageQueueLog> s3_queue_log;
-    std::shared_ptr<ObjectStorageQueueLog> azure_queue_log;
+    std::shared_ptr<S3QueueLog> s3_queue_log;
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
@@ -135,12 +131,6 @@ public:
 
     void stopFlushThread() override;
 
-    /** Creates new table if it does not exist.
-      * Renames old table if its structure is not suitable.
-      * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
-      */
-    void prepareTable() override;
-
 protected:
     LoggerPtr log;
 
@@ -149,11 +139,6 @@ protected:
     using ISystemLog::thread_mutex;
     using Base::queue;
 
-    StoragePtr getStorage() const;
-
-    /// Some tables can override settings for internal queries
-    virtual void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const;
-
 private:
     /* Saving thread data */
     const StorageID table_id;
@@ -161,6 +146,12 @@ private:
     const String create_query;
     String old_create_query;
     bool is_prepared = false;
+
+    /** Creates new table if it does not exist.
+      * Renames old table if its structure is not suitable.
+      * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
+      */
+    void prepareTable() override;
 
     void savingThreadFunction() override;
 

@@ -129,7 +129,7 @@ public:
 
         IMergingAlgorithm::Status status = algorithm.merge();
 
-        if ((status.chunk && status.chunk.hasRows()) || !status.chunk.getChunkInfos().empty())
+        if ((status.chunk && status.chunk.hasRows()) || status.chunk.hasChunkInfo())
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);

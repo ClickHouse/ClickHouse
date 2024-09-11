@@ -22,7 +22,6 @@
 #include <Common/quoteString.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -98,7 +97,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
 {
     std::lock_guard lock(mutex);
     Tables tables;
@@ -242,7 +241,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
     if (fs::exists(table_marked_as_removed))
-        (void)fs::remove(table_marked_as_removed);
+        fs::remove(table_marked_as_removed);
 }
 
 
@@ -299,7 +298,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    (void)fs::remove_all(getMetadataPath());
+    fs::remove_all(getMetadataPath());
 }
 
 
@@ -369,7 +368,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
             iter = detached_or_dropped.erase(iter);
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
             if (fs::exists(table_marked_as_removed))
-                (void)fs::remove(table_marked_as_removed);
+                fs::remove(table_marked_as_removed);
         }
         else
             ++iter;
@@ -546,9 +545,8 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             configuration,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,
