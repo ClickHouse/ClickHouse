@@ -64,7 +64,8 @@ private:
     /// Helper function for managing a parent of a node
     static void reparent(const SchedulerNodePtr & node, ISchedulerNode * new_parent)
     {
-        if (!new_parent || new_parent == node->parent)
+        chassert(new_parent);
+        if (new_parent == node->parent)
             return;
         if (node->parent)
             node->parent->removeChild(node.get());
@@ -130,7 +131,12 @@ private:
             if (existing_branch)
             {
                 if (branch_root)
-                    reparent(branch_root, root);
+                {
+                    if (root)
+                        reparent(branch_root, root);
+                    else
+                        return branch_root;
+                }
                 return {};
             }
             else
@@ -247,13 +253,7 @@ public:
         reparent(immediate_child, this);
     }
 
-    bool equals(ISchedulerNode *) override
-    {
-        assert(false);
-        return false;
-    }
-
-    /// Attaches a child as a leaf of internal subtree and insert or update all the intermediate node
+    /// Attaches a child as a leaf of internal subtree and insert or update all the intermediate nodes
     /// NOTE: Do not confuse with `attachChild()` which is used only for immediate children
     void attachUnifiedChild(const SchedulerNodePtr & child)
     {
@@ -273,6 +273,19 @@ public:
     void updateSchedulingSettings(const SchedulingSettings & new_settings)
     {
         UNUSED(new_settings); // TODO: implement updateSchedulingSettings
+    }
+
+    /// Returns the queue to be used for resource requests or `nullptr` if it has unified children
+    ISchedulerQueue * getQueue()
+    {
+        return static_cast<ISchedulerQueue *>(impl.branch.queue.get());
+    }
+
+protected: // Hide all the ISchedulerNode interface methods as an implementation details
+    bool equals(ISchedulerNode *) override
+    {
+        assert(false);
+        return false;
     }
 
     /// Attaches an immediate child (used through `reparent()`)
@@ -342,5 +355,7 @@ private:
     SchedulerNodePtr immediate_child; // An immediate child (actually the root of the whole subtree)
     bool child_active = false;
 };
+
+using UnifiedSchedulerNodePtr = std::shared_ptr<UnifiedSchedulerNode>;
 
 }

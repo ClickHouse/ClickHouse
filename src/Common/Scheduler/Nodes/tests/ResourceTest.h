@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/Scheduler/SchedulingSettings.h"
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/SchedulerRoot.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -7,6 +8,7 @@
 #include <Common/Scheduler/Nodes/PriorityPolicy.h>
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/UnifiedSchedulerNode.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Nodes/registerResourceManagers.h>
 
@@ -15,6 +17,7 @@
 #include <atomic>
 #include <barrier>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <mutex>
 #include <set>
@@ -45,7 +48,6 @@ struct ResourceTestBase
     template <class TClass, class... Args>
     static TClass * add(EventQueue * event_queue, SchedulerNodePtr & root_node, const String & path, Args... args)
     {
-
         if (path == "/")
         {
             EXPECT_TRUE(root_node.get() == nullptr);
@@ -141,6 +143,32 @@ public:
         ResourceTestBase::add<TClass>(&event_queue, root_node, path, std::forward<Args>(args)...);
     }
 
+    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const SchedulingSettings & settings = {})
+    {
+        return createUnifiedNode(basename, {}, settings);
+    }
+
+    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const UnifiedSchedulerNodePtr & parent, const SchedulingSettings & settings = {})
+    {
+        auto node = std::make_shared<UnifiedSchedulerNode>(&event_queue, settings);
+        node->basename = basename;
+        if (parent)
+        {
+            parent->attachUnifiedChild(node);
+        }
+        else
+        {
+            EXPECT_TRUE(root_node.get() == nullptr);
+            root_node = node;
+        }
+        return node;
+    }
+
+    void enqueue(const UnifiedSchedulerNodePtr & node, const std::vector<ResourceCost> & costs)
+    {
+        enqueueImpl(node->getQueue(), costs);
+    }
+
     void enqueue(const String & path, const std::vector<ResourceCost> & costs)
     {
         ASSERT_TRUE(root_node.get() != nullptr); // root should be initialized first
@@ -161,13 +189,14 @@ public:
                 pos = String::npos;
             }
         }
-        ISchedulerQueue * queue = dynamic_cast<ISchedulerQueue *>(node);
-        ASSERT_TRUE(queue != nullptr); // not a queue
+        enqueueImpl(dynamic_cast<ISchedulerQueue *>(node), costs);
+    }
 
+    void enqueueImpl(ISchedulerQueue * queue, const std::vector<ResourceCost> & costs)
+    {
+        ASSERT_TRUE(queue != nullptr); // not a queue
         for (ResourceCost cost : costs)
-        {
             queue->enqueueRequest(new Request(cost, queue->basename));
-        }
         processEvents(); // to activate queues
     }
 
