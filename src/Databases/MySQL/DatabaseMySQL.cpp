@@ -149,7 +149,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         /// So we just catch and re-throw as known exception if needed.
         fetchTablesIntoLocalCache(local_context);
     }
-    catch(...)
+    catch (...)
     {
         if (throw_on_error)
         {
