@@ -187,10 +187,15 @@ function setup_logs_replication
             ')
 
         echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
+
         echo "::group::${table}"
         # there's the only way big "$statement" can be printed without causing EAGAIN error
         # cat: write error: Resource temporarily unavailable
-        echo "$statement" | cat
+        statement_print="${statement}"
+        if [ "${#statement_print}" -gt 4000 ]; then
+          statement_print="${statement::1999}\n…\n${statement:${#statement}-1999}"
+        fi
+        echo -e "$statement_print"
         echo "::endgroup::"
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
