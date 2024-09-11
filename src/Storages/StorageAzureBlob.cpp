@@ -1054,19 +1054,19 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
                 else
                     ++it;
             }
+
+            if (filter_dag)
+            {
+                std::vector<String> paths;
+                paths.reserve(new_batch.size());
+                for (auto & path_with_metadata : new_batch)
+                    paths.push_back(fs::path(container) / path_with_metadata.relative_path);
+
+                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
+            }
         }
 
         index = 0;
-
-        if (filter_dag)
-        {
-            std::vector<String> paths;
-            paths.reserve(new_batch.size());
-            for (auto & path_with_metadata : new_batch)
-                paths.push_back(fs::path(container) / path_with_metadata.relative_path);
-
-            VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
-        }
 
         if (outer_blobs)
             outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
@@ -1083,7 +1083,13 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
 
     size_t current_index = index++;
     if (current_index >= blobs_with_metadata.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bound for blob metadata");
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Index out of bound for blob metadata. Index: {}, size: {}",
+            index, blobs_with_metadata.size());
+    }
+
     return blobs_with_metadata[current_index];
 }
 
