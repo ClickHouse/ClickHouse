@@ -874,7 +874,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (select_query_options.build_logical_plan)
                 {
                     auto sample_block = storage_snapshot->getSampleBlockForColumns(columns_names);
-                    auto table_name = (table_node ? table_node->getStorageID() : table_function_node->getStorageID()).getFullTableName();
+
+                    String table_name;
+                    if (table_node && !table_node->getTemporaryTableName().empty())
+                        table_name = table_node->getTemporaryTableName();
+                    else
+                    {
+                        const auto & table_id = (table_node ? table_node->getStorageID() : table_function_node->getStorageID());
+                         table_name = table_id.getFullTableName();
+                    }
+
                     auto reading_from_table = std::make_unique<ReadFromTableStep>(
                         sample_block,
                         table_name,
