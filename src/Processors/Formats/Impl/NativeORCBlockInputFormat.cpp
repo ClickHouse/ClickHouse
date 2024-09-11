@@ -1160,7 +1160,7 @@ readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const o
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnWithTypeAndName
+[[maybe_unused]] static ColumnWithTypeAndName
 readColumnWithLowCardinalityStringData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
 {
     /// Calculate dict_column
@@ -1501,7 +1501,8 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                     default:;
                 }
             }
-            return readColumnWithLowCardinalityStringData(orc_column, orc_type, column_name);
+            // return readColumnWithLowCardinalityStringData(orc_column, orc_type, column_name);
+            return readColumnWithStringData(orc_column, orc_type, column_name);
         }
         case orc::CHAR: {
             if (type_hint)
