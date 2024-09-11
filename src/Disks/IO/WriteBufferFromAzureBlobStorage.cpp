@@ -3,6 +3,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
@@ -70,17 +71,6 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 
 void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, size_t num_tries, size_t cost)
 {
-    auto handle_exception = [&, this](const auto & e, size_t i)
-    {
-        if (cost)
-            write_settings.resource_link.accumulate(cost); // Accumulate resource for later use, because we have failed to consume it
-
-        if (i == num_tries - 1)
-            throw;
-
-        LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);
-    };
-
     for (size_t i = 0; i < num_tries; ++i)
     {
         try
@@ -91,7 +81,13 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            handle_exception(e, i);
+            if (cost)
+                write_settings.resource_link.accumulate(cost); // Accumulate resource for later use, because we have failed to consume it
+
+            if (i == num_tries - 1 || !isRetryableAzureException(e))
+                throw;
+
+            LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);
         }
         catch (...)
         {
