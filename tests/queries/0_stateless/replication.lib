@@ -51,6 +51,14 @@ function check_replication_consistency()
     table_name_prefix=$1
     check_query_part=$2
 
+    # Try to kill some mutations because sometimes tests run too much (it's not guarenteed to kill all mutations, see below)
+    # Try multiple replicas, because queries are not finished yet, and "global" KILL MUTATION may fail due to another query (like DROP TABLE)
+    readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%'")
+    for t in "${tables_arr[@]}"
+    do
+        ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t'" > /dev/null 2>/dev/null ||:
+    done
+
     # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%'") -ne 1 ]]; do
@@ -94,7 +102,7 @@ function check_replication_consistency()
     some_table=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%' ORDER BY rand() LIMIT 1")
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA $some_table PULL" 1>/dev/null 2>/dev/null ||:
 
-    # Forcefully cancel mutations to avoid waiting for them to finish
+    # Forcefully cancel mutations to avoid waiting for them to finish. Kills the remaining mutations
     ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table like '$table_name_prefix%'" > /dev/null
 
     # SYNC REPLICA is not enough if some MUTATE_PARTs are not assigned yet
