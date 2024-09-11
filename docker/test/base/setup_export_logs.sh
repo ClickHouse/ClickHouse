@@ -195,7 +195,7 @@ function setup_logs_replication
         if [ "${#statement_print}" -gt 4000 ]; then
           statement_print="${statement::1999}\n…\n${statement:${#statement}-1999}"
         fi
-        echo "$statement_print"
+        echo -e "$statement_print"
         echo "::endgroup::"
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
