@@ -40,10 +40,18 @@ struct ModuloByConstantImpl
             if (right_nullmap)
             {
                 for (size_t i = 0; i < size; ++i)
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
+                {
+                    /// For better performance, try to use branch free code for numeric types(i.e. cond ? a : b --> !!cond * a + !cond * b), except floating point types because of Inf or NaN.
+                    if constexpr (std::is_integral_v<ResultType>)
+                        c[i] = (!!(*right_nullmap)[i]) * ResultType() + (!(*right_nullmap)[i]) * apply<op_case>(a, b, c, i);
                     else
-                        apply<op_case>(a, b, c, i);
+                    {
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                    }
+                }
             }
             else
                 for (size_t i = 0; i < size; ++i)
@@ -105,12 +113,14 @@ struct ModuloByConstantImpl
 
 private:
     template <OpCase op_case>
-    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    static ResultType apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
         if constexpr (op_case == OpCase::Vector)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
         else
             c[i] = Op::template apply<ResultType>(*a, b[i]);
+
+        return c[i];
     }
 };
 

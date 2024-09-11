@@ -2,4 +2,5 @@
     <query>SELECT count() FROM numbers(200000000) WHERE NOT ignore(intDiv(number, 1000000000))</query>
     <query>SELECT count() FROM numbers(200000000) WHERE NOT ignore(divide(number, 1000000000))</query>
     <query>SELECT count() FROM numbers(200000000) WHERE NOT ignore(toUInt32(divide(number, 1000000000)))</query>
+    <query>select intDiv((number+2), toNullable(number+1)) from system.numbers limit 100000000 format Null</query>
 </test>
