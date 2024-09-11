@@ -1,8 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <boost/container/flat_set.hpp>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <memory>
 
 #include "config.h"
@@ -44,11 +42,11 @@ class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
+    explicit SSLCertificateCredentials(const String & user_name_, const String & common_name_);
+    const String & getCommonName() const;
 
 private:
-    SSLCertificateSubjects certificate_subjects;
+    String common_name;
 };
 
 class BasicCredentials

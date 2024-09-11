@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>

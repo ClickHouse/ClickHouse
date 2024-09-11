@@ -12,14 +12,12 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <Parsers/queryToString.h>
 
@@ -315,12 +313,6 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
     {
-        if (async_insert_info_with_partition[i] == nullptr)
-        {
-            LOG_ERROR(getLogger("MergeTreeDataWriter"), "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is {}",
-                      i, partitions_count, fmt::join(selector.begin(), selector.end(), ","));
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
-        }
         result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
         result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
     }

@@ -37,11 +37,8 @@ SELECT untuple(tuple(1)::Tuple(Int)), untuple(tuple(1)::Tuple(Int)) FORMAT Verti
 SELECT untuple(tuple(1)::Tuple(Int)), untuple(tuple(1)::Tuple(Int)) FORMAT Vertical SETTINGS allow_experimental_analyzer = 1; -- Bug: doesn't throw an exception
 
 SELECT '-- tuple() loses the column names (would be good to fix, see #36773)';
-SELECT untuple(tuple(1 as a)) as t FORMAT Vertical SETTINGS allow_experimental_analyzer = 0, enable_named_columns_in_function_tuple = 0;
-SELECT untuple(tuple(1 as a)) as t FORMAT Vertical SETTINGS allow_experimental_analyzer = 1, enable_named_columns_in_function_tuple = 0;
-
-SELECT '-- tuple() with enable_named_columns_in_function_tuple = 1 and allow_experimental_analyzer = 1 keeps the column names';
-SELECT untuple(tuple(1 as a)) as t FORMAT Vertical SETTINGS allow_experimental_analyzer = 1, enable_named_columns_in_function_tuple = 1;
+SELECT untuple(tuple(1 as a)) as t FORMAT Vertical SETTINGS allow_experimental_analyzer = 0;
+SELECT untuple(tuple(1 as a)) as t FORMAT Vertical SETTINGS allow_experimental_analyzer = 1;
 
 SELECT '-- thankfully JSONExtract() keeps them';
 SELECT untuple(JSONExtract('{"key": "value"}', 'Tuple(key String)')) x FORMAT Vertical SETTINGS allow_experimental_analyzer = 0;

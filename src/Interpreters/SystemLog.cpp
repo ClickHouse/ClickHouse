@@ -5,7 +5,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -13,7 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -118,7 +116,6 @@ namespace
 {
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -289,7 +286,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log", "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log", "Contains logging entries which are normally written to a log file or to stdout.");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log", "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.");
-    error_log = createSystemLog<ErrorLog>(global_context, "system", "error_log", config, "error_log", "Contains history of error values from table system.errors, periodically flushed to disk.");
     filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log", "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.");
     filesystem_read_prefetches_log = createSystemLog<FilesystemReadPrefetchesLog>(
         global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log", "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.");
@@ -325,8 +321,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(text_log.get());
     if (metric_log)
         logs.emplace_back(metric_log.get());
-    if (error_log)
-        logs.emplace_back(error_log.get());
     if (asynchronous_metric_log)
         logs.emplace_back(asynchronous_metric_log.get());
     if (opentelemetry_span_log)
@@ -357,15 +351,10 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (blob_storage_log)
         logs.emplace_back(blob_storage_log.get());
 
-    bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
     try
     {
         for (auto & log : logs)
-        {
             log->startup();
-            if (should_prepare)
-                log->prepareTable();
-        }
     }
     catch (...)
     {
@@ -378,14 +367,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(collect_interval_milliseconds);
-    }
-
-    if (error_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
-                                                                DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(collect_interval_milliseconds);
+        metric_log->startCollectMetric(collect_interval_milliseconds);
     }
 
     if (crash_log)
@@ -544,13 +526,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert_context->makeQueryContext();
         addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         PushingPipelineExecutor executor(io.pipeline);

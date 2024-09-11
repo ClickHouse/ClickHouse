@@ -9,7 +9,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
@@ -60,6 +60,7 @@ public:
             "ListObjectAzure")
         , client(client_)
     {
+
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
     }
@@ -104,7 +105,7 @@ private:
 
 AzureObjectStorage::AzureObjectStorage(
     const String & name_,
-    ClientPtr && client_,
+    AzureClientPtr && client_,
     SettingsPtr && settings_,
     const String & object_namespace_,
     const String & description_)
@@ -126,22 +127,25 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
 {
     auto client_ptr = client.get();
 
-    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
-        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+    /// What a shame, no Exists method...
+    Azure::Storage::Blobs::ListBlobsOptions options;
+    options.Prefix = object.remote_path;
+    options.PageSizeHint = 1;
 
-    try
+    ProfileEvents::increment(ProfileEvents::AzureListObjects);
+    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
+        ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+
+    auto blobs_list_response = client_ptr->ListBlobs(options);
+    auto blobs_list = blobs_list_response.Blobs;
+
+    for (const auto & blob : blobs_list)
     {
-        auto blob_client = client_ptr->GetBlobClient(object.remote_path);
-        blob_client.GetProperties();
-        return true;
+        if (object.remote_path == blob.Name)
+            return true;
     }
-    catch (const Azure::Storage::StorageException & e)
-    {
-        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-            return false;
-        throw;
-    }
+
+    return false;
 }
 
 ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
@@ -149,16 +153,14 @@ ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_pr
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 
-    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size);
+    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys);
 }
 
 void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     auto client_ptr = client.get();
 
-    /// NOTE: list doesn't work if endpoint contains non-empty prefix for blobs.
-    /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
-
+    /// What a shame, no Exists method...
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
     if (max_keys)
@@ -397,49 +399,24 @@ void AzureObjectStorage::copyObject( /// NOLINT
 }
 
 void AzureObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context,
-    const ApplyNewSettingsOptions & options)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+    ContextPtr context, const ApplyNewSettingsOptions &)
 {
-    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+    auto new_settings = getAzureBlobStorageSettings(config, config_prefix, context);
     settings.set(std::move(new_settings));
-
-    if (!options.allow_client_change)
-        return;
-
-    bool is_client_for_disk = client.get()->GetClickhouseOptions().IsClientForDisk;
-
-    AzureBlobStorage::ConnectionParams params
-    {
-        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
-        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(*settings.get(), is_client_for_disk),
-    };
-
-    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
-    client.set(std::move(new_client));
+    /// We don't update client
 }
 
 
-std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
+std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
-    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
-    bool is_client_for_disk = client.get()->GetClickhouseOptions().IsClientForDisk;
-
-    AzureBlobStorage::ConnectionParams params
-    {
-        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
-        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(*new_settings, is_client_for_disk),
-    };
-
-    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
-    return std::make_unique<AzureObjectStorage>(name, std::move(new_client), std::move(new_settings), new_namespace, params.endpoint.getEndpointWithoutContainer());
+    return std::make_unique<AzureObjectStorage>(
+        name,
+        getAzureBlobContainerClient(config, config_prefix),
+        getAzureBlobStorageSettings(config, config_prefix, context),
+        object_namespace,
+        description
+    );
 }
 
 }

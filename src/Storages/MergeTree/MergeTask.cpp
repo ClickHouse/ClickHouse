@@ -7,7 +7,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
-#include <Core/Settings.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -17,7 +16,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -424,16 +422,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     return false;
 }
 
-bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
-{
-    return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-}
-
-bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
-{
-    return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-}
-
 void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
 {
     if (global_ctx->storage_columns.contains(name))
@@ -543,9 +531,9 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_columns.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
+    ctx->rows_sources_write_buf->next();
+    ctx->rows_sources_uncompressed_write_buf->next();
     /// Ensure data has written to disk.
-    ctx->rows_sources_write_buf->finalize();
-    ctx->rows_sources_uncompressed_write_buf->finalize();
     ctx->rows_sources_uncompressed_write_buf->finalize();
 
     size_t rows_sources_count = ctx->rows_sources_write_buf->count();
@@ -567,18 +555,18 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     if (!reread_buf)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read temporary file {}", ctx->rows_sources_uncompressed_write_buf->getFileName());
 
-    auto * reread_buffer_raw = dynamic_cast<ReadBufferFromFileBase *>(reread_buf.get());
+    auto * reread_buffer_raw = dynamic_cast<ReadBufferFromFile *>(reread_buf.get());
     if (!reread_buffer_raw)
     {
         const auto & reread_buf_ref = *reread_buf;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ReadBufferFromFileBase, but got {}", demangle(typeid(reread_buf_ref).name()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ReadBufferFromFile, but got {}", demangle(typeid(reread_buf_ref).name()));
     }
     /// Move ownership from std::unique_ptr<ReadBuffer> to std::unique_ptr<ReadBufferFromFile> for CompressedReadBufferFromFile.
     /// First, release ownership from unique_ptr to base type.
     reread_buf.release(); /// NOLINT(bugprone-unused-return-value,hicpp-ignored-remove-result): we already have the pointer value in `reread_buffer_raw`
 
     /// Then, move ownership to unique_ptr to concrete type.
-    std::unique_ptr<ReadBufferFromFileBase> reread_buffer_from_file(reread_buffer_raw);
+    std::unique_ptr<ReadBufferFromFile> reread_buffer_from_file(reread_buffer_raw);
 
     /// CompressedReadBufferFromFile expects std::unique_ptr<ReadBufferFromFile> as argument.
     ctx->rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(std::move(reread_buffer_from_file));

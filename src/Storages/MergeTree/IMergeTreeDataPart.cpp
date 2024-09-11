@@ -24,7 +24,6 @@
 #include <Parsers/queryToString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Backup.h>
@@ -376,12 +375,6 @@ void IMergeTreeDataPart::unloadIndex()
     index_loaded = false;
 }
 
-bool IMergeTreeDataPart::isIndexLoaded() const
-{
-    std::scoped_lock lock(index_mutex);
-    return index_loaded;
-}
-
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;
@@ -652,12 +645,15 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const
+String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const
 {
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(with_subcolumns);
+    auto columns_list = columns_description.get(options);
+
     std::optional<std::string> minimum_size_column;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
-    for (const auto & column : available_columns)
+    for (const auto & column : columns_list)
     {
         if (!hasColumnFiles(column))
             continue;
@@ -739,24 +735,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
+        /// Don't scare people with broken part error
         if (!isRetryableException(std::current_exception()))
-        {
             LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
-
-            if (Exception * e = exception_cast<Exception *>(std::current_exception()))
-            {
-                /// Probably there is something wrong with files of this part.
-                /// So it can be helpful to add to the error message some information about those files.
-                String files_in_part;
-                for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
-                    files_in_part += fmt::format("{}{} ({} bytes)", (files_in_part.empty() ? "" : ", "), it->name(), getDataPartStorage().getFileSize(it->name()));
-                if (!files_in_part.empty())
-                    e->addMessage("Part contains files: {}", files_in_part);
-                if (isEmpty())
-                    e->addMessage("Part is empty");
-            }
-        }
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
         // into metadata before exception, need to clean them all.
@@ -1326,17 +1307,6 @@ void IMergeTreeDataPart::loadRowsCount()
         auto buf = metadata_manager->read("count.txt");
         readIntText(rows_count, *buf);
         assertEOF(*buf);
-
-        if (!index_granularity.empty() && rows_count < index_granularity.getTotalRows() && index_granularity_info.fixed_index_granularity)
-        {
-            /// Adjust last granule size to match the number of rows in the part in case of fixed index_granularity.
-            index_granularity.popMark();
-            index_granularity.appendMark(rows_count % index_granularity_info.fixed_index_granularity);
-            if (rows_count != index_granularity.getTotalRows())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Index granularity total rows in part {} does not match rows_count: {}, instead of {}",
-                    name, index_granularity.getTotalRows(), rows_count);
-        }
     };
 
     if (index_granularity.empty())
@@ -1607,7 +1577,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
-        if (loaded_columns.empty())
+        if (columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         if (!is_readonly_storage)
@@ -2057,6 +2027,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
+        .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
@@ -2352,26 +2323,21 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
-UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
-{
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    return hash.get128();
-}
-
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
+    SipHash hash;
     if (token.empty())
     {
-        const auto hash_value = getPartBlockIDHash();
-        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+        checksums.computeTotalChecksumDataOnly(hash);
+    }
+    else
+    {
+        hash.update(token.data(), token.size());
     }
 
-    SipHash hash;
-    hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }

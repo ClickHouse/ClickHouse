@@ -21,6 +21,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -591,8 +592,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
             configuration.database, configuration.host, configuration.port,
-            configuration.username, configuration.password,
-            args.getContext()->getSettingsRef().postgresql_connection_attempt_timeout);
+            configuration.username, configuration.password);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();

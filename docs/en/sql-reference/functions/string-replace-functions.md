@@ -34,7 +34,7 @@ Alias: `replace`.
 
 Replaces the first occurrence of the substring matching the regular expression `pattern` (in [re2 syntax](https://github.com/google/re2/wiki/Syntax)) in `haystack` by the `replacement` string.
 
-`replacement` can contain substitutions `\0-\9`.
+`replacement` can containing substitutions `\0-\9`.
 Substitutions `\1-\9` correspond to the 1st to 9th capturing group (submatch), substitution `\0` corresponds to the entire match.
 
 To use a verbatim `\` character in the `pattern` or `replacement` strings, escape it using `\`.

@@ -210,7 +210,6 @@ add_object_library(clickhouse_analyzer_passes Analyzer/Resolve)
 add_object_library(clickhouse_planner Planner)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
-add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -419,6 +418,9 @@ dbms_target_link_libraries (
         boost::circular_buffer
         boost::heap)
 
+target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
+dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
+
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)
@@ -543,7 +545,7 @@ if (TARGET ch_contrib::libpqxx)
 endif()
 
 if (TARGET ch_contrib::datasketches)
-    dbms_target_link_libraries(PUBLIC ch_contrib::datasketches)
+    target_link_libraries (clickhouse_aggregate_functions PRIVATE ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
@@ -602,10 +604,6 @@ endif()
 
 if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
-endif()
-
-if (TARGET ch_contrib::prometheus_protobufs)
-    dbms_target_link_libraries (PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
 if (TARGET ch_rust::skim)

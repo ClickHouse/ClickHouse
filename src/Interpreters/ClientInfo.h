@@ -127,7 +127,7 @@ public:
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
-    UInt64 obsolete_count_participating_replicas{0};
+    UInt64 count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
 
     enum class BackgroundOperationType : uint8_t

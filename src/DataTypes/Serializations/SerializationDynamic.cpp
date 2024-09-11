@@ -4,8 +4,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
@@ -111,10 +109,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     const auto & variant_column = column_dynamic.getVariantColumn();
 
     /// Write internal Variant type name.
-    if (settings.data_types_binary_encoding)
-        encodeDataType(dynamic_state->variant_type, *stream);
-    else
-        writeStringBinary(dynamic_state->variant_type->getName(), *stream);
+    writeStringBinary(dynamic_state->variant_type->getName(), *stream);
 
     /// Write statistics in prefix if needed.
     if (settings.dynamic_write_statistics == SerializeBinaryBulkSettings::DynamicStatisticsMode::PREFIX)
@@ -183,16 +178,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         readBinaryLittleEndian(structure_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(structure_version);
         /// Read internal Variant type name.
-        if (settings.data_types_binary_encoding)
-        {
-            structure_state->variant_type = decodeDataType(*structure_stream);
-        }
-        else
-        {
-            String data_type_name;
-            readStringBinary(data_type_name, *structure_stream);
-            structure_state->variant_type = DataTypeFactory::instance().get(data_type_name);
-        }
+        String data_type_name;
+        readStringBinary(data_type_name, *structure_stream);
+        structure_state->variant_type = DataTypeFactory::instance().get(data_type_name);
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(structure_state->variant_type.get());
         if (!variant_type)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type of Dynamic nested column, expected Variant, got {}", structure_state->variant_type->getName());
@@ -292,27 +280,33 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    /// Serialize NULL as Nothing type with no value.
-    if (field.isNull())
-    {
-        encodeDataType(std::make_shared<DataTypeNothing>(), ostr);
+    UInt8 null_bit = field.isNull();
+    writeBinary(null_bit, ostr);
+    if (null_bit)
         return;
-    }
 
     auto field_type = applyVisitor(FieldToDataType(), field);
-    encodeDataType(field_type, ostr);
+    auto field_type_name = field_type->getName();
+    writeVarUInt(field_type_name.size(), ostr);
+    writeString(field_type_name, ostr);
     field_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
 }
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto field_type = decodeDataType(istr);
-    if (isNothing(field_type))
+    UInt8 null_bit;
+    readBinary(null_bit, istr);
+    if (null_bit)
     {
         field = Null();
         return;
     }
 
+    size_t field_type_name_size;
+    readVarUInt(field_type_name_size, istr);
+    String field_type_name(field_type_name_size, 0);
+    istr.readStrict(field_type_name.data(), field_type_name_size);
+    auto field_type = DataTypeFactory::instance().get(field_type_name);
     field_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
 }
 
@@ -323,15 +317,15 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
     const auto & variant_column = dynamic_column.getVariantColumn();
     auto global_discr = variant_column.globalDiscriminatorAt(row_num);
 
-    /// Serialize NULL as Nothing type with no value.
-    if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-    {
-        encodeDataType(std::make_shared<DataTypeNothing>(), ostr);
+    UInt8 null_bit = global_discr == ColumnVariant::NULL_DISCRIMINATOR;
+    writeBinary(null_bit, ostr);
+    if (null_bit)
         return;
-    }
 
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(global_discr);
-    encodeDataType(variant_type, ostr);
+    const auto & variant_type_name = variant_info.variant_names[global_discr];
+    writeVarUInt(variant_type_name.size(), ostr);
+    writeString(variant_type_name, ostr);
     variant_type->getDefaultSerialization()->serializeBinary(variant_column.getVariantByGlobalDiscriminator(global_discr), variant_column.offsetAt(row_num), ostr, settings);
 }
 
@@ -352,23 +346,30 @@ static void deserializeVariant(
 void SerializationDynamic::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     auto & dynamic_column = assert_cast<ColumnDynamic &>(column);
-    auto variant_type = decodeDataType(istr);
-    if (isNothing(variant_type))
+    UInt8 null_bit;
+    readBinary(null_bit, istr);
+    if (null_bit)
     {
         dynamic_column.insertDefault();
         return;
     }
 
-    auto variant_type_name = variant_type->getName();
+    size_t variant_type_name_size;
+    readVarUInt(variant_type_name_size, istr);
+    String variant_type_name(variant_type_name_size, 0);
+    istr.readStrict(variant_type_name.data(), variant_type_name_size);
+
     const auto & variant_info = dynamic_column.getVariantInfo();
     auto it = variant_info.variant_name_to_discriminator.find(variant_type_name);
     if (it != variant_info.variant_name_to_discriminator.end())
     {
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(it->second);
         deserializeVariant(dynamic_column.getVariantColumn(), variant_type, it->second, istr, [&settings](const ISerialization & serialization, IColumn & variant, ReadBuffer & buf){ serialization.deserializeBinary(variant, buf, settings); });
         return;
     }
 
     /// We don't have this variant yet. Let's try to add it.
+    auto variant_type = DataTypeFactory::instance().get(variant_type_name);
     if (dynamic_column.addNewVariant(variant_type))
     {
         auto discr = variant_info.variant_name_to_discriminator.at(variant_type_name);

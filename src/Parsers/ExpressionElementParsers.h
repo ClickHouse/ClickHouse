@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** The SELECT subquery, in parentheses.
+/** The SELECT subquery is in parenthesis.
   */
 class ParserSubquery : public IParserBase
 {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/SettingsEnums.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/IInterpreter.h>

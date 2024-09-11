@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
@@ -196,16 +197,6 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
         UInt64 idx;
         in >> idx >> "\n";
         files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
-
-        ReadBufferFromFile header_buffer(files.back());
-        const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
-        total_bytes += total_bytes;
-
-        if (header.rows)
-        {
-            total_rows += header.rows;
-            total_bytes += header.bytes;
-        }
     }
 
     recovered = true;
@@ -241,8 +232,9 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                connection = std::move(result.front().entry);
+                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
+                connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
                 LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
@@ -299,8 +291,9 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-            auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            auto connection = std::move(result.front().entry);
+            auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+            auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
+            auto connection = std::move(result.entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
             RemoteInserter remote(*connection, timeouts,

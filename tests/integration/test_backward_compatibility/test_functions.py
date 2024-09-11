@@ -67,6 +67,11 @@ def test_aggregate_states(start_cluster):
             f"select hex(initializeAggregation('{function_name}State', 'foo'))"
         ).strip()
 
+    def get_final_value_unhex(node, function_name, value):
+        return node.query(
+            f"select finalizeAggregation(unhex('{value}')::AggregateFunction({function_name}, String))"
+        ).strip()
+
     for aggregate_function in aggregate_functions:
         logging.info("Checking %s", aggregate_function)
 
@@ -95,13 +100,39 @@ def test_aggregate_states(start_cluster):
 
         upstream_state = get_aggregate_state_hex(upstream, aggregate_function)
         if upstream_state != backward_state:
-            logging.info(
-                "Failed %s, %s (backward) != %s (upstream)",
-                aggregate_function,
-                backward_state,
-                upstream_state,
-            )
-            failed += 1
+            allowed_changes_if_result_is_the_same = ["anyHeavy"]
+
+            if aggregate_function in allowed_changes_if_result_is_the_same:
+                backward_final_from_upstream = get_final_value_unhex(
+                    backward, aggregate_function, upstream_state
+                )
+                upstream_final_from_backward = get_final_value_unhex(
+                    upstream, aggregate_function, backward_state
+                )
+
+                if backward_final_from_upstream == upstream_final_from_backward:
+                    logging.info(
+                        "OK %s (but different intermediate states)", aggregate_function
+                    )
+                    passed += 1
+                else:
+                    logging.error(
+                        "Failed %s, Intermediate: %s (backward) != %s (upstream). Final from intermediate: %s (backward from upstream state) != %s (upstream from backward state)",
+                        aggregate_function,
+                        backward_state,
+                        upstream_state,
+                        backward_final_from_upstream,
+                        upstream_final_from_backward,
+                    )
+                    failed += 1
+            else:
+                logging.error(
+                    "Failed %s, %s (backward) != %s (upstream)",
+                    aggregate_function,
+                    backward_state,
+                    upstream_state,
+                )
+                failed += 1
         else:
             logging.info("OK %s", aggregate_function)
             passed += 1

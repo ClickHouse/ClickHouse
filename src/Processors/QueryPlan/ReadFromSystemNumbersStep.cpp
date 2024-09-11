@@ -12,7 +12,6 @@
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Core/Types.h>
 
 
@@ -411,7 +410,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
-    , query_info_limit(query_info.trivial_limit)
+    , limit(query_info.limit)
     , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
@@ -600,7 +599,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         {
             auto rows_appr = itemCountInRange(numbers_storage.offset, *numbers_storage.limit, numbers_storage.step);
             if (limit > 0 && limit < rows_appr)
-                rows_appr = query_info_limit;
+                rows_appr = limit;
             source->addTotalRowsApprox(rows_appr);
         }
 

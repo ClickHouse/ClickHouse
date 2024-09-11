@@ -3,7 +3,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
-#include <Core/Settings.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

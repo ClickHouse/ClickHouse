@@ -15,22 +15,26 @@ from commit_status_helper import (
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
-from ci_config import CI
-from ci_utils import Utils
+from lambda_shared_package.lambda_shared.pr import (
+    CATEGORY_TO_LABEL,
+    TRUSTED_CONTRIBUTORS,
+    Labels,
+    check_pr_description,
+)
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS, StatusType
-
+from ci_config import CI
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
 }
 
-OK_SKIP_LABELS = {CI.Labels.RELEASE, CI.Labels.PR_BACKPORT, CI.Labels.PR_CHERRYPICK}
+OK_SKIP_LABELS = {Labels.RELEASE, Labels.PR_BACKPORT, Labels.PR_CHERRYPICK}
 PR_CHECK = "PR Check"
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
-    if pr_user_login.lower() in CI.TRUSTED_CONTRIBUTORS:
+    if pr_user_login.lower() in TRUSTED_CONTRIBUTORS:
         logging.info("User '%s' is trusted", pr_user_login)
         return True
 
@@ -59,13 +63,13 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
 
-    if CI.Labels.CAN_BE_TESTED not in pr_info.labels and not pr_is_by_trusted_user(
+    if Labels.CAN_BE_TESTED not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
         logging.info(
             "PRs by untrusted users need the '%s' label - "
             "please contact a member of the core team",
-            CI.Labels.CAN_BE_TESTED,
+            Labels.CAN_BE_TESTED,
         )
         return False, "Needs 'can be tested' label"
 
@@ -92,32 +96,30 @@ def main():
     commit = get_commit(gh, pr_info.sha)
     status = SUCCESS  # type: StatusType
 
-    description_error, category = Utils.check_pr_description(
-        pr_info.body, GITHUB_REPOSITORY
-    )
+    description_error, category = check_pr_description(pr_info.body, GITHUB_REPOSITORY)
     pr_labels_to_add = []
     pr_labels_to_remove = []
     if (
-        category in CI.CATEGORY_TO_LABEL
-        and CI.CATEGORY_TO_LABEL[category] not in pr_info.labels
+        category in CATEGORY_TO_LABEL
+        and CATEGORY_TO_LABEL[category] not in pr_info.labels
     ):
-        pr_labels_to_add.append(CI.CATEGORY_TO_LABEL[category])
+        pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
 
     for label in pr_info.labels:
         if (
-            label in CI.CATEGORY_TO_LABEL.values()
-            and category in CI.CATEGORY_TO_LABEL
-            and label != CI.CATEGORY_TO_LABEL[category]
+            label in CATEGORY_TO_LABEL.values()
+            and category in CATEGORY_TO_LABEL
+            and label != CATEGORY_TO_LABEL[category]
         ):
             pr_labels_to_remove.append(label)
 
     if pr_info.has_changes_in_submodules():
-        pr_labels_to_add.append(CI.Labels.SUBMODULE_CHANGED)
-    elif CI.Labels.SUBMODULE_CHANGED in pr_info.labels:
-        pr_labels_to_remove.append(CI.Labels.SUBMODULE_CHANGED)
+        pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
+    elif Labels.SUBMODULE_CHANGED in pr_info.labels:
+        pr_labels_to_remove.append(Labels.SUBMODULE_CHANGED)
 
-    if any(label in CI.Labels.AUTO_BACKPORT for label in pr_labels_to_add):
-        backport_labels = [CI.Labels.MUST_BACKPORT, CI.Labels.MUST_BACKPORT_CLOUD]
+    if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
+        backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
         pr_labels_to_add += [
             label for label in backport_labels if label not in pr_info.labels
         ]
@@ -162,15 +164,15 @@ def main():
 
     # 2. Then we check if the documentation is not created to fail the Mergeable check
     if (
-        CI.Labels.PR_FEATURE in pr_info.labels
+        Labels.PR_FEATURE in pr_info.labels
         and not pr_info.has_changes_in_documentation()
     ):
         print(
-            f"::error ::The '{CI.Labels.PR_FEATURE}' in the labels, "
+            f"::error ::The '{Labels.PR_FEATURE}' in the labels, "
             "but there's no changed documentation"
         )
         status = FAILURE
-        description = f"expect adding docs for {CI.Labels.PR_FEATURE}"
+        description = f"expect adding docs for {Labels.PR_FEATURE}"
     # 3. But we allow the workflow to continue
 
     # 4. And post only a single commit status on a failure

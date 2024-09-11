@@ -3,7 +3,6 @@
 
 #include <Common/quoteString.h>
 #include <Common/escapeString.h>
-#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>

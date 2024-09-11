@@ -5,7 +5,6 @@
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -105,16 +104,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             connection_entries.emplace_back(std::move(result.entry));
         }
-        else
-        {
-            chassert(!fail_message.empty());
-            if (result.entry.isNull())
-                LOG_DEBUG(log, "Failed to connect to replica {}. {}", pool->getAddress(), fail_message);
-            else
-                LOG_DEBUG(log, "Replica is not usable for remote query execution: {}. {}", pool->getAddress(), fail_message);
-        }
 
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
 
@@ -136,7 +127,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
     {
-        auto res = std::make_unique<MultiplexedConnections>(connection, context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -157,7 +148,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 {
     create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
     {
-        auto res = std::make_unique<MultiplexedConnections>(connection_ptr, context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -178,7 +169,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 {
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
     {
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -243,7 +234,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
         }
 
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
         if (extension && extension->replica_info)
             res->setReplicaInfo(*extension->replica_info);
         return res;
@@ -908,10 +899,4 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     std::lock_guard guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
 }
-
-bool RemoteQueryExecutor::needToSkipUnavailableShard() const
-{
-    return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
-}
-
 }

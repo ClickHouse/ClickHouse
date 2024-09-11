@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
@@ -260,10 +259,7 @@ try
                 ++it;
             }
 
-            auto result = Chunk(std::move(res_columns), rows_read);
-            if (add_part_level)
-                result.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
-            return result;
+            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
         }
     }
     else

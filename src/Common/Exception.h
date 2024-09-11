@@ -25,6 +25,8 @@ namespace DB
 
 class AtomicLogger;
 
+[[noreturn]] void abortOnFailedAssertion(const String & description);
+
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
 
@@ -165,8 +167,6 @@ protected:
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
-[[noreturn]] void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size);
-[[noreturn]] void abortOnFailedAssertion(const String & description);
 
 std::string getExceptionStackTraceString(const std::exception & e);
 std::string getExceptionStackTraceString(std::exception_ptr e);
@@ -243,15 +243,6 @@ private:
     const char * name() const noexcept override { return "DB::ErrnoException"; }
     const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
-
-/// An exception to use in unit tests to test interfaces.
-/// It is distinguished from others, so it does not have to be logged.
-class TestException : public Exception
-{
-public:
-    using Exception::Exception;
-};
-
 
 using Exceptions = std::vector<std::exception_ptr>;
 

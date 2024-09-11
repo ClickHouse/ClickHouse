@@ -4,7 +4,6 @@
 #include <Columns/ColumnSet.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -25,7 +24,6 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <TableFunctions/TableFunctionFactory.h>
-
 #include <unordered_map>
 
 

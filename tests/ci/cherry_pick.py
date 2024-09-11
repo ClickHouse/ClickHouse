@@ -38,7 +38,7 @@ from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from ci_config import Labels
+from lambda_shared_package.lambda_shared.pr import Labels
 from ssh import SSHKey
 
 

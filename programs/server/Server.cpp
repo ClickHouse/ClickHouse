@@ -11,7 +11,6 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
-#include <Common/Jemalloc.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -68,7 +67,6 @@
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -135,6 +133,10 @@
 #    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
+#endif
+
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
@@ -174,9 +176,33 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
+#if USE_JEMALLOC
+static bool jemallocOptionEnabled(const char *name)
+{
+    bool value;
+    size_t size = sizeof(value);
+
+    if (mallctl(name, reinterpret_cast<void *>(&value), &size, /* newp= */ nullptr, /* newlen= */ 0))
+        throw Poco::SystemException("mallctl() failed");
+
+    return value;
+}
+#else
+static bool jemallocOptionEnabled(const char *) { return false; }
+#endif
+
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
+
+    if (jemallocOptionEnabled("opt.background_thread"))
+    {
+        LOG_ERROR(&app.logger(),
+            "jemalloc.background_thread was requested, "
+            "however ClickHouse uses percpu_arena and background_thread most likely will not give any benefits, "
+            "and also background_thread is not compatible with ClickHouse watchdog "
+            "(that can be disabled with CLICKHOUSE_WATCHDOG_ENABLE=0)");
+    }
 
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
@@ -588,54 +614,6 @@ static void sanityChecks(Server & server)
     }
 }
 
-void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, Poco::Logger * log)
-{
-    try
-    {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys("startup_scripts", keys);
-
-        SetResultDetailsFunc callback;
-        for (const auto & key : keys)
-        {
-            std::string full_prefix = "startup_scripts." + key;
-
-            if (config.has(full_prefix + ".condition"))
-            {
-                auto condition = config.getString(full_prefix + ".condition");
-                auto condition_read_buffer = ReadBufferFromString(condition);
-                auto condition_write_buffer = WriteBufferFromOwnString();
-
-                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
-                executeQuery(condition_read_buffer, condition_write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
-
-                auto result = condition_write_buffer.str();
-
-                if (result != "1\n" && result != "true\n")
-                {
-                    if (result != "0\n" && result != "false\n")
-                        context->addWarningMessage(fmt::format("The condition query returned `{}`, which can't be interpreted as a boolean (`0`, `false`, `1`, `true`). Will skip this query.", result));
-
-                    continue;
-                }
-
-                LOG_DEBUG(log, "Condition is true, will execute the query next");
-            }
-
-            auto query = config.getString(full_prefix + ".query");
-            auto read_buffer = ReadBufferFromString(query);
-            auto write_buffer = WriteBufferFromOwnString();
-
-            LOG_DEBUG(log, "Executing query `{}`", query);
-            executeQuery(read_buffer, write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to parse startup scripts file");
-    }
-}
-
 static void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
     [[ maybe_unused ]] int server_logs_level)
@@ -675,35 +653,9 @@ static void initializeAzureSDKLogger(
 #endif
 }
 
-#if defined(SANITIZER)
-static std::vector<String> getSanitizerNames()
-{
-    std::vector<String> names;
-
-#if defined(ADDRESS_SANITIZER)
-    names.push_back("address");
-#endif
-#if defined(THREAD_SANITIZER)
-    names.push_back("thread");
-#endif
-#if defined(MEMORY_SANITIZER)
-    names.push_back("memory");
-#endif
-#if defined(UNDEFINED_BEHAVIOR_SANITIZER)
-    names.push_back("undefined behavior");
-#endif
-
-    return names;
-}
-#endif
-
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
-#endif
-
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
@@ -787,17 +739,7 @@ try
         global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
-    auto sanitizers = getSanitizerNames();
-
-    String log_message;
-    if (sanitizers.empty())
-        log_message = "sanitizer";
-    else if (sanitizers.size() == 1)
-        log_message = fmt::format("{} sanitizer", sanitizers.front());
-    else
-        log_message = fmt::format("sanitizers ({})", fmt::join(sanitizers, ", "));
-
-    global_context->addWarningMessage(fmt::format("Server was built with {}. It will work slowly.", log_message));
+    global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
 #if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
@@ -806,10 +748,11 @@ try
 
     const size_t physical_server_memory = getMemoryAmount();
 
-    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+    LOG_INFO(log, "Available RAM: {}; logical cores: {}; used cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
-        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-        std::thread::hardware_concurrency());
+        std::thread::hardware_concurrency(),
+        getNumberOfPhysicalCPUCores()  // on ARM processors it can show only enabled at current moment cores
+        );
 
 #if defined(__x86_64__)
     String cpu_info;
@@ -1060,8 +1003,6 @@ try
     StatusFile status{path / "status", StatusFile::write_full_info};
 
     ServerUUID::load(path / "uuid", log);
-
-    PlacementInfo::PlacementInfo::instance().initialize(config());
 
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
@@ -1440,8 +1381,8 @@ try
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
-    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
+    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
+    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
@@ -1467,26 +1408,14 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
 
     std::vector<std::string> extra_paths = {include_from_path};
     if (!cert_path.empty())
         extra_paths.emplace_back(cert_path);
     if (!key_path.empty())
         extra_paths.emplace_back(key_path);
-
-    Poco::Util::AbstractConfiguration::Keys protocols;
-    config().keys("protocols", protocols);
-    for (const auto & protocol : protocols)
-    {
-        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
-        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
-        if (!cert_path.empty())
-            extra_paths.emplace_back(cert_path);
-        if (!key_path.empty())
-            extra_paths.emplace_back(key_path);
-    }
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
@@ -1600,15 +1529,13 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings.max_dictionary_num_to_warn);
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
-            /// Only for system.server_settings
-            global_context->setConfigReloaderInterval(new_server_settings.config_reload_interval_ms);
 
             SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
+                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfPhysicalCPUCores();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
@@ -1730,7 +1657,7 @@ try
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
-            CertificateReloader::instance().tryReloadAll(*config);
+            CertificateReloader::instance().tryLoad(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
 
@@ -1764,7 +1691,8 @@ try
 
             /// Must be the last.
             latest_config = config;
-        });
+        },
+        /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     const auto listen_hosts = getListenHosts(config());
     const auto interserver_listen_hosts = getInterserverListenHosts(config());
@@ -1875,6 +1803,11 @@ try
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
 #endif
 
+    }
+
+    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+    {
+        PlacementInfo::PlacementInfo::instance().initialize(config());
     }
 
     {
@@ -2039,11 +1972,6 @@ try
         /// otherwise there is a race condition between the system database initialization
         /// and creation of new tables in the database.
         waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
-
-        /// Startup scripts can depend on the system log tables.
-        if (config().has("startup_scripts") && !server_settings.prepare_system_log_tables_on_startup.changed)
-            global_context->setServerSetting("prepare_system_log_tables_on_startup", true);
-
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -2192,9 +2120,6 @@ try
         load_metadata_tasks.clear();
         load_metadata_tasks.shrink_to_fit();
 
-        if (config().has("startup_scripts"))
-            loadStartupScripts(config(), global_context, log);
-
         {
             std::lock_guard lock(servers_lock);
             for (auto & server : servers)
@@ -2213,7 +2138,6 @@ try
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings.cannot_allocate_thread_fault_injection_probability);
 
 #if USE_GWP_ASAN
-        GWPAsan::initFinished();
         GWPAsan::setForceSampleProbability(server_settings.gwp_asan_force_sample_probability);
 #endif
 
@@ -2732,7 +2656,8 @@ void Server::createInterserverServers(
 
 void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
-    const ServerType & server_type) const
+    const ServerType & server_type
+) const
 {
     LoggerRawPtr log = &logger();
 

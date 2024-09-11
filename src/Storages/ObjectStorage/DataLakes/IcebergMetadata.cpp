@@ -3,7 +3,7 @@
 #if USE_AWS_S3 && USE_AVRO
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
+
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>

@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>

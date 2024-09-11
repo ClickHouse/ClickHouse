@@ -245,8 +245,6 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
             writeBinaryLittleEndian(sum.uncompressed_hash, out);
         }
     }
-
-    out.finalize();
 }
 
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)

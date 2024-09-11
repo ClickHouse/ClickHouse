@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_INDEX;
     extern const int LOGICAL_ERROR;
 }
 
@@ -286,7 +286,7 @@ std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name) c
 String DataTypeTuple::getNameByPosition(size_t i) const
 {
     if (i == 0 || i > names.size())
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index of tuple element ({}) is out range ([1, {}])", i, names.size());
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of tuple element ({}) if out range ([1, {}])", i, names.size());
 
     return names[i - 1];
 }

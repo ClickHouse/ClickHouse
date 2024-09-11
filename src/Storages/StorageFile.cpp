@@ -25,6 +25,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
@@ -52,8 +53,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
-
-#include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -368,21 +367,12 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     }
     else if (path.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(path))
-        {
-            std::error_code error;
-            size_t size = fs::file_size(path, error);
-            if (!error)
-                total_bytes_to_read += size;
+        std::error_code error;
+        size_t size = fs::file_size(path, error);
+        if (!error)
+            total_bytes_to_read += size;
 
-            paths.push_back(path);
-        }
-        else
-        {
-            /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(path / fs::path("*"), total_bytes_to_read);
-            can_be_directory = false;
-        }
+        paths.push_back(path);
     }
     else
     {
@@ -427,9 +417,7 @@ namespace
                 {
                     for (const auto & path : paths)
                     {
-                        auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_path && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_path))
+                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
                         {
                             format = format_from_path;
                             break;
@@ -718,9 +706,7 @@ namespace
                     /// If format is unknown we can try to determine it by the file name.
                     if (!format)
                     {
-                        auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_file && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file))
+                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
                             format = format_from_file;
                     }
 
@@ -1793,19 +1779,18 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
         if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onCancel() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        cancelBuffers();
-        releaseBuffers();
+        finalize();
         cancelled = true;
     }
 
@@ -1819,18 +1804,18 @@ public:
         catch (...)
         {
             /// An exception context is needed to proper delete write buffers without finalization
-            releaseBuffers();
+            release();
         }
     }
 
     void onFinish() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalizeBuffers();
+        finalize();
     }
 
 private:
-    void finalizeBuffers()
+    void finalize()
     {
         if (!writer)
             return;
@@ -1843,25 +1828,17 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            releaseBuffers();
+            release();
             throw;
         }
 
         write_buf->finalize();
     }
 
-    void releaseBuffers()
+    void release()
     {
         writer.reset();
         write_buf.reset();
-    }
-
-    void cancelBuffers()
-    {
-        if (writer)
-            writer->cancel();
-        if (write_buf)
-            write_buf->cancel();
     }
 
     StorageMetadataPtr metadata_snapshot;
@@ -2203,7 +2180,11 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
-                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
+                    StorageFile::parseFileSource(
+                        literal->value.get<String>(),
+                        source_path,
+                        storage_args.path_to_archive,
+                        factory_args.getLocalContext()->getSettingsRef().allow_archive_path_syntax);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -2230,8 +2211,14 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
     return schema_cache;
 }
 
-void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax)
 {
+    if (!allow_archive_path_syntax)
+    {
+        filename = std::move(source);
+        return;
+    }
+
     size_t pos = source.find("::");
     if (pos == String::npos)
     {
@@ -2243,18 +2230,21 @@ void StorageFile::parseFileSource(String source, String & filename, String & pat
     while (path_to_archive_view.ends_with(' '))
         path_to_archive_view.remove_suffix(1);
 
-    if (path_to_archive_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
-
-    path_to_archive = path_to_archive_view;
-
     std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.front() == ' ')
+    while (filename_view.starts_with(' '))
         filename_view.remove_prefix(1);
 
-    if (filename_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains characters that could mean glob expression
+    if (filename_view.empty() || path_to_archive_view.empty()
+        || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+    {
+        filename = std::move(source);
+        return;
+    }
 
+    path_to_archive = path_to_archive_view;
     filename = filename_view;
 }
 

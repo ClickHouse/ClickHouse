@@ -166,7 +166,7 @@ struct SelectQueryInfo
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     QueryTreeNodePtr table_expression;
 
-    bool current_table_chosen_for_reading_with_parallel_replicas = false;
+    bool analyzer_can_use_parallel_replicas_on_follower = false;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -229,8 +229,8 @@ struct SelectQueryInfo
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
-    // If not 0, that means it's a trivial limit query.
-    UInt64 trivial_limit = 0;
+    // If limit is not 0, that means it's a trivial limit query.
+    UInt64 limit = 0;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;

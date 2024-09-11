@@ -5,7 +5,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>

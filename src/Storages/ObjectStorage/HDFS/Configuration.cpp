@@ -2,7 +2,6 @@
 
 #if USE_HDFS
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>

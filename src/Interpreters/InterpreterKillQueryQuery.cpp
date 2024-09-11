@@ -16,7 +16,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>

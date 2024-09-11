@@ -115,7 +115,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
-        optimizePrimaryKeyConditionAndLimit(stack);
+        optimizePrimaryKeyCondition(stack);
 
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
@@ -216,7 +216,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
              optimization_settings.force_projection_name);
 }
 
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});

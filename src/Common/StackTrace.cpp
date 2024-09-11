@@ -545,7 +545,7 @@ std::string StackTrace::toString() const
     return toStringCached(frame_pointers, offset, size);
 }
 
-std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offset, size_t size)
+std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size_t size)
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 

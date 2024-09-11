@@ -5,7 +5,6 @@ SET optimize_using_constraints = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_substitute_columns = 1;
 SET optimize_append_index = 1;
-SET optimize_trivial_insert_select = 1;
 
 DROP TABLE IF EXISTS column_swap_test_test;
 

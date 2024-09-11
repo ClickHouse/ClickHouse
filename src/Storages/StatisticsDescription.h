@@ -13,7 +13,6 @@ enum class StatisticsType : UInt8
 {
     TDigest = 0,
     Uniq = 1,
-    CountMinSketch = 2,
 
     Max = 63,
 };

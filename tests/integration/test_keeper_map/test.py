@@ -104,24 +104,3 @@ def test_keeper_map_without_zk(started_cluster):
     node.query("DETACH TABLE test_keeper_map_without_zk")
 
     client.stop()
-
-
-def test_keeper_map_with_failed_drop(started_cluster):
-    run_query(
-        "CREATE TABLE test_keeper_map_with_failed_drop (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_map_with_failed_drop') PRIMARY KEY(key);"
-    )
-
-    run_query("INSERT INTO test_keeper_map_with_failed_drop VALUES (1, 11)")
-    run_query("SYSTEM ENABLE FAILPOINT keepermap_fail_drop_data")
-    node.query("DROP TABLE test_keeper_map_with_failed_drop SYNC")
-
-    zk_client = get_genuine_zk()
-    assert (
-        zk_client.get("/test_keeper_map/test_keeper_map_with_failed_drop/data")
-        is not None
-    )
-
-    run_query("SYSTEM DISABLE FAILPOINT keepermap_fail_drop_data")
-    run_query(
-        "CREATE TABLE test_keeper_map_with_failed_drop_another (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_map_with_failed_drop') PRIMARY KEY(key);"
-    )

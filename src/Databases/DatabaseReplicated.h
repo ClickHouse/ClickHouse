@@ -86,8 +86,6 @@ public:
 
     std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
 
-    void renameDatabase(ContextPtr query_context, const String & new_name) override;
-
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:
@@ -107,17 +105,15 @@ private:
     void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
-    void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
-
 
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
 
-    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
+    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr);
 
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
-    ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const;
+    ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
     String readMetadataFile(const String & table_name) const;
 
     ClusterPtr getClusterImpl(bool all_groups = false) const;
@@ -132,11 +128,6 @@ private:
 
     UInt64 getMetadataHash(const String & table_name) const;
     bool checkDigestValid(const ContextPtr & local_context, bool debug_check = true) const TSA_REQUIRES(metadata_mutex);
-
-    /// For debug purposes only, don't use in production code
-    void dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const;
-    void dumpTablesInZooKeeperForDebugOnly() const;
-    void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
 
     void waitDatabaseStarted() const override;
     void stopLoading() override;
@@ -155,7 +146,6 @@ private:
     std::atomic_bool is_recovering = false;
     std::atomic_bool ddl_worker_initialized = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
-    std::mutex ddl_worker_mutex;
     UInt32 max_log_ptr_at_creation = 0;
 
     /// Usually operation with metadata are single-threaded because of the way replication works,

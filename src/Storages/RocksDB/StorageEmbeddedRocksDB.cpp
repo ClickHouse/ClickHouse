@@ -28,7 +28,6 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <IO/SharedThreadPools.h>
@@ -314,8 +313,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     Block block;
     while (executor.pull(block))
     {
-        auto chunk = Chunk(block.getColumns(), block.rows());
-        sink->consume(chunk);
+        sink->consume(Chunk{block.getColumns(), block.rows()});
     }
 }
 

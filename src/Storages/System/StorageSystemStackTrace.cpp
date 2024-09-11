@@ -25,7 +25,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

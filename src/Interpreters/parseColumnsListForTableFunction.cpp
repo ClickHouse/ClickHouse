@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -21,18 +20,6 @@ extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 extern const int ILLEGAL_COLUMN;
 
 }
-
-DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings& settings)
-        : allow_suspicious_low_cardinality_types(settings.allow_suspicious_low_cardinality_types)
-        , allow_experimental_object_type(settings.allow_experimental_object_type)
-        , allow_suspicious_fixed_string_types(settings.allow_suspicious_fixed_string_types)
-        , allow_experimental_variant_type(settings.allow_experimental_variant_type)
-        , allow_suspicious_variant_types(settings.allow_suspicious_variant_types)
-        , validate_nested_types(settings.validate_experimental_and_suspicious_types_inside_nested_types)
-        , allow_experimental_dynamic_type(settings.allow_experimental_dynamic_type)
-{
-}
-
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {

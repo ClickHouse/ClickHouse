@@ -3,8 +3,6 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include <Core/Settings.h>
-
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>

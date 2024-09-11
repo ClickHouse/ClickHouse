@@ -24,6 +24,12 @@ public:
 
     std::string getName() const override;
 
+    bool supportsSubcolumns() const override { return true; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
+
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 

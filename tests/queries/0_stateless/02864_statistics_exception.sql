@@ -1,55 +1,57 @@
--- Tests creating/dropping/materializing statistics produces the right exceptions.
+DROP TABLE IF EXISTS t1;
 
-DROP TABLE IF EXISTS tab;
-
--- Can't create statistics when allow_experimental_statistics = 0
-CREATE TABLE tab
+CREATE TABLE t1 
 (
-    a Float64 STATISTICS(tdigest)
-) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+    a Float64 STATISTICS(tdigest),
+    b Int64 STATISTICS(tdigest),
+    pk String,
+) Engine = MergeTree() ORDER BY pk; -- { serverError INCORRECT_QUERY }
 
 SET allow_experimental_statistics = 1;
 
--- The same type of statistics can't exist more than once on a column
-CREATE TABLE tab
+CREATE TABLE t1 
 (
-    a Float64 STATISTICS(tdigest, tdigest)
-) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+    a Float64 STATISTICS(tdigest),
+    b Int64,
+    pk String STATISTICS(tdigest),
+) Engine = MergeTree() ORDER BY pk; -- { serverError ILLEGAL_STATISTICS }
 
--- Unknown statistics types are rejected
-CREATE TABLE tab
+CREATE TABLE t1 
 (
-    a Float64 STATISTICS(no_statistics_type)
-) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+    a Float64 STATISTICS(tdigest, tdigest(10)),
+    b Int64,
+) Engine = MergeTree() ORDER BY pk; -- { serverError INCORRECT_QUERY }
 
--- tDigest statistics can only be created on numeric columns
-CREATE TABLE tab
+CREATE TABLE t1 
 (
-    a String STATISTICS(tdigest),
-) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+    a Float64 STATISTICS(xyz),
+    b Int64,
+) Engine = MergeTree() ORDER BY pk; -- { serverError INCORRECT_QUERY }
 
-CREATE TABLE tab
+CREATE TABLE t1 
 (
     a Float64,
-    b String
-) Engine = MergeTree() ORDER BY tuple();
+    b Int64,
+    pk String,
+) Engine = MergeTree() ORDER BY pk; 
 
-ALTER TABLE tab ADD STATISTICS a TYPE no_statistics_type; -- { serverError INCORRECT_QUERY }
-ALTER TABLE tab ADD STATISTICS a TYPE tdigest;
-ALTER TABLE tab ADD STATISTICS IF NOT EXISTS a TYPE tdigest;
-ALTER TABLE tab ADD STATISTICS a TYPE tdigest; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE tab MODIFY STATISTICS a TYPE tdigest;
+ALTER TABLE t1 ADD STATISTICS a TYPE xyz; -- { serverError INCORRECT_QUERY }
+ALTER TABLE t1 ADD STATISTICS a TYPE tdigest;
+ALTER TABLE t1 ADD STATISTICS IF NOT EXISTS a TYPE tdigest;
+ALTER TABLE t1 ADD STATISTICS a TYPE tdigest; -- { serverError ILLEGAL_STATISTICS }
 -- Statistics can be created only on integer columns
-ALTER TABLE tab ADD STATISTICS b TYPE tdigest; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE tab DROP STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE tab DROP STATISTICS a;
-ALTER TABLE tab DROP STATISTICS IF EXISTS a;
-ALTER TABLE tab CLEAR STATISTICS a; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE tab CLEAR STATISTICS IF EXISTS a;
-ALTER TABLE tab MATERIALIZE STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE t1 MODIFY STATISTICS a TYPE tdigest;
+ALTER TABLE t1 ADD STATISTICS pk TYPE tdigest; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE t1 DROP STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE t1 DROP STATISTICS a;
+ALTER TABLE t1 DROP STATISTICS IF EXISTS a;
+ALTER TABLE t1 CLEAR STATISTICS a; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE t1 CLEAR STATISTICS IF EXISTS a;
+ALTER TABLE t1 MATERIALIZE STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
 
-ALTER TABLE tab ADD STATISTICS a TYPE tdigest;
-ALTER TABLE tab MODIFY COLUMN a Float64 TTL toDateTime(b) + INTERVAL 1 MONTH;
-ALTER TABLE tab MODIFY COLUMN a Int64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t1 ADD STATISTICS a TYPE tdigest;
+ALTER TABLE t1 ADD STATISTICS b TYPE tdigest;
+ALTER TABLE t1 MODIFY COLUMN a Float64 TTL toDateTime(b) + INTERVAL 1 MONTH;
+ALTER TABLE t1 MODIFY COLUMN a Int64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
-DROP TABLE tab;
+DROP TABLE t1;

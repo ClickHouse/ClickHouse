@@ -7,53 +7,6 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
-class Labels:
-    PR_BUGFIX = "pr-bugfix"
-    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
-    CAN_BE_TESTED = "can be tested"
-    DO_NOT_TEST = "do not test"
-    MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
-    JEPSEN_TEST = "jepsen-test"
-    SKIP_MERGEABLE_CHECK = "skip mergeable check"
-    PR_BACKPORT = "pr-backport"
-    PR_BACKPORTS_CREATED = "pr-backports-created"
-    PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
-    PR_CHERRYPICK = "pr-cherrypick"
-    PR_CI = "pr-ci"
-    PR_FEATURE = "pr-feature"
-    PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
-    PR_SYNC_UPSTREAM = "pr-sync-upstream"
-    RELEASE = "release"
-    RELEASE_LTS = "release-lts"
-    SUBMODULE_CHANGED = "submodule changed"
-
-    # automatic backport for critical bug fixes
-    AUTO_BACKPORT = {"pr-critical-bugfix"}
-
-
-TRUSTED_CONTRIBUTORS = {
-    e.lower()
-    for e in [
-        "amosbird",
-        "azat",  # SEMRush
-        "bharatnc",  # Many contributions.
-        "cwurm",  # ClickHouse, Inc
-        "den-crane",  # Documentation contributor
-        "ildus",  # adjust, ex-pgpro
-        "nvartolomei",  # Seasoned contributor, CloudFlare
-        "taiyang-li",
-        "ucasFL",  # Amos Bird's friend
-        "thomoco",  # ClickHouse, Inc
-        "tonickkozlov",  # Cloudflare
-        "tylerhannan",  # ClickHouse, Inc
-        "tsolodov",  # ClickHouse, Inc
-        "justindeguzman",  # ClickHouse, Inc
-        "XuJia0210",  # ClickHouse, Inc
-    ]
-}
-
-
 class WorkflowStages(metaclass=WithIter):
     """
     Stages of GitHUb actions workflow
@@ -102,16 +55,10 @@ class Tags(metaclass=WithIter):
     CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_BUILDS = "ci_set_builds"
+    CI_SET_NON_REQUIRED = "ci_set_non_required"
+    CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
 
     libFuzzer = "libFuzzer"
-
-
-class WorkFlowNames(metaclass=WithIter):
-    """
-    CI WorkFlow Names for custom CI runs
-    """
-
-    JEPSEN = "JepsenWorkflow"
 
 
 class BuildNames(metaclass=WithIter):
@@ -266,12 +213,8 @@ class StatusNames(metaclass=WithIter):
 
 
 class SyncState(metaclass=WithIter):
-    PENDING = "awaiting sync"
-    # temporary state if GH does not know mergeable state
-    MERGE_UNKNOWN = "unknown state (might be auto recoverable)"
-    # changes cannot be pushed/merged to a sync branch
-    PUSH_FAILED = "push failed"
-    MERGE_CONFLICTS = "merge conflicts"
+    PENDING = "awaiting merge"
+    MERGE_FAILED = "merge failed"
     TESTING = "awaiting test results"
     TESTS_FAILED = "tests failed"
     COMPLETED = "completed"
@@ -337,12 +280,8 @@ class JobConfig:
 
     # GH Runner type (tag from @Runners)
     runner_type: str
-    # used in ci unittests for config validation
+    # used for config validation in ci unittests
     job_name_keyword: str = ""
-    # name of another job that (if provided) should be used to check if job was affected by the change or not (in CiCache.has_evidence(job=@reference_job_name) call)
-    # for example: "Stateless flaky check" can use reference_job_name="Stateless tests (release)". "Stateless flaky check" does not run on master
-    #   and there cannot be an evidence for it, so instead "Stateless tests (release)" job name can be used to check the evidence
-    reference_job_name: str = ""
     # builds required for the job (applicable for test jobs)
     required_builds: Optional[List[str]] = None
     # build config for the build job (applicable for builds)
@@ -359,8 +298,6 @@ class JobConfig:
     run_by_label: str = ""
     # to run always regardless of the job digest or/and label
     run_always: bool = False
-    # disables CI await for a given job
-    disable_await: bool = False
     # if the job needs to be run on the release branch, including master (building packages, docker server).
     # NOTE: Subsequent runs on the same branch with the similar digest are still considered skip-able.
     required_on_release_branch: bool = False
@@ -386,9 +323,6 @@ class JobConfig:
         assert self.required_builds
         return self.required_builds[0]
 
-    def has_digest(self) -> bool:
-        return self.digest != DigestConfig()
-
 
 class CommonJobConfigs:
     """
@@ -405,7 +339,6 @@ class CommonJobConfigs:
             ],
         ),
         runner_type=Runners.STYLE_CHECKER_ARM,
-        disable_await=True,
     )
     COMPATIBILITY_TEST = JobConfig(
         job_name_keyword="compatibility",
@@ -441,7 +374,7 @@ class CommonJobConfigs:
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=9000,
+        timeout=10800,
     )
     STATEFUL_TEST = JobConfig(
         job_name_keyword="stateful",
@@ -503,12 +436,7 @@ class CommonJobConfigs:
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
-        digest=DigestConfig(
-            include_paths=[
-                "./tests/ci/ast_fuzzer_check.py",
-            ],
-            docker=["clickhouse/fuzzer"],
-        ),
+        digest=DigestConfig(),
         run_command="ast_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,

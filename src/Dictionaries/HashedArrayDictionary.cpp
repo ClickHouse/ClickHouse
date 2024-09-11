@@ -2,7 +2,6 @@
 
 #include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>

@@ -13,11 +13,11 @@ private:
     /// To be able to deserialize Dynamic element as a subcolumn
     /// we need its type name and global discriminator.
     String dynamic_element_name;
-    bool is_null_map_subcolumn;
 
 public:
-    SerializationDynamicElement(const SerializationPtr & nested_, const String & dynamic_element_name_, bool is_null_map_subcolumn_ = false)
-        : SerializationWrapper(nested_), dynamic_element_name(dynamic_element_name_), is_null_map_subcolumn(is_null_map_subcolumn_)
+    SerializationDynamicElement(const SerializationPtr & nested_, const String & dynamic_element_name_)
+        : SerializationWrapper(nested_)
+        , dynamic_element_name(dynamic_element_name_)
     {
     }
 

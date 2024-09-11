@@ -6,7 +6,6 @@
 #include "ExternalDictionaryLibraryHandlerFactory.h"
 
 #include <Formats/FormatFactory.h>
-#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/BridgeProtocolVersion.h>

@@ -43,6 +43,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -60,20 +61,26 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -83,6 +90,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -290,6 +298,10 @@ VirtualColumnsDescription StorageDistributed::createVirtuals()
 
     desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "Deprecated. Use function shardNum instead");
 
+    /// Add virtual columns from table with Merge engine.
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of database which the row comes from");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
+
     return desc;
 }
 
@@ -308,7 +320,8 @@ StorageDistributed::StorageDistributed(
     const DistributedSettings & distributed_settings_,
     LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_,
-    ASTPtr remote_table_function_ptr_)
+    ASTPtr remote_table_function_ptr_,
+    bool is_remote_function_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
@@ -322,6 +335,7 @@ StorageDistributed::StorageDistributed(
     , relative_data_path(relative_data_path_)
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
+    , is_remote_function(is_remote_function_)
 {
     if (!distributed_settings.flush_on_detach && distributed_settings.background_insert_batch)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
@@ -373,38 +387,6 @@ StorageDistributed::StorageDistributed(
 }
 
 
-StorageDistributed::StorageDistributed(
-    const StorageID & id_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    ASTPtr remote_table_function_ptr_,
-    const String & cluster_name_,
-    ContextPtr context_,
-    const ASTPtr & sharding_key_,
-    const String & storage_policy_name_,
-    const String & relative_data_path_,
-    const DistributedSettings & distributed_settings_,
-    LoadingStrictnessLevel mode,
-    ClusterPtr owned_cluster_)
-    : StorageDistributed(
-        id_,
-        columns_,
-        constraints_,
-        String{},
-        String{},
-        String{},
-        cluster_name_,
-        context_,
-        sharding_key_,
-        storage_policy_name_,
-        relative_data_path_,
-        distributed_settings_,
-        mode,
-        std::move(owned_cluster_),
-        remote_table_function_ptr_)
-{
-}
-
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -418,7 +400,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     query_info.cluster = cluster;
 
-    if (!local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
+    if (!local_context->canUseParallelReplicasCustomKey(*cluster))
     {
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
@@ -488,7 +470,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (query_info.query_tree)
+    if (settings.allow_experimental_analyzer)
         optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
@@ -831,9 +813,7 @@ void StorageDistributed::read(
 
     SelectQueryInfo modified_query_info = query_info;
 
-    const auto & settings = local_context->getSettingsRef();
-
-    if (settings.allow_experimental_analyzer)
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         StorageID remote_storage_id = StorageID::createEmpty();
         if (!remote_table_function_ptr)
@@ -852,28 +832,31 @@ void StorageDistributed::read(
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
-
-        /// Return directly (with correct header) if no shard to query.
-        if (modified_query_info.getCluster()->getShardsInfo().empty())
-            return;
     }
     else
     {
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    }
 
+    if (!local_context->getSettingsRef().allow_experimental_analyzer)
+    {
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
             remote_database, remote_table, remote_table_function_ptr);
+    }
 
-        if (modified_query_info.getCluster()->getShardsInfo().empty())
-        {
-            Pipe pipe(std::make_shared<NullSource>(header));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
-            query_plan.addStep(std::move(read_from_pipe));
-
+    /// Return directly (with correct header) if no shard to query.
+    if (modified_query_info.getCluster()->getShardsInfo().empty())
+    {
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
             return;
-        }
+
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
+
+        return;
     }
 
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
@@ -884,8 +867,27 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
-        *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr()->columns);
+    const auto & settings = local_context->getSettingsRef();
+
+    ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
+    if (local_context->canUseParallelReplicasCustomKey(*modified_query_info.getCluster()))
+    {
+        if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
+        {
+            additional_shard_filter_generator =
+                [my_custom_key_ast = std::move(custom_key_ast),
+                 column_description = this->getInMemoryMetadataPtr()->columns,
+                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+                 custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
+                 custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
+                 context = local_context,
+                 replica_count = modified_query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
+            {
+                return getCustomKeyFilterForParallelReplica(
+                    replica_count, replica_num - 1, my_custom_key_ast, {custom_key_type, custom_key_range_lower, custom_key_range_upper}, column_description, context);
+            };
+        }
+    }
 
     ClusterProxy::executeQuery(
         query_plan,
@@ -900,8 +902,8 @@ void StorageDistributed::read(
         sharding_key_expr,
         sharding_key_column_name,
         distributed_settings,
-        shard_filter_generator,
-        /* is_remote_function= */ static_cast<bool>(owned_cluster));
+        additional_shard_filter_generator,
+        is_remote_function);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -1022,13 +1024,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         const auto & shard_info = shards_info[shard_index];
         if (shard_info.isLocal())
         {
-            InterpreterInsertQuery interpreter(
-                new_query,
-                query_context,
-                /* allow_materialized */ false,
-                /* no_squash */ false,
-                /* no_destination */ false,
-                /* async_isnert */ false);
+            InterpreterInsertQuery interpreter(new_query, query_context);
             pipeline.addCompletedPipeline(interpreter.execute().pipeline);
         }
         else

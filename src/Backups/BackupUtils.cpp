@@ -105,7 +105,7 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         auto new_query = query.clone();
         adjustCreateQueryForBackup(new_query, global_context);
         ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
-        create.resetUUIDs();
+        create.setUUID({});
         create.if_not_exists = false;
         return new_query;
     };

@@ -5,7 +5,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-#include <Core/SettingsEnums.h>
 
 namespace DB
 {

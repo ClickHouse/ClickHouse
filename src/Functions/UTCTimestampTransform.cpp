@@ -144,8 +144,8 @@ REGISTER_FUNCTION(UTCTimestampTransform)
 {
     factory.registerFunction<ToUTCTimestampFunction>();
     factory.registerFunction<FromUTCTimestampFunction>();
-    factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::CaseInsensitive);
 }
 
 }

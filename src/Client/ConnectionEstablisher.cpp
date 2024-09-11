@@ -1,7 +1,6 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
-#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -9,7 +8,6 @@ namespace ProfileEvents
     extern const Event DistributedConnectionUsable;
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
-    extern const Event DistributedConnectionFailTry;
 }
 
 namespace DB
@@ -99,8 +97,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     }
     catch (const Exception & e)
     {
-        ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
-
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
             && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
             throw;

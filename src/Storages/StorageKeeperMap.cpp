@@ -8,7 +8,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <Core/ServerUUID.h>
-#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -37,7 +36,6 @@
 
 #include <Common/Base64.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
@@ -64,11 +62,6 @@
 
 namespace DB
 {
-
-namespace FailPoints
-{
-    extern const char keepermap_fail_drop_data[];
-}
 
 namespace ErrorCodes
 {
@@ -126,10 +119,10 @@ public:
 
     std::string getName() const override { return "StorageKeeperMapSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         auto rows = chunk.getNumRows();
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
         WriteBufferFromOwnString wb_key;
         WriteBufferFromOwnString wb_value;
@@ -417,16 +410,18 @@ StorageKeeperMap::StorageKeeperMap(
 
             auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
-            /// A table on the same Keeper path already exists, we just appended our table id to subscribe as a new replica
-            /// We still don't know if the table matches the expected metadata so table_is_valid is not changed
-            /// It will be checked lazily on the first operation
-            if (code == Coordination::Error::ZOK)
-                return;
-
-            if (code != Coordination::Error::ZNONODE)
+            // tables_path was removed with drop
+            if (code == Coordination::Error::ZNONODE)
+            {
+                LOG_INFO(log, "Metadata nodes were removed by another server, will retry");
+                continue;
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
                 throw zkutil::KeeperException(code, "Failed to create table on path {} because a table with same UUID already exists", zk_root_path);
+            }
 
-            /// ZNONODE means we dropped zk_tables_path but didn't finish drop completely
+            return;
         }
 
         if (client->exists(zk_dropped_path))
@@ -477,7 +472,6 @@ StorageKeeperMap::StorageKeeperMap(
 
 
         table_is_valid = true;
-        /// we are the first table created for the specified Keeper path, i.e. we are the first replica
         return;
     }
 
@@ -566,10 +560,6 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
 bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
 {
-    fiu_do_on(FailPoints::keepermap_fail_drop_data,
-    {
-        throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
-    });
     zookeeper->removeChildrenRecursive(zk_data_path);
 
     bool completely_removed = false;
@@ -1258,10 +1248,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     Block block;
     while (executor.pull(block))
-    {
-        auto chunk = Chunk(block.getColumns(), block.rows());
-        sink->consume(chunk);
-    }
+        sink->consume(Chunk{block.getColumns(), block.rows()});
 
     sink->finalize<true>(strict);
 }

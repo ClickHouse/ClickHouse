@@ -5,7 +5,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/Settings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -68,7 +67,7 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
-    virtual bool isReplicated() const = 0;
+    virtual bool supportsPeriodicUpdate() const = 0;
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -90,7 +89,7 @@ public:
 
     ~LocalStorage() override = default;
 
-    bool isReplicated() const override { return false; }
+    bool supportsPeriodicUpdate() const override { return false; }
 
     std::vector<std::string> list() const override
     {
@@ -226,7 +225,7 @@ public:
 
     ~ZooKeeperStorage() override = default;
 
-    bool isReplicated() const override { return true; }
+    bool supportsPeriodicUpdate() const override { return true; }
 
     /// Return true if children changed.
     bool waitUpdate(size_t timeout) override
@@ -474,14 +473,14 @@ void NamedCollectionsMetadataStorage::writeCreateQuery(const ASTCreateNamedColle
     storage->write(getFileName(query.collection_name), serializeAST(*normalized_query), replace);
 }
 
-bool NamedCollectionsMetadataStorage::isReplicated() const
+bool NamedCollectionsMetadataStorage::supportsPeriodicUpdate() const
 {
-    return storage->isReplicated();
+    return storage->supportsPeriodicUpdate();
 }
 
 bool NamedCollectionsMetadataStorage::waitUpdate()
 {
-    if (!storage->isReplicated())
+    if (!storage->supportsPeriodicUpdate())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Periodic updates are not supported");
 
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();

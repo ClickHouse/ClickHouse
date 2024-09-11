@@ -1954,10 +1954,7 @@ struct ToRelativeSubsecondNumImpl
             return t.value;
         if (scale > scale_multiplier)
             return t.value / (scale / scale_multiplier);
-        return static_cast<UInt128>(t.value) * static_cast<UInt128>((scale_multiplier / scale));
-        /// Casting ^^: All integers are Int64, yet if t.value is big enough the multiplication can still
-        /// overflow which is UB. This place is too low-level and generic to check if t.value is sane.
-        /// Therefore just let it overflow safely and don't bother further.
+        return t.value * (scale_multiplier / scale);
     }
     static Int64 execute(UInt32 t, const DateLUTImpl &)
     {

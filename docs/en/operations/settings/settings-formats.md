@@ -171,8 +171,8 @@ If the `schema_inference_hints` is not formated properly, or if there is a typo 
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
-Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+Controls making inferred types `Nullable` in schema inference.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 
 Default value: `true`.
 
@@ -1428,13 +1428,6 @@ Average block bytes output by parquet reader. Lowering the configuration in the 
 
 Default value: `65409 * 256 = 16744704`
 
-### output_format_parquet_write_page_index {#input_format_parquet_max_block_size}
-
-Could add page index into parquet files. To enable this, need set `output_format_parquet_use_custom_encoder`=`false` and
-`output_format_parquet_write_page_index`=`true`.
-
-Enable by default.
-
 ## Hive format settings {#hive-format-settings}
 
 ### input_format_hive_text_fields_delimiter {#input_format_hive_text_fields_delimiter}
@@ -1951,18 +1944,6 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 
 Default value: `1GiB`.
 
-### output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
-
-Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes output format.
-
-Disabled by default.
-
-### input_format_binary_decode_types_in_binary_format {#input_format_binary_decode_types_in_binary_format}
-
-Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes input format.
-
-Disabled by default.
-
 ## Native format settings {#native-format-settings}
 
 ### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
@@ -1970,15 +1951,3 @@ Disabled by default.
 Allow types conversion in Native input format between columns from input data and requested columns.
 
 Enabled by default.
-
-### output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
-
-Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native output format.
-
-Disabled by default.
-
-### input_format_native_decode_types_in_binary_format {#input_format_native_decode_types_in_binary_format}
-
-Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native input format.
-
-Disabled by default.

@@ -152,7 +152,7 @@ SELECT * FROM test;
 
 `MATERIALIZED expr`
 
-Materialized expression. Values of such columns are automatically calculated according to the specified materialized expression when rows are inserted. Values cannot be explicitly specified during `INSERT`s.
+Materialized expression. Values of such columns are always calculated, they cannot be specified in INSERT queries.
 
 Also, default value columns of this type are not included in the result of `SELECT *`. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`. This behavior can be disabled with setting `asterisk_include_materialized_columns`.
 

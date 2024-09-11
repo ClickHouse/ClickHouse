@@ -4,7 +4,6 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
@@ -26,7 +25,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
-        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive, context->getSettingsRef().allow_archive_path_syntax);
         return;
     }
 
@@ -42,7 +41,8 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         else if (filename == "stderr")
             fd = STDERR_FILENO;
         else
-            StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
+            StorageFile::parseFileSource(
+                std::move(filename), filename, path_to_archive, context->getSettingsRef().allow_archive_path_syntax);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -63,9 +63,12 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
         return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
-StoragePtr TableFunctionFile::getStorage(const String & source,
-    const String & format_, const ColumnsDescription & columns,
-    ContextPtr global_context, const std::string & table_name,
+StoragePtr TableFunctionFile::getStorage(
+    const String & source,
+    const String & format_,
+    const ColumnsDescription & columns,
+    ContextPtr global_context,
+    const std::string & table_name,
     const std::string & compression_method_) const
 {
     // For `file` table function, we are going to use format settings from the

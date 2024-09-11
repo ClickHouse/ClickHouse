@@ -143,16 +143,9 @@ public:
 
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#else
-    void doInsertFrom(const IColumn & src_, size_t n) override;
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#endif
 
     void insertDefault() override
     {
@@ -221,11 +214,7 @@ public:
         return scattered_columns;
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-#else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-#endif
 
     bool hasEqualValues() const override
     {

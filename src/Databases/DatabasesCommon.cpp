@@ -2,9 +2,12 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -13,10 +16,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -238,24 +237,6 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
 }
 
-DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
-    ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
-{
-    std::lock_guard lock(mutex);
-    if (!filter_by_table_name)
-        return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(snapshot_detached_tables);
-
-    SnapshotDetachedTables filtered_detached_tables;
-    for (const auto & [detached_table_name, snapshot] : snapshot_detached_tables)
-        if (filter_by_table_name(detached_table_name))
-        {
-            filtered_detached_tables.emplace(detached_table_name, snapshot);
-        }
-
-
-    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(filtered_detached_tables));
-}
-
 bool DatabaseWithOwnTablesBase::empty() const
 {
     std::lock_guard lock(mutex);
@@ -270,36 +251,27 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, con
 
 StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
+    StoragePtr res;
+
     auto it = tables.find(table_name);
     if (it == tables.end())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                         backQuote(database_name), backQuote(table_name));
-
-    auto table_storage = it->second;
-
-    snapshot_detached_tables.emplace(
-        table_name,
-        SnapshotDetachedTable{
-            .database = it->second->getStorageID().getDatabaseName(),
-            .table = table_name,
-            .uuid = it->second->getStorageID().uuid,
-            .metadata_path = getObjectMetadataPath(table_name),
-            .is_permanently = false});
-
+    res = it->second;
     tables.erase(it);
-    table_storage->is_detached = true;
+    res->is_detached = true;
 
-    if (!table_storage->isSystemStorage() && database_name != DatabaseCatalog::SYSTEM_DATABASE)
-        CurrentMetrics::sub(getAttachedCounterForStorage(table_storage));
+    if (res->isSystemStorage() == false)
+        CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
 
-    auto table_id = table_storage->getStorageID();
+    auto table_id = res->getStorageID();
     if (table_id.hasUUID())
     {
         assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
-    return table_storage;
+    return res;
 }
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
@@ -328,14 +300,12 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
     }
 
-    snapshot_detached_tables.erase(table_name);
-
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
 
-    if (!table->isSystemStorage() && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
-        CurrentMetrics::add(getAttachedCounterForStorage(table));
+    if (table->isSystemStorage() == false && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
@@ -367,7 +337,6 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     std::lock_guard lock(mutex);
     tables.clear();
-    snapshot_detached_tables.clear();
 }
 
 DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()

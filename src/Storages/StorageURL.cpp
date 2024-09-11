@@ -36,8 +36,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -567,36 +565,42 @@ StorageURLSink::StorageURLSink(
 }
 
 
-void StorageURLSink::consume(Chunk & chunk)
+void StorageURLSink::consume(Chunk chunk)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 void StorageURLSink::onCancel()
 {
     std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
+    finalize();
     cancelled = true;
 }
 
-void StorageURLSink::onException(std::exception_ptr)
+void StorageURLSink::onException(std::exception_ptr exception)
 {
     std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (...)
+    {
+        /// An exception context is needed to proper delete write buffers without finalization
+        release();
+    }
 }
 
 void StorageURLSink::onFinish()
 {
     std::lock_guard lock(cancel_mutex);
-    finalizeBuffers();
+    finalize();
 }
 
-void StorageURLSink::finalizeBuffers()
+void StorageURLSink::finalize()
 {
     if (!writer)
         return;
@@ -609,25 +613,17 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        releaseBuffers();
+        release();
         throw;
     }
 
     write_buf->finalize();
 }
 
-void StorageURLSink::releaseBuffers()
+void StorageURLSink::release()
 {
     writer.reset();
     write_buf.reset();
-}
-
-void StorageURLSink::cancelBuffers()
-{
-    if (writer)
-        writer->cancel();
-    if (write_buf)
-        write_buf->cancel();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
@@ -737,9 +733,7 @@ namespace
                     {
                         for (const auto & url : options)
                         {
-                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
-                            /// Use this format only if we have a schema reader for it.
-                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
+                            if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url))
                             {
                                 format = format_from_file_name;
                                 break;

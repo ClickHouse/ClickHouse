@@ -3,8 +3,6 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
-#include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -26,6 +24,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Common/typeid_cast.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -176,9 +175,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!getContext()->getSettingsRef().allow_experimental_statistics
-            && (command_ast->type == ASTAlterCommand::ADD_STATISTICS || command_ast->type == ASTAlterCommand::DROP_STATISTICS
-                || command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
+        if (!getContext()->getSettings().allow_experimental_statistics && (
+            command_ast->type == ASTAlterCommand::ADD_STATISTICS ||
+            command_ast->type == ASTAlterCommand::DROP_STATISTICS ||
+            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
     }
 

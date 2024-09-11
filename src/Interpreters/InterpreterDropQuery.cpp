@@ -14,7 +14,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
@@ -399,9 +398,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (query.if_empty)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
-            if (database->hasReplicationThread())
+            if (!truncate && database->hasReplicationThread())
                 database->stopReplication();
-
 
             if (database->shouldBeEmptyOnDetach())
             {

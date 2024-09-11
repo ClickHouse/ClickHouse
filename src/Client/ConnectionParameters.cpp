@@ -52,11 +52,31 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 
-    if (config.has("jwt"))
+    if (!config.has("ssh-key-file"))
     {
-        jwt = config.getString("jwt");
+        bool password_prompt = false;
+        if (config.getBool("ask-password", false))
+        {
+            if (config.has("password"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
+            password_prompt = true;
+        }
+        else
+        {
+            password = config.getString("password", "");
+            /// if the value of --password is omitted, the password will be set implicitly to "\n"
+            if (password == ASK_PASSWORD)
+                password_prompt = true;
+        }
+        if (password_prompt)
+        {
+            std::string prompt{"Password for user (" + user + "): "};
+            char buf[1000] = {};
+            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+                password = result;
+        }
     }
-    else if (config.has("ssh-key-file"))
+    else
     {
 #if USE_SSH
         std::string filename = config.getString("ssh-key-file");
@@ -81,30 +101,6 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
-    }
-    else
-    {
-        bool password_prompt = false;
-        if (config.getBool("ask-password", false))
-        {
-            if (config.has("password"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
-            password_prompt = true;
-        }
-        else
-        {
-            password = config.getString("password", "");
-            /// if the value of --password is omitted, the password will be set implicitly to "\n"
-            if (password == ASK_PASSWORD)
-                password_prompt = true;
-        }
-        if (password_prompt)
-        {
-            std::string prompt{"Password for user (" + user + "): "};
-            char buf[1000] = {};
-            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
-                password = result;
-        }
     }
 
     quota_key = config.getString("quota_key", "");
@@ -143,7 +139,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 }
 
 UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config,
-                                               const std::string & connection_host)
+                                               std::string connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
     return config.getInt("port",

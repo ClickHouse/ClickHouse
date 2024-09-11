@@ -24,8 +24,9 @@
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-#include <Core/Settings.h>
+
 #include <Columns/ColumnString.h>
+#include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -48,8 +49,6 @@
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
 
-#include <Poco/Util/Application.h>
-
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -65,7 +64,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int USER_EXPIRED;
 }
 
 
@@ -76,12 +74,6 @@ void Client::processError(const String & query) const
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
-
-        if (server_exception->code() == ErrorCodes::USER_EXPIRED)
-        {
-            server_exception->rethrow();
-        }
-
         if (is_interactive)
         {
             fmt::print(stderr, "\n");
@@ -186,8 +178,6 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
-        if (config.has(prefix + ".accept-invalid-certificate"))
-            config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -251,10 +241,6 @@ std::vector<String> Client::loadWarningMessages()
     }
 }
 
-Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
-{
-    return config();
-}
 
 void Client::initialize(Poco::Util::Application & self)
 {
@@ -278,12 +264,6 @@ void Client::initialize(Poco::Util::Application & self)
     }
     else if (config().has("connection"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
-
-    if (config().has("accept-invalid-certificate"))
-    {
-        config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
-        config().setString("openSSL.client.verificationMode", "none");
-    }
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -710,7 +690,9 @@ bool Client::processWithFuzzing(const String & full_query)
         const char * begin = full_query.data();
         orig_ast = parseQuery(begin, begin + full_query.size(),
             global_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true);
+            /*allow_multi_statements=*/ true,
+            /*is_interactive=*/ is_interactive,
+            /*ignore_error=*/ ignore_error);
     }
     catch (const Exception & e)
     {
@@ -739,7 +721,7 @@ bool Client::processWithFuzzing(const String & full_query)
     }
     if (auto *q = orig_ast->as<ASTSetQuery>())
     {
-        if (auto *set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
             return true;
     }
 
@@ -962,7 +944,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("jwt", po::value<std::string>(), "Use JWT for authentication")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
@@ -1121,13 +1102,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
-    if (options.count("jwt"))
-    {
-        if (!options["user"].defaulted())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
-        config().setString("jwt", options["jwt"].as<std::string>());
-        config().setString("user", "");
-    }
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");

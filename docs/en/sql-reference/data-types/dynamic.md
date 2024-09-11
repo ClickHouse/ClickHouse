@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/dynamic
-sidebar_position: 62
+sidebar_position: 56
 sidebar_label: Dynamic
 ---
 
@@ -493,44 +493,3 @@ SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) O
 ```
 
 As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt64)` and casted all other types to `String`.
-
-## JSONExtract functions with Dynamic
-
-All `JSONExtract*` functions support `Dynamic` type:
-
-```sql
-SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Dynamic') AS dynamic, dynamicType(dynamic) AS dynamic_type;
-```
-
-```text
-┌─dynamic─┬─dynamic_type───────────┐
-│ [1,2,3] │ Array(Nullable(Int64)) │
-└─────────┴────────────────────────┘
-```
-
-```sql
-SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Variant(UInt32, String, Array(UInt32)))') AS map_of_dynamics, mapApply((k, v) -> (k, variantType(v)), map_of_dynamics) AS map_of_dynamic_types```
-
-```text
-┌─map_of_dynamics──────────────────┬─map_of_dynamic_types────────────────────────────┐
-│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'UInt32','b':'String','c':'Array(UInt32)'} │
-└──────────────────────────────────┴─────────────────────────────────────────────────┘
-```
-
-```sql
-SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Variant(UInt32, String, Array(UInt32))') AS dynamics, arrayMap(x -> (x.1, variantType(x.2)), dynamics) AS dynamic_types```
-```
-
-```text
-┌─dynamics───────────────────────────────┬─dynamic_types─────────────────────────────────────────┐
-│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
-└────────────────────────────────────────┴───────────────────────────────────────────────────────┘
-```
-
-### Binary output format
-
-In RowBinary format values of `Dynamic` type are serialized in the following format:
-
-```text
-<binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
-```

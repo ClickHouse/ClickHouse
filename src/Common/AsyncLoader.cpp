@@ -49,7 +49,6 @@ void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopw
 AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
     : name(init.name)
     , priority(init.priority)
-    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores())
     , thread_pool(std::make_unique<ThreadPool>(
         init.metric_threads,
         init.metric_active_threads,
@@ -57,16 +56,17 @@ AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
         /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
         /* max_free_threads = */ 0, // We do not require free threads
         /* queue_size = */0)) // Unlimited queue to avoid blocking during worker spawning
+    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores())
 {}
 
 AsyncLoader::Pool::Pool(Pool&& o) noexcept
     : name(o.name)
     , priority(o.priority)
+    , thread_pool(std::move(o.thread_pool))
     , ready_queue(std::move(o.ready_queue))
     , max_threads(o.max_threads)
     , workers(o.workers)
     , suspended_workers(o.suspended_workers.load()) // All these constructors are needed because std::atomic is neither copy-constructible, nor move-constructible. We never move pools after init, so it is safe.
-    , thread_pool(std::move(o.thread_pool))
 {}
 
 void cancelOnDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel)

@@ -43,9 +43,6 @@ def get_additional_envs(check_name: str) -> List[str]:
     if "azure" in check_name:
         result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
 
-    if "s3" in check_name:
-        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-
     return result
 
 

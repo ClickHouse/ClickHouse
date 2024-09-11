@@ -4,9 +4,6 @@
 source /setup_export_logs.sh
 set -e -x
 
-MAX_RUN_TIME=${MAX_RUN_TIME:-3600}
-MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 3600 : MAX_RUN_TIME))
-
 # Choose random timezone for this test run
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
@@ -19,17 +16,11 @@ dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
-# shellcheck disable=SC1091
-source /utils.lib
-
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
-
 ./setup_minio.sh stateful
-./mc admin trace clickminio > /test_output/minio.log &
-MC_ADMIN_PID=$!
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
@@ -191,8 +182,8 @@ else
             ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
             SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 
-        clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-        clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+        clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0"
+        clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0"
         clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
         clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
     else
@@ -200,7 +191,7 @@ else
         clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
     fi
     clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, ClientIP6 FixedString(16), RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, URLDomain String, RefererDomain String, Refresh UInt8, IsRobot UInt8, RefererCategories Array(UInt16), URLCategories Array(UInt16), URLRegions Array(UInt32), RefererRegions Array(UInt32), ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), UTCEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32, RemoteIP6 FixedString(16), WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming Int32, DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32, ResponseEndTiming Int32, FetchTiming Int32, RedirectTiming Int32, DOMInteractiveTiming Int32, DOMContentLoadedTiming Int32, DOMCompleteTiming Int32, LoadEventStartTiming Int32, LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32, FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, GoalsReached Array(UInt32), OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32, YCLID UInt64, ShareService String, ShareURL String, ShareTitle String, ParsedParams Nested(Key1 String, Key2 String, Key3 String, Key4 String, Key5 String, ValueDouble Float64), IslandID FixedString(16), RequestNum UInt32, RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
-    clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+    clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0"
 fi
 
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -222,10 +213,6 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--s3-storage')
     fi
 
-    if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
-    fi
-
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
@@ -245,22 +232,7 @@ function run_tests()
 }
 
 export -f run_tests
-
-function timeout_with_logging() {
-    local exit_code=0
-
-    timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
-
-    if [[ "${exit_code}" -eq "124" ]]
-    then
-      echo "The command 'timeout ${*}' has been killed by timeout"
-    fi
-
-    return $exit_code
-}
-
-TIMEOUT=$((MAX_RUN_TIME - 700))
-timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
+timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
@@ -275,8 +247,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
-# Kill minio admin client to stop collecting logs
-kill $MC_ADMIN_PID
 rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst ||:
@@ -298,5 +268,3 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
 fi
-
-collect_core_dumps

@@ -595,29 +595,17 @@ void ColumnVariant::insertManyFromImpl(const DB::IColumn & src_, size_t position
     }
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVariant::insertFrom(const IColumn & src_, size_t n)
-#else
-void ColumnVariant::doInsertFrom(const IColumn & src_, size_t n)
-#endif
 {
     insertFromImpl(src_, n, nullptr);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t length)
-#else
-void ColumnVariant::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
-#endif
 {
     insertRangeFromImpl(src_, start, length, nullptr);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVariant::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
-#else
-void ColumnVariant::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
-#endif
 {
     insertManyFromImpl(src_, position, length, nullptr);
 }
@@ -942,7 +930,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
 {
     /// If we have only NULLs, index will take no effect, just return resized column.
     if (hasOnlyNulls())
-        return cloneResized(limit);
+        return cloneResized(limit == 0 ? indexes.size(): limit);
 
     /// Optimization when we have only one non empty variant and no NULLs.
     /// In this case local_discriminators column is filled with identical values and offsets column
@@ -998,8 +986,16 @@ ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t 
     new_variants.reserve(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
     {
-        size_t nested_limit = nested_perms[i].size() == variants[i]->size() ? 0 : nested_perms[i].size();
-        new_variants.emplace_back(variants[i]->permute(nested_perms[i], nested_limit));
+        /// Check if no values from this variant were selected.
+        if (nested_perms[i].empty())
+        {
+            new_variants.emplace_back(variants[i]->cloneEmpty());
+        }
+        else
+        {
+            size_t nested_limit = nested_perms[i].size() == variants[i]->size() ? 0 : nested_perms[i].size();
+            new_variants.emplace_back(variants[i]->permute(nested_perms[i], nested_limit));
+        }
     }
 
     /// We cannot use new_offsets column as an offset column, because it became invalid after variants permutation.
@@ -1175,11 +1171,7 @@ bool ColumnVariant::hasEqualValues() const
     return local_discriminators->hasEqualValues() && variants[localDiscriminatorAt(0)]->hasEqualValues();
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#else
-int ColumnVariant::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#endif
 {
     const auto & rhs_variant = assert_cast<const ColumnVariant &>(rhs);
     Discriminator left_discr = globalDiscriminatorAt(n);

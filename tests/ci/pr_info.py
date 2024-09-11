@@ -13,11 +13,8 @@ from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
-    GITHUB_UPSTREAM_REPOSITORY,
 )
-from ci_config import Labels
-from get_robot_token import get_best_robot_token
-from github_helper import GitHub
+from lambda_shared_package.lambda_shared.pr import Labels
 
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
@@ -296,16 +293,13 @@ class PRInfo:
         else:
             if "schedule" in github_event:
                 self.event_type = EventType.SCHEDULE
-            elif "inputs" in github_event:
+            else:
                 # assume this is a dispatch
                 self.event_type = EventType.DISPATCH
-                print("PR Info:")
-                print(self)
-            else:
-                logging.warning(
-                    "event.json does not match pull_request or push:\n%s",
-                    json.dumps(github_event, sort_keys=True, indent=4),
-                )
+            logging.warning(
+                "event.json does not match pull_request or push:\n%s",
+                json.dumps(github_event, sort_keys=True, indent=4),
+            )
             self.sha = os.getenv(
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
@@ -336,10 +330,6 @@ class PRInfo:
             assert self.number
             return True
         return False
-
-    @property
-    def is_push_event(self) -> bool:
-        return self.event_type == EventType.PUSH
 
     @property
     def is_scheduled(self) -> bool:
@@ -441,34 +431,6 @@ class PRInfo:
             if "contrib/" in f:
                 return True
         return False
-
-    def get_latest_sync_commit(self):
-        gh = GitHub(get_best_robot_token(), per_page=100)
-        assert self.head_ref.startswith("sync-upstream/pr/")
-        assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
-        upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
-        upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])
-        upstream_pr = upstream_repo.get_pull(upstream_pr_number)
-        sync_repo = gh.get_repo(GITHUB_REPOSITORY)
-        sync_pr = sync_repo.get_pull(self.number)
-        # Find the commit that is in both repos, upstream and cloud
-        sync_commits = sync_pr.get_commits().reversed
-        upstream_commits = upstream_pr.get_commits().reversed
-        # Github objects are compared by _url attribute. We can't compare them directly and
-        # should compare commits by SHA1
-        upstream_shas = [c.sha for c in upstream_commits]
-        logging.info("Commits in upstream PR:\n %s", ", ".join(upstream_shas))
-        sync_shas = [c.sha for c in sync_commits]
-        logging.info("Commits in sync PR:\n %s", ", ".join(reversed(sync_shas)))
-
-        # find latest synced commit
-        last_synced_upstream_commit = None
-        for commit in upstream_commits:
-            if commit.sha in sync_shas:
-                last_synced_upstream_commit = commit
-                break
-        assert last_synced_upstream_commit
-        return last_synced_upstream_commit
 
 
 class FakePRInfo:

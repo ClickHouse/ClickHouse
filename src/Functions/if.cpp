@@ -10,7 +10,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -1309,7 +1308,7 @@ public:
 
 REGISTER_FUNCTION(If)
 {
-    factory.registerFunction<FunctionIf>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
 }
 
 FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
