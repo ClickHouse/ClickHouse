@@ -986,6 +986,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
 
             auto indices_expression_dag = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
+            indices_expression_dag.addMaterializingOutputActions(); /// Const columns cannot be written without materialization.
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
                 merge_column_query_plan.getCurrentDataStream(),
                 std::move(indices_expression_dag));
@@ -1352,10 +1353,10 @@ bool MergeTask::execute()
 
 
 /// Apply merge strategy (Ordinary, Colapsing, Aggregating, etc) to the stream
-class ApplyMergeStep : public ITransformingStep
+class MergePartsStep : public ITransformingStep
 {
 public:
-    ApplyMergeStep(
+    MergePartsStep(
         const DataStream & input_stream_,
         const SortDescription & sort_description_,
         const Names partition_key_columns_,
@@ -1378,7 +1379,7 @@ public:
         , time_of_merge(time_of_merge_)
     {}
 
-    String getName() const override { return "ApplyMergePolicy"; }
+    String getName() const override { return "MergeParts"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
     {
@@ -1495,45 +1496,6 @@ private:
     const time_t time_of_merge{0};
 };
 
-
-class MaterializingStep : public ITransformingStep
-{
-public:
-    explicit MaterializingStep(
-        const DataStream & input_stream_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-    {}
-
-    String getName() const override { return "Materializing"; }
-
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        pipeline.addTransform(std::make_shared<MaterializingTransform>(input_streams.front().header));
-    }
-
-    void updateOutputStream() override
-    {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-    }
-
-private:
-    static Traits getTraits()
-    {
-        return ITransformingStep::Traits
-        {
-            {
-                .returns_single_stream = true,
-                .preserves_number_of_streams = true,
-                .preserves_sorting = true,
-            },
-            {
-                .preserves_number_of_rows = true,
-            }
-        };
-    }
-};
-
-
 class TTLStep : public ITransformingStep
 {
 public:
@@ -1618,8 +1580,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    auto sorting_key_expression_dag = global_ctx->metadata_snapshot->getSortingKey().expression->getActionsDAG().clone();
-
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
@@ -1644,15 +1604,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->context,
             ctx->log);
 
-        if (global_ctx->metadata_snapshot->hasSortingKey())
-        {
-            /// Calculate sorting key expressions so that they are available for merge sorting.
-            auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
-                plan_for_part->getCurrentDataStream(),
-                sorting_key_expression_dag.clone());    /// TODO: can we avoid cloning here?
-            plan_for_part->addStep(std::move(calculate_sorting_key_expression_step));
-        }
-
         plans.emplace_back(std::move(plan_for_part));
     }
 
@@ -1667,6 +1618,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
         merge_parts_query_plan.unitePlans(std::move(union_step), std::move(plans));
+    }
+
+    if (global_ctx->metadata_snapshot->hasSortingKey())
+    {
+        /// Calculate sorting key expressions so that they are available for merge sorting.
+        auto sorting_key_expression_dag = global_ctx->metadata_snapshot->getSortingKey().expression->getActionsDAG().clone();
+        auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
+            merge_parts_query_plan.getCurrentDataStream(),
+            std::move(sorting_key_expression_dag));
+        merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
     /// Merge
@@ -1691,7 +1652,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         if (global_ctx->cleanup && !data_settings->allow_experimental_replacing_merge_with_cleanup)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
-        auto merge_step = std::make_unique<ApplyMergeStep>(
+        auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentDataStream(),
             sort_description,
             partition_key_columns,
@@ -1749,12 +1710,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (!global_ctx->merging_skip_indexes.empty())
     {
         auto indices_expression_dag = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
+        indices_expression_dag.addMaterializingOutputActions(); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentDataStream(),
             std::move(indices_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_indices_expression_step));
-        /// TODO: what is the purpose of MaterializingTransform in the original code?
-        merge_parts_query_plan.addStep(std::make_unique<MaterializingStep>(merge_parts_query_plan.getCurrentDataStream()));
     }
 
     if (!subqueries.empty())
