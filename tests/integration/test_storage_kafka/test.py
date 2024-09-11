@@ -4647,9 +4647,16 @@ def test_row_based_formats(
 
             CREATE MATERIALIZED VIEW test.{table_name}_view ENGINE=MergeTree ORDER BY (key, value) AS
                 SELECT key, value FROM test.{table_name};
-
-            INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
         """
+        )
+
+    for format_name in formats_to_test:
+        logging.debug("Inserting to {format_name}")
+
+        topic_name = format_name + get_topic_postfix(create_query_generator)
+        table_name = f"kafka_{format_name}"
+        instance.query(
+            f"INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows})"
         )
 
     for format_name in formats_to_test:

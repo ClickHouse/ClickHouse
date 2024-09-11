@@ -94,7 +94,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster, instance):
         "MsgPack",
     ]
     for format in formats_to_test:
-        logging.debug(f"Creating tables and writing messages to {format}")
+        logging.debug(f"Creating tables for {format}")
         topic = topic_prefix + format
         kafka_create_topic(admin_client, topic)
 
@@ -124,6 +124,10 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster, instance):
                 SELECT key, value FROM test.kafka_{topic};
             """
         )
+
+    for format in formats_to_test:
+        logging.debug(f"Inserting data to {format}")
+        topic = topic_prefix + format
         instance.http_query(
             insert_query_template.format(table_name="test.kafka_writer_" + topic),
             method="POST",
