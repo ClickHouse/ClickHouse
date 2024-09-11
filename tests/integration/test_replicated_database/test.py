@@ -1559,15 +1559,9 @@ def test_detach_attach_table(started_cluster):
     main_node.query(
         "CREATE TABLE detach_attach_db.detach_attach_table (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k;"
     )
-    main_node.query(
-        "INSERT INTO detach_attach_db.detach_attach_table VALUES (1);"
-    )
-    main_node.query(
-        "DETACH TABLE detach_attach_db.detach_attach_table PERMANENTLY;"
-    )
-    main_node.query(
-        "ATTACH TABLE detach_attach_db.detach_attach_table;"
-    )
+    main_node.query("INSERT INTO detach_attach_db.detach_attach_table VALUES (1);")
+    main_node.query("DETACH TABLE detach_attach_db.detach_attach_table PERMANENTLY;")
+    main_node.query("ATTACH TABLE detach_attach_db.detach_attach_table;")
     assert (
         main_node.query("SELECT * FROM detach_attach_db.detach_attach_table;") == "1\n"
     )
