@@ -44,6 +44,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
+extern const int LOGICAL_ERROR:
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -85,58 +86,6 @@ enum class DataFileContent : uint8_t
     EQUALITY_DELETES = 2,
 };
 
-/**
- * Iceberg supports the next data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
- * - Primitive types:
- *   - boolean
- *   - int
- *   - long
- *   - float
- *   - double
- *   - decimal(P, S)
- *   - date
- *   - time (time of day in microseconds since midnight)
- *   - timestamp (in microseconds since 1970-01-01)
- *   - timestamptz (timestamp with timezone, stores values in UTC timezone)
- *   - string
- *   - uuid
- *   - fixed(L) (fixed-length byte array of length L)
- *   - binary
- * - Complex types:
- *   - struct(field1: Type1, field2: Type2, ...) (tuple of typed values)
- *   - list(nested_type)
- *   - map(Key, Value)
- *
- * Example of table schema in metadata:
- * {
- *     "type" : "struct",
- *     "schema-id" : 0,
- *     "fields" : [
- *     {
- *         "id" : 1,
- *         "name" : "id",
- *         "required" : false,
- *         "type" : "long"
- *     },
- *     {
- *         "id" : 2,
- *         "name" : "array",
- *         "required" : false,
- *         "type" : {
- *             "type" : "list",
- *             "element-id" : 5,
- *             "element" : "int",
- *             "element-required" : false
- *     },
- *     {
- *         "id" : 3,
- *         "name" : "data",
- *         "required" : false,
- *         "type" : "binary"
- *     }
- * }
- */
-
 std::pair<size_t, size_t> parse_decimal(const String & type_name)
 {
     ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
@@ -152,11 +101,19 @@ std::pair<size_t, size_t> parse_decimal(const String & type_name)
 
 bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
 {
-    std::stringstream ss_first;
-    std::stringstream ss_second;
-    first.stringify(ss_first);
-    second.stringify(ss_second);
-    return ss_first.str() == ss_second.str();
+    std::stringstream first_string_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::stringstream second_string_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    first.stringify(first_string_stream);
+    if (!first_string_stream)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JSON Parsing failed");
+    }
+    second.stringify(second_string_stream);
+    if (!second_string_stream)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JSON Parsing failed");
+    }
+    return first_string_stream.str() == second_string_stream.str();
 }
 }
 
@@ -259,6 +216,14 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(const Poco::JSON::Object::Ptr &
 
 }
 
+
+/**
+* Iceberg allows only three types of primitive type conversion:
+* int -> long
+* float -> double
+* decimal(P, S) -> decimal(P', S) where P' > P
+* This function checks if `old_type` and `new_type` satisfy to one of these conditions.
+**/
 bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type, const String & new_type)
 {
     bool allowed_type_conversion = (old_type == new_type);
@@ -298,21 +263,21 @@ std::shared_ptr<ActionsDAG>
 IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
 {
     std::map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
-    auto fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    auto old_schema_fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
     std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
     auto & outputs = dag->getOutputs();
-    for (size_t i = 0; i != fields->size(); ++i)
+    for (size_t i = 0; i != old_schema_fields->size(); ++i)
     {
-        auto field = fields->getObject(static_cast<UInt32>(i));
+        auto field = old_schema_fields->getObject(static_cast<UInt32>(i));
         size_t id = field->getValue<size_t>("id");
         auto name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
         old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, "type", required))};
     }
-    fields = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
-    for (size_t i = 0; i != fields->size(); ++i)
+    auto new_schema_fields = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i != new_schema_fields->size(); ++i)
     {
-        auto field = fields->getObject(static_cast<UInt32>(i));
+        auto field = new_schema_fields->getObject(static_cast<UInt32>(i));
         size_t id = field->getValue<size_t>("id");
         auto name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
@@ -380,7 +345,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Can't add a column with id {} with required values to the table during schema evolution,  old schema id is {}, new "
+                    "Canßnot add a column with id {} with required values to the table during schema evolution, old schema id is {}, new "
                     "schema id is {}",
                     id,
                     current_old_id,
@@ -425,8 +390,10 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
     }
-    current_old_id = -1;
-    current_new_id = -1;
+    SCOPE_EXIT({
+        current_old_id = -1;
+        current_new_id = -1;
+    });
     return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema, new_schema);
 }
 

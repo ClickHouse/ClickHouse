@@ -110,6 +110,7 @@ public:
         updated_configuration->setPaths(current_metadata->getDataFileInfos());
         updated_configuration->setPartitionColumns(current_metadata->getPartitionColumns());
 
+
         Storage::configuration = updated_configuration;
     }
 
