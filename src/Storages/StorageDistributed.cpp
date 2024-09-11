@@ -32,7 +32,6 @@
 #include <Common/randomSeed.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/IdentifierQuotingStyle.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -41,8 +40,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/parseQuery.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -1104,7 +1104,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary);
+            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
