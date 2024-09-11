@@ -315,7 +315,18 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
+    {
+        if (insert_query.format.empty() && insert_query.infile)
+        {
+            const auto & in_file_node = insert_query.infile->as<ASTLiteral &>();
+            const auto in_file = in_file_node.value.safeGet<std::string>();
+            const auto in_file_format = FormatFactory::instance().getFormatFromFileName(in_file);
+            if (!FormatFactory::instance().isInputFormat(in_file_format))
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input INFILE format {}", in_file_format);
+        }
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
+    }
 
     /// For table functions we check access while executing
     /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().

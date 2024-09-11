@@ -166,6 +166,7 @@ private:
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
+        std::vector<AlterConversionsPtr> alter_conversions;
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
@@ -268,12 +269,12 @@ private:
     {
         bool execute() override;
 
-        bool prepare();
-        bool executeImpl();
+        bool prepare() const;
+        bool executeImpl() const;
         void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
@@ -288,10 +289,10 @@ private:
         void calculateProjections(const Block & block) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections();
+        bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
-        void createMergedStream();
+        void createMergedStream() const;
         void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
@@ -333,7 +334,16 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::optional<Pipe> prepared_pipe;
+
+        /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
+        /// and it initiates prefetching of the first range of that column.
+        struct PreparedColumnPipeline
+        {
+            QueryPipeline pipeline;
+            MergeTreeIndices indexes_to_recalc;
+        };
+
+        std::optional<PreparedColumnPipeline> prepared_pipeline;
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
@@ -378,7 +388,7 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
-        Pipe createPipeForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
