@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
-    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -108,8 +107,12 @@ private:
     }
 };
 
-ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, const ObjectStorageQueueSettings & settings_)
+ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
+    const fs::path & zookeeper_path_,
+    const ObjectStorageQueueTableMetadata & table_metadata_,
+    const ObjectStorageQueueSettings & settings_)
     : settings(settings_)
+    , table_metadata(table_metadata_)
     , zookeeper_path(zookeeper_path_)
     , buckets_num(getBucketsNum(settings_))
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
@@ -142,11 +145,6 @@ void ObjectStorageQueueMetadata::shutdown()
     shutdown_called = true;
     if (task)
         task->deactivate();
-}
-
-void ObjectStorageQueueMetadata::checkSettings(const ObjectStorageQueueSettings & settings_) const
-{
-    ObjectStorageQueueTableMetadata::checkEquals(settings, settings_);
 }
 
 ObjectStorageQueueMetadata::FileStatusPtr ObjectStorageQueueMetadata::getFileStatus(const std::string & path)
@@ -219,13 +217,14 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-void ObjectStorageQueueMetadata::initialize(
-    const ConfigurationPtr & configuration,
-    const StorageInMemoryMetadata & storage_metadata)
+void ObjectStorageQueueMetadata::syncWithKeeper(
+    const fs::path & zookeeper_path,
+    const ObjectStorageQueueTableMetadata & table_metadata,
+    const ObjectStorageQueueSettings & settings,
+    LoggerPtr log)
 {
-    const auto metadata_from_table = ObjectStorageQueueTableMetadata(*configuration, settings, storage_metadata);
-    const auto & columns_from_table = storage_metadata.getColumns();
     const auto table_metadata_path = zookeeper_path / "metadata";
+    const auto buckets_num = getBucketsNum(settings);
     const auto metadata_paths = settings.mode == ObjectStorageQueueMode::ORDERED
         ? ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num)
         : ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
@@ -237,24 +236,17 @@ void ObjectStorageQueueMetadata::initialize(
     {
         if (zookeeper->exists(table_metadata_path))
         {
-            const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
-            const auto columns_from_zk = ColumnsDescription::parse(metadata_from_zk.columns);
+            const auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata");
+            const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
 
-            metadata_from_table.checkEquals(metadata_from_zk);
-            if (columns_from_zk != columns_from_table)
-            {
-                throw Exception(
-                    ErrorCodes::INCOMPATIBLE_COLUMNS,
-                    "Table columns structure in ZooKeeper is different from local table structure. "
-                    "Local columns:\n{}\nZookeeper columns:\n{}",
-                    columns_from_table.toString(), columns_from_zk.toString());
-            }
+            table_metadata.checkEquals(metadata_from_zk);
             return;
         }
 
         Coordination::Requests requests;
         requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-        requests.emplace_back(zkutil::makeCreateRequest(table_metadata_path, metadata_from_table.toString(), zkutil::CreateMode::Persistent));
+        requests.emplace_back(zkutil::makeCreateRequest(
+                                  table_metadata_path, table_metadata.toString(), zkutil::CreateMode::Persistent));
 
         for (const auto & path : metadata_paths)
         {
@@ -263,16 +255,27 @@ void ObjectStorageQueueMetadata::initialize(
         }
 
         if (!settings.last_processed_path.value.empty())
-            getFileMetadata(settings.last_processed_path)->setProcessedAtStartRequests(requests, zookeeper);
+        {
+            ObjectStorageQueueOrderedFileMetadata(
+                zookeeper_path,
+                settings.last_processed_path,
+                std::make_shared<FileStatus>(),
+                /* bucket_info */nullptr,
+                buckets_num,
+                settings.loading_retries,
+                log).setProcessedAtStartRequests(requests, zookeeper);
+        }
 
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(requests, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
         {
             auto exception = zkutil::KeeperMultiException(code, requests, responses);
+
             LOG_INFO(log, "Got code `{}` for path: {}. "
                      "It looks like the table {} was created by another server at the same moment, "
-                     "will retry", code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
+                     "will retry",
+                     code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
             continue;
         }
         else if (code != Coordination::Error::ZOK)
