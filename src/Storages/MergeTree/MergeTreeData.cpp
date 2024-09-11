@@ -8,7 +8,6 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-#include "Common/logger_useful.h"
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
@@ -1310,7 +1309,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         /// during loading, such as "not enough memory" or network error.
         if (isRetryableException(std::current_exception()))
             throw;
-        LOG_DEBUG(log, "Failed to load data part {}, unknown exception", part_name);
+
+        LOG_DEBUG(log, "Failed to load data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
         mark_broken();
         return res;
     }
@@ -1341,6 +1341,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         /// during loading, such as "not enough memory" or network error.
         if (isRetryableException(std::current_exception()))
             throw;
+
         mark_broken();
         return res;
     }
@@ -1459,25 +1460,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         if (try_no + 1 == max_tries)
             throw;
 
-        String exception_message;
-        try
-        {
-            rethrow_exception(exception_ptr);
-        }
-        catch (const Exception & e)
-        {
-            exception_message = e.message();
-        }
-        #if USE_AZURE_BLOB_STORAGE
-        catch (const Azure::Core::RequestFailedException & e)
-        {
-             exception_message = e.Message;
-        }
-        #endif
-
-
-        LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
-                  part_name, try_no, exception_message, initial_backoff_ms);
+        LOG_DEBUG(log,
+            "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
+             part_name, try_no, getExceptionMessage(exception_ptr, false), initial_backoff_ms);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(initial_backoff_ms));
         initial_backoff_ms = std::min(initial_backoff_ms * 2, max_backoff_ms);
