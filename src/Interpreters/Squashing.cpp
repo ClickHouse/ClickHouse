@@ -33,7 +33,7 @@ Chunk Squashing::squash(Chunk && input_chunk)
 
 Chunk Squashing::add(Chunk && input_chunk)
 {
-    if (!input_chunk)
+    if (!input_chunk || input_chunk.getNumRows() == 0)
         return {};
 
     /// Just read block is already enough.
