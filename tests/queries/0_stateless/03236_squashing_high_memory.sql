@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan
 -- reason: test requires too many rows to read
 
 SET max_rows_to_read = '501G';
