@@ -4,15 +4,19 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/BitHelpers.h>
+#include <Common/ThreadPool.h>
 #include <Common/formatReadable.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+
 
 namespace ProfileEvents
 {
@@ -22,6 +26,13 @@ namespace ProfileEvents
     extern const Event USearchSearchCount;
     extern const Event USearchSearchVisitedMembers;
     extern const Event USearchSearchComputedDistances;
+}
+
+namespace CurrentMetrics
+{
+extern const Metric UsearchUpdateThreads;
+extern const Metric UsearchUpdateThreadsActive;
+extern const Metric UsearchUpdateThreadsScheduled;
 }
 
 namespace DB
@@ -273,17 +284,42 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     if (!index->try_reserve(roundUpToPowerOfTwoOrZero(index->size() + rows)))
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
 
-    for (size_t row = 0; row < rows; ++row)
+    size_t max_threads = Context::getGlobalContextInstance()->getSettingsRef().max_threads;
+    max_threads = max_threads > 0 ? max_threads : getNumberOfPhysicalCPUCores();
+
+    auto thread_pool = std::make_unique<ThreadPool>(
+        CurrentMetrics::UsearchUpdateThreads,
+        CurrentMetrics::UsearchUpdateThreadsActive,
+        CurrentMetrics::UsearchUpdateThreadsScheduled,
+        max_threads);
+
+    auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row, ThreadGroupPtr thread_group)
     {
-        if (auto result = index->add(static_cast<USearchIndex::vector_key_t>(index->size()), &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
+        SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+
+        if (thread_group)
+            CurrentThread::attachToGroupIfDetached(thread_group);
+
+        if (auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
         else
         {
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
             ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
             ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
         }
+    };
+
+    size_t current_index_size = index->size();
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        auto key = static_cast<USearchIndex::vector_key_t>(current_index_size + row);
+        auto task = [group = CurrentThread::getGroup(), &add_vector_to_index, key, row] { add_vector_to_index(key, row, group); };
+        thread_pool->scheduleOrThrowOnError(task);
     }
+    thread_pool->wait();
 }
 
 }
