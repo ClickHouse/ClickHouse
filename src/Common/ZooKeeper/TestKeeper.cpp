@@ -368,6 +368,8 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
 
         if (child_path.starts_with(path))
             children.emplace_back(child_path, child_node);
+        else
+            break;
     }
 
     if (children.size() > remove_nodes_limit)
