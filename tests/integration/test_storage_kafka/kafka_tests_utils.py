@@ -1,21 +1,26 @@
-import logging
-import time
-import avro.schema
-import avro.io
 import io
-from kafka.admin import NewTopic
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
-from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+import logging
+import os
+import socket
+import time
 from contextlib import contextmanager
-from google.protobuf.internal.encoder import _VarintBytes
 
+import avro.io
+import avro.schema
+from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+from google.protobuf.internal.encoder import _VarintBytes
+from helpers.client import QueryRuntimeException
+from helpers.test_tools import TSV
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
 
 # protoc --version
 # libprotoc 3.0.0
 # # to create kafka_pb2.py
 # protoc --python_out=. kafka.proto
-from test_storage_kafka import kafka_pb2
-from test_storage_kafka import social_pb2
+from test_storage_kafka import kafka_pb2, social_pb2
 
 
 @contextmanager
@@ -211,7 +216,6 @@ def kafka_consume_with_retry(
 def kafka_produce_protobuf_messages_no_delimiters(
     kafka_cluster, topic, start_index, num_messages
 ):
-    data = ""
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -379,3 +383,64 @@ def get_topic_postfix(generator):
     if generator == generate_new_create_table_query:
         return "new"
     raise Exception("Unexpected generator")
+
+
+# Since everything is async and shaky when receiving messages from Kafka,
+# we may want to try and check results multiple times in a loop.
+def kafka_check_result(result, check=False, ref_file="test_kafka_json.reference"):
+    fpath = os.path.join(os.path.dirname(__file__), ref_file)
+    with open(fpath) as reference:
+        if check:
+            assert TSV(result) == TSV(reference)
+        else:
+            return TSV(result) == TSV(reference)
+
+
+# https://stackoverflow.com/a/57692111/1555175
+def describe_consumer_group(kafka_cluster, name):
+    client = BrokerConnection("localhost", kafka_cluster.kafka_port, socket.AF_INET)
+    client.connect_blocking()
+
+    list_members_in_groups = DescribeGroupsRequest_v1(groups=[name])
+    future = client.send(list_members_in_groups)
+    while not future.is_done:
+        for resp, f in client.recv():
+            f.success(resp)
+
+    (
+        error_code,
+        group_id,
+        state,
+        protocol_type,
+        protocol,
+        members,
+    ) = future.value.groups[0]
+
+    res = []
+    for member in members:
+        (member_id, client_id, client_host, member_metadata, member_assignment) = member
+        member_info = {}
+        member_info["member_id"] = member_id
+        member_info["client_id"] = client_id
+        member_info["client_host"] = client_host
+        member_topics_assignment = []
+        for topic, partitions in MemberAssignment.decode(member_assignment).assignment:
+            member_topics_assignment.append({"topic": topic, "partitions": partitions})
+        member_info["assignment"] = member_topics_assignment
+        res.append(member_info)
+    return res
+
+
+def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
+    try_count = 0
+    while True:
+        logging.debug(f"Inserting, try_count is {try_count}")
+        try:
+            try_count += 1
+            instance.query(f"INSERT INTO test.{table_name} VALUES {values}")
+            break
+        except QueryRuntimeException as e:
+            if "Local: Timed out." in str(e) and try_count < max_try_count:
+                continue
+            else:
+                raise
