@@ -17,9 +17,17 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS;
 "
 
-$CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND current_database = currentDatabase() and type='QueryFinish';
-"
+for i in {1..5}; do
+    count=$( $CLICKHOUSE_CLIENT --query "
+        SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
+        WHERE query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        current_database = currentDatabase() and type='QueryFinish';" )
+    if [[ "$count" == "1" ]]; then
+        echo "1"
+        break
+    fi
+    sleep 1
+done
 
 $CLICKHOUSE_CLIENT --query_id="test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME" --query "
     SELECT countDistinct(_path) FROM file('$DATA_DIR/data_hive/partitioning/identifier=*/email.csv') WHERE identifier = 2070 SETTINGS use_hive_partitioning=1;
@@ -29,9 +37,17 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS;
 "
 
-$CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND current_database = currentDatabase() and type='QueryFinish';
-"
+for i in {1..5}; do
+    count=$( $CLICKHOUSE_CLIENT --query "
+        SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
+        WHERE query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        current_database = currentDatabase() and type='QueryFinish';" )
+    if [[ "$count" == "1" ]]; then
+        echo "1"
+        break
+    fi
+    sleep 1
+done
 
 $CLICKHOUSE_CLIENT --query_id="test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME" --query "
     SELECT countDistinct(_path) FROM file('$DATA_DIR/data_hive/partitioning/array=*/sample.parquet') WHERE array = [1,2,3] SETTINGS use_hive_partitioning=1;
@@ -41,7 +57,16 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS;
 "
 
-$CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND current_database = currentDatabase() and type='QueryFinish';
-"
+for i in {1..5}; do
+    count=$( $CLICKHOUSE_CLIENT --query "
+        SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
+        WHERE query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        current_database = currentDatabase() and type='QueryFinish';" )
+    if [[ "$count" == "1" ]]; then
+        echo "1"
+        break
+    fi
+    sleep 1
+done
+
 rm -rf $DATA_DIR
