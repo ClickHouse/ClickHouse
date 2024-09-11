@@ -1464,7 +1464,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         if (!getContext()->getSettingsRef().allow_experimental_refreshable_materialized_view)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Refreshable materialized views are experimental. Enable allow_experimental_refreshable_materialized_view to use.");
+                "Refreshable materialized views are experimental. Enable allow_experimental_refreshable_materialized_view to use");
 
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.refresh_strategy);
