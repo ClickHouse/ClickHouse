@@ -112,7 +112,12 @@ static const orc::Type * getORCTypeByName(const orc::Type & schema, const String
     return nullptr;
 }
 
-static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_with_unsupported_types, bool & skipped)
+static DataTypePtr parseORCType(
+    const orc::Type * orc_type,
+    bool skip_columns_with_unsupported_types,
+    bool dictionary_as_low_cardinality,
+    const orc::StripeInformation * strip_info,
+    bool & skipped)
 {
     assert(orc_type != nullptr);
 
@@ -139,12 +144,25 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
             return std::make_shared<DataTypeDateTime64>(9);
         case orc::TypeKind::TIMESTAMP_INSTANT:
             return std::make_shared<DataTypeDateTime64>(9, "UTC");
+        case orc::TypeKind::CHAR:
         case orc::TypeKind::VARCHAR:
         case orc::TypeKind::BINARY:
-        case orc::TypeKind::STRING:
-            return std::make_shared<DataTypeString>();
-        case orc::TypeKind::CHAR:
-            return std::make_shared<DataTypeFixedString>(orc_type->getMaximumLength());
+        case orc::TypeKind::STRING: {
+            DataTypePtr type;
+            if (orc_type->getKind() == orc::TypeKind::CHAR)
+                type = std::make_shared<DataTypeFixedString>(orc_type->getMaximumLength());
+            else
+                type = std::make_shared<DataTypeString>();
+
+            /// Wrap in LowCardinality if necessary
+            if (dictionary_as_low_cardinality && strip_info)
+            {
+                auto encoding = strip_info->getColumnEncoding(orc_type->getColumnId());
+                if (encoding == orc::ColumnEncodingKind_DICTIONARY || encoding == orc::ColumnEncodingKind_DICTIONARY_V2)
+                    type = std::make_shared<DataTypeLowCardinality>(type);
+            }
+            return type;
+        }
         case orc::TypeKind::DECIMAL: {
             UInt64 precision = orc_type->getPrecision();
             UInt64 scale = orc_type->getScale();
@@ -160,7 +178,8 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
             if (subtype_count != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
 
-            DataTypePtr nested_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
+            DataTypePtr nested_type = parseORCType(
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
             if (skipped)
                 return {};
 
@@ -170,11 +189,12 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
             if (subtype_count != 2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
 
-            DataTypePtr key_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
+            DataTypePtr key_type = parseORCType(
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
             if (skipped)
                 return {};
 
-            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, skipped);
+            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
             if (skipped)
                 return {};
 
@@ -188,7 +208,8 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
 
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
-                auto parsed_type = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, skipped);
+                auto parsed_type
+                    = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
                 if (skipped)
                     return {};
 
@@ -491,7 +512,7 @@ static void buildORCSearchArgumentImpl(
             ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
             ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, skipped));
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped));
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
             if (!expect_type || !column)
             {
@@ -992,6 +1013,10 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     std::atomic<int> is_stopped = 0;
     getFileReader(in, file_reader, format_settings, is_stopped);
 
+    std::unique_ptr<orc::StripeInformation> stripe_info;
+    if (file_reader->getNumberOfStripes())
+        stripe_info = file_reader->getStripe(0);
+
     const auto & schema = file_reader->getType();
     Block header;
     for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
@@ -1000,7 +1025,12 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
         const orc::Type * orc_type = schema.getSubtype(i);
 
         bool skipped = false;
-        DataTypePtr type = parseORCType(orc_type, format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference, skipped);
+        DataTypePtr type = parseORCType(
+            orc_type,
+            format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
+            format_settings.orc.dictionary_as_low_cardinality,
+            stripe_info.get(),
+            skipped);
         type = std::make_shared<DataTypeLowCardinality>(removeNullable(type));
         if (!skipped)
             header.insert(ColumnWithTypeAndName{type, name});
@@ -1516,7 +1546,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
         case orc::TIMESTAMP_INSTANT:
             return readColumnWithTimestampData(orc_column, orc_type, column_name);
         case orc::DECIMAL: {
-            auto interal_type = parseORCType(orc_type, false, skipped);
+            auto interal_type = parseORCType(orc_type, false, false, nullptr, skipped);
 
             auto precision = orc_type->getPrecision();
             if (precision == 0)
