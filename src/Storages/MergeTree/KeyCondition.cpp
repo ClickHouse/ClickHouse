@@ -1297,10 +1297,10 @@ bool KeyCondition::tryPrepareSetIndex(
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
-                if (nullable_set_column_null_map_size < nullable_set_column_null_map.size())
+                if (nullable_set_column_null_map_size < set_column_null_map->size())
                     filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
                 else
-                    filter[i] = (*set_column_null_map)[i];
+                    filter[i] = !nullable_set_column_null_map[i];
             }
 
             set_column = nullable_set_column_typed.filter(filter, 0);
