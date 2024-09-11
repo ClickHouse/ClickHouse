@@ -204,7 +204,7 @@ class JobNames(metaclass=WithIter):
     PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
     PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
-    SQL_LOGIC_TEST = "Sqllogic test (release)"
+    # SQL_LOGIC_TEST = "Sqllogic test (release)"
 
     SQLANCER = "SQLancer (release)"
     SQLANCER_DEBUG = "SQLancer (debug)"
@@ -415,6 +415,7 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
+                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateless-test"],
@@ -431,6 +432,7 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
+                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateful-test"],
@@ -448,6 +450,7 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
+                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stress-test"],
@@ -459,9 +462,9 @@ class CommonJobConfigs:
     UPGRADE_TEST = JobConfig(
         job_name_keyword="upgrade",
         digest=DigestConfig(
-            include_paths=["./tests/ci/upgrade_check.py"],
+            include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"],
             exclude_files=[".md"],
-            docker=["clickhouse/upgrade-check"],
+            docker=["clickhouse/stress-test"],
         ),
         run_command="upgrade_check.py",
         runner_type=Runners.STRESS_TESTER,
