@@ -1,12 +1,14 @@
 -- Tags: no-fasttest
 -- reason: test requires too many rows to read
 
+SET max_rows_to_read = '501G';
+
 DROP TABLE IF EXISTS id_values;
 
 DROP TABLE IF EXISTS test_table;
 
 CREATE TABLE id_values ENGINE MergeTree ORDER BY id1 AS
-    SELECT arrayJoin(range(20000)) AS id1, arrayJoin(range(1000)) AS id2;
+    SELECT arrayJoin(range(500000)) AS id1, arrayJoin(range(1000)) AS id2;
 
 SET max_memory_usage = '1G';
 
