@@ -228,8 +228,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
 
-        if (!create.attach && fs::exists(metadata_path))
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
+        if (!create.attach && fs::exists(metadata_path) && !fs::is_empty(metadata_path))
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
     else if (create.storage->engine->name == "MaterializeMySQL"
         || create.storage->engine->name == "MaterializedMySQL")
@@ -329,6 +329,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
 
+        /// Needed to make database creation retriable if it fails after the file is created
+        fs::remove(metadata_file_tmp_path);
+
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
@@ -350,13 +353,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
-        if (need_write_metadata)
-        {
-            /// Prevents from overwriting metadata of detached database
-            renameNoReplace(metadata_file_tmp_path, metadata_file_path);
-            renamed = true;
-        }
-
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
@@ -367,6 +363,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
+        }
+
+        if (need_write_metadata)
+        {
+            /// Prevents from overwriting metadata of detached database
+            renameNoReplace(metadata_file_tmp_path, metadata_file_path);
+            renamed = true;
         }
     }
     catch (...)
@@ -781,14 +784,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_full_text_index)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_full_text_index')");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is disabled. Turn on setting 'allow_experimental_full_text_index'");
                 /// ----
                 /// Temporary check during a transition period. Please remove at the end of 2024.
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
                 /// ----
                 if (index_desc.type == "vector_similarity" && !settings.allow_experimental_vector_similarity_index)
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index is disabled. Turn on allow_experimental_vector_similarity_index");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental vector similarity index is disabled. Turn on setting 'allow_experimental_vector_similarity_index'");
 
                 properties.indices.push_back(index_desc);
             }
@@ -821,19 +824,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
-
-            /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
-            if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
-                create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
-
-            if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
-                create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
-
-            if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
-                create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
-
-            if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
-                create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
         }
         else
         {
@@ -1245,6 +1235,27 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
     bool from_path = create.attach_from_path.has_value();
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !is_on_cluster && !create.attach)
+    {
+        if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It's not allowed to explicitly specify UUIDs for tables in Replicated databases, "
+                                                       "see database_replicated_allow_explicit_uuid");
+        }
+        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 1)
+        {
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "It's not recommended to explicitly specify UUIDs for tables in Replicated databases");
+        }
+        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 2)
+        {
+            UUID old_uuid = create.uuid;
+            create.uuid = UUIDHelpers::Nil;
+            create.generateRandomUUIDs();
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Replaced a user-provided UUID ({}) with a random one ({}) "
+                                                                   "to make sure it's unique", old_uuid, create.uuid);
+        }
+    }
 
     if (is_replicated_database_internal && !internal)
     {
