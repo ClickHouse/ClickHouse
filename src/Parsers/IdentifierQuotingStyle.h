@@ -16,8 +16,8 @@ enum class IdentifierQuotingStyle : uint8_t
 
 enum class IdentifierQuotingRule : uint8_t
 {
-    Always, /// Always quote identifiers
-    WhenNecessaryForUserDisplay, /// When the identifiers is one of the certain keywords defined in `writeProbablyQuotedStringImpl`
-    WhenNecessary, /// Same as `WhenNecessaryForUserDisplay`, and ambiguous identifiers passed to `writeIdentifier`
+    UserDisplay,    /// When the identifiers is one of the certain keywords defined in `writeProbablyQuotedStringImpl`
+    WhenNecessary,  /// When the identifiers is one of the certain keywords defined in `writeProbablyQuotedStringImpl`, and ambiguous identifiers passed to `writeIdentifier`
+    Always,         /// Always quote identifiers
 };
 }
