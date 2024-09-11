@@ -17,7 +17,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS;
 "
 
-for i in {1..5}; do
+for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
         WHERE query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS;
 "
 
-for i in {1..5}; do
+for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
         WHERE query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
@@ -57,7 +57,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS;
 "
 
-for i in {1..5}; do
+for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
         WHERE query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
