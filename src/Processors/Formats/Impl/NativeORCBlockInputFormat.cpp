@@ -1,4 +1,5 @@
 #include "NativeORCBlockInputFormat.h"
+#include "Columns/ColumnsCommon.h"
 
 #if USE_ORC
 #    include <Columns/ColumnDecimal.h>
@@ -112,11 +113,20 @@ static const orc::Type * getORCTypeByName(const orc::Type & schema, const String
     return nullptr;
 }
 
+static bool isDictionaryEncoded(const orc::StripeInformation * stripe_info, const orc::Type * orc_type)
+{
+    if (!stripe_info)
+        return false;
+
+    auto encoding = stripe_info->getColumnEncoding(orc_type->getColumnId());
+    return encoding == orc::ColumnEncodingKind_DICTIONARY || encoding == orc::ColumnEncodingKind_DICTIONARY_V2;
+}
+
 static DataTypePtr parseORCType(
     const orc::Type * orc_type,
     bool skip_columns_with_unsupported_types,
     bool dictionary_as_low_cardinality,
-    const orc::StripeInformation * strip_info,
+    const orc::StripeInformation * stripe_info,
     bool & skipped)
 {
     assert(orc_type != nullptr);
@@ -154,13 +164,10 @@ static DataTypePtr parseORCType(
             else
                 type = std::make_shared<DataTypeString>();
 
-            /// Wrap in LowCardinality if necessary
-            if (dictionary_as_low_cardinality && strip_info)
-            {
-                auto encoding = strip_info->getColumnEncoding(orc_type->getColumnId());
-                if (encoding == orc::ColumnEncodingKind_DICTIONARY || encoding == orc::ColumnEncodingKind_DICTIONARY_V2)
-                    type = std::make_shared<DataTypeLowCardinality>(type);
-            }
+            /// Wrap type in LowCardinality if orc column is dictionary encoded and dictionary_as_low_cardinality is true
+            if (dictionary_as_low_cardinality && isDictionaryEncoded(stripe_info, orc_type))
+                type = std::make_shared<DataTypeLowCardinality>(type);
+
             return type;
         }
         case orc::TypeKind::DECIMAL: {
@@ -179,7 +186,7 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
 
             DataTypePtr nested_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
             if (skipped)
                 return {};
 
@@ -190,11 +197,11 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
 
             DataTypePtr key_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
             if (skipped)
                 return {};
 
-            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
+            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
             if (skipped)
                 return {};
 
@@ -209,7 +216,7 @@ static DataTypePtr parseORCType(
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
                 auto parsed_type
-                    = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, strip_info, skipped);
+                    = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
                 if (skipped)
                     return {};
 
@@ -922,7 +929,7 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
 
     orc::RowReaderOptions row_reader_options;
-    row_reader_options.setEnableLazyDecoding(true);
+    row_reader_options.setEnableLazyDecoding(format_settings.orc.dictionary_as_low_cardinality);
     row_reader_options.includeTypes(include_indices);
     row_reader_options.setTimezoneName(format_settings.orc.reader_time_zone_name);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
@@ -1013,12 +1020,13 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     std::atomic<int> is_stopped = 0;
     getFileReader(in, file_reader, format_settings, is_stopped);
 
+
+    const auto & schema = file_reader->getType();
+    Block header;
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
         stripe_info = file_reader->getStripe(0);
 
-    const auto & schema = file_reader->getType();
-    Block header;
     for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
     {
         const std::string & name = schema.getFieldName(i);
@@ -1031,7 +1039,6 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
             format_settings.orc.dictionary_as_low_cardinality,
             stripe_info.get(),
             skipped);
-        type = std::make_shared<DataTypeLowCardinality>(removeNullable(type));
         if (!skipped)
             header.insert(ColumnWithTypeAndName{type, name});
     }
@@ -1042,11 +1049,18 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
 }
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
-    const Block & header_, bool allow_missing_columns_, bool null_as_default_, bool case_insensitive_matching_)
+    const Block & header_,
+    bool allow_missing_columns_,
+    bool null_as_default_,
+    bool case_insensitive_matching_,
+    bool dictionary_as_low_cardinality_,
+    std::unique_ptr<orc::StripeInformation> stripe_info_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
+    , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
+    , stripe_info(std::move(stripe_info_))
 {
 }
 
@@ -1160,50 +1174,122 @@ readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const o
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-[[maybe_unused]] static ColumnWithTypeAndName
-readColumnWithLowCardinalityStringData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+template <bool fixed_string>
+static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
+    const orc::ColumnVectorBatch * orc_column, const orc::Type * orc_type, const String & column_name, bool nullable)
 {
-    /// Calculate dict_column
-    auto dict_type = std::make_shared<DataTypeString>();
-    auto dict_column = dict_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*dict_column).getChars();
-    PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*dict_column).getOffsets();
-
     const auto * orc_str_column = dynamic_cast<const orc::EncodedStringVectorBatch *>(orc_column);
+    size_t rows = orc_str_column->numElements;
     const auto & orc_dict = *orc_str_column->dictionary;
     size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
-    size_t reserver_size = orc_dict.dictionaryBlob.size() + dict_size;
-    column_chars_t.resize_exact(reserver_size);
-    column_offsets.resize_exact(dict_size);
 
-    size_t curr_offset = 0;
-    for (size_t i = 0; i < dict_size; ++i)
+    /// Fill CH holder_column with orc dictionary
+    /// Note that holder_column is always a ColumnString or ColumnFixedstring whether nullable is true or false, because ORC dictionary doesn't contain null values.
+    DataTypePtr holder_type;
+    if constexpr (fixed_string)
+        holder_type = std::make_shared<DataTypeFixedString>(orc_type->getMaximumLength());
+    else
+        holder_type = std::make_shared<DataTypeString>();
+
+    auto holder_column = holder_type->createColumn();
+
+    if constexpr (fixed_string)
     {
-        const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
-        size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
-        memcpy(&column_chars_t[curr_offset], buf, buf_size);
-        curr_offset += buf_size;
+        const size_t n = orc_type->getMaximumLength();
+        auto & concrete_holder_column = assert_cast<ColumnFixedString &>(*holder_column);
+        PaddedPODArray<UInt8> & column_chars_t = concrete_holder_column.getChars();
+        size_t reserve_size = dict_size * n;
+        column_chars_t.resize_exact(reserve_size);
+        size_t curr_offset = 0;
+        for (size_t i = 0; i < dict_size; ++i)
+        {
+            const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
+            size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
+            memcpy(&column_chars_t[curr_offset], buf, buf_size);
+            curr_offset += n;
+        }
+    }
+    else
+    {
+        auto & concrete_holder_column = assert_cast<ColumnString &>(*holder_column);
+        PaddedPODArray<UInt8> & column_chars_t = concrete_holder_column.getChars();
+        PaddedPODArray<UInt64> & column_offsets = concrete_holder_column.getOffsets();
 
-        column_chars_t[curr_offset] = 0;
-        ++curr_offset;
+        size_t reserve_size = orc_dict.dictionaryBlob.size() + dict_size;
+        column_chars_t.resize_exact(reserve_size);
+        column_offsets.resize_exact(dict_size);
+        size_t curr_offset = 0;
+        for (size_t i = 0; i < dict_size; ++i)
+        {
+            const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
+            size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
+            memcpy(&column_chars_t[curr_offset], buf, buf_size);
+            curr_offset += buf_size;
 
-        column_offsets[i] = curr_offset;
+            column_chars_t[curr_offset] = 0;
+            ++curr_offset;
+
+            column_offsets[i] = curr_offset;
+        }
     }
 
-    /// Fill dict_column into unique column
-    auto internal_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    auto internal_column = internal_type->createColumn();
-    auto dictionary_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(internal_column.get())->getDictionaryPtr());
-    dynamic_cast<IColumnUnique *>(dictionary_column.get())->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
+    /// Insert CH dictionary_column from holder_column
+    DataTypePtr nested_type = nullable ? std::make_shared<DataTypeNullable>(holder_type) : holder_type;
+    auto internal_type = std::make_shared<DataTypeLowCardinality>(std::move(nested_type));
+    auto tmp_internal_column = internal_type->createColumn();
+    auto dictionary_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_internal_column.get())->getDictionaryPtr());
+    auto index_column
+        = dynamic_cast<IColumnUnique *>(dictionary_column.get())->uniqueInsertRangeFrom(*holder_column, 0, holder_column->size());
 
-    /// Fill index_column
-    auto index_column = ColumnUInt64::create();
-    auto & index_data = index_column->getData();
-    index_data.resize_exact(orc_str_column->index.size());
-    for (size_t i = 0; i < orc_str_column->index.size(); ++i)
-        index_data[i] = orc_str_column->index[i] + 1;
+    /// Fill index_column and wrap it with LowCardinality
+    auto call_by_type = [&](auto index_type) -> MutableColumnPtr
+    {
+        using IndexType = decltype(index_type);
+        const ColumnVector<IndexType> * concrete_index_column = checkAndGetColumn<ColumnVector<IndexType>>(index_column.get());
+        if (!concrete_index_column)
+            return nullptr;
 
-    internal_column = ColumnLowCardinality::create(std::move(dictionary_column), std::move(index_column));
+        const auto & index_data = concrete_index_column->getData();
+        auto res_column = ColumnVector<IndexType>::create(rows);
+        auto & res_data = dynamic_cast<ColumnVector<IndexType> &>(*res_column).getData();
+
+        if (!orc_str_column->hasNulls)
+        {
+            for (size_t i = 0; i < rows; ++i)
+            {
+                /// First map row index to orc dictionary index, then map orc dictionary index to CH dictionary index
+                res_data[i] = index_data[orc_str_column->index[i]];
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < rows; ++i)
+            {
+                if (orc_str_column->notNull[i])
+                    res_data[i] = index_data[orc_str_column->index[i]];
+                else
+                {
+                    /// Set index of null values to 0
+                    /// If dictionary_column is nullable, 0 represents null value.
+                    /// Otherwise, 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
+                    res_data[i] = 0;
+                }
+            }
+        }
+
+        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(index_column));
+    };
+
+    MutableColumnPtr internal_column;
+    if (!internal_column)
+        internal_column = call_by_type(UInt8());
+    if (!internal_column)
+        internal_column = call_by_type(UInt16());
+    if (!internal_column)
+        internal_column = call_by_type(UInt32());
+    if (!internal_column)
+        internal_column = call_by_type(UInt64());
+
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
@@ -1450,16 +1536,16 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const orc
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnWithTypeAndName readColumnFromORCColumn(
+ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const orc::ColumnVectorBatch * orc_column,
     const orc::Type * orc_type,
     const std::string & column_name,
     bool inside_nullable,
-    DataTypePtr type_hint = nullptr)
+    DataTypePtr type_hint) const
 {
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable()))
+    if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable())) && !orc_column->isEncoded
         && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP && orc_type->getKind() != orc::STRUCT))
     {
         DataTypePtr nested_type_hint;
@@ -1501,8 +1587,14 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                     default:;
                 }
             }
-            // return readColumnWithLowCardinalityStringData(orc_column, orc_type, column_name);
-            return readColumnWithStringData(orc_column, orc_type, column_name);
+
+            if (orc_column->isEncoded && dictionary_as_low_cardinality)
+            {
+                bool nullable = type_hint ? isNullableOrLowCardinalityNullable(type_hint) : true;
+                return readColumnWithEncodedStringOrFixedStringData<true>(orc_column, orc_type, column_name, nullable);
+            }
+            else
+                return readColumnWithStringData(orc_column, orc_type, column_name);
         }
         case orc::CHAR: {
             if (type_hint)
@@ -1520,7 +1612,14 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                     default:;
                 }
             }
-            return readColumnWithFixedStringData(orc_column, orc_type, column_name);
+
+            if (orc_column->isEncoded && dictionary_as_low_cardinality)
+            {
+                bool nullable = type_hint ? isNullableOrLowCardinalityNullable(type_hint) : true;
+                return readColumnWithEncodedStringOrFixedStringData<false>(orc_column, orc_type, column_name, nullable);
+            }
+            else
+                return readColumnWithFixedStringData(orc_column, orc_type, column_name);
         }
         case orc::BOOLEAN:
             return readColumnWithBooleanData(orc_column, orc_type, column_name);
