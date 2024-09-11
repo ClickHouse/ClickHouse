@@ -23,7 +23,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
