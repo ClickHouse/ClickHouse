@@ -28,7 +28,7 @@ def test_unfreeze(storage_policy: str, started_cluster: ClickHouseCluster) -> No
     node1.query(
         f"""\
 CREATE TABLE test1 (a Int)
-ENGINE = ReplicatedMergeTree('/clickhouse-tables/test1/{storage_policy}', 'r1')
+ENGINE = ReplicatedMergeTree('/clickhouse-tables/test1', 'r1')
 ORDER BY a
 SETTINGS storage_policy = '{storage_policy}'
 """
@@ -55,3 +55,4 @@ LIMIT 20
     assert len(kazoo.get_children(part_path + part_name)) == 1
     assert node1.query("SELECT count() FROM test1").strip() == "20"
     node1.query("DROP TABLE test1")
+    node1.query("SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse-tables/test1'")
