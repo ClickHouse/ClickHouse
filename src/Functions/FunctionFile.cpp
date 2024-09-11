@@ -129,7 +129,7 @@ public:
 
             try
             {
-                if (need_check && file_path.string().find(user_files_absolute_path_string) != 0)
+                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);

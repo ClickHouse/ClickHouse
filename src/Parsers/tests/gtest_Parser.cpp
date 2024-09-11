@@ -1,7 +1,4 @@
-#include <IO/WriteBufferFromOStream.h>
-#include <Interpreters/applyTableOverride.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
@@ -9,7 +6,7 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
-#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -53,19 +50,38 @@ TEST_P(ParserTest, parseQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
         }
         else
         {
             ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
-                WriteBufferFromOwnString buf;
-                formatAST(*ast->clone(), buf, false, false);
-                String formatted_ast = buf.str();
-                EXPECT_EQ(expected_ast, formatted_ast);
+                ASTPtr ast_clone = ast->clone();
+                {
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
+                    EXPECT_EQ(expected_ast, formatted_ast);
+                }
+
+
+                ASTPtr ast_clone2 = ast_clone->clone();
+                /// Break `ast_clone2`, it should not affect `ast_clone` if `clone()` implemented properly
+                for (auto & child : ast_clone2->children)
+                {
+                    if (auto * identifier = dynamic_cast<ASTIdentifier *>(child.get()))
+                        identifier->setShortName("new_name");
+                }
+
+                {
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
+                    EXPECT_EQ(expected_ast, formatted_ast);
+                }
             }
             else
             {
@@ -86,7 +102,7 @@ TEST_P(ParserTest, parseQuery)
     }
     else
     {
-        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
     }
 }
 
@@ -215,47 +231,47 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
         },
         {
             "CREATE DATABASE db ENGINE=MaterializeMySQL('addr:port', 'db', 'user', 'pw') TABLE OVERRIDE `tbl`\n(PARTITION BY toYYYYMM(created))",
-            "CREATE DATABASE db\nENGINE = MaterializeMySQL('addr:port', 'db', 'user', 'pw')\nTABLE OVERRIDE `tbl`\n(\n    PARTITION BY toYYYYMM(`created`)\n)"
+            "CREATE DATABASE db\nENGINE = MaterializeMySQL('addr:port', 'db', 'user', 'pw')\nTABLE OVERRIDE tbl\n(\n    PARTITION BY toYYYYMM(created)\n)"
         },
         {
             "CREATE DATABASE db ENGINE=Foo TABLE OVERRIDE `tbl` (), TABLE OVERRIDE a (COLUMNS (_created DateTime MATERIALIZED now())), TABLE OVERRIDE b (PARTITION BY rand())",
-            "CREATE DATABASE db\nENGINE = Foo\nTABLE OVERRIDE `tbl`\n(\n\n),\nTABLE OVERRIDE `a`\n(\n    COLUMNS\n    (\n        `_created` DateTime MATERIALIZED now()\n    )\n),\nTABLE OVERRIDE `b`\n(\n    PARTITION BY rand()\n)"
+            "CREATE DATABASE db\nENGINE = Foo\nTABLE OVERRIDE tbl\n(\n\n),\nTABLE OVERRIDE a\n(\n    COLUMNS\n    (\n        `_created` DateTime MATERIALIZED now()\n    )\n),\nTABLE OVERRIDE b\n(\n    PARTITION BY rand()\n)"
         },
         {
             "CREATE DATABASE db ENGINE=MaterializeMySQL('addr:port', 'db', 'user', 'pw') TABLE OVERRIDE tbl (COLUMNS (id UUID) PARTITION BY toYYYYMM(created))",
-            "CREATE DATABASE db\nENGINE = MaterializeMySQL('addr:port', 'db', 'user', 'pw')\nTABLE OVERRIDE `tbl`\n(\n    COLUMNS\n    (\n        `id` UUID\n    )\n    PARTITION BY toYYYYMM(`created`)\n)"
+            "CREATE DATABASE db\nENGINE = MaterializeMySQL('addr:port', 'db', 'user', 'pw')\nTABLE OVERRIDE tbl\n(\n    COLUMNS\n    (\n        `id` UUID\n    )\n    PARTITION BY toYYYYMM(created)\n)"
         },
         {
             "CREATE DATABASE db TABLE OVERRIDE tbl (COLUMNS (INDEX foo foo TYPE minmax GRANULARITY 1) PARTITION BY if(_staged = 1, 'staging', toYYYYMM(created)))",
-            "CREATE DATABASE db\nTABLE OVERRIDE `tbl`\n(\n    COLUMNS\n    (\n        INDEX foo `foo` TYPE minmax GRANULARITY 1\n    )\n    PARTITION BY if(`_staged` = 1, 'staging', toYYYYMM(`created`))\n)"
+            "CREATE DATABASE db\nTABLE OVERRIDE tbl\n(\n    COLUMNS\n    (\n        INDEX foo foo TYPE minmax GRANULARITY 1\n    )\n    PARTITION BY if(_staged = 1, 'staging', toYYYYMM(created))\n)"
         },
         {
             "CREATE DATABASE db TABLE OVERRIDE t1 (TTL inserted + INTERVAL 1 MONTH DELETE), TABLE OVERRIDE t2 (TTL `inserted` + INTERVAL 2 MONTH DELETE)",
-            "CREATE DATABASE db\nTABLE OVERRIDE `t1`\n(\n    TTL `inserted` + toIntervalMonth(1)\n),\nTABLE OVERRIDE `t2`\n(\n    TTL `inserted` + toIntervalMonth(2)\n)"
+            "CREATE DATABASE db\nTABLE OVERRIDE t1\n(\n    TTL inserted + toIntervalMonth(1)\n),\nTABLE OVERRIDE t2\n(\n    TTL inserted + toIntervalMonth(2)\n)"
         },
         {
             "CREATE DATABASE db ENGINE = MaterializeMySQL('127.0.0.1:3306', 'db', 'root', 'pw') SETTINGS allows_query_when_mysql_lost = 1 TABLE OVERRIDE tab3 (COLUMNS (_staged UInt8 MATERIALIZED 1) PARTITION BY (c3) TTL c3 + INTERVAL 10 minute), TABLE OVERRIDE tab5 (PARTITION BY (c3) TTL c3 + INTERVAL 10 minute)",
-            "CREATE DATABASE db\nENGINE = MaterializeMySQL('127.0.0.1:3306', 'db', 'root', 'pw')\nSETTINGS allows_query_when_mysql_lost = 1\nTABLE OVERRIDE `tab3`\n(\n    COLUMNS\n    (\n        `_staged` UInt8 MATERIALIZED 1\n    )\n    PARTITION BY `c3`\n    TTL `c3` + toIntervalMinute(10)\n),\nTABLE OVERRIDE `tab5`\n(\n    PARTITION BY `c3`\n    TTL `c3` + toIntervalMinute(10)\n)"
+            "CREATE DATABASE db\nENGINE = MaterializeMySQL('127.0.0.1:3306', 'db', 'root', 'pw')\nSETTINGS allows_query_when_mysql_lost = 1\nTABLE OVERRIDE tab3\n(\n    COLUMNS\n    (\n        `_staged` UInt8 MATERIALIZED 1\n    )\n    PARTITION BY c3\n    TTL c3 + toIntervalMinute(10)\n),\nTABLE OVERRIDE tab5\n(\n    PARTITION BY c3\n    TTL c3 + toIntervalMinute(10)\n)"
         },
         {
             "CREATE DATABASE db TABLE OVERRIDE tbl (PARTITION BY toYYYYMM(created) COLUMNS (created DateTime CODEC(Delta)))",
-            "CREATE DATABASE db\nTABLE OVERRIDE `tbl`\n(\n    COLUMNS\n    (\n        `created` DateTime CODEC(Delta)\n    )\n    PARTITION BY toYYYYMM(`created`)\n)"
+            "CREATE DATABASE db\nTABLE OVERRIDE tbl\n(\n    COLUMNS\n    (\n        `created` DateTime CODEC(Delta)\n    )\n    PARTITION BY toYYYYMM(created)\n)"
         },
         {
-            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1",
+            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1", 
             "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1"
         },
         {
-            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2",
+            "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2", 
             "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2"
         },
         {
             "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2 TABLE OVERRIDE a (ORDER BY (id, version))",
-            "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2\nTABLE OVERRIDE `a`\n(\n    ORDER BY (`id`, `version`)\n)"
+            "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2\nTABLE OVERRIDE a\n(\n    ORDER BY (id, version)\n)"
         },
         {
             "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2 COMMENT 'db comment' TABLE OVERRIDE a (ORDER BY (id, version))",
-            "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2\nTABLE OVERRIDE `a`\n(\n    ORDER BY (`id`, `version`)\n)\nCOMMENT 'db comment'"
+            "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2\nTABLE OVERRIDE a\n(\n    ORDER BY (id, version)\n)\nCOMMENT 'db comment'"
         }
 })));
 
@@ -296,6 +312,16 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        }
+})));
+
+INSTANTIATE_TEST_SUITE_P(ParserRenameQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserRenameQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "RENAME TABLE eligible_test TO eligible_test2",
+            "RENAME TABLE eligible_test TO eligible_test2"
         }
 })));
 
@@ -619,12 +645,13 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;
+static constexpr size_t kDummyMaxParserBacktracks = 1000000;
 
 INSTANTIATE_TEST_SUITE_P(
     ParserPRQL,
     ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth)),
+        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth, kDummyMaxParserBacktracks)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
             {
                 "from albums\ngroup {author_id} (\n  aggregate {first_published = min published}\n)\njoin a=author side:left (==author_id)\njoin p=purchases side:right (==author_id)\ngroup {a.id, p.purchase_id} (\n  aggregate {avg_sell = min first_published}\n)",

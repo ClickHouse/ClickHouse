@@ -10,6 +10,8 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/escapeForFileName.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 namespace DB
 {
 
@@ -74,9 +76,9 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
                     "Table function '{}' expected bool flag for 'with_marks' argument", getName());
 
             if (value.getType() == Field::Types::Bool)
-                with_marks = value.get<bool>();
+                with_marks = value.safeGet<bool>();
             else
-                with_marks = value.get<UInt64>();
+                with_marks = value.safeGet<UInt64>();
         }
 
         if (!params.empty())

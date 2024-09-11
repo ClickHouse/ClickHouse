@@ -1,6 +1,9 @@
 #include <Functions/FunctionConstantBase.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <numbers>
+
+
 namespace DB
 {
 
@@ -19,7 +22,7 @@ namespace
     struct EImpl
     {
         static constexpr char name[] = "e";
-        static constexpr double value = 2.7182818284590452353602874713526624977572470;
+        static constexpr double value = std::numbers::e;
     };
 
     using FunctionE = FunctionMathConstFloat64<EImpl>;
@@ -28,7 +31,7 @@ namespace
     struct PiImpl
     {
         static constexpr char name[] = "pi";
-        static constexpr double value = 3.1415926535897932384626433832795028841971693;
+        static constexpr double value = std::numbers::pi;
     };
 
     using FunctionPi = FunctionMathConstFloat64<PiImpl>;
@@ -41,7 +44,7 @@ REGISTER_FUNCTION(E)
 
 REGISTER_FUNCTION(Pi)
 {
-    factory.registerFunction<FunctionPi>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionPi>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

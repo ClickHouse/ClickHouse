@@ -2,19 +2,19 @@
 
 #if USE_ODBC
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/parseQuery.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"
@@ -202,10 +202,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         if (columns.empty())
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Columns definition was not returned");
 
-        WriteBufferFromHTTPServerResponse out(
-            response,
-            request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
-            keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
         try
         {
             writeStringBinary(columns.toString(), out);

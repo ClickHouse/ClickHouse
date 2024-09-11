@@ -16,7 +16,6 @@ node1 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -28,7 +27,6 @@ node2 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node3 = cluster.add_instance(
     "node3",
@@ -40,7 +38,6 @@ node3 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 

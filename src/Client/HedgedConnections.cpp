@@ -3,6 +3,7 @@
 
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 
@@ -67,7 +68,6 @@ HedgedConnections::HedgedConnections(
     }
 
     active_connection_count = connections.size();
-    offsets_with_disabled_changing_replica = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
 }
 
@@ -188,15 +188,22 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+        const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
-        if (offset_states.size() > 1 && enable_sample_offset_parallel_processing)
+        if (offset_states.size() > 1 && enable_offset_parallel_processing)
         {
             modified_settings.parallel_replicas_count = offset_states.size();
             modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         }
 
-        replica.connection->sendQuery(timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+        /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+        /// Make the analyzer being set, so it will be effectively applied on the remote server.
+        /// In other words, the initiator always controls whether the analyzer enabled or not for
+        /// all servers involved in the distributed query processing.
+        modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings.allow_experimental_analyzer));
+
+        replica.connection->sendQuery(
+            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
         replica.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };
@@ -255,6 +262,17 @@ void HedgedConnections::sendCancel()
 
     if (!sent_query || cancelled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cancel. Either no query sent or already cancelled.");
+
+    /// All hedged connections should be stopped, since otherwise before the
+    /// HedgedConnectionsFactory will be destroyed (that will happen from
+    /// QueryPipeline dtor) they could still do some work.
+    /// And not only this does not make sense, but it also could lead to
+    /// use-after-free of the current_thread, since the thread from which they
+    /// had been created differs from the thread where the dtor of
+    /// QueryPipeline will be called and the initial thread could be already
+    /// destroyed (especially when the system is under pressure).
+    if (hedged_connections_factory.hasEventsInProcess())
+        hedged_connections_factory.stopChoosingReplicas();
 
     cancelled = true;
 

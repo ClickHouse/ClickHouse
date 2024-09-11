@@ -1,7 +1,11 @@
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/typeid_cast.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -23,7 +27,6 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
-#include <Common/typeid_cast.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -45,6 +48,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -55,7 +59,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextP
 
 BlockIO InterpreterAlterQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
@@ -71,11 +75,15 @@ BlockIO InterpreterAlterQuery::execute()
 
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
+    ASTSelectWithUnionQuery * modify_query = nullptr;
+
     for (auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
         if (command_ast->sql_security)
             InterpreterCreateQuery::processSQLSecurityOption(getContext(), command_ast->sql_security->as<ASTSQLSecurity &>());
+        else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
+            modify_query = command_ast->select->as<ASTSelectWithUnionQuery>();
     }
 
     BlockIO res;
@@ -123,6 +131,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
 
+    if (modify_query)
+    {
+        // Expand CTE before filling default database
+        ApplyWithSubqueryVisitor::visit(*modify_query);
+    }
+
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
@@ -164,11 +178,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!getContext()->getSettings().allow_experimental_statistic && (
-            command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
-            command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
-            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTIC))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistic");
+        if (!getContext()->getSettingsRef().allow_experimental_statistics
+            && (command_ast->type == ASTAlterCommand::ADD_STATISTICS || command_ast->type == ASTAlterCommand::DROP_STATISTICS
+                || command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
@@ -178,6 +191,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (1 < command_types_count || mixed_settings_amd_metadata_alter)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
+    }
+
+    if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
+    {
+        if (getContext()->getServerSettings().disable_insertion_and_mutation)
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
     if (!alter_commands.empty())
@@ -332,19 +351,24 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
             break;
         }
-        case ASTAlterCommand::ADD_STATISTIC:
+        case ASTAlterCommand::ADD_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_ADD_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
-        case ASTAlterCommand::DROP_STATISTIC:
+        case ASTAlterCommand::MODIFY_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_DROP_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
-        case ASTAlterCommand::MATERIALIZE_STATISTIC:
+        case ASTAlterCommand::DROP_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_DROP_STATISTICS, database, table);
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_STATISTICS:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

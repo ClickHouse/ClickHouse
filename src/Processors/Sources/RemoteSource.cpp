@@ -4,6 +4,8 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -35,16 +37,23 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
         progress(value.read_rows, value.read_bytes);
     });
 
-    query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
-    {
-        if (rows_before_limit)
+    query_executor->setProfileInfoCallback(
+        [this](const ProfileInfo & info)
         {
-            if (info.hasAppliedLimit())
-                rows_before_limit->add(info.getRowsBeforeLimit());
-            else
-                manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-        }
-    });
+            if (rows_before_limit)
+            {
+                if (info.hasAppliedLimit())
+                    rows_before_limit->add(info.getRowsBeforeLimit());
+                else
+                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+            }
+
+            if (rows_before_aggregation)
+            {
+                if (info.hasAppliedAggregation())
+                    rows_before_aggregation->add(info.getRowsBeforeAggregation());
+            }
+        });
 }
 
 RemoteSource::~RemoteSource() = default;
@@ -71,17 +80,54 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
+    if (executor_finished)
+        return Status::Finished;
+
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        query_executor->finish();
         is_async_state = false;
-        return status;
+        need_drain = true;
+        return Status::Ready;
     }
 
     return status;
+}
+
+void RemoteSource::work()
+{
+    /// Connection drain is a heavy operation that may take a long time.
+    /// Therefore we move connection drain from prepare() to work(), and drain multiple connections in parallel.
+    /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
+    if (need_drain)
+    {
+        query_executor->finish();
+        executor_finished = true;
+        return;
+    }
+
+    if (preprocessed_packet)
+    {
+        preprocessed_packet = false;
+        return;
+    }
+
+    ISource::work();
+}
+
+void RemoteSource::onAsyncJobReady()
+{
+    chassert(async_read);
+
+    if (!was_query_sent)
+        return;
+
+    chassert(!preprocessed_packet);
+    preprocessed_packet = query_executor->processParallelReplicaPacketIfAny();
+    if (preprocessed_packet)
+        is_async_state = false;
 }
 
 std::optional<Chunk> RemoteSource::tryGenerate()
@@ -145,7 +191,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
-
         query_executor->finish();
         return {};
     }
@@ -159,15 +204,22 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
         info->is_overflows = block.info.is_overflows;
-        chunk.setChunkInfo(std::move(info));
+        chunk.getChunkInfos().add(std::move(info));
     }
 
     return chunk;
 }
 
-void RemoteSource::onCancel()
+void RemoteSource::onCancel() noexcept
 {
-    query_executor->cancel();
+    try
+    {
+        query_executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation.");
+    }
 }
 
 void RemoteSource::onUpdatePorts()

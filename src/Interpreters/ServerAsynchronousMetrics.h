@@ -12,9 +12,12 @@ class ServerAsynchronousMetrics : WithContext, public AsynchronousMetrics
 public:
     ServerAsynchronousMetrics(
         ContextPtr global_context_,
-        int update_period_seconds,
-        int heavy_metrics_update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        unsigned update_period_seconds,
+        unsigned heavy_metrics_update_period_seconds,
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        bool update_jemalloc_epoch_,
+        bool update_rss_);
+
     ~ServerAsynchronousMetrics() override;
 
 private:

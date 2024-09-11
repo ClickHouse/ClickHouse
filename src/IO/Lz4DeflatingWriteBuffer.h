@@ -19,10 +19,10 @@ public:
         WriteBufferT && out_,
         int compression_level,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
+        char * existing_memory = nullptr, /// NOLINT(readability-non-const-parameter)
         size_t alignment = 0,
         bool compress_empty_ = true)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment) /// NOLINT(bugprone-move-forwarding-reference)
     , tmp_memory(buf_size)
     , compress_empty(compress_empty_)
     {

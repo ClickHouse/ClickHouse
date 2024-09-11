@@ -19,7 +19,7 @@ namespace
             if (!id_mode)
                 return parseRoleName(pos, expected, res);
 
-            if (!ParserKeyword{"ID"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::ID}.ignore(pos, expected))
                 return false;
             if (!ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 return false;
@@ -53,16 +53,16 @@ namespace
 
         auto parse_element = [&]
         {
-            if (ParserKeyword{"NONE"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::NONE}.ignore(pos, expected))
                 return true;
 
-            if (allow_all && ParserKeyword{"ALL"}.ignore(pos, expected))
+            if (allow_all && ParserKeyword{Keyword::ALL}.ignore(pos, expected))
             {
                 res_all = true;
                 return true;
             }
 
-            if (allow_any && ParserKeyword{"ANY"}.ignore(pos, expected))
+            if (allow_any && ParserKeyword{Keyword::ANY}.ignore(pos, expected))
             {
                 res_all = true;
                 return true;
@@ -102,7 +102,7 @@ namespace
         bool & except_current_user)
     {
         return IParserBase::wrapParseImpl(pos, [&] {
-            if (!ParserKeyword{"EXCEPT"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::EXCEPT}.ignore(pos, expected))
                 return false;
 
             bool unused;

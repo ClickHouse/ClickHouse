@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -63,7 +64,7 @@ std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTr
     return {};
 }
 
-void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
+void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
@@ -82,7 +83,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
             getName(), queryToString(kind_arg));
 
-    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.get<String>());
+    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
     auto explain_query = std::make_shared<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
@@ -91,15 +92,15 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a serialized string settings argument, got '{}'",
             getName(), queryToString(function->arguments->children[1]));
 
-    const auto & settings_str = settings_arg->value.get<String>();
+    const auto & settings_str = settings_arg->value.safeGet<String>();
     if (!settings_str.empty())
     {
-        constexpr UInt64 max_size = 4096;
-        constexpr UInt64 max_depth = 16;
+        const Settings & settings = context->getSettingsRef();
 
         /// parse_only_internals_ = true - we don't want to parse `SET` keyword
         ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
-        ASTPtr settings_ast = parseQuery(settings_parser, settings_str, max_size, max_depth);
+        ASTPtr settings_ast = parseQuery(settings_parser, settings_str,
+            settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         explain_query->setSettings(std::move(settings_ast));
     }
 
@@ -136,7 +137,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
 
 ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind());
+    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind()); /// NOLINT(readability-static-accessed-through-instance)
     ColumnsDescription columns_description;
     for (const auto & column : sample_block.getColumnsWithTypeAndName())
         columns_description.add(ColumnDescription(column.name, column.type));

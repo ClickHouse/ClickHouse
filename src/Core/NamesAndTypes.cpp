@@ -188,6 +188,18 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
     return filter(NameSet(names.begin(), names.end()));
 }
 
+NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
+{
+    NamesAndTypesList res;
+    for (const auto & column : *this)
+    {
+        if (!names.contains(column.name))
+            res.push_back(column);
+    }
+    return res;
+}
+
+
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.

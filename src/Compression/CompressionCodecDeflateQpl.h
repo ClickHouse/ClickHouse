@@ -4,6 +4,11 @@
 #include <map>
 #include <random>
 #include <pcg_random.hpp>
+
+#include "config.h"
+
+#if USE_QPL
+
 #include <qpl/qpl.h>
 
 namespace Poco
@@ -26,7 +31,7 @@ public:
 
     qpl_job * acquireJob(UInt32 & job_id);
     void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() { return job_pool_ready; }
+    const bool & isJobPoolReady() const { return job_pool_ready; }
 
 private:
     bool tryLockJob(UInt32 index);
@@ -117,3 +122,4 @@ private:
 };
 
 }
+#endif

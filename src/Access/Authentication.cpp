@@ -4,11 +4,13 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
+#include <Common/Exception.h>
+#include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Common/SSH/Wrappers.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 
+#include "config.h"
 
 namespace DB
 {
@@ -74,7 +76,7 @@ namespace
     }
 
 #if USE_SSH
-    bool checkSshSignature(const std::vector<ssh::SSHKey> & keys, std::string_view signature, std::string_view original)
+    bool checkSshSignature(const std::vector<SSHKey> & keys, std::string_view signature, std::string_view original)
     {
         for (const auto & key: keys)
             if (key.isPublic() && key.verifySignature(signature, original))
@@ -107,6 +109,9 @@ bool Authentication::areCredentialsValid(
             case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
             case AuthenticationType::KERBEROS:
                 return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
 
@@ -114,7 +119,11 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
 
             case AuthenticationType::MAX:
                 break;
@@ -144,8 +153,15 @@ bool Authentication::areCredentialsValid(
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
 
             case AuthenticationType::MAX:
                 break;
@@ -178,7 +194,14 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
+
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
 
             case AuthenticationType::BCRYPT_PASSWORD:
                 return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
@@ -209,20 +232,36 @@ bool Authentication::areCredentialsValid(
             case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
             case AuthenticationType::SSL_CERTIFICATE:
-                return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
+                for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+                {
+                    for (const auto & subject : auth_data.getSSLCertificateSubjects().at(type))
+                    {
+                        if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
+                            return true;
+                    }
+                }
+                return false;
 
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
 
             case AuthenticationType::MAX:
                 break;
         }
     }
 
+#if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
     {
         switch (auth_data.getType())
@@ -236,6 +275,9 @@ bool Authentication::areCredentialsValid(
             case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
+            case AuthenticationType::JWT:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
@@ -243,15 +285,12 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<SSLCertificateCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-#if USE_SSH
                 return checkSshSignature(auth_data.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
-#else
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
-#endif
             case AuthenticationType::MAX:
                 break;
         }
     }
+#endif
 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;

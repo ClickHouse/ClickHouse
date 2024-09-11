@@ -5,10 +5,11 @@ FROM ubuntu:22.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
 
 RUN apt-get update \
     && apt-get install \
+        sudo \
         apt-transport-https \
         apt-utils \
         ca-certificates \
@@ -26,6 +27,8 @@ RUN apt-get update \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -41,20 +44,10 @@ RUN apt-get update \
         bash \
         bsdmainutils \
         build-essential \
-        clang-${LLVM_VERSION} \
-        clang-tidy-${LLVM_VERSION} \
-        cmake \
-        gdb \
         git \
         gperf \
-        libclang-rt-${LLVM_VERSION}-dev \
-        lld-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION}-dev \
-        libclang-${LLVM_VERSION}-dev \
         moreutils \
         nasm \
-        ninja-build \
         pigz \
         rename \
         software-properties-common \
@@ -63,49 +56,5 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# This symlink is required by gcc to find the lld linker
-RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
-# for external_symbolizer_path
-RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
-# FIXME: workaround for "The imported target "merge-fdata" references the file" error
-# https://salsa.debian.org/pkg-llvm-team/llvm-toolchain/-/commit/992e52c0b156a5ba9c6a8a54f8c4857ddd3d371d
-RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
-
-ARG CCACHE_VERSION=4.6.1
-RUN mkdir /tmp/ccache \
-    && cd /tmp/ccache \
-    && curl -L \
-        -O https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION.tar.xz \
-        -O https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION.tar.xz.asc \
-    && gpg --recv-keys --keyserver hkps://keyserver.ubuntu.com 5A939A71A46792CF57866A51996DDA075594ADB8 \
-    && gpg --verify ccache-4.6.1.tar.xz.asc \
-    && tar xf ccache-$CCACHE_VERSION.tar.xz \
-    && cd /tmp/ccache/ccache-$CCACHE_VERSION \
-    && cmake -DCMAKE_INSTALL_PREFIX=/usr \
-        -DCMAKE_BUILD_TYPE=None \
-        -DZSTD_FROM_INTERNET=ON \
-        -DREDIS_STORAGE_BACKEND=OFF \
-        -Wno-dev \
-        -B build \
-        -S . \
-    && make VERBOSE=1 -C build \
-    && make install -C build \
-    && cd / \
-    && rm -rf /tmp/ccache
-
-ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.5.4
-ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
-# sccache requires a value for the region. So by default we use The Default Region
-ENV SCCACHE_REGION=us-east-1
-RUN arch=${TARGETARCH:-amd64} \
-  && case $arch in \
-    amd64) rarch=x86_64 ;; \
-    arm64) rarch=aarch64 ;; \
-  esac \
-  && curl -Ls "https://github.com/mozilla/sccache/releases/download/$SCCACHE_VERSION/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl.tar.gz" | \
-    tar xz -C /tmp \
-  && mv "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl/sccache" /usr/bin \
-  && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
-
-COPY process_functional_tests_result.py /
+COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"

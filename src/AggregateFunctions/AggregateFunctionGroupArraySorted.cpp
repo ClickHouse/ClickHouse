@@ -47,11 +47,12 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupArraySortedStrategy
+enum class GroupArraySortedStrategy : uint8_t
 {
     heap,
     sort
 };
+
 
 constexpr size_t group_array_sorted_sort_strategy_max_elements_threshold = 1000000;
 
@@ -209,6 +210,14 @@ struct GroupArraySortedData
                 result_array_data[result_array_data_insert_begin + i] = values[i];
         }
     }
+
+    ~GroupArraySortedData()
+    {
+        for (auto & value : values)
+        {
+            value.~T();
+        }
+    }
 };
 
 template <typename T>
@@ -310,9 +319,11 @@ public:
         {
             for (Field & element : values)
             {
-                UInt8 is_null = 0;
-                readBinary(is_null, buf);
-                if (!is_null)
+                /// We must initialize the Field type since some internal functions (like operator=) use them
+                new (&element) Field;
+                bool has_value = false;
+                readBinary(has_value, buf);
+                if (has_value)
                     serialization->deserializeBinary(element, buf, {});
             }
         }
@@ -363,10 +374,10 @@ AggregateFunctionPtr createWithNumericOrTimeType(const IDataType & argument_type
 template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArraySortedImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, args...))
         return AggregateFunctionPtr(res);
 
-    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, std::forward<TArgs>(args)...);
+    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, args...);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArray(
@@ -386,11 +397,11 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
+            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        max_elems = parameters[0].get<UInt64>();
+        max_elems = parameters[0].safeGet<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

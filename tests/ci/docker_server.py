@@ -11,7 +11,6 @@ from os import path as p
 from pathlib import Path
 from typing import Dict, List
 
-from build_check import get_release_or_pr
 from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
@@ -28,7 +27,6 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
-    get_tagged_versions,
     get_version_from_repo,
     version_arg,
 )
@@ -64,13 +62,20 @@ def parse_args() -> argparse.Namespace:
         "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
     )
     parser.add_argument(
-        "--release-type",
+        "--sha",
         type=str,
-        choices=("auto", "latest", "major", "minor", "patch", "head"),
+        default="",
+        help="sha of the commit to use packages from",
+    )
+    parser.add_argument(
+        "--tag-type",
+        type=str,
+        choices=("head", "release", "release-latest"),
         default="head",
-        help="version part that will be updated when '--version' is set; "
-        "'auto' is a special case, it will get versions from github and detect the "
-        "release type (latest, major, minor or patch) automatically",
+        help="defines required tags for resulting docker image. "
+        "head - for master image (tag: head) "
+        "release - for release image (tags: XX, XX.XX, XX.XX.XX, XX.XX.XX.XX) "
+        "release-latest - for latest release image (tags: XX, XX.XX, XX.XX.XX, XX.XX.XX.XX, latest) ",
     )
     parser.add_argument(
         "--image-path",
@@ -122,18 +127,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def retry_popen(cmd: str, log_file: Path) -> int:
-    max_retries = 5
-    for retry in range(max_retries):
-        # From time to time docker build may failed. Curl issues, or even push
-        # It will sleep progressively 5, 15, 30 and 50 seconds between retries
-        progressive_sleep = 5 * sum(i + 1 for i in range(retry))
-        if progressive_sleep:
-            logging.warning(
-                "The following command failed, sleep %s before retry: %s",
-                progressive_sleep,
-                cmd,
-            )
-            time.sleep(progressive_sleep)
+    max_retries = 2
+    sleep_seconds = 10
+    retcode = -1
+    for _retry in range(max_retries):
         with TeePopen(
             cmd,
             log_file=log_file,
@@ -141,86 +138,57 @@ def retry_popen(cmd: str, log_file: Path) -> int:
             retcode = process.wait()
             if retcode == 0:
                 return 0
-
+            else:
+                # From time to time docker build may failed. Curl issues, or even push
+                logging.error(
+                    "The following command failed, sleep %s before retry: %s",
+                    sleep_seconds,
+                    cmd,
+                )
+                time.sleep(sleep_seconds)
     return retcode
 
 
-def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
-    if release_type != "auto":
-        return release_type
-
-    git_versions = get_tagged_versions()
-    reference_version = git_versions[0]
-    for i in reversed(range(len(git_versions))):
-        if git_versions[i] <= version:
-            if i == len(git_versions) - 1:
-                return "latest"
-            reference_version = git_versions[i + 1]
-            break
-
-    if version.major < reference_version.major:
-        return "major"
-    if version.minor < reference_version.minor:
-        return "minor"
-    if version.patch < reference_version.patch:
-        return "patch"
-
-    raise ValueError(
-        "Release type 'tweak' is not supported for "
-        f"{version.string} < {reference_version.string}"
-    )
-
-
-def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
+def gen_tags(version: ClickHouseVersion, tag_type: str) -> List[str]:
     """
-    22.2.2.2 + latest:
+    @tag_type release-latest, @version 22.2.2.2:
     - latest
     - 22
     - 22.2
     - 22.2.2
     - 22.2.2.2
-    22.2.2.2 + major:
+    @tag_type release, @version 22.2.2.2:
     - 22
     - 22.2
     - 22.2.2
     - 22.2.2.2
-    22.2.2.2 + minor:
-    - 22.2
-    - 22.2.2
-    - 22.2.2.2
-    22.2.2.2 + patch:
-    - 22.2.2
-    - 22.2.2.2
-    22.2.2.2 + head:
+    @tag_type head:
     - head
     """
     parts = version.string.split(".")
     tags = []
-    if release_type == "latest":
-        tags.append(release_type)
+    if tag_type == "release-latest":
+        tags.append("latest")
         for i in range(len(parts)):
             tags.append(".".join(parts[: i + 1]))
-    elif release_type == "major":
+    elif tag_type == "head":
+        tags.append(tag_type)
+    elif tag_type == "release":
         for i in range(len(parts)):
             tags.append(".".join(parts[: i + 1]))
-    elif release_type == "minor":
-        for i in range(1, len(parts)):
-            tags.append(".".join(parts[: i + 1]))
-    elif release_type == "patch":
-        for i in range(2, len(parts)):
-            tags.append(".".join(parts[: i + 1]))
-    elif release_type == "head":
-        tags.append(release_type)
     else:
-        raise ValueError(f"{release_type} is not valid release part")
+        assert False, f"Invalid release type [{tag_type}]"
     return tags
 
 
-def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str]) -> List[str]:
+def buildx_args(
+    urls: Dict[str, str], arch: str, direct_urls: List[str], version: str
+) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
         f"--label=com.clickhouse.build.githash={git.sha}",
+        f"--label=com.clickhouse.build.version={version}",
     ]
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
@@ -267,7 +235,9 @@ def build_and_push_image(
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
                 urls = [url for url in direct_urls[arch] if ".tgz" in url]
-        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls))
+        cmd_args.extend(
+            buildx_args(repo_urls, arch, direct_urls=urls, version=version.describe)
+        )
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
@@ -357,23 +327,15 @@ def main():
     del args.image_repo
     del args.push
 
-    if pr_info.is_master():
+    if pr_info.is_master:
         push = True
 
     image = DockerImageData(image_path, image_repo, False)
-    args.release_type = auto_release_type(args.version, args.release_type)
-    tags = gen_tags(args.version, args.release_type)
+    tags = gen_tags(args.version, args.tag_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
-    release_or_pr, _ = get_release_or_pr(pr_info, args.version)
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
-        if not args.bucket_prefix:
-            repo_urls[
-                arch
-            ] = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}"
-        else:
-            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
         if args.allow_build_reuse:
             # read s3 urls from pre-downloaded build reports
             if "clickhouse-server" in image_repo:
@@ -395,6 +357,21 @@ def main():
                 for url in urls
                 if any(package in url for package in PACKAGES) and "-dbg" not in url
             ]
+        elif args.bucket_prefix:
+            assert not args.allow_build_reuse
+            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
+            print(f"Bucket prefix is set: Fetching packages from [{repo_urls}]")
+        elif args.sha:
+            version = args.version
+            repo_urls[arch] = (
+                f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
+                f"{version.major}.{version.minor}/{args.sha}/{build_name}"
+            )
+            print(f"Fetching packages from [{repo_urls}]")
+        else:
+            assert (
+                False
+            ), "--sha, --bucket_prefix or --allow-build-reuse (to fetch packages from build report) must be provided"
 
     if push:
         docker_login()
@@ -411,7 +388,6 @@ def main():
             )
             if test_results[-1].status != "OK":
                 status = FAILURE
-    pr_info = pr_info or PRInfo()
 
     description = f"Processed tags: {', '.join(tags)}"
     JobReport(

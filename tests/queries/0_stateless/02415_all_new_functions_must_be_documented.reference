@@ -57,11 +57,13 @@ URLPathHierarchy
 UUIDNumToString
 UUIDStringToNum
 _CAST
+__actionName
 __bitBoolMaskAnd
 __bitBoolMaskOr
 __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
+__scalarSubqueryResult
 abs
 accurateCast
 accurateCastOrDefault
@@ -141,7 +143,6 @@ arrayStringConcat
 arraySum
 arrayUniq
 arrayWithConstant
-arrayZip
 asinh
 assumeNotNull
 atan
@@ -193,15 +194,13 @@ blockSerializedSize
 blockSize
 buildId
 byteSize
-caseWithExpr
 caseWithExpression
-caseWithoutExpr
-caseWithoutExpression
 catboostEvaluate
 cbrt
 ceil
 char
 cityHash64
+clamp
 coalesce
 concat
 concatAssumeInjective
@@ -311,7 +310,6 @@ fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestampInJodaSyntax
-fullHostName
 fuzzBits
 gccMurmurHash
 gcd
@@ -417,7 +415,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-lowerUTF8
 makeDate
 makeDate32
 makeDateTime
@@ -563,6 +560,7 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
+printf
 proportionsZTest
 protocol
 queryID
@@ -643,14 +641,6 @@ shardNum
 showCertificate
 sigmoid
 sign
-simpleJSONExtractBool
-simpleJSONExtractFloat
-simpleJSONExtractInt
-simpleJSONExtractRaw
-simpleJSONExtractString
-simpleJSONExtractUInt
-simpleJSONHas
-sin
 sinh
 sipHash128
 sipHash128Keyed
@@ -885,7 +875,6 @@ tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart
-tuple
 tupleConcat
 tupleDivide
 tupleDivideByNumber
@@ -906,7 +895,6 @@ tupleToNameValuePairs
 unbin
 unhex
 upper
-upperUTF8
 uptime
 validateNestedArraySizes
 version

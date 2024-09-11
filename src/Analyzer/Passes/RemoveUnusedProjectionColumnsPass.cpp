@@ -148,6 +148,13 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
 
         for (auto & [query_or_union_node, used_columns] : visitor.query_or_union_node_to_used_columns)
         {
+            /// can't remove columns from distinct, see example - 03023_remove_unused_column_distinct.sql
+            if (auto * query_node = query_or_union_node->as<QueryNode>())
+            {
+                if (query_node->isDistinct())
+                    continue;
+            }
+
             auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
             updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
 

@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-enum class ArrayFirstLastIndexStrategy
+enum class ArrayFirstLastIndexStrategy : uint8_t
 {
     First,
     Last
@@ -132,4 +132,3 @@ REGISTER_FUNCTION(ArrayFirstIndex)
 }
 
 }
-

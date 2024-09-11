@@ -7,6 +7,8 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
+#include <Core/Settings.h>
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -31,10 +33,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace FailPoints
+{
+    extern const char infinite_sleep[];
+}
+
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
   */
 
-enum class FunctionSleepVariant
+enum class FunctionSleepVariant : uint8_t
 {
     PerBlock,
     PerRow
@@ -62,32 +69,17 @@ public:
     {
     }
 
-    /// Get the name of the function.
-    String getName() const override
-    {
-        return name;
-    }
-
-    /// Do not sleep during query analysis.
-    bool isSuitableForConstantFolding() const override
-    {
-        return false;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
+    String getName() const override { return name; }
+    bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
+    size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         WhichDataType which(arguments[0]);
 
-        if (!which.isFloat()
-            && !which.isNativeUInt())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Float64",
+        if (!which.isFloat() && !which.isNativeUInt())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected UInt* or Float*",
                 arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>();
@@ -121,6 +113,8 @@ public:
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             UInt64 microseconds = static_cast<UInt64>(seconds * 1e6);
+            FailPointInjection::pauseFailPoint(FailPoints::infinite_sleep);
+
             if (max_microseconds && microseconds > max_microseconds)
                 throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {} microseconds",
                     max_microseconds, microseconds);

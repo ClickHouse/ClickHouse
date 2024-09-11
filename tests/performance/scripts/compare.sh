@@ -71,6 +71,8 @@ function configure
 {
     # Use the new config for both servers, so that we can change it in a PR.
     rm right/config/config.d/text_log.xml ||:
+    # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
+    rm right/config/config.d/backups.xml ||:
     cp -rv right/config left ||:
 
     # Start a temporary server to rename the tables
@@ -87,6 +89,7 @@ function configure
         --path db0
         --user_files_path db0/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
+        --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
     )
     left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
@@ -113,8 +116,12 @@ function configure
     rm -r db0/preprocessed_configs ||:
     rm -r db0/{data,metadata}/system ||:
     rm db0/status ||:
+
     cp -al db0/ left/db/
+    cp -R coordination0 left/coordination
+
     cp -al db0/ right/db/
+    cp -R coordination0 right/coordination
 }
 
 function restart
@@ -135,6 +142,7 @@ function restart
         --tcp_port $LEFT_SERVER_PORT
         --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
+        --keeper_server.storage_path left/coordination
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
     )
@@ -154,6 +162,7 @@ function restart
         --tcp_port $RIGHT_SERVER_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
+        --keeper_server.storage_path right/coordination
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
     )

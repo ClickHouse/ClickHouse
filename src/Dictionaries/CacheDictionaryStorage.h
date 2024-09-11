@@ -73,7 +73,7 @@ public:
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request,
-        IColumn::Filter * const default_mask = nullptr) override
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
@@ -110,7 +110,7 @@ public:
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests,
-        IColumn::Filter * const default_mask = nullptr) override
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests, default_mask);
@@ -189,7 +189,6 @@ private:
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
-        size_t fetched_columns_index_without_default = 0;
         size_t keys_size = keys.size();
 
         PaddedPODArray<FetchedKey> fetched_keys;
@@ -211,14 +210,9 @@ private:
 
             result.expired_keys_size += static_cast<size_t>(key_state == KeyState::expired);
 
-            result.key_index_to_state[key_index] = {key_state,
-                default_mask ? fetched_columns_index_without_default : fetched_columns_index};
+            result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
             fetched_keys[fetched_columns_index] = FetchedKey(cell.element_index, cell.is_default);
-
             ++fetched_columns_index;
-
-            if (!cell.is_default)
-                ++fetched_columns_index_without_default;
 
             result.key_index_to_state[key_index].setDefaultValue(cell.is_default);
             result.default_keys_size += cell.is_default;
@@ -233,8 +227,7 @@ private:
 
             auto & attribute = attributes[attribute_index];
             auto & fetched_column = *result.fetched_columns[attribute_index];
-            fetched_column.reserve(default_mask ? fetched_columns_index_without_default :
-                                                  fetched_columns_index);
+            fetched_column.reserve(fetched_columns_index);
 
             if (!default_mask)
             {
@@ -402,13 +395,13 @@ private:
                         }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & string_value = column_value.get<String>();
+                            const String & string_value = column_value.safeGet<String>();
                             StringRef inserted_value = copyStringInArena(arena, string_value);
                             container.back() = inserted_value;
                         }
                         else
                         {
-                            container.back() = static_cast<ElementType>(column_value.get<ElementType>());
+                            container.back() = static_cast<ElementType>(column_value.safeGet<ElementType>());
                         }
                     });
                 }
@@ -448,7 +441,7 @@ private:
                         }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & string_value = column_value.get<String>();
+                            const String & string_value = column_value.safeGet<String>();
                             StringRef inserted_value = copyStringInArena(arena, string_value);
 
                             if (!cell_was_default)
@@ -461,7 +454,7 @@ private:
                         }
                         else
                         {
-                            container[index_to_use] = static_cast<ElementType>(column_value.get<ElementType>());
+                            container[index_to_use] = static_cast<ElementType>(column_value.safeGet<ElementType>());
                         }
                     });
                 }
@@ -658,12 +651,12 @@ private:
                 }
                 else if constexpr (std::is_same_v<ValueType, StringRef>)
                 {
-                    auto & value = default_value.get<String>();
+                    auto & value = default_value.safeGet<String>();
                     value_setter(value);
                 }
                 else
                 {
-                    value_setter(default_value.get<ValueType>());
+                    value_setter(default_value.safeGet<ValueType>());
                 }
             }
             else
@@ -689,7 +682,11 @@ private:
             auto fetched_key = fetched_keys[fetched_key_index];
 
             if (unlikely(fetched_key.is_default))
+            {
                 default_mask[fetched_key_index] = 1;
+                auto v = ValueType{};
+                value_setter(v);
+            }
             else
             {
                 default_mask[fetched_key_index] = 0;
@@ -754,7 +751,7 @@ private:
 
     std::vector<Attribute> attributes;
 
-    inline void setCellDeadline(Cell & cell, TimePoint now)
+    void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
@@ -774,7 +771,7 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    inline size_t getCellIndex(const KeyType key) const
+    size_t getCellIndex(const KeyType key) const
     {
         const size_t hash = DefaultHash<KeyType>()(key);
         const size_t index = hash & size_overlap_mask;
@@ -783,7 +780,7 @@ private:
 
     using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
 
-    inline KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;
@@ -810,7 +807,7 @@ private:
         return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
     }
 
-    inline size_t getCellIndexForInsert(const KeyType & key) const
+    size_t getCellIndexForInsert(const KeyType & key) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;

@@ -11,6 +11,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
+#include <Common/HostResolvePool.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -50,14 +52,16 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/MaterializedView/RefreshTask.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
 #include <base/coverage.h>
@@ -333,8 +337,15 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
+            HostResolversPool::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context->reloadClusterConfig();
+            break;
+        }
+        case Type::DROP_CONNECTIONS_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
+            HTTPConnectionPools::instance().dropCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -358,9 +369,12 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
+        {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache();
+            getContext()->clearQueryCache(query.query_cache_tag);
             break;
+        }
+
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
@@ -388,22 +402,31 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
+                {
+                    if (!cache_data->cache->isInitialized())
+                        continue;
+
                     cache_data->cache->removeAllReleasable(user_id);
+                }
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
-                if (query.key_to_drop.empty())
+
+                if (cache->isInitialized())
                 {
-                    cache->removeAllReleasable(user_id);
-                }
-                else
-                {
-                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                    if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
+                    if (query.key_to_drop.empty())
+                    {
+                        cache->removeAllReleasable(user_id);
+                    }
                     else
-                        cache->removeKey(key, user_id);
+                    {
+                        auto key = FileCacheKey::fromKeyString(query.key_to_drop);
+                        if (query.offset_to_drop.has_value())
+                            cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
+                        else
+                            cache->removeKey(key, user_id);
+                    }
                 }
             }
             break;
@@ -482,17 +505,17 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageFile::getSchemaCache(getContext()).clear();
 #if USE_AWS_S3
             if (caches_to_drop.contains("S3"))
-                StorageS3::getSchemaCache(getContext()).clear();
+                StorageObjectStorage::getSchemaCache(getContext(), StorageS3Configuration::type_name).clear();
 #endif
 #if USE_HDFS
             if (caches_to_drop.contains("HDFS"))
-                StorageHDFS::getSchemaCache(getContext()).clear();
+                StorageObjectStorage::getSchemaCache(getContext(), StorageHDFSConfiguration::type_name).clear();
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageAzureBlob::getSchemaCache(getContext()).clear();
+                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
 #endif
             break;
         }
@@ -643,13 +666,20 @@ BlockIO InterpreterSystemQuery::execute()
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
         case Type::REFRESH_VIEW:
-            getRefreshTask()->run();
+            for (const auto & task : getRefreshTasks())
+                task->run();
+            break;
+        case Type::WAIT_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->wait();
             break;
         case Type::CANCEL_VIEW:
-            getRefreshTask()->cancel();
+            for (const auto & task : getRefreshTasks())
+                task->cancel();
             break;
         case Type::TEST_VIEW:
-            getRefreshTask()->setFakeTime(query.fake_time_for_view);
+            for (const auto & task : getRefreshTasks())
+                task->setFakeTime(query.fake_time_for_view);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -690,14 +720,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-
-            auto logs = getContext()->getSystemLogs();
-            std::vector<std::function<void()>> commands;
-            commands.reserve(logs.size());
-            for (auto * system_log : logs)
-                commands.emplace_back([system_log] { system_log->flush(true); });
-
-            executeCommandsAndThrowIfError(commands);
+            auto system_logs = getContext()->getSystemLogs();
+            system_logs.flush(true);
             break;
         }
         case Type::STOP_LISTEN:
@@ -711,7 +735,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            auto * queue = getContext()->getAsynchronousInsertQueue();
+            auto * queue = getContext()->tryGetAsynchronousInsertQueue();
             if (!queue)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
@@ -722,10 +746,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
+            CannotAllocateThreadFaultInjector::setFaultProbability(0);
             break;
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
+            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
             break;
         case Type::UNFREEZE:
         {
@@ -746,10 +772,23 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::WAIT_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            LOG_TRACE(log, "waiting for failpoint {}", query.fail_point_name);
+            FailPointInjection::pauseFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "finished failpoint {}", query.fail_point_name);
+            break;
+        }
         case Type::RESET_COVERAGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
+            break;
+        }
+        case Type::UNLOAD_PRIMARY_KEY:
+        {
+            unloadPrimaryKeys();
             break;
         }
 
@@ -845,7 +884,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -1129,6 +1168,42 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::unloadPrimaryKeys()
+{
+    if (!table_id.empty())
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        {
+            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
+            merge_tree->unloadPrimaryKeys();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
+        }
+    }
+    else
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "Unloading primary keys for all tables");
+
+        for (auto & database : DatabaseCatalog::instance().getDatabases())
+        {
+            for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
+            {
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                {
+                    merge_tree->unloadPrimaryKeys();
+                }
+            }
+        }
+    }
+}
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1157,12 +1232,16 @@ void InterpreterSystemQuery::syncTransactionLog()
 }
 
 
-void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
+    SettingsChanges settings_changes;
+    if (query.query_settings)
+        settings_changes = query.query_settings->as<ASTSetQuery>()->changes;
+
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
-        storage_distributed->flushClusterNodesAllData(getContext());
+        storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
@@ -1173,15 +1252,15 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
 }
 
-RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
+RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
     ctx->checkAccess(AccessType::SYSTEM_VIEWS);
-    auto task = ctx->getRefreshSet().getTask(table_id);
-    if (!task)
+    auto tasks = ctx->getRefreshSet().findTasks(table_id);
+    if (tasks.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
-    return task;
+    return tasks;
 }
 
 
@@ -1201,6 +1280,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_DNS_CACHE:
+        case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
@@ -1336,6 +1416,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::REFRESH_VIEW:
+        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
         case Type::STOP_VIEW:
@@ -1437,9 +1518,18 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
             break;
         }
+        case Type::UNLOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:

@@ -25,6 +25,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -276,7 +277,7 @@ public:
     StackTraceSource(
         const Names & column_names,
         Block header_,
-        ActionsDAGPtr && filter_dag_,
+        std::optional<ActionsDAG> filter_dag_,
         ContextPtr context_,
         UInt64 max_block_size_,
         LoggerPtr log_)
@@ -422,7 +423,7 @@ protected:
 private:
     ContextPtr context;
     Block header;
-    const ActionsDAGPtr filter_dag;
+    const std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate;
 
     const size_t max_block_size;
@@ -507,11 +508,11 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({
-        { "thread_name", std::make_shared<DataTypeString>() },
-        { "thread_id", std::make_shared<DataTypeUInt64>() },
-        { "query_id", std::make_shared<DataTypeString>() },
-        { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-    }, { /* aliases */ }));
+        {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
+        {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
+        {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+    }));
     setInMemoryMetadata(storage_metadata);
 
     notification_pipe.open();

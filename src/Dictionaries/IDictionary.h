@@ -37,7 +37,7 @@ using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHi
   *
   * Complex is for dictionaries that support any combination of key columns.
   */
-enum class DictionaryKeyType
+enum class DictionaryKeyType : uint8_t
 {
     Simple,
     Complex
@@ -46,7 +46,7 @@ enum class DictionaryKeyType
 /** DictionarySpecialKeyType provides IDictionary client information about
   * which special key type is supported by dictionary.
   */
-enum class DictionarySpecialKeyType
+enum class DictionarySpecialKeyType : uint8_t
 {
     None,
     Range
@@ -69,17 +69,19 @@ public:
         return dictionary_id.getNameForLogs();
     }
 
+    /// Returns fully qualified unquoted dictionary name
+    std::string getQualifiedName() const
+    {
+        std::lock_guard lock{mutex};
+        if (dictionary_id.database_name.empty())
+            return dictionary_id.table_name;
+        return dictionary_id.database_name + "." + dictionary_id.table_name;
+    }
+
     StorageID getDictionaryID() const
     {
         std::lock_guard lock{mutex};
         return dictionary_id;
-    }
-
-    void updateDictionaryName(const StorageID & new_name) const
-    {
-        std::lock_guard lock{mutex};
-        assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
-        dictionary_id = new_name;
     }
 
     std::string getLoadableName() const final
@@ -339,12 +341,6 @@ public:
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
-    void setDictionaryComment(String new_comment)
-    {
-        std::lock_guard lock{mutex};
-        dictionary_comment = std::move(new_comment);
-    }
-
     String getDictionaryComment() const
     {
         std::lock_guard lock{mutex};
@@ -452,9 +448,26 @@ public:
         return sample_block;
     }
 
+    /// Internally called by ExternalDictionariesLoader.
+    /// In order to update the dictionary ID change its configuration first and then call ExternalDictionariesLoader::reloadConfig().
+    void updateDictionaryID(const StorageID & new_dictionary_id)
+    {
+        std::lock_guard lock{mutex};
+        assert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
+        dictionary_id = new_dictionary_id;
+    }
+
+    /// Internally called by ExternalDictionariesLoader.
+    /// In order to update the dictionary comment change its configuration first and then call ExternalDictionariesLoader::reloadConfig().
+    void updateDictionaryComment(const String & new_dictionary_comment)
+    {
+        std::lock_guard lock{mutex};
+        dictionary_comment = new_dictionary_comment;
+    }
+
 private:
     mutable std::mutex mutex;
-    mutable StorageID dictionary_id TSA_GUARDED_BY(mutex);
+    StorageID dictionary_id TSA_GUARDED_BY(mutex);
     String dictionary_comment TSA_GUARDED_BY(mutex);
 };
 

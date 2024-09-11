@@ -1,25 +1,28 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/TableNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Planner/Utils.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include <Planner/Utils.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -318,6 +321,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
+    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
@@ -359,14 +364,22 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         {
             auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
             auto in_function_node_type = in_function_subquery_node->getNodeType();
-            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
+            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
-                planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth);
+            auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
+            if (!temporary_table_expression_node)
+            {
+                auto subquery_to_execute = in_function_subquery_node;
+                if (subquery_to_execute->as<TableNode>())
+                    subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
 
-            in_function_subquery_node = std::move(temporary_table_expression_node);
+                temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
+                    planner_context->getMutableQueryContext(),
+                    global_in_or_join_node.subquery_depth);
+            }
+
+            replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
         }
         else
         {
@@ -382,6 +395,12 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    if (auto * query_node = query_tree_to_modify->as<QueryNode>())
+        query_node->clearSettingsChanges();
 
     return query_tree_to_modify;
 }

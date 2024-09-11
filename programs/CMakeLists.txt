@@ -1,8 +1,11 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
 
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
+
+set(MAX_LINKER_MEMORY 3500)
+include(../cmake/limit_jobs.cmake)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
@@ -66,16 +69,16 @@ else()
     message(STATUS "Library bridge mode: OFF")
 endif()
 
-if (ENABLE_CLICKHOUSE_KEEPER)
-    message(STATUS "ClickHouse keeper mode: ON")
-else()
-    message(STATUS "ClickHouse keeper mode: OFF")
-endif()
-
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     message(STATUS "ClickHouse keeper-converter mode: ON")
 else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
+endif()
+
+if (ENABLE_CLICKHOUSE_KEEPER)
+    message(STATUS "ClickHouse Keeper: ON")
+else()
+    message(STATUS "ClickHouse Keeper: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
@@ -122,7 +125,6 @@ add_subdirectory (local)
 add_subdirectory (benchmark)
 add_subdirectory (extract-from-config)
 add_subdirectory (compressor)
-add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (obfuscator)
 add_subdirectory (install)
@@ -132,16 +134,16 @@ add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
 add_subdirectory (disks)
 
-if (ENABLE_CLICKHOUSE_KEEPER)
-    add_subdirectory (keeper)
-endif()
-
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
     add_subdirectory (keeper-client)
+endif()
+
+if (ENABLE_CLICKHOUSE_KEEPER)
+    add_subdirectory (keeper)
 endif()
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
@@ -163,7 +165,7 @@ if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
     set (HARMFUL_LIB harmful)
 endif ()
 
-target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
+target_link_libraries (clickhouse PRIVATE clickhouse_common_io ${HARMFUL_LIB})
 target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 if (ENABLE_CLICKHOUSE_KEEPER)
@@ -200,7 +202,6 @@ clickhouse_program_install(clickhouse-server server)
 clickhouse_program_install(clickhouse-client client chc)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-benchmark benchmark)
-clickhouse_program_install(clickhouse-copier copier)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-compressor compressor)
 clickhouse_program_install(clickhouse-format format)
@@ -269,10 +270,6 @@ if (ENABLE_TESTS)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()
 
 if (TARGET ch_contrib::protobuf)
     get_property(google_proto_files TARGET ch_contrib::protobuf PROPERTY google_proto_files)

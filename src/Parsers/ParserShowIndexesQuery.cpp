@@ -22,16 +22,16 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     auto query = std::make_shared<ASTShowIndexesQuery>();
 
-    if (!ParserKeyword("SHOW").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::SHOW).ignore(pos, expected))
         return false;
 
-    if (ParserKeyword("EXTENDED").ignore(pos, expected))
+    if (ParserKeyword(Keyword::EXTENDED).ignore(pos, expected))
         query->extended = true;
 
-    if (!(ParserKeyword("INDEX").ignore(pos, expected) || ParserKeyword("INDEXES").ignore(pos, expected) || ParserKeyword("INDICES").ignore(pos, expected) || ParserKeyword("KEYS").ignore(pos, expected)))
+    if (!(ParserKeyword(Keyword::INDEX).ignore(pos, expected) || ParserKeyword(Keyword::INDEXES).ignore(pos, expected) || ParserKeyword(Keyword::INDICES).ignore(pos, expected) || ParserKeyword(Keyword::KEYS).ignore(pos, expected)))
         return false;
 
-    if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
+    if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
     {
         if (!ParserCompoundIdentifier().parse(pos, from1, expected))
             return false;
@@ -51,7 +51,7 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     else
     {
-        if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
+        if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
             if (!ParserIdentifier().parse(pos, from2, expected))
                 return false;
 
@@ -61,7 +61,7 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->database = from2_str;
     }
 
-    if (ParserKeyword("WHERE").ignore(pos, expected))
+    if (ParserKeyword(Keyword::WHERE).ignore(pos, expected))
         if (!ParserExpressionWithOptionalAlias(false).parse(pos, query->where_expression, expected))
             return false;
 

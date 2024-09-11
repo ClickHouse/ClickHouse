@@ -2,14 +2,13 @@
 
 #include <base/cgroupsv2.h>
 #include <base/getPageSize.h>
+#include <base/Numa.h>
 
 #include <fstream>
-#include <stdexcept>
 
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
-
 
 namespace
 {
@@ -20,11 +19,9 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
     if (!cgroupsV2Enabled())
         return {};
 
-    if (!cgroupsV2MemoryControllerEnabled())
+    std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
         return {};
-
-    std::string cgroup = cgroupV2OfProcess();
-    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
 
     /// Open the bottom-most nested memory limit setting file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.
@@ -50,9 +47,6 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
 
 }
 
-/** Returns the size of physical memory (RAM) in bytes.
-  * Returns 0 on unsupported platform
-  */
 uint64_t getMemoryAmountOrZero()
 {
     int64_t num_pages = sysconf(_SC_PHYS_PAGES);
@@ -64,6 +58,9 @@ uint64_t getMemoryAmountOrZero()
         return 0;
 
     uint64_t memory_amount = num_pages * page_size;
+
+    if (auto total_numa_memory = DB::getNumaNodesTotalMemory(); total_numa_memory.has_value())
+        memory_amount = *total_numa_memory;
 
     /// Respect the memory limit set by cgroups v2.
     auto limit_v2 = getCgroupsV2MemoryLimit();
@@ -80,8 +77,7 @@ uint64_t getMemoryAmountOrZero()
         {
             uint64_t limit_v1;
             if (limit_file_v1 >> limit_v1)
-                if (limit_v1 < memory_amount)
-                    memory_amount = limit_v1;
+                memory_amount = std::min(memory_amount, limit_v1);
         }
     }
 

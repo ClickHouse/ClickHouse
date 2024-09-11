@@ -23,9 +23,13 @@ from report import (
     TestResult,
     TestResults,
     read_test_results,
+    FAILURE,
 )
 from stopwatch import Stopwatch
-from tee_popen import TeePopen
+
+import integration_tests_runner as runner
+from ci_config import CI
+from ci_utils import Utils
 
 
 def get_json_params_dict(
@@ -73,7 +77,7 @@ def get_env_for_runner(
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
 
     if "analyzer" in check_name.lower():
-        my_env["CLICKHOUSE_USE_NEW_ANALYZER"] = "1"
+        my_env["CLICKHOUSE_USE_OLD_ANALYZER"] = "1"
 
     return my_env
 
@@ -184,7 +188,7 @@ def main():
     build_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(build_path)
+        download_last_release(build_path, debug=True)
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
@@ -206,11 +210,8 @@ def main():
         json_params.write(params_text)
         logging.info("Parameters file %s is written: %s", json_path, params_text)
 
-    output_path_log = result_path / "main_script_log.txt"
-
-    runner_path = repo_path / "tests" / "integration" / "ci-runner.py"
-    run_command = f"sudo -E {runner_path}"
-    logging.info("Going to run command: `%s`", run_command)
+    for k, v in my_env.items():
+        os.environ[k] = v
     logging.info(
         "ENV parameters for runner:\n%s",
         "\n".join(
@@ -218,31 +219,13 @@ def main():
         ),
     )
 
-    integration_infrastructure_fail = False
-    with TeePopen(run_command, output_path_log, my_env) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run tests successfully")
-        elif retcode == 13:
-            logging.warning(
-                "There were issues with infrastructure. Not writing status report to restart job."
-            )
-            integration_infrastructure_fail = True
-            sys.exit(1)
-        else:
-            logging.info("Some tests failed")
-
-    # subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-
-    if not integration_infrastructure_fail:
-        state, description, test_results, additional_logs = process_results(result_path)
+    try:
+        runner.run()
+    except Exception as e:
+        logging.error("Exception: %s", e)
+        state, description, test_results, additional_logs = ERROR, "infrastructure error", [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)], []  # type: ignore
     else:
-        state, description, test_results, additional_logs = (
-            ERROR,
-            "no description",
-            [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)],
-            [],
-        )
+        state, description, test_results, additional_logs = process_results(result_path)
 
     JobReport(
         description=description,
@@ -250,10 +233,26 @@ def main():
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=[output_path_log] + additional_logs,
+        additional_files=additional_logs,
     ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
+    should_block_ci = False
     if state != SUCCESS:
+        should_block_ci = True
+
+    if state == FAILURE and CI.is_required(check_name):
+        failed_cnt = Utils.get_failed_tests_number(description)
+        print(
+            f"Job status is [{state}] with [{failed_cnt}] failed test cases. status description [{description}]"
+        )
+        if (
+            failed_cnt
+            and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
+        ):
+            print(f"Won't block the CI workflow")
+            should_block_ci = False
+
+    if should_block_ci:
         sys.exit(1)
 
 

@@ -1,15 +1,12 @@
 #pragma once
 
 #include <Core/UUID.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include "Common/NamePrompter.h"
 #include <Common/SharedMutex.h>
-#include "Storages/IStorage.h"
-#include "Databases/IDatabase.h"
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -23,9 +20,6 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -119,8 +113,10 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
     FutureSetFromSubqueryPtr future_set;
 };
 
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+
 ///TODO maybe remove shared_ptr from here?
-using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
@@ -133,6 +129,7 @@ public:
     static constexpr const char * SYSTEM_DATABASE = "system";
     static constexpr const char * INFORMATION_SCHEMA = "information_schema";
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
+    static constexpr const char * DEFAULT_DATABASE = "default";
 
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
@@ -228,7 +225,7 @@ public:
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
-    void dequeueDroppedTableCleanup(StorageID table_id);
+    void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
 
@@ -248,6 +245,9 @@ public:
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
+    void checkTableCanBeAddedWithNoCyclicDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
+    void checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
+    void checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2);
 
     struct TableMarkedAsDropped
     {
@@ -288,13 +288,19 @@ private:
     static constexpr UInt64 bits_for_first_level = 4;
     using UUIDToStorageMap = std::array<UUIDToStorageMapPart, 1ull << bits_for_first_level>;
 
-    static inline size_t getFirstLevelIdx(const UUID & uuid)
+    static size_t getFirstLevelIdx(const UUID & uuid)
     {
         return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level);
     }
 
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
+
+    time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
+    std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
+    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
+    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
+    void rescheduleDropTableTask();
 
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
@@ -348,87 +354,13 @@ private:
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
-    static constexpr time_t default_drop_delay_sec = 8 * 60;
-    time_t drop_delay_sec = default_drop_delay_sec;
     std::condition_variable wait_table_finally_dropped;
-
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
-    static constexpr time_t default_unused_dir_hide_timeout_sec = 60 * 60;              /// 1 hour
-    time_t unused_dir_hide_timeout_sec = default_unused_dir_hide_timeout_sec;
-    static constexpr time_t default_unused_dir_rm_timeout_sec = 30 * 24 * 60 * 60;      /// 30 days
-    time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
-    static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
-    time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
-
-    static constexpr time_t default_drop_error_cooldown_sec = 5;
-    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
     std::set<String> disks_to_reload;
     static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
-};
-
-class TableNameHints : public IHints<>
-{
-public:
-    TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
-        : context(context_),
-        database(database_)
-    {
-    }
-
-    /// getHintForTable tries to get a hint for the provided table_name in the provided
-    /// database. If the results are empty, it goes for extended hints for the table
-    /// with getExtendedHintForTable which looks for the table name in every database that's
-    /// available in the database catalog. It finally returns a single hint which is the database
-    /// name and table_name pair which is similar to the table_name provided. Perhaps something to
-    /// consider is should we return more than one pair of hint?
-    std::pair<String, String> getHintForTable(const String & table_name) const
-    {
-        auto results = this->getHints(table_name, getAllRegisteredNames());
-        if (results.empty())
-            return getExtendedHintForTable(table_name);
-        return std::make_pair(database->getDatabaseName(), results[0]);
-    }
-
-    /// getExtendedHintsForTable tries to get hint for the given table_name across all
-    /// the databases that are available in the database catalog.
-    std::pair<String, String> getExtendedHintForTable(const String & table_name) const
-    {
-        /// load all available databases from the DatabaseCatalog instance
-        auto & database_catalog = DatabaseCatalog::instance();
-        auto all_databases = database_catalog.getDatabases();
-
-        for (const auto & [db_name, db] : all_databases)
-        {
-            /// this case should be covered already by getHintForTable
-            if (db_name == database->getDatabaseName())
-                continue;
-
-            TableNameHints hints(db, context);
-            auto results = hints.getHints(table_name);
-
-            /// if the results are not empty, return the first instance of the table_name
-            /// and the corresponding database_name that was found.
-            if (!results.empty())
-                return std::make_pair(db_name, results[0]);
-        }
-        return {};
-    }
-
-    Names getAllRegisteredNames() const override
-    {
-        Names result;
-        if (database)
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-                result.emplace_back(table_it->name());
-        return result;
-    }
-
-private:
-    ContextPtr context;
-    ConstDatabasePtr database;
 };
 
 

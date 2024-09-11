@@ -190,11 +190,11 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 
 void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    boost::range::remove_erase_if(
+    std::erase_if(
         changes,
         [&](SettingChange & change) -> bool
         {
-            return !checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source);
+            return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
         });
 }
 
@@ -211,7 +211,7 @@ void SettingsConstraints::check(const MergeTreeSettings & current_settings, cons
 
 void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    boost::range::remove_erase_if(
+    std::erase_if(
         changes,
         [&](SettingChange & change) -> bool
         {

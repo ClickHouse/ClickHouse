@@ -11,7 +11,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 
-enum class TotalsMode;
+enum class TotalsMode : uint8_t;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates total values according to totals_mode.

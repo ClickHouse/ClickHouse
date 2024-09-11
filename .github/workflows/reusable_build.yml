@@ -33,6 +33,10 @@ name: Build ClickHouse
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
 
 jobs:
   Build:
@@ -43,8 +47,7 @@ jobs:
     runs-on: [self-hosted, '${{inputs.runner_type}}']
     steps:
       - name: Check out repository code
-        # WIP: temporary try commit with limited perallelization of checkout
-        uses: ClickHouse/checkout@0be3f7b3098bae494d3ef5d29d2e0676fb606232
+        uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           ref: ${{ fromJson(inputs.data).git_ref }}
@@ -55,6 +58,7 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
           DOCKER_TAG<<DOCKER_JSON
           ${{ toJson(fromJson(inputs.data).docker_data.images) }}
           DOCKER_JSON

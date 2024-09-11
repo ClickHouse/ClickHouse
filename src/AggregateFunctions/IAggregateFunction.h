@@ -1,17 +1,18 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
+#include <Core/IResolvedFunction.h>
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -45,13 +46,6 @@ class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
-
-using AggregateDataPtr = char *;
-using AggregateDataPtrs = std::vector<AggregateDataPtr>;
-using ConstAggregateDataPtr = const char *;
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 struct AggregateFunctionProperties;
 
@@ -151,7 +145,9 @@ public:
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 
-    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/) const
+    constexpr static bool parallelizeMergeWithKey() { return false; }
+
+    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
     }
@@ -162,16 +158,20 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Return true if it is allowed to replace call of `addBatch`
+    /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
+    virtual bool canOptimizeEqualKeysRanges() const { return true; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const
+    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/, Arena * /*arena*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }
 
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
-    virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, Arena * arena) const = 0;
+    virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
@@ -501,11 +501,15 @@ public:
                 static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
-    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, Arena * arena) const override
+    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         for (size_t i = 0; i < size; ++i)
         {
-            static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            if constexpr (Derived::parallelizeMergeWithKey())
+                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+            else
+                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+
             static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
         }
     }

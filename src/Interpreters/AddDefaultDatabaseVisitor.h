@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -100,6 +101,7 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
+    mutable std::unordered_set<String> with_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -117,6 +119,10 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
+        if (select.recursive_with)
+            for (const auto & child : select.with()->children)
+                with_aliases.insert(child->as<ASTWithElement>()->name);
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
@@ -163,7 +169,10 @@ private:
         if (identifier.compound())
             return;
         /// There is temporary table with such name, should not be rewritten.
-        if (external_tables.count(identifier.shortName()))
+        if (external_tables.contains(identifier.shortName()))
+            return;
+        /// This is WITH RECURSIVE alias.
+        if (with_aliases.contains(identifier.name()))
             return;
 
         auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
@@ -201,7 +210,7 @@ private:
                             if (literal_value.getType() != Field::Types::String)
                                 continue;
 
-                            auto dictionary_name = literal_value.get<String>();
+                            auto dictionary_name = literal_value.safeGet<String>();
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
                             literal_value = qualified_dictionary_name.getFullName();
                         }
@@ -275,13 +284,7 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        for (ASTRenameQuery::Element & elem : node.elements)
-        {
-            if (!elem.from.database)
-                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
-            if (!elem.to.database)
-                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
-        }
+        node.setDatabaseIfNotExists(database_name);
     }
 
     void visitDDL(ASTAlterQuery & node, ASTPtr &) const

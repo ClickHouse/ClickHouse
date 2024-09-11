@@ -1,5 +1,6 @@
-#include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/logger_useful.h>
 
 #include <set>
@@ -158,7 +159,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             auto destination = data->getDestinationForMoveTTL(*ttl_entry);
             if (destination && !data->isPartInTTLDestination(*ttl_entry, *part))
-                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForMoveTTL(*ttl_entry));
+                reservation = MergeTreeData::tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForMoveTTL(*ttl_entry));
         }
 
         if (reservation) /// Found reservation by TTL rule.

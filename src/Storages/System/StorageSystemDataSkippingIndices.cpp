@@ -26,16 +26,16 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
         {
-            { "database", std::make_shared<DataTypeString>() },
-            { "table", std::make_shared<DataTypeString>() },
-            { "name", std::make_shared<DataTypeString>() },
-            { "type", std::make_shared<DataTypeString>() },
-            { "type_full", std::make_shared<DataTypeString>() },
-            { "expr", std::make_shared<DataTypeString>() },
-            { "granularity", std::make_shared<DataTypeUInt64>() },
-            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "marks", std::make_shared<DataTypeUInt64>()}
+            { "database", std::make_shared<DataTypeString>(), "Database name."},
+            { "table", std::make_shared<DataTypeString>(), "Table name."},
+            { "name", std::make_shared<DataTypeString>(), "Index name."},
+            { "type", std::make_shared<DataTypeString>(), "Index type."},
+            { "type_full", std::make_shared<DataTypeString>(), "Index type expression from create statement."},
+            { "expr", std::make_shared<DataTypeString>(), "Expression for the index calculation."},
+            { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
+            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
+            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
+            { "marks", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
         }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -131,8 +131,10 @@ protected:
                     // 'type_full' column
                     if (column_mask[src_index++])
                     {
-                        if (auto * expression = index.definition_ast->as<ASTIndexDeclaration>(); expression && expression->type)
-                            res_columns[res_index++]->insert(queryToString(*expression->type));
+                        auto * expression = index.definition_ast->as<ASTIndexDeclaration>();
+                        auto index_type = expression ? expression->getType() : nullptr;
+                        if (index_type)
+                            res_columns[res_index++]->insert(queryToString(*index_type));
                         else
                             res_columns[res_index++]->insertDefault();
                     }
@@ -212,14 +214,24 @@ private:
     std::shared_ptr<StorageSystemDataSkippingIndices> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    const ActionsDAG::Node * predicate = nullptr;
+    ExpressionActionsPtr virtual_columns_filter;
 };
 
 void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        Block block_to_filter
+        {
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+        };
+
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        if (dag)
+            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
 }
 
 void StorageSystemDataSkippingIndices::read(
@@ -265,7 +277,8 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 
     /// Condition on "database" in a query acts like an index.
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+    if (virtual_columns_filter)
+        VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, block);
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<DataSkippingIndicesSource>(

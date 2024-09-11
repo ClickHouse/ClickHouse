@@ -5,6 +5,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
@@ -36,6 +37,31 @@ ColumnString::ColumnString(const ColumnString & src)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "String offsets has data inconsistent with chars array. Last offset: {}, array length: {}",
             last_offset, chars.size());
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
+    const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
+    const size_t src_buf_size
+        = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + src_buf_size * length;
+    chars.resize(new_size);
+
+    const size_t old_rows = offsets.size();
+    offsets.resize(old_rows + length);
+
+    for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
+        memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
+
+    for (size_t i = 0, current_offset = old_size + src_buf_size; i < length; ++i, current_offset += src_buf_size)
+        offsets[old_rows + i] = current_offset;
 }
 
 
@@ -82,13 +108,10 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-void ColumnString::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnString::getWeakHash32() const
 {
     auto s = offsets.size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -104,10 +127,16 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
         prev_offset = offset;
         ++hash_data;
     }
+
+    return hash;
 }
 
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
@@ -460,6 +489,24 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
+size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        StringRef value = getDataAt(permuted_i);
+        elements.emplace(value, inserted);
+    }
+    return elements.size();
+}
+
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
@@ -471,32 +518,35 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return res;
 
-    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
-    res_chars.reserve_exact(chars.size() / col_size * replicate_offsets.back());
-    res_offsets.reserve_exact(replicate_offsets.back());
+    res_offsets.resize_exact(replicate_offsets.back());
 
-    Offset prev_replicate_offset = 0;
-    Offset prev_string_offset = 0;
-    Offset current_new_offset = 0;
-
+    Chars & res_chars = res->chars;
+    size_t res_chars_size = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-        size_t string_size = offsets[i] - prev_string_offset;
+        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        size_t string_size = offsets[i] - offsets[i - 1];
+        res_chars_size += size_to_replicate * string_size;
+    }
+    res_chars.resize_exact(res_chars_size);
 
+    size_t curr_row = 0;
+    size_t curr_offset = 0;
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        const size_t string_size = offsets[i] - offsets[i-1];
+        const UInt8 * src = &chars[offsets[i - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
-            current_new_offset += string_size;
-            res_offsets.push_back(current_new_offset);
-
-            res_chars.resize(res_chars.size() + string_size);
             memcpySmallAllowReadWriteOverflow15(
-                &res_chars[res_chars.size() - string_size], &chars[prev_string_offset], string_size);
-        }
+                &res_chars[curr_offset], src, string_size);
 
-        prev_replicate_offset = replicate_offsets[i];
-        prev_string_offset = offsets[i];
+            curr_offset += string_size;
+            res_offsets[curr_row] = curr_offset;
+            ++curr_row;
+        }
     }
 
     return res;
@@ -505,6 +555,26 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve_exact(n);
+}
+
+size_t ColumnString::capacity() const
+{
+    return offsets.capacity();
+}
+
+void ColumnString::prepareForSquashing(const Columns & source_columns)
+{
+    size_t new_size = size();
+    size_t new_chars_size = chars.size();
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
+        new_size += source_string_column.size();
+        new_chars_size += source_string_column.chars.size();
+    }
+
+    offsets.reserve_exact(new_size);
+    chars.reserve_exact(new_chars_size);
 }
 
 void ColumnString::shrinkToFit()

@@ -16,6 +16,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/UUIDGenerator.h>
 #include <base/insertAtEnd.h>
+
+#include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
 namespace fs = std::filesystem;
@@ -91,9 +93,7 @@ namespace
                         break;
                     }
 
-                    size_t id_endpos = line.find('\t');
-                    String id_as_string = line.substr(0, id_endpos);
-                    UUID id = parse<UUID>(line);
+                    UUID id = parse<UUID>(line.substr(0, line.find('\t')));
                     line.clear();
 
                     String queries;
@@ -297,7 +297,7 @@ namespace
 
 
 std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
-    const std::vector<std::pair<UUID, AccessEntityPtr>> access_entities,
+    const std::vector<std::pair<UUID, AccessEntityPtr>> & access_entities,
     const String & data_path_in_backup,
     size_t counter,
     const AccessControl & access_control)
@@ -326,7 +326,7 @@ void AccessRestorerFromBackup::addDataPath(const String & data_path)
         return;
 
     fs::path data_path_in_backup_fs = data_path;
-    Strings filenames = backup->listFiles(data_path);
+    Strings filenames = backup->listFiles(data_path, /*recursive*/ false);
     if (filenames.empty())
         return;
 

@@ -1,0 +1,83 @@
+-------- Bloom filter --------
+
+-- No skip for prefix
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for prefix with complete token
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for suffix
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for suffix with complete token
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for substring
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for substring with complete token
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for multiple substrings
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for multiple substrings with complete tokens
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for multiple non-existsing substrings, only one with complete token
+Parts: 1/1
+Parts: 1/1
+
+-------- GIN filter --------
+
+-- No skip for prefix
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for prefix with complete token
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for suffix
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for suffix with complete token
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for substring
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for substring with complete token
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for multiple substrings
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for multiple substrings with complete tokens
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for multiple non-existsing substrings, only one with complete token
+Parts: 1/1
+Parts: 1/1

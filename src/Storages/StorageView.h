@@ -16,7 +16,7 @@ public:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         const String & comment,
-        const bool is_parameterized_view_=false);
+        bool is_parameterized_view_ = false);
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
@@ -45,7 +45,7 @@ public:
         replaceWithSubquery(select_query, metadata_snapshot->getSelectQuery().inner_query->clone(), view_name, parameterized_view);
     }
 
-    static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, const bool parameterized_view);
+    static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
 
 protected:

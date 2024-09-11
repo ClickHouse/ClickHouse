@@ -3,6 +3,8 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
+#include <Core/ServerSettings.h>
+
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -44,34 +46,34 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
     {
         Poco::Net::HTTPBasicCredentials credentials{};
 
-        ReadWriteBufferFromHTTP metadata_buf(
-            Poco::URI(fs::path(full_url) / ".index"),
-            Poco::Net::HTTPRequest::HTTP_GET,
-            ReadWriteBufferFromHTTP::OutStreamCallback(),
-            ConnectionTimeouts::getHTTPTimeouts(
-                getContext()->getSettingsRef(),
-                getContext()->getServerSettings().keep_alive_timeout),
-            credentials,
-            /* max_redirects= */ 0,
-            /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
-            getContext()->getReadSettings());
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
+            getContext()->getSettingsRef(),
+            getContext()->getServerSettings().keep_alive_timeout);
+
+        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
+                                .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                                .withSettings(getContext()->getReadSettings())
+                                .withTimeouts(timeouts)
+                                .withHostFilter(&getContext()->getRemoteHostFilter())
+                                .withSkipNotFound(true)
+                                .create(credentials);
 
         String file_name;
 
-        while (!metadata_buf.eof())
+        while (!metadata_buf->eof())
         {
-            readText(file_name, metadata_buf);
-            assertChar('\t', metadata_buf);
+            readText(file_name, *metadata_buf);
+            assertChar('\t', *metadata_buf);
 
             bool is_directory;
-            readBoolText(is_directory, metadata_buf);
+            readBoolText(is_directory, *metadata_buf);
             size_t size = 0;
             if (!is_directory)
             {
-                assertChar('\t', metadata_buf);
-                readIntText(size, metadata_buf);
+                assertChar('\t', *metadata_buf);
+                readIntText(size, *metadata_buf);
             }
-            assertChar('\n', metadata_buf);
+            assertChar('\n', *metadata_buf);
 
             FileDataPtr file_data = is_directory
                 ? FileData::createDirectoryInfo(false)
@@ -86,6 +88,10 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
             loaded_files.emplace_back(file_path);
         }
 
+        /// Check for not found url after read attempt, because of delayed initialization.
+        if (metadata_buf->hasNotFoundURL())
+            return {};
+
         auto [it, inserted] = files.add(path, FileData::createDirectoryInfo(true));
         if (!inserted)
         {
@@ -99,10 +105,6 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
     }
     catch (HTTPException & e)
     {
-        /// 404 - no files
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return {};
-
         e.addMessage("while loading disk metadata");
         throw;
     }
@@ -250,15 +252,17 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
+    size_t object_size = object.bytes_size;
     auto read_buffer_creator =
-         [this, read_settings]
-         (bool /* restricted_seek */, const std::string & path_) -> std::unique_ptr<ReadBufferFromFileBase>
+         [this, read_settings, object_size]
+         (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
      {
-         return std::make_unique<ReadBufferFromWebServer>(
-             fs::path(url) / path_,
-             getContext(),
-             read_settings,
-             /* use_external_buffer */true);
+        return std::make_unique<ReadBufferFromWebServer>(
+            fs::path(url) / object_.remote_path,
+            getContext(),
+            object_size,
+            read_settings,
+            /* use_external_buffer */true);
      };
 
     auto global_context = Context::getGlobalContextInstance();
@@ -339,11 +343,6 @@ void WebObjectStorage::shutdown()
 }
 
 void WebObjectStorage::startup()
-{
-}
-
-void WebObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
 {
 }
 

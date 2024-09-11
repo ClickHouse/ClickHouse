@@ -1,5 +1,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -142,8 +143,9 @@ Block getHeaderForProcessingStage(
 
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
-                auto storage = std::make_shared<StorageDummy>(
-                    storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns(), storage_snapshot);
+                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+                                                                                        storage_snapshot->getAllColumnsDescription(),
+                                                                                        storage_snapshot);
                 InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
                 result = interpreter.getSampleBlock();
             }

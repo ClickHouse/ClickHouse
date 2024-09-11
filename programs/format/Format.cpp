@@ -15,8 +15,9 @@
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ErrorCodes.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/TerminalSize.h>
+#include <Core/BaseSettingsProgramOptions.h>
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
@@ -70,8 +71,8 @@ void skipSpacesAndComments(const char*& pos, const char* end, bool print_comment
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 extern const char * auto_time_zones[];
 
@@ -102,7 +103,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         {
             std::string_view name = field.getName();
             if (name == "max_parser_depth" || name == "max_query_size")
-                cmd_settings.addProgramOption(desc, name, field);
+                addProgramOption(cmd_settings, desc, name, field);
         }
 
         boost::program_options::variables_map options;
@@ -174,6 +175,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            auto context_const = WithContext(context).getContext();
+            context->makeGlobalContext();
+
             registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
@@ -234,9 +240,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 size_t approx_query_length = multiple ? find_first_symbols<';'>(pos, end) - pos : end - pos;
 
                 ASTPtr res = parseQueryAndMovePosition(
-                    parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
+                    parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth, cmd_settings.max_parser_backtracks);
 
-                std::unique_ptr<ReadBuffer> insert_query_payload = nullptr;
+                std::unique_ptr<ReadBuffer> insert_query_payload;
                 /// If the query is INSERT ... VALUES, then we will try to parse the data.
                 if (auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
@@ -258,7 +264,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOwnString str_buf;
-                        formatAST(*res, str_buf, hilite, oneline || approx_query_length < max_line_length);
+                        bool oneline_current_query = oneline || approx_query_length < max_line_length;
+                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
+                        settings.show_secrets = true;
+                        settings.print_pretty_type_names = !oneline_current_query;
+                        res->format(settings);
 
                         if (insert_query_payload)
                         {
@@ -301,7 +311,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     else
                     {
                         WriteBufferFromOwnString str_buf;
-                        formatAST(*res, str_buf, hilite, oneline);
+                        bool oneline_current_query = oneline || approx_query_length < max_line_length;
+                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
+                        settings.show_secrets = true;
+                        settings.print_pretty_type_names = !oneline_current_query;
+                        res->format(settings);
 
                         auto res_string = str_buf.str();
                         WriteBufferFromOStream res_cout(std::cout, 4096);

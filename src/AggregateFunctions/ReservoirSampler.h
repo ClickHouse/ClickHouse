@@ -258,10 +258,10 @@ private:
         chassert(limit > 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
-        if (limit <= static_cast<UInt64>(rng.max()))
+        if (limit <= static_cast<UInt64>(pcg32_fast::max()))
             return rng() % limit;
         else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
+            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
     void sortIfNeeded()

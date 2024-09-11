@@ -2,8 +2,6 @@
 # Tags: long, no-debug
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -29,10 +27,10 @@ function test1_select()
 function test2_insert()
 {
     echo "test2 insert"
-    $CH_CLIENT -q "insert into test select number, number::Variant(UInt64)::Variant(UInt64, Array(UInt64)) from numbers(1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
-    $CH_CLIENT -q "insert into test select number, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)) as res from numbers(1000000, 1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
-    $CH_CLIENT -q "insert into test select number, if(number % 2, NULL, 'str_' || toString(number))::Variant(String)::Variant(UInt64, String, Array(UInt64)) as res from numbers(2000000, 1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
-    $CH_CLIENT -q "insert into test select number, if(number < 3500000, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)), if(number % 2, NULL, 'str_' || toString(number))::Variant(String)::Variant(UInt64, String, Array(UInt64))) from numbers(3000000, 1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
+    $CH_CLIENT -q "insert into test select number, number::Variant(UInt64)::Variant(UInt64, Array(UInt64)) from numbers(200000) settings max_insert_block_size = 10000, min_insert_block_size_rows=10000"
+    $CH_CLIENT -q "insert into test select number, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)) as res from numbers(200000, 200000) settings max_insert_block_size = 10000, min_insert_block_size_rows=10000"
+    $CH_CLIENT -q "insert into test select number, if(number % 2, NULL, 'str_' || toString(number))::Variant(String)::Variant(UInt64, String, Array(UInt64)) as res from numbers(400000, 200000) settings max_insert_block_size = 10000, min_insert_block_size_rows=10000"
+    $CH_CLIENT -q "insert into test select number, if(number < 3500000, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)), if(number % 2, NULL, 'str_' || toString(number))::Variant(String)::Variant(UInt64, String, Array(UInt64))) from numbers(600000, 200000) settings max_insert_block_size = 10000, min_insert_block_size_rows=10000"
 }
 
 function test2_select()

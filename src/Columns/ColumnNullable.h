@@ -51,12 +51,16 @@ public:
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     TypeIndex getDataType() const override { return TypeIndex::Nullable; }
     MutableColumnPtr cloneResized(size_t size) const override;
-    size_t size() const override { return nested_column->size(); }
+    size_t size() const override { return assert_cast<const ColumnUInt8 &>(*null_map).size(); }
     bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
+    Float64 getFloat64(size_t n) const override;
+    Float32 getFloat32(size_t n) const override;
+    UInt64 getUInt(size_t n) const override;
+    Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
     StringRef getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
@@ -65,10 +69,21 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#endif
 
     void insertFromNotNullable(const IColumn & src, size_t n);
     void insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length);
@@ -85,7 +100,11 @@ public:
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#endif
 
 #if USE_EMBEDDED_COMPILER
 
@@ -104,7 +123,10 @@ public:
                         size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
+    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
     void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -113,7 +135,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
     // Special function for nullable minmax index
@@ -185,6 +207,9 @@ public:
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
 
+    bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
@@ -205,5 +230,8 @@ ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
+
+ColumnPtr removeNullable(const ColumnPtr & column);
+ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 
 }

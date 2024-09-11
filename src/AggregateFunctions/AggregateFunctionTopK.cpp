@@ -35,7 +35,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 
@@ -467,7 +467,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     if (!params.empty())
     {
         if (params.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                             "Aggregate function '{}' requires three parameters or less", name);
 
         threshold = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
@@ -535,9 +535,9 @@ void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 
     factory.registerFunction("topK", { createAggregateFunctionTopK<false, false>, properties });
     factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true, false>, properties });
-    factory.registerFunction("approx_top_k", { createAggregateFunctionTopK<false, true>, properties }, AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, properties }, AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("approx_top_count", "approx_top_k", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("approx_top_k", { createAggregateFunctionTopK<false, true>, properties }, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, properties }, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("approx_top_count", "approx_top_k", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

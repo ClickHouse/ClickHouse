@@ -17,7 +17,7 @@ struct KostikConsistentHashImpl
     using BucketsType = ResultType;
     static constexpr auto max_buckets = 32768;
 
-    static inline ResultType apply(UInt64 hash, BucketsType n)
+    static ResultType apply(UInt64 hash, BucketsType n)
     {
         return ConsistentHashing(hash, n);
     }

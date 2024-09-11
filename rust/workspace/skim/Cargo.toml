@@ -1,0 +1,17 @@
+[package]
+name = "_ch_rust_skim_rust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+skim = { version = "0.10.2", default-features = false }
+cxx = "1.0.83"
+term = "0.7.0"
+
+[build-dependencies]
+cxx-build = "1.0.83"
+
+[lib]
+crate-type = ["staticlib"]

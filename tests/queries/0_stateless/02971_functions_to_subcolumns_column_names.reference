@@ -1,0 +1,5 @@
+SELECT
+    __table1.`arr.size0` AS `length(arr)`,
+    __table1.`n.null` AS `isNull(n)`
+FROM default.t_column_names AS __table1
+{"length(arr)":"3","isNull(n)":0}

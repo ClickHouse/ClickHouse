@@ -5,11 +5,12 @@
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_AzureBlobStorage.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Backups/BackupImpl.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <filesystem>
 #endif
 
@@ -49,7 +50,9 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        StorageAzureBlob::Configuration configuration;
+        String blob_path;
+        AzureBlobStorage::ConnectionParams connection_params;
+        auto request_settings = AzureBlobStorage::getRequestSettings(params.context->getSettingsRef());
 
         if (!id_arg.empty())
         {
@@ -59,48 +62,42 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             if (!config.has(config_prefix))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
 
-            if (config.has(config_prefix + ".connection_string"))
+            connection_params =
             {
-                configuration.connection_url = config.getString(config_prefix + ".connection_string");
-                configuration.is_connection_string = true;
-                configuration.container = config.getString(config_prefix + ".container");
-            }
-            else
-            {
-                configuration.connection_url = config.getString(config_prefix + ".storage_account_url");
-                configuration.is_connection_string = false;
-                configuration.container =  config.getString(config_prefix + ".container");
-                configuration.account_name = config.getString(config_prefix + ".account_name");
-                configuration.account_key =  config.getString(config_prefix + ".account_key");
-            }
+                .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+                .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+                .client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true),
+            };
 
             if (args.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
-                configuration.blob_path = args[0].safeGet<String>();
-
+                blob_path = args[0].safeGet<String>();
         }
         else
         {
             if (args.size() == 3)
             {
-                configuration.connection_url = args[0].safeGet<String>();
-                configuration.is_connection_string = true;
+                auto connection_url = args[0].safeGet<String>();
+                auto container_name = args[1].safeGet<String>();
+                blob_path = args[2].safeGet<String>();
 
-                configuration.container =  args[1].safeGet<String>();
-                configuration.blob_path = args[2].safeGet<String>();
+                AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
+                connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true);
             }
             else if (args.size() == 5)
             {
-                configuration.connection_url = args[0].safeGet<String>();
-                configuration.is_connection_string = false;
+                connection_params.endpoint.storage_account_url = args[0].safeGet<String>();
+                connection_params.endpoint.container_name = args[1].safeGet<String>();
+                blob_path = args[2].safeGet<String>();
 
-                configuration.container =  args[1].safeGet<String>();
-                configuration.blob_path = args[2].safeGet<String>();
-                configuration.account_name = args[3].safeGet<String>();
-                configuration.account_key = args[4].safeGet<String>();
+                auto account_name = args[3].safeGet<String>();
+                auto account_key = args[4].safeGet<String>();
 
+                connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(account_name, account_key);
+                connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true);
             }
             else
             {
@@ -110,12 +107,12 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         }
 
         BackupImpl::ArchiveParams archive_params;
-        if (hasRegisteredArchiveFileExtension(configuration.blob_path))
+        if (hasRegisteredArchiveFileExtension(blob_path))
         {
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
-            archive_params.archive_name = removeFileNameFromURL(configuration.blob_path);
+            archive_params.archive_name = removeFileNameFromURL(blob_path);
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
@@ -129,10 +126,13 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderAzureBlobStorage>(configuration,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
+            auto reader = std::make_shared<BackupReaderAzureBlobStorage>(
+                connection_params,
+                blob_path,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -140,14 +140,20 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.base_backup_info,
                 reader,
                 params.context,
-                /* use_same_s3_credentials_for_base_backup*/ false);
+                params.is_internal_backup,
+                /* use_same_s3_credentials_for_base_backup*/ false,
+                params.use_same_password_for_base_backup);
         }
         else
         {
-            auto writer = std::make_shared<BackupWriterAzureBlobStorage>(configuration,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
+            auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
+                connection_params,
+                blob_path,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.azure_attempt_to_create_container);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -159,7 +165,8 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.backup_coordination,
                 params.backup_uuid,
                 params.deduplicate_files,
-                /* use_same_s3_credentials_for_base_backup */ false);
+                /* use_same_s3_credentials_for_base_backup */ false,
+                params.use_same_password_for_base_backup);
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");

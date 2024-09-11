@@ -48,6 +48,8 @@ private:
     ColumnUnique(const ColumnUnique & other);
 
 public:
+    std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
+
     MutableColumnPtr cloneEmpty() const override;
 
     const ColumnPtr & getNestedColumn() const override;
@@ -90,7 +92,11 @@ public:
         return getNestedColumn()->updateHashWithValue(n, hash_func);
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#endif
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -376,7 +382,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
     if (is_nullable && src.isNullAt(n))
         return getNullValueIndex();
 
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src))
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
 
     auto ref = src.getDataAt(n);
@@ -488,7 +494,11 @@ const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
 }
 
 template <typename ColumnType>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnUnique<ColumnType>::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     if (is_nullable)
     {
@@ -569,7 +579,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         return nullptr;
     };
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(src))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
     {
         src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
         null_map = &nullable_column->getNullMapData();
@@ -671,7 +681,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     size_t max_dictionary_size)
 {
     auto overflowed_keys = column_holder->cloneEmpty();
-    auto overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
+    auto * overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
     if (!overflowed_keys_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid keys type for ColumnUnique.");
 

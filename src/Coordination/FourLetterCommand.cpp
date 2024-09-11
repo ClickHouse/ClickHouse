@@ -1,5 +1,6 @@
 #include <Coordination/FourLetterCommand.h>
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -8,7 +9,7 @@
 #include <Poco/Path.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
@@ -305,7 +306,7 @@ String MonitorCommand::run()
     print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
     print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
     print(ret, "key_arena_size", state_machine.getKeyArenaSize());
-    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
+    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
@@ -592,7 +593,7 @@ String RecalculateCommand::run()
 
 String CleanResourcesCommand::run()
 {
-    keeper_dispatcher.cleanResources();
+    KeeperDispatcher::cleanResources();
     return "ok";
 }
 

@@ -2,13 +2,13 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -28,6 +28,7 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryJoinAdapter;
+class ExpressionActions;
 class StorageJoin;
 class StorageDictionary;
 class IKeyValueEntity;
@@ -139,12 +140,15 @@ private:
     SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
+    const UInt64 cross_join_min_rows_to_compress = 1000;
+    const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
+    const size_t output_by_rowlist_perkey_rows_threshold = 0;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -153,6 +157,8 @@ private:
     ASTs key_asts_right;
 
     Clauses clauses;
+    /// Originally used for inequal join. If there is no any inequal join condition, it will be nullptr.
+    std::shared_ptr<ExpressionActions> mixed_join_expression = nullptr;
 
     ASTTableJoin table_join;
 
@@ -183,6 +189,8 @@ private:
 
     VolumePtr tmp_volume;
 
+    TemporaryDataOnDiskScopePtr tmp_data;
+
     std::shared_ptr<StorageJoin> right_storage_join;
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
@@ -194,19 +202,19 @@ private:
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
-    ActionsDAGPtr applyKeyConvertToTable(
+    std::optional<ActionsDAG> applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src,
         const NameToTypeMap & type_mapping,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyNullsafeWrapper(
+    std::optional<ActionsDAG> applyNullsafeWrapper(
         const ColumnsWithTypeAndName & cols_src,
         const NameSet & columns_for_nullsafe_comparison,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyJoinUseNullsConversion(
+    std::optional<ActionsDAG> applyJoinUseNullsConversion(
         const ColumnsWithTypeAndName & cols_src,
         const NameToNameMap & key_column_rename);
 
@@ -228,7 +236,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, VolumePtr tmp_volume_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -243,7 +251,10 @@ public:
         table_join.strictness = strictness;
     }
 
+    TableJoin(const TableJoin & rhs) = default;
+
     JoinKind kind() const { return table_join.kind; }
+    void setKind(JoinKind kind) { table_join.kind = kind; }
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
@@ -251,7 +262,9 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
+
+    ActionsDAG createJoinedBlockActions(ContextPtr context) const;
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
 
@@ -269,6 +282,10 @@ public:
 
     bool joinUseNulls() const { return join_use_nulls; }
 
+    UInt64 crossJoinMinRowsToCompress() const { return cross_join_min_rows_to_compress; }
+
+    UInt64 crossJoinMinBytesToCompress() const { return cross_join_min_bytes_to_compress; }
+
     bool forceNullableRight() const
     {
         return join_use_nulls && isLeftOrFull(kind());
@@ -279,6 +296,7 @@ public:
         return join_use_nulls && isRightOrFull(kind());
     }
 
+    size_t outputByRowListPerkeyRowsThreshold() const { return output_by_rowlist_perkey_rows_threshold; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -297,6 +315,9 @@ public:
 
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
+
+    const std::shared_ptr<ExpressionActions> & getMixedJoinExpression() const { return mixed_join_expression; }
+    std::shared_ptr<ExpressionActions> & getMixedJoinExpression() { return mixed_join_expression; }
 
     Names getAllNames(JoinTableSide side) const;
 
@@ -359,7 +380,7 @@ public:
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr>
+    std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
     createConvertingActions(
         const ColumnsWithTypeAndName & left_sample_columns,
         const ColumnsWithTypeAndName & right_sample_columns);

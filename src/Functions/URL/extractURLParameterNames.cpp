@@ -22,13 +22,15 @@ public:
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
             {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
-        validateFunctionArgumentTypes(func, arguments, mandatory_args);
+        validateFunctionArguments(func, arguments, mandatory_args);
     }
 
     static constexpr auto strings_argument_position = 0uz;

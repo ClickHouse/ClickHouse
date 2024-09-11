@@ -7,6 +7,8 @@ toc_max_heading_level: 2
 
 # Core Settings
 
+All below settings are also available in table [system.settings](/docs/en/operations/system-tables/settings).
+
 ## additional_table_filters
 
 An additional filter expression that is applied after reading
@@ -1168,6 +1170,10 @@ Data in the VALUES clause of INSERT queries is processed by a separate stream pa
 
 Default value: 262144 (= 256 KiB).
 
+:::note
+`max_query_size` cannot be set within an SQL query (e.g., `SELECT now() SETTINGS max_query_size=10000`) because ClickHouse needs to allocate a buffer to parse the query, and this buffer size is determined by the `max_query_size` setting, which must be configured before the query is executed.
+:::
+
 ## max_parser_depth {#max_parser_depth}
 
 Limits maximum recursion depth in the recursive descent parser. Allows controlling the stack size.
@@ -1352,17 +1358,30 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
+## postgresql_connection_attempt_timeout {#postgresql-connection-attempt-timeout}
+
+Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
+The value is passed as a `connect_timeout` parameter of the connection URL.
+
+Default value: `2`.
+
 ## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
 Default value: 5000
 
+## postgresql_connection_pool_retries {#postgresql-connection-pool-retries}
+
+The maximum number of retries to establish a connection with the PostgreSQL end-point.
+
+Default value: `2`.
+
 ## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
 
 Close connection before returning connection to the pool.
 
-Default value: true.
+Default value: false.
 
 ## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
 
@@ -1588,6 +1607,22 @@ Possible values:
 
 Default value: `default`.
 
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
+
+When used in conjuction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
+
+When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+
 ## allow_experimental_parallel_reading_from_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
@@ -1689,6 +1724,18 @@ Possible values:
 
 Default value: `throw`.
 
+## query_cache_system_table_handling {#query-cache-system-table-handling}
+
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
+
+Possible values:
+
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
+
+Default value: `throw`.
+
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
 Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
@@ -1753,6 +1800,17 @@ Possible values:
 
 Default value: `0`.
 
+## query_cache_tag {#query-cache-tag}
+
+A string which acts as a label for [query cache](../query-cache.md) entries.
+The same queries with different tags are considered different by the query cache.
+
+Possible values:
+
+- Any string
+
+Default value: `''`
+
 ## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
 
 The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.
@@ -1776,7 +1834,7 @@ Default value: 0 (no restriction).
 ## insert_quorum {#insert_quorum}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables the quorum writes.
@@ -1819,7 +1877,7 @@ See also:
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1840,7 +1898,7 @@ See also:
 ## select_sequential_consistency {#select_sequential_consistency}
 
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree. 
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -1911,7 +1969,9 @@ Default value: `16`.
 
 ### wait_for_async_insert {#wait-for-async-insert}
 
-Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` as soon it has received the data, but it might still fail to parse or insert it later (You can check in system.asynchronous_insert_log)
+
+If you want to use asynchronous inserts, we need to also enable [`async_insert`](#async-insert).
 
 Possible values:
 
@@ -1940,7 +2000,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `10485760`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -2232,7 +2292,7 @@ Default value: 0.
 
 ## count_distinct_implementation {#count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
 
 Possible values:
 
@@ -2504,7 +2564,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 
@@ -2795,13 +2855,23 @@ The minimum chunk size in bytes, which each thread will parse in parallel.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
+Minimum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
 - Any positive integer.
 
 Default value: `5000`.
+
+## max_merge_selecting_sleep_ms
+
+Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: `60000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -2816,6 +2886,17 @@ Possible values:
 - 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
 Default value: 0.
+
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
+
+Enables skipping read-only replicas for INSERT queries into Distributed.
+
+Possible values:
+
+- 0 — INSERT was as usual, if it will go to read-only replica it will fail
+- 1 — Initiator will skip read-only replicas before sending data to shards.
+
+Default value: `0`
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
@@ -3142,6 +3223,18 @@ Possible values:
 - 2 - The query waits for all mutations to complete on all replicas (if they exist).
 
 Default value: `0`.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
+
+The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
+
+Possible values:
+
+- 0 - Mutations execute asynchronously.
+- 1 - The query waits for the lightweight deletes to complete on the current server.
+- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+
+Default value: `2`.
 
 **See Also**
 
@@ -3638,6 +3731,26 @@ Possible values:
 
 Default value: `0`.
 
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## s3_validate_request_settings {#s3_validate_request_settings}
+
+Enables s3 request settings validation.
+
+Possible values:
+- 1 — validate settings.
+- 0 — do not validate settings.
+
+Default value: `1`.
+
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3663,6 +3776,56 @@ Default value: `0`.
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
+
+Ignore absence of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_skip_empty_files {#azure_skip_empty_files}
+
+Enables or disables skipping empty files in S3 engine.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
@@ -3752,6 +3915,10 @@ Possible values:
 - 0 - Disabled (infinite timeout).
 
 Default value: 30.
+
+:::note
+It's applicable only to the default profile. A server reboot is required for the changes to take effect.
+:::
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -3905,21 +4072,8 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+Supported only with experimental analyzer (`enable_analyzer = 1`).
 :::
-
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
-Cloud default value: `1`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
@@ -3954,6 +4108,7 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+- `none_only_active` - similar to `none`, but doesn't wait for inactive replicas of the `Replicated` database. Note: with this mode it's impossible to figure out that the query was not executed on some replica and will be executed in background.
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
@@ -4336,6 +4491,18 @@ Possible values:
 
 Default value: `0`.
 
+
+## function_locate_has_mysql_compatible_argument_order {#function-locate-has-mysql-compatible-argument-order}
+
+Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
+
+Possible values:
+
+- 0 — Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
+- 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
+
+Default value: `1`.
+
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
@@ -4483,8 +4650,8 @@ Default Value: 5.
 
 ## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
 
-It represents soft memory limit in case when hard limit is reached on user level.
-This value is used to compute overcommit ratio for the query.
+It represents the soft memory limit when the hard limit is reached on the global level.
+This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -4500,8 +4667,8 @@ Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
 
-It represents soft memory limit in case when hard limit is reached on global level.
-This value is used to compute overcommit ratio for the query.
+It represents the soft memory limit when the hard limit is reached on the user level.
+This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -5011,7 +5178,7 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistic {#allow_experimental_statistic}
+## allow_experimental_statistics {#allow_experimental_statistics}
 
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
 
@@ -5021,7 +5188,7 @@ Allows using statistic to optimize the order of [prewhere conditions](../../sql-
 
 ## analyze_index_with_space_filling_curves
 
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 
 ## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
@@ -5278,7 +5445,7 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
 
 When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
 
 Default value: `false`.
 
@@ -5288,6 +5455,15 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
+
+## allow_deprecated_snowflake_conversion_functions {#allow_deprecated_snowflake_conversion_functions}
+
+Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
+Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
+
+To re-enable the deprecated functions (e.g., during a transition period), please set this setting to `true`.
+
+Default value: `false`
 
 ## allow_experimental_variant_type {#allow_experimental_variant_type}
 
@@ -5429,3 +5605,80 @@ Enabling this setting can lead to incorrect result as in case of evolved schema 
 :::
 
 Default value: 'false'.
+
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
+
+Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
+
+## mysql_datatypes_support_level
+
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+- `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
+- `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
+- `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
+- `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+
+## cross_join_min_rows_to_compress
+
+Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `10000000`.
+
+## cross_join_min_bytes_to_compress
+
+Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+
+Default value: `1GiB`.
+
+## use_json_alias_for_old_object_type
+
+When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
+
+Default value: `false`.
+
+## type_json_skip_duplicated_paths
+
+When enabled, ClickHouse will skip duplicated paths during parsing of [JSON](../../sql-reference/data-types/newjson.md) object. Only the value of the first occurrence of each path will be inserted.
+
+Default value: `false`
+
+## restore_replace_external_engines_to_null
+
+For testing purposes. Replaces all external engines to Null to not initiate external connections.
+
+Default value: `False`
+
+## restore_replace_external_table_functions_to_null
+
+For testing purposes. Replaces all external table functions to Null to not initiate external connections.
+
+Default value: `False`
+
+## disable_insertion_and_mutation
+
+Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
+
+Default value: `false`.
+
+## use_hive_partitioning
+
+When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+
+Default value: `false`.
+
+## allow_experimental_time_series_table {#allow-experimental-time-series-table}
+
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
+
+Possible values:
+
+- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
+- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+
+Default value: `0`.
+
+## create_if_not_exists
+
+Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
+
+Default value: `false`.

@@ -102,14 +102,14 @@ struct ContinuousImpl
         auto baseline_argument = arguments[0];
         baseline_argument.column = baseline_argument.column->convertToFullColumnIfConst();
         auto baseline_column_untyped = castColumnAccurate(baseline_argument, float_64_type);
-        const auto * baseline_column = checkAndGetColumn<ColumnVector<Float64>>(*baseline_column_untyped);
-        const auto & baseline_column_data = baseline_column->getData();
+        const auto & baseline_column = checkAndGetColumn<ColumnVector<Float64>>(*baseline_column_untyped);
+        const auto & baseline_column_data = baseline_column.getData();
 
         auto sigma_argument = arguments[1];
         sigma_argument.column = sigma_argument.column->convertToFullColumnIfConst();
         auto sigma_column_untyped = castColumnAccurate(sigma_argument, float_64_type);
-        const auto * sigma_column = checkAndGetColumn<ColumnVector<Float64>>(*sigma_column_untyped);
-        const auto & sigma_column_data = sigma_column->getData();
+        const auto & sigma_column = checkAndGetColumn<ColumnVector<Float64>>(*sigma_column_untyped);
+        const auto & sigma_column_data = sigma_column.getData();
 
         const IColumn & col_mde = *arguments[2].column;
         const IColumn & col_power = *arguments[3].column;

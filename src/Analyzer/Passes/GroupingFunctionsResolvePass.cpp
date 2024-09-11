@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 
@@ -24,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupByKind
+enum class GroupByKind : uint8_t
 {
     ORDINARY,
     ROLLUP,
@@ -146,7 +147,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     if (query_node_typed.hasGroupBy())
     {
         /// It is expected by execution layer that if there are only 1 grouping set it will be removed
-        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1)
+        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1 && !context->getSettingsRef().group_by_use_nulls)
         {
             auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
             auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
@@ -256,4 +257,3 @@ void GroupingFunctionsResolvePass::run(QueryTreeNodePtr & query_tree_node, Conte
 }
 
 }
-

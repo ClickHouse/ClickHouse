@@ -1,29 +1,9 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <base/types.h>
-#include <magic_enum.hpp>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-template <typename E>
-requires std::is_enum_v<E>
-static E parseEnum(const String & str)
-{
-    auto value = magic_enum::enum_cast<E>(str);
-    if (!value || *value == E::Unknown)
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected string {} for enum {}", str, magic_enum::enum_type_name<E>());
-
-    return *value;
-}
-
 /// It's a bug in clang with three-way comparison operator
 /// https://github.com/llvm/llvm-project/issues/55919
 #pragma clang diagnostic push
@@ -42,9 +22,6 @@ public:
         /// Data of all columns is stored in one file. Marks are also stored in single file.
         Compact,
 
-        /// Format with buffering data in RAM. Obsolete - new parts cannot be created in this format.
-        InMemory,
-
         Unknown,
     };
 
@@ -54,8 +31,8 @@ public:
     auto operator<=>(const MergeTreeDataPartType &) const = default;
 
     Value getValue() const { return value; }
-    String toString() const { return String(magic_enum::enum_name(value)); }
-    void fromString(const String & str) { value = parseEnum<Value>(str); }
+    String toString() const;
+    void fromString(const String & str);
 
 private:
     Value value;
@@ -77,8 +54,8 @@ public:
     auto operator<=>(const MergeTreeDataPartStorageType &) const = default;
 
     Value getValue() const { return value; }
-    String toString() const { return String(magic_enum::enum_name(value)); }
-    void fromString(const String & str) { value = parseEnum<Value>(str); }
+    String toString() const;
+    void fromString(const String & str);
 
 private:
     Value value;

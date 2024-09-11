@@ -5,6 +5,9 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
+#include <istream>
+#include <ostream>
+
 
 namespace DB
 {
@@ -79,7 +82,7 @@ inline char * writeVarInt(Int64 x, char * ostr)
     return writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
 
-namespace impl
+namespace varint_impl
 {
 
 template <bool check_eof>
@@ -106,8 +109,9 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     if (istr.buffer().end() - istr.position() >= 10)
-        return impl::readVarUInt<false>(x, istr);
-    return impl::readVarUInt<true>(x, istr);
+        varint_impl::readVarUInt<false>(x, istr);
+    else
+        varint_impl::readVarUInt<true>(x, istr);
 }
 
 inline void readVarUInt(UInt64 & x, std::istream & istr)

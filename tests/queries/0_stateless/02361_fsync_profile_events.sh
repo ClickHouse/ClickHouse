@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, no-random-merge-tree-settings
-# Tag no-s3-storage: s3 does not have fsync
+# Tags: no-object-storage, no-random-merge-tree-settings
+# Tag no-object-storage: s3 does not have fsync
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists data_fsync_pe;
 
     create table data_fsync_pe (key Int) engine=MergeTree()
@@ -27,7 +27,7 @@ for i in {1..100}; do
     $CLICKHOUSE_CLIENT --query_id "$query_id" -q "insert into data_fsync_pe values (1)"
 
     read -r FileSync FileOpen DirectorySync FileSyncElapsedMicroseconds DirectorySyncElapsedMicroseconds <<<"$(
-    $CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
+    $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
         system flush logs;
 
         select

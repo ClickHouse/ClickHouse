@@ -9,6 +9,7 @@ from helpers.test_tools import assert_eq_with_retry, TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
+    main_configs=["configs/remote_servers.xml"],
     user_configs=[
         "configs/users.d/assign_myquota_to_default_user.xml",
         "configs/users.d/drop_default_quota.xml",

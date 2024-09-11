@@ -8,14 +8,14 @@
 namespace DB
 {
 
-enum class VolumeType
+enum class VolumeType : uint8_t
 {
     JBOD,
     SINGLE_DISK,
     UNKNOWN
 };
 
-enum class VolumeLoadBalancing
+enum class VolumeLoadBalancing : uint8_t
 {
     ROUND_ROBIN,
     LEAST_USED,
@@ -64,7 +64,7 @@ public:
         DiskSelectorPtr disk_selector
     );
 
-    virtual ReservationPtr reserve(UInt64 bytes) override = 0;
+    ReservationPtr reserve(UInt64 bytes) override = 0;
 
     /// This is a volume.
     bool isVolume() const override { return true; }

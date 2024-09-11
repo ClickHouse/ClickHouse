@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/mannwhitneyutest
-sidebar_position: 310
+sidebar_position: 161
 sidebar_label: mannWhitneyUTest
 ---
 

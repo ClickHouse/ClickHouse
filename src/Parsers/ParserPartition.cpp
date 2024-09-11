@@ -14,8 +14,8 @@ namespace DB
 
 bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_id("ID");
-    ParserKeyword s_all("ALL");
+    ParserKeyword s_id(Keyword::ID);
+    ParserKeyword s_all(Keyword::ALL);
     ParserStringLiteral parser_string_literal;
     ParserSubstitution parser_substitution;
     ParserExpression parser_expr;
@@ -65,7 +65,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 if (literal_ast->value.getType() == Field::Types::Tuple)
                 {
-                    fields_count = literal_ast->value.get<const Tuple &>().size();
+                    fields_count = literal_ast->value.safeGet<const Tuple &>().size();
                 }
                 else
                 {

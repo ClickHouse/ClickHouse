@@ -4,6 +4,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -75,17 +76,25 @@ public:
         return constant_value->getType();
     }
 
+    /// Check if conversion to AST requires wrapping with _CAST function.
+    bool requiresCastCall() const;
+
+    /// Check if constant is a result of _CAST function constant folding.
+    bool receivedFromInitiatorServer() const;
+
     void setMaskId(size_t id)
     {
         mask_id = id;
     }
 
+    void convertToNullable() override;
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

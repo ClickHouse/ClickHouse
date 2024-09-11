@@ -11,14 +11,18 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Columns/ColumnSet.h>
 
 #include <IO/WriteBufferFromString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+
+#include <AggregateFunctions/WindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
@@ -32,6 +36,9 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/WindowNode.h>
+
+#include <Core/Settings.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -160,26 +167,6 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
     return ast;
 }
 
-/** There are no limits on the maximum size of the result for the subquery.
-  * Since the result of the query is not the result of the entire query.
-  */
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
-{
-    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
-      * Because the result of this query is not the result of the entire query.
-      * Constraints work instead
-      *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-      *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
-      *  which are checked separately (in the Set, Join objects).
-      */
-    Settings subquery_settings = mutable_context->getSettings();
-    subquery_settings.max_result_rows = 0;
-    subquery_settings.max_result_bytes = 0;
-    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings.extremes = false;
-    mutable_context->setSettings(subquery_settings);
-}
-
 namespace
 {
 
@@ -233,14 +220,14 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context)
 {
-    ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
+    ActionsDAG action_dag(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
     auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
-    action_dag->getOutputs() = std::move(expression_dag_index_nodes);
+    action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
     return action_dag;
 }
@@ -422,38 +409,6 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     return query_node->cloneAndReplace(replacement_map);
 }
 
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context)
-{
-    auto projection_columns = columns;
-
-    QueryTreeNodes subquery_projection_nodes;
-    subquery_projection_nodes.reserve(projection_columns.size());
-
-    for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
-
-    if (subquery_projection_nodes.empty())
-    {
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        projection_columns.push_back({"1", std::move(constant_data_type)});
-    }
-
-    auto context_copy = Context::createCopy(context);
-    updateContextForSubqueryExecution(context_copy);
-
-    auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
-
-    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
-    query_node->resolveProjectionColumns(projection_columns);
-    query_node->getJoinTree() = table_expression;
-    query_node->setIsSubquery(true);
-
-    return query_node;
-}
-
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     SelectQueryInfo select_query_info;
@@ -492,7 +447,7 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
     collectSourceColumns(filter_query_tree, planner_context, false /*keep_alias_columns*/);
     collectSets(filter_query_tree, *planner_context);
 
-    auto filter_actions_dag = std::make_shared<ActionsDAG>();
+    ActionsDAG filter_actions_dag;
 
     PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
     auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
@@ -501,13 +456,13 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
             "Filter actions must return single output node. Actual {}",
             expression_nodes.size());
 
-    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
+    auto & filter_actions_outputs = filter_actions_dag.getOutputs();
     filter_actions_outputs = std::move(expression_nodes);
 
     std::string filter_node_name = filter_actions_outputs[0]->result_name;
     bool remove_filter_column = true;
 
-    for (const auto & filter_input_node : filter_actions_dag->getInputs())
+    for (const auto & filter_input_node : filter_actions_dag.getInputs())
         if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
             filter_actions_outputs.push_back(filter_input_node);
 
@@ -523,8 +478,52 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
     ParserExpression parser;
     auto additional_result_filter_ast = parseQuery(
                 parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
-                "additional result filter", settings.max_query_size, settings.max_parser_depth);
+                "additional result filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
     return additional_result_filter_ast;
+}
+
+void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                useful_sets.insert(column_set->getData());
+        }
+
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    appendSetsFromActionsDAG(index_hint->getActions(), useful_sets);
+                }
+            }
+        }
+    }
+}
+
+std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
+{
+    if (!node.isWindowFunction())
+        return {};
+    auto & window_node = node.getWindowNode()->as<WindowNode &>();
+    const auto & window_frame = window_node.getWindowFrame();
+    if (!window_frame.is_default)
+        return window_frame;
+    auto aggregate_function = node.getAggregateFunction();
+    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
+    {
+        return win_func->getDefaultFrame();
+    }
+    return {};
 }
 
 }

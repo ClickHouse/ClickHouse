@@ -10,6 +10,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Planner/TableExpressionData.h>
+#include <Interpreters/SelectQueryOptions.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ class TableNode;
 
 struct FiltersForTableExpression
 {
-    ActionsDAGPtr filter_actions;
+    std::optional<ActionsDAG> filter_actions;
     PrewhereInfoPtr prewhere_info;
 };
 
@@ -74,11 +75,17 @@ private:
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
 
+class PlannerContext;
+using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
 class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_);
+    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_);
+
+    /// Create planner with modified query_context
+    PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_);
 
     /// Get planner context query context
     ContextPtr getQueryContext() const
@@ -165,12 +172,20 @@ public:
     static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
+
+    /// Returns false if any of following conditions met:
+    /// 1. Query is executed on a follower node.
+    /// 2. ignore_ast_optimizations is set.
+    bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
+
 private:
     /// Query context
     ContextMutablePtr query_context;
 
     /// Global planner context
     GlobalPlannerContextPtr global_planner_context;
+
+    bool is_ast_level_optimization_allowed;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
@@ -181,7 +196,5 @@ private:
     /// Set key to set
     PreparedSets prepared_sets;
 };
-
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 }

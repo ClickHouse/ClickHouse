@@ -53,6 +53,10 @@ public:
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
+    // Verifies whether the user's validity extends beyond the current time.
+    // Throws an exception if the user's validity has expired.
+    void checkIfUserIsStillValid();
+
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
 
@@ -65,7 +69,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
     void setForwardedFor(const String & forwarded_for);
     void setQuotaClientKey(const String & quota_key);
     void setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
@@ -98,8 +102,7 @@ public:
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
-    void recordLoginSucess(ContextPtr login_context) const;
-
+    void recordLoginSuccess(ContextPtr login_context) const;
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;

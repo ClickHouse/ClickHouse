@@ -69,7 +69,7 @@ public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
         ClusterPtr cluster_,
-        ParallelReplicasReadingCoordinatorPtr coordinator_,
+        const StorageID & storage_id_,
         Block header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
@@ -91,6 +91,7 @@ private:
 
     ClusterPtr cluster;
     ASTPtr query_ast;
+    StorageID storage_id;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;

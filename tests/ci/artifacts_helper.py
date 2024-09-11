@@ -10,15 +10,12 @@ from pathlib import Path
 from shutil import copy2
 from typing import List, Optional, Union
 
-# isort: off
 from github.Commit import Commit
-
-# isort: on
 
 from build_download_helper import download_build_with_progress
 from commit_status_helper import post_commit_status
 from compress_files import SUFFIX, compress_fast, decompress_fast
-from env_helper import CI, RUNNER_TEMP, S3_BUILDS_BUCKET
+from env_helper import IS_CI, RUNNER_TEMP, S3_BUILDS_BUCKET
 from git_helper import SHA_REGEXP
 from report import FOOTER_HTML_TEMPLATE, HEAD_HTML_TEMPLATE, SUCCESS
 from s3_helper import S3Helper
@@ -134,7 +131,7 @@ class ArtifactsHelper:
         post_commit_status(commit, SUCCESS, url, "Artifacts for workflow", "Artifacts")
 
     def _regenerate_index(self) -> None:
-        if CI:
+        if IS_CI:
             files = self._get_s3_objects()
         else:
             files = self._get_local_s3_objects()

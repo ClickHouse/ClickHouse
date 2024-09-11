@@ -15,16 +15,10 @@ namespace ErrorCodes
 }
 
 ObjectStorageKeysGeneratorPtr getKeyGenerator(
-    String type,
     const S3::URI & uri,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
-    if (type == "s3_plain")
-        return createObjectStorageKeysGeneratorAsIsWithPrefix(uri.key);
-
-    chassert(type == "s3");
-
     bool storage_metadata_write_full_object_key = DiskObjectStorageMetadata::getWriteFullObjectKeySetting();
     bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
 
@@ -85,7 +79,7 @@ bool checkBatchRemove(S3ObjectStorage & storage)
     /// We are using generateObjectKeyForPath() which returns random object key.
     /// That generated key is placed in a right directory where we should have write access.
     const String path = fmt::format("clickhouse_remove_objects_capability_{}", getServerUUID());
-    const auto key = storage.generateObjectKeyForPath(path);
+    const auto key = storage.generateObjectKeyForPath(path, {} /* key_prefix */);
     StoredObject object(key.serialize(), path);
     try
     {

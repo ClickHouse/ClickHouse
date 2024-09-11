@@ -9,7 +9,7 @@ written_rows:   0
 written_bytes:  0
 result_rows:    0
 result_bytes:   0
-query:          INSERT INTO default.async_insert_landing SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing']
@@ -26,7 +26,7 @@ written_rows:   4
 written_bytes:  16
 result_rows:    4
 result_bytes:   16
-query:          INSERT INTO default.async_insert_landing SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing']
@@ -54,7 +54,7 @@ written_rows:   0
 written_bytes:  0
 result_rows:    0
 result_bytes:   0
-query:          INSERT INTO default.async_insert_landing SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing','default.async_insert_target']
@@ -68,10 +68,10 @@ type:           QueryFinish
 read_rows:      3
 read_bytes:     12
 written_rows:   6
-written_bytes:  12
+written_bytes:  24
 result_rows:    6
-result_bytes:   12
-query:          INSERT INTO default.async_insert_landing SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+result_bytes:   24
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing','default.async_insert_target']
@@ -84,12 +84,12 @@ Row 1:
 ──────
 view_name:      default.async_insert_mv
 view_type:      Materialized
-view_query:     SELECT id + throwIf(id = 42) FROM default.async_insert_landing
+view_query:     SELECT id + throwIf(id = 42) AS id FROM default.async_insert_landing
 view_target:    default.async_insert_target
 read_rows:      3
 read_bytes:     12
 written_rows:   3
-written_bytes:  0
+written_bytes:  12
 status:         QueryFinish
 exception_code: 0
 
@@ -98,6 +98,13 @@ Row 1:
 ──────
 database:     default
 table:        async_insert_landing
+partition_id: all
+rows:         3
+
+Row 2:
+──────
+database:     default
+table:        async_insert_target
 partition_id: all
 rows:         3
 
@@ -111,7 +118,7 @@ written_rows:   0
 written_bytes:  0
 result_rows:    0
 result_bytes:   0
-query:          INSERT INTO default.async_insert_landing SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing','default.async_insert_target']
@@ -128,7 +135,7 @@ written_rows:   3
 written_bytes:  12
 result_rows:    0
 result_bytes:   0
-query:          INSERT INTO default.async_insert_landing SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing','default.async_insert_target']
@@ -141,7 +148,7 @@ Row 1:
 ──────
 view_name:      default.async_insert_mv
 view_type:      Materialized
-view_query:     SELECT id + throwIf(id = 42) FROM default.async_insert_landing
+view_query:     SELECT id + throwIf(id = 42) AS id FROM default.async_insert_landing
 view_target:    default.async_insert_target
 read_rows:      3
 read_bytes:     12

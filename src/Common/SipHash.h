@@ -149,7 +149,7 @@ public:
 
         /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
-        switch (end - data)
+        switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
             case 6: current_bytes[CURRENT_BYTES_IDX(5)] = data[5]; [[fallthrough]];

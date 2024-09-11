@@ -334,7 +334,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
     }
 };
 
-enum class SortingQueueStrategy
+enum class SortingQueueStrategy : uint8_t
 {
     Default,
     Batch

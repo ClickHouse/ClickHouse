@@ -1,8 +1,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
-#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
-#include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -14,12 +13,14 @@ namespace DB
 namespace
 {
 
-void addConvertingActions(QueryPlan & plan, const Block & header)
+void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
 {
     if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
         return;
 
-    auto get_converting_dag = [](const Block & block_, const Block & header_)
+    auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
+
+    auto get_converting_dag = [mode](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -27,12 +28,12 @@ void addConvertingActions(QueryPlan & plan, const Block & header)
         return ActionsDAG::makeConvertingActions(
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
+            mode,
             true);
     };
 
     auto convert_actions_dag = get_converting_dag(plan.getCurrentDataStream().header, header);
-    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
+    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(convert_actions_dag));
     plan.addStep(std::move(converting));
 }
 
@@ -44,7 +45,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
-    size_t shard_count)
+    size_t shard_count,
+    bool has_missing_objects)
 {
     checkStackSize();
 
@@ -65,6 +67,10 @@ std::unique_ptr<QueryPlan> createLocalPlan(
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
+        /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
+        /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
+        /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
+        new_context->setSetting("enable_positional_arguments", Field(false));
         auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
         query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
     }
@@ -74,7 +80,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         interpreter.buildQueryPlan(*query_plan);
     }
 
-    addConvertingActions(*query_plan, header);
+    addConvertingActions(*query_plan, header, has_missing_objects);
     return query_plan;
 }
 

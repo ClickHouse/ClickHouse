@@ -4,7 +4,7 @@ sidebar_position: 51
 sidebar_label: COMMENT
 ---
 
-# ALTER TABLE … MODIFY COMMENT {#alter-modify-comment}
+# ALTER TABLE ... MODIFY COMMENT {#alter-modify-comment}
 
 Добавляет, изменяет или удаляет комментарий к таблице, независимо от того, был ли он установлен раньше или нет. Изменение комментария отражается как в системной таблице [system.tables](../../../operations/system-tables/tables.md), так и в результате выполнения запроса `SHOW CREATE TABLE`.
 

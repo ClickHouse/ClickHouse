@@ -104,7 +104,7 @@ struct AggregateFunctionVarianceData
     Float64 m2 = 0.0;
 };
 
-enum class VarKind
+enum class VarKind : uint8_t
 {
     varSampStable,
     stddevSampStable,
@@ -150,13 +150,13 @@ private:
 
     Float64 getResult(ConstAggregateDataPtr __restrict place) const
     {
-        const auto & data = this->data(place);
+        const auto & dt = data(place);
         switch (kind)
         {
-            case VarKind::varSampStable: return getVarSamp(data.m2, data.count);
-            case VarKind::stddevSampStable: return getStddevSamp(data.m2, data.count);
-            case VarKind::varPopStable: return getVarPop(data.m2, data.count);
-            case VarKind::stddevPopStable: return getStddevPop(data.m2, data.count);
+            case VarKind::varSampStable: return getVarSamp(dt.m2, dt.count);
+            case VarKind::stddevSampStable: return getStddevSamp(dt.m2, dt.count);
+            case VarKind::varPopStable: return getVarPop(dt.m2, dt.count);
+            case VarKind::stddevPopStable: return getStddevPop(dt.m2, dt.count);
         }
     }
 
@@ -182,22 +182,22 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).update(*columns[0], row_num);
+        data(place).update(*columns[0], row_num);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).mergeWith(this->data(rhs));
+        data(place).mergeWith(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).serialize(buf);
+        data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -343,7 +343,7 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
     Float64 co_moment = 0.0;
 };
 
-enum class CovarKind
+enum class CovarKind : uint8_t
 {
     covarSampStable,
     covarPopStable,

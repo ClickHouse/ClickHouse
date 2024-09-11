@@ -102,25 +102,30 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        if (items.empty())
-            return {nullptr, false};
-
-        // Recursively pull request from child
-        auto [request, child_active] = items.front().child->dequeueRequest();
-        assert(request != nullptr);
-
-        // Deactivate child if it is empty
-        if (!child_active)
+        // Cycle is required to do deactivations in the case of canceled requests, when dequeueRequest returns `nullptr`
+        while (true)
         {
-            std::pop_heap(items.begin(), items.end());
-            items.pop_back();
             if (items.empty())
-                busy_periods++;
-        }
+                return {nullptr, false};
 
-        dequeued_requests++;
-        dequeued_cost += request->cost;
-        return {request, !items.empty()};
+            // Recursively pull request from child
+            auto [request, child_active] = items.front().child->dequeueRequest();
+
+            // Deactivate child if it is empty
+            if (!child_active)
+            {
+                std::pop_heap(items.begin(), items.end());
+                items.pop_back();
+                if (items.empty())
+                    busy_periods++;
+            }
+
+            if (request)
+            {
+                incrementDequeued(request->cost);
+                return {request, !items.empty()};
+            }
+        }
     }
 
     bool isActive() override

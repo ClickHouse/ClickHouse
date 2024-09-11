@@ -19,7 +19,6 @@
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
-#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -27,7 +26,7 @@
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 
@@ -1391,9 +1390,9 @@ struct PcgSerializer
 {
     static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
     {
-        writeText(rng.multiplier(), buf);
+        writeText(pcg32_fast::multiplier(), buf);
         writeChar(' ', buf);
-        writeText(rng.increment(), buf);
+        writeText(pcg32_fast::increment(), buf);
         writeChar(' ', buf);
         writeText(rng.state_, buf);
     }
@@ -1421,7 +1420,7 @@ struct fmt::formatter<DB::UUID>
     }
 
     template<typename FormatContext>
-    auto format(const DB::UUID & uuid, FormatContext & context)
+    auto format(const DB::UUID & uuid, FormatContext & context) const
     {
         return fmt::format_to(context.out(), "{}", toString(uuid));
     }

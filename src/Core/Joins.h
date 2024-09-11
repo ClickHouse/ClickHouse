@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// Join method.
-enum class JoinKind
+enum class JoinKind : uint8_t
 {
     Inner, /// Leave only rows that was JOINed.
     Left, /// If in "right" table there is no corresponding rows, use default values instead.
@@ -19,19 +19,19 @@ enum class JoinKind
 
 const char * toString(JoinKind kind);
 
-inline constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
-inline constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
-inline constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
-inline constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
-inline constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
-inline constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::Right || kind == JoinKind::Full; }
-inline constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }
-inline constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner || kind == JoinKind::Right; }
-inline constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
-inline constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
+constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
+constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
+constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
+constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
+constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
+constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::Right || kind == JoinKind::Full; }
+constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }
+constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner || kind == JoinKind::Right; }
+constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
+constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
 
 /// Allows more optimal JOIN for typical cases.
-enum class JoinStrictness
+enum class JoinStrictness : uint8_t
 {
     Unspecified,
     RightAny, /// Old ANY JOIN. If there are many suitable rows in right table, use any from them to join.
@@ -45,7 +45,7 @@ enum class JoinStrictness
 const char * toString(JoinStrictness strictness);
 
 /// Algorithm for distributed query processing.
-enum class JoinLocality
+enum class JoinLocality : uint8_t
 {
     Unspecified,
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
@@ -55,7 +55,7 @@ enum class JoinLocality
 const char * toString(JoinLocality locality);
 
 /// ASOF JOIN inequality type
-enum class ASOFJoinInequality
+enum class ASOFJoinInequality : uint8_t
 {
     None,
     Less,
@@ -66,7 +66,7 @@ enum class ASOFJoinInequality
 
 const char * toString(ASOFJoinInequality asof_join_inequality);
 
-inline constexpr ASOFJoinInequality getASOFJoinInequality(std::string_view func_name)
+constexpr ASOFJoinInequality getASOFJoinInequality(std::string_view func_name)
 {
     ASOFJoinInequality inequality = ASOFJoinInequality::None;
 
@@ -82,7 +82,7 @@ inline constexpr ASOFJoinInequality getASOFJoinInequality(std::string_view func_
     return inequality;
 }
 
-inline constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequality)
+constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequality)
 {
     if (inequality == ASOFJoinInequality::Less)
         return ASOFJoinInequality::Greater;
@@ -96,7 +96,7 @@ inline constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality
     return ASOFJoinInequality::None;
 }
 
-enum class JoinAlgorithm
+enum class JoinAlgorithm : uint8_t
 {
     DEFAULT = 0,
     AUTO,
@@ -111,7 +111,7 @@ enum class JoinAlgorithm
 
 const char * toString(JoinAlgorithm join_algorithm);
 
-enum class JoinTableSide
+enum class JoinTableSide : uint8_t
 {
     Left,
     Right

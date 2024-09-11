@@ -21,7 +21,7 @@ class ReadBufferFromRemoteFSGather final : public ReadBufferFromFileBase
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(bool restricted_seek, const std::string & path)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(bool restricted_seek, const StoredObject & object)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
@@ -39,9 +39,9 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
-    size_t getFileSize() override { return getTotalSize(blobs_to_read); }
+    std::optional<size_t> tryGetFileSize() override { return getTotalSize(blobs_to_read); }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 

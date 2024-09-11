@@ -36,7 +36,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#codecs) and `default_expr` (see the section [Default expressions](/docs/en/sql-reference/statements/create/table.md/#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/docs/en/sql-reference/statements/create/table.md/#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -108,7 +108,7 @@ ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](partition.md/#how-to-set-partition-expression).
+Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](../alter/partition.md/#how-to-set-partition-expression).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
@@ -155,7 +155,7 @@ This query changes the `name` column properties:
 
 - Column-level Settings
 
-For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#codecs).
+For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#column_compression_codec).
 
 For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
 
@@ -173,7 +173,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
 
-The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description, but column type is mandatory in this case.
+The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#add-column) description, but column type is mandatory in this case.
 
 Example:
 
@@ -335,7 +335,7 @@ The `ALTER` query lets you create and delete separate elements (columns) in nest
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](/docs/en/sql-reference/statements/insert-into.md/#inserting-the-results-of-select) query, then switch the tables using the [RENAME](/docs/en/sql-reference/statements/rename.md/#rename-table) query and delete the old table. You can use the [clickhouse-copier](/docs/en/operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](/docs/en/sql-reference/statements/insert-into.md/#inserting-the-results-of-select) query, then switch the tables using the [RENAME](/docs/en/sql-reference/statements/rename.md/#rename-table) query and delete the old table.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 

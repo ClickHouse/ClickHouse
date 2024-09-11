@@ -16,7 +16,9 @@ ClickHouse also supports:
 
 ## NULL Processing
 
-During aggregation, all `NULL`s are skipped. If the aggregation has several parameters it will ignore any row in which one or more of the parameters are NULL.
+During aggregation, all `NULL` arguments are skipped. If the aggregation has several arguments it will ignore any row in which one or more of them are NULL.
+
+There is an exception to this rule, which are the functions [`first_value`](../../sql-reference/aggregate-functions/reference/first_value.md), [`last_value`](../../sql-reference/aggregate-functions/reference/last_value.md) and their aliases (`any` and `anyLast` respectively) when followed by the modifier `RESPECT NULLS`. For example, `FIRST_VALUE(b) RESPECT NULLS`.
 
 **Examples:**
 
@@ -84,4 +86,51 @@ FROM t_null_big;
 ┌─groupArray(y)─┬─tupleElement(groupArray(tuple(y)), 1)─┐
 │ [2,2,3]       │ [2,NULL,2,3,NULL]                     │
 └───────────────┴───────────────────────────────────────┘
+```
+
+Note that aggregations are skipped when the columns are used as arguments to an aggregated function.  For example [`count`](../../sql-reference/aggregate-functions/reference/count.md) without parameters (`count()`) or with constant ones (`count(1)`) will count all rows in the block (independently of the value of the GROUP BY column as it's not an argument), while `count(column)` will only return the number of rows where column is not NULL.
+
+```sql
+SELECT
+    v,
+    count(1),
+    count(v)
+FROM
+(
+    SELECT if(number < 10, NULL, number % 3) AS v
+    FROM numbers(15)
+)
+GROUP BY v
+
+┌────v─┬─count()─┬─count(v)─┐
+│ ᴺᵁᴸᴸ │      10 │        0 │
+│    0 │       1 │        1 │
+│    1 │       2 │        2 │
+│    2 │       2 │        2 │
+└──────┴─────────┴──────────┘
+```
+
+And here is an example of of first_value with `RESPECT NULLS` where we can see that NULL inputs are respected and it will return the first value read, whether it's NULL or not:
+
+```sql
+SELECT
+    col || '_' || ((col + 1) * 5 - 1) as range,
+    first_value(odd_or_null) as first,
+    first_value(odd_or_null) IGNORE NULLS as first_ignore_null,
+    first_value(odd_or_null) RESPECT NULLS as first_respect_nulls
+FROM
+(
+    SELECT
+        intDiv(number, 5) AS col,
+        if(number % 2 == 0, NULL, number) as odd_or_null
+    FROM numbers(15)
+)
+GROUP BY col
+ORDER BY col
+
+┌─range─┬─first─┬─first_ignore_null─┬─first_respect_nulls─┐
+│ 0_4   │     1 │                 1 │                ᴺᵁᴸᴸ │
+│ 1_9   │     5 │                 5 │                   5 │
+│ 2_14  │    11 │                11 │                ᴺᵁᴸᴸ │
+└───────┴───────┴───────────────────┴─────────────────────┘
 ```

@@ -71,6 +71,9 @@ std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const Quer
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
     size_t table_function_node_arguments_size = table_function_node_arguments.size();
 
+    if (table_function_node_arguments_size <= 2)
+        return {};
+
     std::vector<size_t> result_indexes;
     result_indexes.reserve(table_function_node_arguments_size - 2);
     for (size_t i = 2; i < table_function_node_arguments_size; ++i)
@@ -167,7 +170,14 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     if (settings_query != nullptr)
         settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
 
-    auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context, is_insert_query), ConstraintsDescription{});
+    auto storage = std::make_shared<StorageExecutable>(
+        storage_id,
+        format,
+        settings,
+        input_queries,
+        getActualTableStructure(context, is_insert_query),
+        ConstraintsDescription{},
+        /* comment = */ "");
     storage->startup();
     return storage;
 }

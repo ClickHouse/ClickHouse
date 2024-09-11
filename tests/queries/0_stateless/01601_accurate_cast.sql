@@ -16,6 +16,21 @@ SELECT accurateCast(-129, 'Int8'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT accurateCast(5, 'Int8');
 SELECT accurateCast(128, 'Int8'); -- { serverError CANNOT_CONVERT_TYPE }
 
+SELECT accurateCast('-1', 'UInt8'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('5', 'UInt8');
+SELECT accurateCast('257', 'UInt8'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('-1', 'UInt16'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('5', 'UInt16');
+SELECT accurateCast('65536', 'UInt16'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('-1', 'UInt32'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('5', 'UInt32');
+SELECT accurateCast('4294967296', 'UInt32'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('-1', 'UInt64'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('5', 'UInt64');
+SELECT accurateCast('-129', 'Int8'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast('5', 'Int8');
+SELECT accurateCast('128', 'Int8'); -- { serverError CANNOT_PARSE_TEXT }
+
 SELECT accurateCast(10, 'Decimal32(9)'); -- { serverError DECIMAL_OVERFLOW }
 SELECT accurateCast(1, 'Decimal32(9)');
 SELECT accurateCast(-10, 'Decimal32(9)'); -- { serverError DECIMAL_OVERFLOW }
@@ -35,7 +50,7 @@ SELECT accurateCast('1xxx', 'Date');   -- { serverError CANNOT_PARSE_DATE }
 SELECT accurateCast('2023-05-30', 'Date');
 SELECT accurateCast(19, 'Date');
 
-select accurateCast('test', 'Nullable(Bool)');
+select accurateCast('test', 'Nullable(Bool)');   -- { serverError CANNOT_PARSE_BOOL }
 select accurateCast('test', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }
 select accurateCast('truex', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }
 select accurateCast('xfalse', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }

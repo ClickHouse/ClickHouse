@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -121,6 +122,8 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     set_and_key->set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
 }
+
+FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
 SetPtr FutureSetFromSubquery::get() const
 {

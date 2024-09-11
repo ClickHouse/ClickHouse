@@ -1,0 +1,181 @@
+0	0	1
+0	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    isNull(id) UInt8
+    isNull(n) UInt8
+    isNotNull(n) UInt8
+  PROJECTION
+    LIST id: 1, nodes: 3
+      CONSTANT id: 2, constant_value: UInt64_0, constant_value_type: UInt8
+        EXPRESSION
+          FUNCTION id: 3, function_name: isNull, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 4, nodes: 1
+                COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
+      COLUMN id: 7, column_name: n.null, result_type: UInt8, source_id: 6
+      FUNCTION id: 8, function_name: not, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 9, nodes: 1
+            COLUMN id: 10, column_name: n.null, result_type: UInt8, source_id: 6
+  JOIN TREE
+    TABLE id: 6, alias: __table1, table_name: default.t_func_to_subcolumns
+
+SELECT
+    _CAST(0, \'UInt8\') AS `isNull(id)`,
+    __table1.`n.null` AS `isNull(n)`,
+    NOT __table1.`n.null` AS `isNotNull(n)`
+FROM default.t_func_to_subcolumns AS __table1
+3	0	1	0
+0	1	0	\N
+QUERY id: 0
+  PROJECTION COLUMNS
+    length(arr) UInt64
+    empty(arr) UInt8
+    notEmpty(arr) UInt8
+    empty(n) Nullable(UInt8)
+  PROJECTION
+    LIST id: 1, nodes: 4
+      COLUMN id: 2, column_name: arr.size0, result_type: UInt64, source_id: 3
+      FUNCTION id: 4, function_name: equals, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 5, nodes: 2
+            COLUMN id: 6, column_name: arr.size0, result_type: UInt64, source_id: 3
+            CONSTANT id: 7, constant_value: UInt64_0, constant_value_type: UInt8
+      FUNCTION id: 8, function_name: notEquals, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 9, nodes: 2
+            COLUMN id: 10, column_name: arr.size0, result_type: UInt64, source_id: 3
+            CONSTANT id: 11, constant_value: UInt64_0, constant_value_type: UInt8
+      FUNCTION id: 12, function_name: empty, function_type: ordinary, result_type: Nullable(UInt8)
+        ARGUMENTS
+          LIST id: 13, nodes: 1
+            COLUMN id: 14, column_name: n, result_type: Nullable(String), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.t_func_to_subcolumns
+
+SELECT
+    __table1.`arr.size0` AS `length(arr)`,
+    __table1.`arr.size0` = 0 AS `empty(arr)`,
+    __table1.`arr.size0` != 0 AS `notEmpty(arr)`,
+    empty(__table1.n) AS `empty(n)`
+FROM default.t_func_to_subcolumns AS __table1
+['foo','bar']	[1,2]
+[]	[]
+QUERY id: 0
+  PROJECTION COLUMNS
+    mapKeys(m) Array(String)
+    mapValues(m) Array(UInt64)
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: m.keys, result_type: Array(String), source_id: 3
+      COLUMN id: 4, column_name: m.values, result_type: Array(UInt64), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.t_func_to_subcolumns
+
+SELECT
+    __table1.`m.keys` AS `mapKeys(m)`,
+    __table1.`m.values` AS `mapValues(m)`
+FROM default.t_func_to_subcolumns AS __table1
+1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count(n) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: not, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: n.null, result_type: UInt8, source_id: 7
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.t_func_to_subcolumns
+
+SELECT sum(NOT __table1.`n.null`) AS `count(n)`
+FROM default.t_func_to_subcolumns AS __table1
+2
+QUERY id: 0
+  PROJECTION COLUMNS
+    count(id) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: id, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.t_func_to_subcolumns
+
+SELECT count(__table1.id) AS `count(id)`
+FROM default.t_func_to_subcolumns AS __table1
+1	0	0
+2	1	0
+3	0	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt64
+    isNull(n) UInt8
+    isNull(right.n) UInt8
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: n.null, result_type: UInt8, source_id: 3
+      CONSTANT id: 5, constant_value: UInt64_0, constant_value_type: UInt8
+        EXPRESSION
+          FUNCTION id: 6, function_name: isNull, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 1
+                COLUMN id: 8, column_name: n, result_type: String, source_id: 9
+  JOIN TREE
+    JOIN id: 10, strictness: ALL, kind: FULL
+      LEFT TABLE EXPRESSION
+        TABLE id: 3, alias: __table1, table_name: default.t_func_to_subcolumns
+      RIGHT TABLE EXPRESSION
+        UNION id: 9, alias: __table2, is_subquery: 1, union_mode: UNION_ALL
+          QUERIES
+            LIST id: 11, nodes: 2
+              QUERY id: 12, alias: __table3
+                PROJECTION COLUMNS
+                  id UInt8
+                PROJECTION
+                  LIST id: 13, nodes: 1
+                    CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+                JOIN TREE
+                  TABLE id: 15, alias: __table4, table_name: system.one
+              QUERY id: 16, alias: __table5
+                PROJECTION COLUMNS
+                  id UInt8
+                PROJECTION
+                  LIST id: 17, nodes: 1
+                    CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
+                JOIN TREE
+                  TABLE id: 19, alias: __table6, table_name: system.one
+      JOIN EXPRESSION
+        LIST id: 20, nodes: 1
+          COLUMN id: 21, column_name: id, result_type: UInt64, source_id: 10
+            EXPRESSION
+              LIST id: 22, nodes: 2
+                COLUMN id: 23, column_name: id, result_type: UInt64, source_id: 3
+                COLUMN id: 24, column_name: id, result_type: UInt8, source_id: 9
+
+SELECT
+    __table1.id AS id,
+    __table1.`n.null` AS `isNull(n)`,
+    _CAST(0, \'UInt8\') AS `isNull(right.n)`
+FROM default.t_func_to_subcolumns AS __table1
+ALL FULL OUTER JOIN
+(
+    (
+        SELECT 1 AS id
+        FROM system.one AS __table4
+    )
+    UNION ALL
+    (
+        SELECT 3 AS id
+        FROM system.one AS __table6
+    )
+) AS __table2 USING (id)
+0	10
+0	20

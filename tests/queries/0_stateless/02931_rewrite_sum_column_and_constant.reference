@@ -245,21 +245,21 @@ EXPLAIN SYNTAX (SELECT 2 * count(uint64) - sum(uint64) From test_table);
 SELECT (2 * count(uint64)) - sum(uint64)
 FROM test_table
 SELECT sum(float64 + 2) From test_table;
-26.5
+26.875
 SELECT sum(2 + float64) From test_table;
-26.5
+26.875
 SELECT sum(float64 - 2) From test_table;
-6.5
+6.875
 SELECT sum(2 - float64) From test_table;
--6.5
+-6.875
 SELECT sum(float64) + 2 * count(float64) From test_table;
-26.5
+26.875
 SELECT 2 * count(float64) + sum(float64) From test_table;
-26.5
+26.875
 SELECT sum(float64) - 2 * count(float64) From test_table;
-6.5
+6.875
 SELECT 2 * count(float64) - sum(float64) From test_table;
--6.5
+-6.875
 EXPLAIN SYNTAX (SELECT sum(float64 + 2) From test_table);
 SELECT sum(float64) + (2 * count(float64))
 FROM test_table
@@ -375,25 +375,25 @@ EXPLAIN SYNTAX (SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - 
 SELECT ((2 * count(uint64)) - sum(uint64)) + ((3 * count(uint64)) - sum(uint64))
 FROM test_table
 SELECT sum(float64 + 2) + sum(float64 + 3) From test_table;
-58
+58.75
 SELECT sum(float64 + 2) - sum(float64 + 3) From test_table;
 -5
 SELECT sum(float64 - 2) + sum(float64 - 3) From test_table;
-8
+8.75
 SELECT sum(float64 - 2) - sum(float64 - 3) From test_table;
 5
 SELECT sum(2 - float64) - sum(3 - float64) From test_table;
 -5
 SELECT (sum(float64) + 2 * count(float64)) + (sum(float64) + 3 * count(float64)) From test_table;
-58
+58.75
 SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64)) From test_table;
 -5
 SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table;
-8
+8.75
 SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table;
 5
 SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table;
--8
+-8.75
 EXPLAIN SYNTAX (SELECT sum(float64 + 2) + sum(float64 + 3) From test_table);
 SELECT (sum(float64) + (2 * count(float64))) + (sum(float64) + (3 * count(float64)))
 FROM test_table

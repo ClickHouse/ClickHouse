@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <algorithm>
+#include <memory>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -12,15 +13,19 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/Settings.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IInflatingTransform.h>
 #include <Processors/ISimpleTransform.h>
@@ -90,7 +95,7 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
     return Chunk(std::move(columns), 1);
 }
 
-class TableCheckTask : public ChunkInfo
+class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
     TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
@@ -109,6 +114,12 @@ public:
         context->checkAccess(AccessType::SHOW_TABLES, table_->getStorageID());
     }
 
+    TableCheckTask(const TableCheckTask & other)
+        : table(other.table)
+        , check_data_tasks(other.check_data_tasks)
+        , is_finished(other.is_finished.load())
+    {}
+
     std::optional<CheckResult> checkNext() const
     {
         if (isFinished())
@@ -120,8 +131,8 @@ public:
             std::this_thread::sleep_for(sleep_time);
         });
 
-        IStorage::DataValidationTasksPtr check_data_tasks_ = check_data_tasks;
-        auto result = table->checkDataNext(check_data_tasks_);
+        IStorage::DataValidationTasksPtr tmp = check_data_tasks;
+        auto result = table->checkDataNext(tmp);
         is_finished = !result.has_value();
         return result;
     }
@@ -179,7 +190,7 @@ protected:
         /// source should return at least one row to start pipeline
         result.addColumn(ColumnUInt8::create(1, 1));
         /// actual data stored in chunk info
-        result.setChunkInfo(std::move(current_check_task));
+        result.getChunkInfos().add(std::move(current_check_task));
         return result;
     }
 
@@ -279,7 +290,7 @@ public:
 protected:
     void transform(Chunk & chunk) override
     {
-        auto table_check_task = std::dynamic_pointer_cast<const TableCheckTask>(chunk.getChunkInfo());
+        auto table_check_task = chunk.getChunkInfos().get<TableCheckTask>();
         auto check_result = table_check_task->checkNext();
         if (!check_result)
         {
@@ -333,10 +344,10 @@ public:
         if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 
-        const auto * col = checkAndGetColumn<ColumnUInt8>(columns[column_position_to_check].get());
-        for (size_t i = 0; i < col->size(); ++i)
+        const auto & col = checkAndGetColumn<ColumnUInt8>(*columns[column_position_to_check]);
+        for (size_t i = 0; i < col.size(); ++i)
         {
-            if (col->getElement(i) == 0)
+            if (col.getElement(i) == 0)
             {
                 result_value = 0;
                 return;

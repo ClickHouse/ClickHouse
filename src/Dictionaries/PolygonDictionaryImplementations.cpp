@@ -8,6 +8,7 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 #include <numeric>
 
@@ -29,7 +30,7 @@ PolygonDictionarySimple::PolygonDictionarySimple(
 {
 }
 
-std::shared_ptr<const IExternalLoadable> PolygonDictionarySimple::clone() const
+std::shared_ptr<IExternalLoadable> PolygonDictionarySimple::clone() const
 {
     return std::make_shared<PolygonDictionarySimple>(
             this->getDictionaryID(),
@@ -76,7 +77,7 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
     }
 }
 
-std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() const
+std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexEach::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexEach>(
             this->getDictionaryID(),
@@ -126,7 +127,7 @@ PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
 {
 }
 
-std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() const
+std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexCell::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexCell>(
             this->getDictionaryID(),
@@ -166,7 +167,6 @@ DictionaryPtr createLayout(const std::string & ,
                            ContextPtr global_context,
                            bool /*created_from_ddl*/)
 {
-    const String database = config.getString(config_prefix + ".database", "");
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)

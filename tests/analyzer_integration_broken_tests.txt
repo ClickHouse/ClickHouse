@@ -1,5 +1,0 @@
-test_build_sets_from_multiple_threads/test.py::test_set
-test_concurrent_backups_s3/test.py::test_concurrent_backups
-test_distributed_type_object/test.py::test_distributed_type_object
-test_merge_table_over_distributed/test.py::test_global_in
-test_merge_table_over_distributed/test.py::test_select_table_name_from_merge_over_distributed

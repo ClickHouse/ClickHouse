@@ -10,14 +10,8 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int FS_METADATA_ERROR;
-}
-
 MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_)
-    : disk(disk_)
-    , compatible_key_prefix(compatible_key_prefix_)
+    : disk(disk_), compatible_key_prefix(compatible_key_prefix_)
 {
 }
 
@@ -158,83 +152,9 @@ const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTra
     return metadata_storage;
 }
 
-void MetadataStorageFromDiskTransaction::addOperation(MetadataOperationPtr && operation)
-{
-    if (state != MetadataFromDiskTransactionState::PREPARING)
-        throw Exception(
-            ErrorCodes::FS_METADATA_ERROR,
-            "Cannot add operations to transaction in {} state, it should be in {} state",
-            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
-
-    operations.emplace_back(std::move(operation));
-}
-
 void MetadataStorageFromDiskTransaction::commit()
 {
-    if (state != MetadataFromDiskTransactionState::PREPARING)
-        throw Exception(
-            ErrorCodes::FS_METADATA_ERROR,
-            "Cannot commit transaction in {} state, it should be in {} state",
-            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
-
-    {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
-        for (size_t i = 0; i < operations.size(); ++i)
-        {
-            try
-            {
-                operations[i]->execute(lock);
-            }
-            catch (Exception & ex)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
-                state = MetadataFromDiskTransactionState::FAILED;
-                rollback(i);
-                throw;
-            }
-        }
-    }
-
-    /// Do it in "best effort" mode
-    for (size_t i = 0; i < operations.size(); ++i)
-    {
-        try
-        {
-            operations[i]->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to finalize operation #{}", i));
-        }
-    }
-
-    state = MetadataFromDiskTransactionState::COMMITTED;
-}
-
-void MetadataStorageFromDiskTransaction::rollback(size_t until_pos)
-{
-    /// Otherwise everything is alright
-    if (state == MetadataFromDiskTransactionState::FAILED)
-    {
-        for (int64_t i = until_pos; i >= 0; --i)
-        {
-            try
-            {
-                operations[i]->undo();
-            }
-            catch (Exception & ex)
-            {
-                state = MetadataFromDiskTransactionState::PARTIALLY_ROLLED_BACK;
-                ex.addMessage(fmt::format("While rolling back operation #{}", i));
-                throw;
-            }
-        }
-    }
-    else
-    {
-        /// Nothing to do, transaction committed or not even started to commit
-    }
+    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
 }
 
 void MetadataStorageFromDiskTransaction::writeStringToFile(
@@ -334,6 +254,14 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
     auto operation = std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage);
+    auto result = operation->outcome;
+    addOperation(std::move(operation));
+    return result;
+}
+
+TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
+{
+    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage, *metadata_storage.getDisk());
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;

@@ -106,7 +106,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (name_collision && (id_by_name != id))
     {
         assert(replace_if_exists);
-        removeNoLock(id_by_name, /* throw_if_not_exists= */ true);
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ true); // NOLINT
     }
 
     if (id_collision)
@@ -128,7 +128,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
             }
             return true;
         }
-        removeNoLock(id, /* throw_if_not_exists= */ true);
+        removeNoLock(id, /* throw_if_not_exists= */ true); // NOLINT
     }
 
     /// Do insertion.
@@ -238,7 +238,7 @@ void MemoryAccessStorage::removeAllExceptNoLock(const boost::container::flat_set
         const auto & id = it->first;
         ++it; /// We must go to the next element in the map `entries_by_id` here because otherwise removeNoLock() can invalidate our iterator.
         if (!ids_to_keep.contains(id))
-            removeNoLock(id, /* throw_if_not_exists */ true);
+            removeNoLock(id, /* throw_if_not_exists */ true); // NOLINT
     }
 }
 

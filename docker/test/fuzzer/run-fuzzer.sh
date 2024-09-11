@@ -17,7 +17,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-17_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-18_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function git_clone_with_retry
@@ -138,7 +138,7 @@ function filter_exists_and_template
             # but it doesn't allow to use regex
             echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
         else
-            echo "'$path' does not exists" >&2
+            echo "'$path' does not exist" >&2
         fi
     done
 }
@@ -173,51 +173,15 @@ function fuzz
 
     mkdir -p /var/run/clickhouse-server
 
-    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
-    server_pid=$!
-
-    kill -0 $server_pid
-
-    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
-    # and clickhouse-server can do fork-exec, for example, to run some bridge.
-    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
-    # explicitly ignore non-fatal signals that are used by server.
-    # Number of SIGRTMIN can be determined only in runtime.
-    RTMIN=$(kill -l SIGRTMIN)
-    echo "
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG$RTMIN nostop noprint pass
-info signals
-continue
-backtrace full
-thread apply all backtrace full
-info registers
-disassemble /s
-up
-disassemble /s
-up
-disassemble /s
-p \"done\"
-detach
-quit
-" > script.gdb
-
-    gdb -batch -command script.gdb -p $server_pid &
-    sleep 5
-    # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
-    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
-
-    # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
-    for _ in {1..180}
+    # server.log -> All server logs, including sanitizer
+    # stderr.log -> Process logs (sanitizer) only
+    clickhouse-server \
+        --config-file db/config.xml \
+        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+        --  --path db \
+            --logger.console=0 \
+            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    for _ in {1..30}
     do
         if clickhouse-client --query "select 1"
         then
@@ -225,7 +189,64 @@ quit
         fi
         sleep 1
     done
-    kill -0 $server_pid # This checks that it is our server that is started and not some other one
+    server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
+
+    kill -0 $server_pid
+
+    IS_ASAN=$(clickhouse-client --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
+    if [[ "$IS_ASAN" = "1" ]];
+    then
+        echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+    else
+        # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
+        # and clickhouse-server can do fork-exec, for example, to run some bridge.
+        # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
+        # explicitly ignore non-fatal signals that are used by server.
+        # Number of SIGRTMIN can be determined only in runtime.
+        RTMIN=$(kill -l SIGRTMIN)
+        echo "
+    set follow-fork-mode parent
+    handle SIGHUP nostop noprint pass
+    handle SIGINT nostop noprint pass
+    handle SIGQUIT nostop noprint pass
+    handle SIGPIPE nostop noprint pass
+    handle SIGTERM nostop noprint pass
+    handle SIGUSR1 nostop noprint pass
+    handle SIGUSR2 nostop noprint pass
+    handle SIG$RTMIN nostop noprint pass
+    info signals
+    continue
+    backtrace full
+    thread apply all backtrace full
+    info registers
+    disassemble /s
+    up
+    disassemble /s
+    up
+    disassemble /s
+    p \"done\"
+    detach
+    quit
+    " > script.gdb
+
+        gdb -batch -command script.gdb -p $server_pid &
+        sleep 5
+        # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
+        time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+
+        # Check connectivity after we attach gdb, because it might cause the server
+        # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
+        for _ in {1..180}
+        do
+            if clickhouse-client --query "select 1"
+            then
+                break
+            fi
+            sleep 1
+        done
+        kill -0 $server_pid # This checks that it is our server that is started and not some other one
+    fi
+
     echo 'Server started and responded.'
 
     setup_logs_replication
@@ -250,8 +271,13 @@ quit
     # The fuzzer_pid belongs to the timeout process.
     actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
 
-    echo "Attaching gdb to the fuzzer itself"
-    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
+    if [[ "$IS_ASAN" = "1" ]];
+    then
+        echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+    else
+        echo "Attaching gdb to the fuzzer itself"
+        gdb -batch -command script.gdb -p $actual_fuzzer_pid &
+    fi
 
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
@@ -343,10 +369,9 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { rg -ao "Found error:.*" fuzzer.log \
-            || rg -ao "Exception:.*" fuzzer.log \
-            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
-            | tail -1 > description.txt
+        echo "Let op!" > description.txt
+        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
+        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
     fi
 
     if test -f core.*; then
@@ -428,6 +453,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="run.log">run.log</a>
   <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
+  <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}

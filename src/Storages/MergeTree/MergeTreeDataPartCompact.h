@@ -40,15 +40,6 @@ public:
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
-    MergeTreeWriterPtr getWriter(
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) override;
-
     bool isStoredOnDisk() const override { return true; }
 
     bool isStoredOnRemoteDisk() const override;
@@ -68,14 +59,14 @@ protected:
          MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
          size_t columns_count, const IDataPartStorage & data_part_storage_);
 
+     void doCheckConsistency(bool require_part_metadata) const override;
+
 private:
-    void checkConsistency(bool require_part_metadata) const override;
+     /// Loads marks index granularity into memory
+     void loadIndexGranularity() override;
 
-    /// Loads marks index granularity into memory
-    void loadIndexGranularity() override;
-
-    /// Compact parts doesn't support per column size, only total size
-    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+     /// Compact parts doesn't support per column size, only total size
+     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

@@ -11,13 +11,12 @@ namespace DB
 {
 ColumnsDescription StorageSystemUserDirectories::getColumnsDescription()
 {
-    /// TODO: Fill in all the comments.
     return ColumnsDescription
     {
-        {"name", std::make_shared<DataTypeString>()},
-        {"type", std::make_shared<DataTypeString>()},
-        {"params", std::make_shared<DataTypeString>()},
-        {"precedence", std::make_shared<DataTypeUInt64>()},
+        {"name", std::make_shared<DataTypeString>(), "The name of the directory."},
+        {"type", std::make_shared<DataTypeString>(), "The type of the access storage e.g. users.xml or replicated or memory etc."},
+        {"params", std::make_shared<DataTypeString>(), "JSON with the parameters of the access storage."},
+        {"precedence", std::make_shared<DataTypeUInt64>(), "The order in which this directory is declared in the config. The same order is used when ClickHouse tries to find a user or role."},
     };
 }
 

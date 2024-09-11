@@ -279,13 +279,13 @@ String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::initializer_list<const std::string_view> params, const uint32_t max_depth)
+    const std::string_view function_name, const std::initializer_list<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
 {
-    return kqlCallToExpression(function_name, std::span(params), max_depth);
+    return kqlCallToExpression(function_name, std::span(params), max_depth, max_backtracks);
 }
 
 String IParserKQLFunction::kqlCallToExpression(
-    const std::string_view function_name, const std::span<const std::string_view> params, const uint32_t max_depth)
+    const std::string_view function_name, const std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks)
 {
     const auto params_str = std::accumulate(
         std::cbegin(params),
@@ -301,8 +301,8 @@ String IParserKQLFunction::kqlCallToExpression(
         });
 
     const auto kql_call = std::format("{}({})", function_name, params_str);
-    DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
-    DB::IParser::Pos tokens_pos(call_tokens, max_depth);
+    Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
+    IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 

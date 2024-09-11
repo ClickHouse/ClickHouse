@@ -17,6 +17,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
+
 namespace DB
 {
 
@@ -92,14 +93,15 @@ StoragePtr TableFunctionHive::executeImpl(
     ColumnsDescription /*cached_columns_*/,
     bool /*is_insert_query*/) const
 {
-    const Settings & settings = context_->getSettings();
+    const Settings & settings = context_->getSettingsRef();
     ParserExpression partition_by_parser;
     ASTPtr partition_by_ast = parseQuery(
         partition_by_parser,
         "(" + partition_by_def + ")",
         "partition by declaration list",
         settings.max_query_size,
-        settings.max_parser_depth);
+        settings.max_parser_depth,
+        settings.max_parser_backtracks);
     StoragePtr storage;
     storage = std::make_shared<StorageHive>(
         hive_metastore_url,

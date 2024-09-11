@@ -114,6 +114,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
         return settings.ostr;
     };
@@ -172,6 +173,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
+        case Type::UNLOAD_PRIMARY_KEY:
         {
             if (table)
             {
@@ -189,6 +191,44 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
         case Type::FLUSH_DISTRIBUTED:
+        {
+            if (table)
+            {
+                settings.ostr << ' ';
+                print_database_table();
+            }
+
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                settings.ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+
+                // If the mode is LIGHTWEIGHT and specific source replicas are specified
+                if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
+                {
+                    settings.ostr << ' ';
+                    print_keyword("FROM");
+                    settings.ostr << ' ';
+
+                    bool first = true;
+                    for (const auto & src : src_replicas)
+                    {
+                        if (!first)
+                            settings.ostr << ", ";
+                        first = false;
+                        settings.ostr << quoteString(src);
+                    }
+                }
+            }
+
+            if (query_settings)
+            {
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                query_settings->formatImpl(settings, state, frame);
+            }
+
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
@@ -216,28 +256,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                 print_identifier(disk);
             }
 
-            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-            {
-                settings.ostr << ' ';
-                print_keyword(magic_enum::enum_name(sync_replica_mode));
-
-                // If the mode is LIGHTWEIGHT and specific source replicas are specified
-                if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
-                {
-                    settings.ostr << ' ';
-                    print_keyword("FROM");
-                    settings.ostr << ' ';
-
-                    bool first = true;
-                    for (const auto & src : src_replicas)
-                    {
-                        if (!first)
-                            settings.ostr << ", ";
-                        first = false;
-                        settings.ostr << quoteString(src);
-                    }
-                }
-            }
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
@@ -348,6 +366,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         {
             settings.ostr << ' ';
             print_identifier(fail_point_name);
@@ -357,6 +376,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_VIEW:
         case Type::STOP_VIEW:
         case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
         {
             settings.ostr << ' ';
             print_database_table();
@@ -383,6 +403,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
+        case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_MARK_CACHE:

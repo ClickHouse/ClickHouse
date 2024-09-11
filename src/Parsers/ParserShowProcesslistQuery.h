@@ -20,7 +20,7 @@ protected:
     {
         auto query = std::make_shared<ASTShowProcesslistQuery>();
 
-        if (!ParserKeyword("SHOW PROCESSLIST").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::SHOW_PROCESSLIST).ignore(pos, expected))
             return false;
 
         node = query;

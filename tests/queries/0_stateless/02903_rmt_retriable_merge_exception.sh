@@ -10,12 +10,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # (i.e. "No active replica has part X or covering part")
 # does not appears as errors (level=Error), only as info message (level=Information).
 
-cluster=default
+cluster=test_shard_localhost
 if [[ $($CLICKHOUSE_CLIENT -q "select count()>0 from system.clusters where cluster = 'test_cluster_database_replicated'") = 1 ]]; then
     cluster=test_cluster_database_replicated
 fi
 
-$CLICKHOUSE_CLIENT -nm --distributed_ddl_output_mode=none -q "
+$CLICKHOUSE_CLIENT -m --distributed_ddl_output_mode=none -q "
     drop table if exists rmt1;
     drop table if exists rmt2;
 
@@ -46,7 +46,7 @@ part_name='%'
 
 # wait while there be at least one 'No active replica has part all_0_1_1 or covering part' in logs
 for _ in {0..50}; do
-    no_active_repilica_messages=$($CLICKHOUSE_CLIENT -nm -q "
+    no_active_repilica_messages=$($CLICKHOUSE_CLIENT -m -q "
         system flush logs;
 
         select count()
@@ -65,7 +65,7 @@ for _ in {0..50}; do
     sleep 1
 done
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     system start pulling replication log rmt2;
     system flush logs;
 

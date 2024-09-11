@@ -17,6 +17,8 @@
 #ifndef METROHASH_METROHASH_128_H
 #define METROHASH_METROHASH_128_H
 
+// NOLINTBEGIN(readability-avoid-const-params-in-decls)
+
 #include <stdint.h>
 
 class MetroHash128
@@ -68,5 +70,6 @@ private:
 void metrohash128_1(const uint8_t * key, uint64_t len, uint32_t seed, uint8_t * out);
 void metrohash128_2(const uint8_t * key, uint64_t len, uint32_t seed, uint8_t * out);
 
+// NOLINTEND(readability-avoid-const-params-in-decls)
 
 #endif // #ifndef METROHASH_METROHASH_128_H

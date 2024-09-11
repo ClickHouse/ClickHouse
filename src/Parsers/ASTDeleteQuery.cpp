@@ -40,9 +40,16 @@ void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << '.';
     }
 
+    chassert(table);
     table->formatImpl(settings, state, frame);
 
     formatOnCluster(settings);
+
+    if (partition)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
     predicate->formatImpl(settings, state, frame);

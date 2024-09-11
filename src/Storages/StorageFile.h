@@ -89,6 +89,9 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -100,7 +103,7 @@ public:
     {
         std::vector<std::string> paths_to_archives;
         std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
+        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
 
         bool isSingleFileRead() const
         {
@@ -125,7 +128,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
+    static void parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax);
 
     static ArchiveInfo getArchiveInfo(
         const std::string & path_to_archive,
@@ -134,7 +137,7 @@ public:
         const ContextPtr & context,
         size_t & total_bytes_to_read);
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     friend class StorageFileSource;
@@ -263,7 +266,7 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
 
@@ -277,6 +280,7 @@ private:
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
+    std::optional<Poco::Timestamp> current_file_last_modified;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
@@ -286,7 +290,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     std::shared_ptr<IArchiveReader> archive_reader;
-    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

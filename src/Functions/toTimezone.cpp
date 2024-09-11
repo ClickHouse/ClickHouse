@@ -9,6 +9,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -88,7 +89,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ToTimeZoneOverloadResolver>(context); }
     explicit ToTimeZoneOverloadResolver(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
     {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

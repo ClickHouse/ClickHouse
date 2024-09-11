@@ -8,7 +8,6 @@
 #include <functional>
 
 #include <Core/CompareHelper.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -40,6 +39,7 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 /// construct a Field of Array or a Tuple type. An alternative approach would be
 /// to construct both of these types from FieldVector, and have the caller
 /// specify the desired Field type explicitly.
+/// NOLINTBEGIN(modernize-type-traits)
 #define DEFINE_FIELD_VECTOR(X) \
 struct X : public FieldVector \
 { \
@@ -48,6 +48,7 @@ struct X : public FieldVector \
 
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
+/// NOLINTEND(modernize-type-traits)
 
 /// An array with the following structure: [(key1, value1), (key2, value2), ...]
 DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
@@ -149,7 +150,7 @@ public:
 
     operator T() const { return dec; } /// NOLINT
     T getValue() const { return dec; }
-    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
+    T getScaleMultiplier() const;
     UInt32 getScale() const { return scale; }
 
     template <typename U>
@@ -197,6 +198,12 @@ private:
     T dec;
     UInt32 scale;
 };
+
+extern template class DecimalField<Decimal32>;
+extern template class DecimalField<Decimal64>;
+extern template class DecimalField<Decimal128>;
+extern template class DecimalField<Decimal256>;
+extern template class DecimalField<DateTime64>;
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -450,15 +457,6 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
-    template <typename T>
-    NearestFieldType<std::decay_t<T>> & get();
-
-    template <typename T>
-    const auto & get() const
-    {
-        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
-        return mutable_this->get<T>();
-    }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -497,7 +495,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return false;
+            case Types::Null:    return get<Null>() < rhs.get<Null>();
             case Types::Bool:    [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
@@ -541,7 +539,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return true;
+            case Types::Null:    return get<Null>() <= rhs.get<Null>();
             case Types::Bool: [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
@@ -590,7 +588,7 @@ public:
 
         switch (which)
         {
-            case Types::Null: return true;
+            case Types::Null: return get<Null>() == rhs.get<Null>();
             case Types::Bool: [[fallthrough]];
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
@@ -660,8 +658,6 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
         }
-
-        UNREACHABLE();
     }
 
     String dump() const;
@@ -676,6 +672,25 @@ private:
 
     Types::Which which;
 
+    /// This function is prone to type punning and should never be used outside of Field class,
+    /// whenever it is used within this class the stored type should be checked in advance.
+    template <typename T>
+    NearestFieldType<std::decay_t<T>> & get()
+    {
+        // Before storing the value in the Field, we static_cast it to the field
+        // storage type, so here we return the value of storage type as well.
+        // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
+        // value to a different and incompatible type.
+        // For example, a Float32 value is stored as Float64, and it is incorrect to
+        // return a reference to this value as Float32.
+        return *reinterpret_cast<NearestFieldType<std::decay_t<T>>*>(&storage);
+    }
+
+    template <typename T>
+    NearestFieldType<std::decay_t<T>> & get() const
+    {
+        return const_cast<Field *>(this)->get<T>();
+    }
 
     /// Assuming there was no allocated state or it was deallocated (see destroy).
     template <typename T>
@@ -848,58 +863,33 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
-inline constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
+constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64;
 }
 
-inline constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
+constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64
         || t == Field::Types::Bool;
 }
 
-// Field value getter with type checking in debug builds.
-template <typename T>
-NearestFieldType<std::decay_t<T>> & Field::get()
-{
-    // Before storing the value in the Field, we static_cast it to the field
-    // storage type, so here we return the value of storage type as well.
-    // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
-    // value to a different and incompatible type.
-    // For example, a Float32 value is stored as Float64, and it is incorrect to
-    // return a reference to this value as Float32.
-    using StoredType = NearestFieldType<std::decay_t<T>>;
-
-#ifndef NDEBUG
-    // Disregard signedness when converting between int64 types.
-    constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
-    if (target != which
-           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)) && target != Field::Types::IPv4)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid Field get from type {} to type {}", which, target);
-#endif
-
-    StoredType * MAY_ALIAS ptr = reinterpret_cast<StoredType *>(&storage);
-
-    return *ptr;
-}
-
-
 template <typename T>
 auto & Field::safeGet()
 {
-    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
-    if (which != requested)
-        throw Exception(ErrorCodes::BAD_GET,
-            "Bad get: has {}, requested {}", getTypeName(), requested);
+    /// bool is stored as uint64, will be returned as UInt64 when requested as bool or UInt64, as Int64 when requested as Int64
+    /// also allow UInt64 <-> Int64 conversion
+    if (target != which &&
+        !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)) &&
+        !(isInt64OrUInt64FieldType(which) && isInt64OrUInt64FieldType(target)))
+            throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
 
     return get<T>();
 }
-
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
@@ -1031,7 +1021,7 @@ struct fmt::formatter<DB::Field>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx)
+    auto format(const DB::Field & x, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }

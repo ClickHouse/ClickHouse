@@ -22,7 +22,7 @@ description: In order to effectively mitigate possible human errors, you should 
   TEMPORARY TABLE table_name [AS table_name_in_backup] |
   VIEW view_name [AS view_name_in_backup]
   ALL TEMPORARY TABLES [EXCEPT ...] |
-  ALL DATABASES [EXCEPT ...] } [,...]
+  ALL [EXCEPT ...] } [,...]
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
@@ -84,9 +84,12 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - [`compression_method`](/docs/en/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+    - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
+    - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
 
 ### Usage examples
 
@@ -170,7 +173,7 @@ RESTORE TABLE test.table PARTITIONS '2', '3'
 
 ### Backups as tar archives
 
-Backups can also be stored as tar archives. The functionality is the same as for zip, except that a password is not supported. 
+Backups can also be stored as tar archives. The functionality is the same as for zip, except that a password is not supported.
 
 Write a backup as a tar:
 ```
@@ -443,10 +446,6 @@ Often data that is ingested into ClickHouse is delivered through some sort of pe
 ### Filesystem Snapshots {#filesystem-snapshots}
 
 Some local filesystems provide snapshot functionality (for example, [ZFS](https://en.wikipedia.org/wiki/ZFS)), but they might not be the best choice for serving live queries. A possible solution is to create additional replicas with this kind of filesystem and exclude them from the [Distributed](../engines/table-engines/special/distributed.md) tables that are used for `SELECT` queries. Snapshots on such replicas will be out of reach of any queries that modify data. As a bonus, these replicas might have special hardware configurations with more disks attached per server, which would be cost-effective.
-
-### clickhouse-copier {#clickhouse-copier}
-
-[clickhouse-copier](../operations/utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
 
 For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
 

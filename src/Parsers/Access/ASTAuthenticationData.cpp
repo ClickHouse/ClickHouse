@@ -89,6 +89,12 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                 password = true;
                 break;
             }
+            case AuthenticationType::JWT:
+            {
+                prefix = "CLAIMS";
+                parameter = true;
+                break;
+            }
             case AuthenticationType::LDAP:
             {
                 prefix = "SERVER";
@@ -106,7 +112,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             }
             case AuthenticationType::SSL_CERTIFICATE:
             {
-                prefix = "CN";
+                prefix = ssl_cert_subject_type.value();
                 parameters = true;
                 break;
             }
