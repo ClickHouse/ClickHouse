@@ -70,6 +70,17 @@ size_t chooseSegmentSize(
     UNREACHABLE();
 }
 
+size_t getMinMarksPerTask(size_t min_marks_per_task, const std::vector<DB::MergeTreeReadTaskInfoPtr> & per_part_infos)
+{
+    for (const auto & info : per_part_infos)
+        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
+
+    if (min_marks_per_task == 0)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
+
+    return min_marks_per_task;
+}
 }
 
 namespace ProfileEvents
@@ -111,7 +122,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
-    , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
+    , min_marks_per_task(getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos))
     , mark_segment_size(chooseSegmentSize(
           log,
           context_->getSettingsRef().parallel_replicas_mark_segment_size,
@@ -120,13 +131,6 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
           pool_settings.sum_marks,
           extension.total_nodes_count))
 {
-    for (const auto & info : per_part_infos)
-        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
-
-    if (min_marks_per_task == 0)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
-
     extension.all_callback(InitialAllRangesAnnouncement(
         coordination_mode, parts_ranges.getDescriptions(), extension.number_of_current_replica, mark_segment_size));
 }
