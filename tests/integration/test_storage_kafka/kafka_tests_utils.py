@@ -5,6 +5,7 @@ import socket
 import time
 from contextlib import contextmanager
 
+import avro.datafile
 import avro.io
 import avro.schema
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
