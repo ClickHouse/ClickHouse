@@ -122,7 +122,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+        config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }

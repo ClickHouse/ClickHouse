@@ -1,8 +1,6 @@
 #include <Access/AccessRights.h>
-#include <base/sort.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
+#include <base/sort.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <unordered_map>

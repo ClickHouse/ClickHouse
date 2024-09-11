@@ -10,10 +10,7 @@ from pathlib import Path
 from shutil import copy2
 from typing import List, Optional, Union
 
-# isort: off
 from github.Commit import Commit
-
-# isort: on
 
 from build_download_helper import download_build_with_progress
 from commit_status_helper import post_commit_status

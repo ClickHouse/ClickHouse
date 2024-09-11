@@ -490,9 +490,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 
 template class ThreadPoolImpl<std::thread>;
-template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
-template class ThreadFromGlobalPoolImpl<true, true>;
-template class ThreadFromGlobalPoolImpl<true, false>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
+template class ThreadFromGlobalPoolImpl<true>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
@@ -501,9 +500,7 @@ GlobalThreadPool::GlobalThreadPool(
     size_t max_threads_,
     size_t max_free_threads_,
     size_t queue_size_,
-    const bool shutdown_on_exception_,
-    UInt64 global_profiler_real_time_period_ns_,
-    UInt64 global_profiler_cpu_time_period_ns_)
+    const bool shutdown_on_exception_)
     : FreeThreadPool(
         CurrentMetrics::GlobalThread,
         CurrentMetrics::GlobalThreadActive,
@@ -512,12 +509,10 @@ GlobalThreadPool::GlobalThreadPool(
         max_free_threads_,
         queue_size_,
         shutdown_on_exception_)
-    , global_profiler_real_time_period_ns(global_profiler_real_time_period_ns_)
-    , global_profiler_cpu_time_period_ns(global_profiler_cpu_time_period_ns_)
 {
 }
 
-void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
+void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (the_instance)
     {
@@ -525,7 +520,7 @@ void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/, global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns));
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()

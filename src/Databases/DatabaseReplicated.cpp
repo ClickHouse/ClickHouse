@@ -873,7 +873,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     std::vector<RenameEdge> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
-    for (auto existing_tables_it = getTablesIterator(getContext(), {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
+    for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
          existing_tables_it->next(), ++total_tables)
     {
         String name = existing_tables_it->name();
@@ -943,6 +943,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_hyperscan", 1);
         query_context->setSetting("allow_simdjson", 1);
         query_context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
+        query_context->setSetting("allow_suspicious_primary_key", 1);
+        query_context->setSetting("allow_suspicious_ttl_expressions", 1);
+        query_context->setSetting("allow_suspicious_variant_types", 1);
+        query_context->setSetting("enable_deflate_qpl_codec", 1);
+        query_context->setSetting("enable_zstd_qat_codec", 1);
+        query_context->setSetting("allow_create_index_without_type", 1);
+        query_context->setSetting("allow_experimental_s3queue", 1);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
@@ -1324,6 +1331,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
+    stopLoading();
     if (ddl_worker)
         ddl_worker->shutdown();
 }

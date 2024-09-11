@@ -14,15 +14,10 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
 #include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
@@ -184,19 +179,18 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         storage_snapshot,
         *mark_ranges,
         /*virtual_fields=*/ {},
-        /*uncompressed_cache=*/ {},
+        /*uncompressed_cache=*/{},
         mark_cache.get(),
         alter_conversions,
         reader_settings,
-        /*avg_value_size_hints=*/ {},
-        /*profile_callback=*/ {});
+        {},
+        {});
 }
 
 static void fillBlockNumberColumns(
     Columns & res_columns,
     const NamesAndTypesList & columns_list,
     UInt64 block_number,
-    UInt64 block_offset,
     UInt64 num_rows)
 {
     chassert(res_columns.size() == columns_list.size());
@@ -211,16 +205,6 @@ static void fillBlockNumberColumns(
         {
             res_columns[i] = BlockNumberColumn::type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
         }
-        else if (it->name == BlockOffsetColumn::name)
-        {
-            auto column = BlockOffsetColumn::type->createColumn();
-            auto & block_offset_data = assert_cast<ColumnUInt64 &>(*column).getData();
-
-            block_offset_data.resize(num_rows);
-            std::iota(block_offset_data.begin(), block_offset_data.end(), block_offset);
-
-            res_columns[i] = std::move(column);
-        }
     }
 }
 
@@ -230,7 +214,6 @@ try
     const auto & header = getPort().getHeader();
     /// Part level is useful for next step for merging non-merge tree table
     bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    size_t num_marks_in_part = data_part->getMarksCount();
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -239,11 +222,11 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_read = reader->readRows(current_mark, num_marks_in_part, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, data_part->getMarksCount(), continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {
-            fillBlockNumberColumns(columns, sample, data_part->info.min_block, current_row, rows_read);
+            fillBlockNumberColumns(columns, sample, data_part->info.min_block, rows_read);
             reader->fillVirtualColumns(columns, rows_read);
 
             current_row += rows_read;
@@ -252,10 +235,10 @@ try
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
 
+            reader->performRequiredConversions(columns);
+
             if (should_evaluate_missing_defaults)
                 reader->evaluateMissingDefaults({}, columns);
-
-            reader->performRequiredConversions(columns);
 
             /// Reorder columns and fill result block.
             size_t num_columns = sample.size();
@@ -287,7 +270,7 @@ try
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+    if (!isRetryableException(std::current_exception()))
         storage.reportBrokenPart(data_part);
     throw;
 }

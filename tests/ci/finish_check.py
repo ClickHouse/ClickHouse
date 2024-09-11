@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 import logging
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from commit_status_helper import (
     CI_STATUS_NAME,

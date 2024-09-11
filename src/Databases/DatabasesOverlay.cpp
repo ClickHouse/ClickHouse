@@ -254,7 +254,7 @@ void DatabasesOverlay::shutdown()
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
+DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
     for (const auto & db : databases)

@@ -207,7 +207,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 }
 
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});

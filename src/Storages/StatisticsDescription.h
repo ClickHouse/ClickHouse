@@ -27,6 +27,10 @@ struct StatisticDescription
     String getTypeName() const;
 
     StatisticDescription() = default;
+    StatisticDescription(const StatisticDescription & other) { *this = other; }
+    StatisticDescription & operator=(const StatisticDescription & other);
+    StatisticDescription(StatisticDescription && other) noexcept { *this = std::move(other); }
+    StatisticDescription & operator=(StatisticDescription && other) noexcept;
 
     bool operator==(const StatisticDescription & other) const
     {

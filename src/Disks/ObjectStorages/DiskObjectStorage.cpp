@@ -624,6 +624,12 @@ UInt64 DiskObjectStorage::getRevision() const
     return metadata_helper->getRevision();
 }
 
+#if USE_AWS_S3
+std::shared_ptr<const S3::Client> DiskObjectStorage::getS3StorageClient() const
+{
+    return object_storage->getS3StorageClient();
+}
+#endif
 
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {

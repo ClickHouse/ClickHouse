@@ -134,7 +134,7 @@ public:
         const ContextPtr & context,
         size_t & total_bytes_to_read);
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     friend class StorageFileSource;
@@ -286,7 +286,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     std::shared_ptr<IArchiveReader> archive_reader;
-    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

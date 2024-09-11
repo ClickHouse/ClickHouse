@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
@@ -122,9 +123,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashWithValue is not implemented for {}", getName());
     }
 
-    void updateWeakHash32(WeakHash32 &) const override
+    WeakHash32 getWeakHash32() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateWeakHash32 is not implemented for {}", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getWeakHash32 is not implemented for {}", getName());
     }
 
     void updateHashFast(SipHash &) const override

@@ -436,7 +436,7 @@ Default: 0
 Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 Default value: 50 GB.
 The value 0 means that you can drop partitions without any restrictions.
 
@@ -518,7 +518,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 The value 0 means that you can delete all tables without any restrictions.
@@ -1354,7 +1354,6 @@ Keys:
 - `count` – The number of archived log files that ClickHouse stores.
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
-- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
 
 Both log and error log file names (only file names, not directories) support date and time format specifiers.
 
@@ -1423,8 +1422,6 @@ Writing to the console can be configured. Config example:
 </logger>
 ```
 
-### syslog
-
 Writing to the syslog is also supported. Config example:
 
 ``` xml
@@ -1447,52 +1444,6 @@ Keys for syslog:
 - facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
-
-### Log formats
-
-You can specify the log format that will be outputted in the console log. Currently, only JSON is supported. Here is an example of an output JSON log:
-
-```json
-{
-  "date_time": "1650918987.180175",
-  "thread_name": "#1",
-  "thread_id": "254545",
-  "level": "Trace",
-  "query_id": "",
-  "logger_name": "BaseDaemon",
-  "message": "Received signal 2",
-  "source_file": "../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()",
-  "source_line": "192"
-}
-```
-To enable JSON logging support, use the following snippet:
-
-```xml
-<logger>
-    <formatting>
-        <type>json</type>
-        <names>
-            <date_time>date_time</date_time>
-            <thread_name>thread_name</thread_name>
-            <thread_id>thread_id</thread_id>
-            <level>level</level>
-            <query_id>query_id</query_id>
-            <logger_name>logger_name</logger_name>
-            <message>message</message>
-            <source_file>source_file</source_file>
-            <source_line>source_line</source_line>
-        </names>
-    </formatting>
-</logger>
-```
-
-**Renaming keys for JSON logs**
-
-Key names can be modified by changing tag values inside the `<names>` tag. For example, to change `DATE_TIME` to `MY_DATE_TIME`, you can use `<date_time>MY_DATE_TIME</date_time>`.
-
-**Omitting keys for JSON logs**
-
-Log properties can be omitted by commenting out the property.  For example, if you do not want your log to print `query_id`, you can comment out the `<query_id>` tag.
 
 ## send_crash_reports {#send_crash_reports}
 
@@ -1570,7 +1521,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -1588,7 +1539,7 @@ Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 

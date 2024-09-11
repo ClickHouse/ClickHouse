@@ -4,7 +4,6 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -42,18 +41,9 @@ arrow::Result<int64_t> ArrowBufferedOutputStream::Tell() const
 
 arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length)
 {
-    try
-    {
-        out.write(reinterpret_cast<const char *>(data), length);
-        total_length += length;
-        return arrow::Status::OK();
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while writing to arrow stream: {}", message);
-        return arrow::Status::IOError(message);
-    }
+    out.write(reinterpret_cast<const char *>(data), length);
+    total_length += length;
+    return arrow::Status::OK();
 }
 
 RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_)
@@ -84,18 +74,9 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
 {
-    try
-    {
-        if (avoid_buffering)
-            in.setReadUntilPosition(seekable_in.getPosition() + nbytes);
-        return in.readBig(reinterpret_cast<char *>(out), nbytes);
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
-        return arrow::Status::IOError(message);
-    }
+    if (avoid_buffering)
+        in.setReadUntilPosition(seekable_in.getPosition() + nbytes);
+    return in.readBig(reinterpret_cast<char *>(out), nbytes);
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes)
@@ -117,23 +98,14 @@ arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBu
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
 {
-    try
+    if (avoid_buffering)
     {
-        if (avoid_buffering)
-        {
-            // Seeking to a position above a previous setReadUntilPosition() confuses some of the
-            // ReadBuffer implementations.
-            in.setReadUntilEnd();
-        }
-        seekable_in.seek(position, SEEK_SET);
-        return arrow::Status::OK();
+        // Seeking to a position above a previous setReadUntilPosition() confuses some of the
+        // ReadBuffer implementations.
+        in.setReadUntilEnd();
     }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while seeking arrow file: {}", message);
-        return arrow::Status::IOError(message);
-    }
+    seekable_in.seek(position, SEEK_SET);
+    return arrow::Status::OK();
 }
 
 
@@ -143,16 +115,7 @@ ArrowInputStreamFromReadBuffer::ArrowInputStreamFromReadBuffer(ReadBuffer & in_)
 
 arrow::Result<int64_t> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes, void * out)
 {
-    try
-    {
-        return in.readBig(reinterpret_cast<char *>(out), nbytes);
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
-        return arrow::Status::IOError(message);
-    }
+    return in.readBig(reinterpret_cast<char *>(out), nbytes);
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes)
@@ -191,16 +154,7 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes, void* out)
 {
-    try
-    {
-        return in.readBigAt(reinterpret_cast<char *>(out), nbytes, position, nullptr);
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
-        return arrow::Status::IOError(message);
-    }
+    return in.readBigAt(reinterpret_cast<char*>(out), nbytes, position, nullptr);
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes)

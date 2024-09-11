@@ -133,14 +133,14 @@ void SerializationCustomSimpleText::serializeTextJSON(const IColumn & column, si
 void SerializationCustomSimpleText::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readJSONString(str, istr, settings.json);
+    readJSONString(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
 bool SerializationCustomSimpleText::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    if (!tryReadJSONStringInto(str, istr, settings.json))
+    if (!tryReadJSONStringInto(str, istr))
         return false;
     return tryDeserializeFromString(*this, column, str, settings);
 }

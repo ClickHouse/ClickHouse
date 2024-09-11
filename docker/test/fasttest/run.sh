@@ -159,10 +159,17 @@ function clone_submodules
 
         git submodule sync
         git submodule init
-        # --jobs does not work as fast as real parallel running
-        printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
-            xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
-              git submodule update --depth 1 --single-branch
+
+        # Network is unreliable
+        for _ in {1..10}
+        do
+            # --jobs does not work as fast as real parallel running
+            printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
+                xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
+                  git submodule update --depth 1 --single-branch && break
+            sleep 1
+        done
+
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd

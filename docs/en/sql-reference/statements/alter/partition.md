@@ -133,8 +133,6 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 
-If both tables have the same storage policy, use hardlink to attach partition. Otherwise, use copying the data to attach partition.
-
 ## REPLACE PARTITION
 
 ``` sql

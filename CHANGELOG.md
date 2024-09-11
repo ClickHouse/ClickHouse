@@ -123,6 +123,7 @@
 * Something was wrong with Apache Hive, which is experimental and not supported. [#60262](https://github.com/ClickHouse/ClickHouse/pull/60262) ([shanfengp](https://github.com/Aed-p)).
 * An improvement for experimental parallel replicas: force reanalysis if parallel replicas changed [#60362](https://github.com/ClickHouse/ClickHouse/pull/60362) ([Raúl Marín](https://github.com/Algunenano)).
 * Fix usage of plain metadata type with new disks configuration option [#60396](https://github.com/ClickHouse/ClickHouse/pull/60396) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Don't allow to set max_parallel_replicas to 0 as it doesn't make sense [#60430](https://github.com/ClickHouse/ClickHouse/pull/60430) ([Kruglov Pavel](https://github.com/Avogar)).
 * Try to fix logical error 'Cannot capture column because it has incompatible type' in mapContainsKeyLike [#60451](https://github.com/ClickHouse/ClickHouse/pull/60451) ([Kruglov Pavel](https://github.com/Avogar)).
 * Avoid calculation of scalar subqueries for CREATE TABLE. [#60464](https://github.com/ClickHouse/ClickHouse/pull/60464) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Fix deadlock in parallel parsing when lots of rows are skipped due to errors [#60516](https://github.com/ClickHouse/ClickHouse/pull/60516) ([Kruglov Pavel](https://github.com/Avogar)).

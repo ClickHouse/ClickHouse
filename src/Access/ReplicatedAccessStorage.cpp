@@ -67,6 +67,18 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
 
 ReplicatedAccessStorage::~ReplicatedAccessStorage()
 {
+    try
+    {
+        ReplicatedAccessStorage::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void ReplicatedAccessStorage::shutdown()
+{
     stopWatchingThread();
 }
 

@@ -2776,7 +2776,7 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 -   0 — номера строк не выводятся.
 -   1 — номера строк выводятся.
 
-Значение по умолчанию: `1`.
+Значение по умолчанию: `0`.
 
 **Пример**
 
@@ -2798,7 +2798,7 @@ SELECT TOP 3 name, value FROM system.settings;
 ```
 ### output_format_pretty_color {#output_format_pretty_color}
 
-Включает/выключает управляющие последовательности ANSI в форматах Pretty.
+Включает/выключает управляющие последовательности ANSI в форматах Pretty. 
 
 Возможные значения:
 
@@ -4123,7 +4123,7 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 ## session_timezone {#session_timezone}
 
 Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо [часового пояса сервера](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone). То есть, все значения DateTime/DateTime64, для которых явно не задан часовой пояс, будут интерпретированы как относящиеся к указанной зоне.
-При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера.
+При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера. 
 
 Функции `timeZone()` and `serverTimezone()` возвращают часовой пояс текущей сессии и сервера соответственно.
 

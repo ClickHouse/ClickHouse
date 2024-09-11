@@ -20,12 +20,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
     extern const int DECIMAL_OVERFLOW;
-}
-
-template <is_decimal T>
-T DecimalField<T>::getScaleMultiplier() const
-{
-    return DecimalUtils::scaleMultiplier<T>(scale);
+    extern const int INCORRECT_DATA;
 }
 
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
@@ -146,7 +141,7 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::CustomType:
             return Field();
     }
-    UNREACHABLE();
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
 
 void readBinary(Array & x, ReadBuffer & buf)
@@ -633,9 +628,5 @@ std::string_view Field::getTypeName() const
     return fieldTypeToString(which);
 }
 
-template class DecimalField<Decimal32>;
-template class DecimalField<Decimal64>;
-template class DecimalField<Decimal128>;
-template class DecimalField<Decimal256>;
-template class DecimalField<DateTime64>;
+
 }

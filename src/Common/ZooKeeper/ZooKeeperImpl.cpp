@@ -1,8 +1,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
 
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -11,17 +10,17 @@
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 #include <base/sleep.h>
-#include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/thread_local_rng.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
@@ -970,6 +969,10 @@ void ZooKeeper::receiveEvent()
 
     if (request_info.callback)
         request_info.callback(*response);
+
+    /// Finalize current session if we receive a hardware error from ZooKeeper
+    if (err != Error::ZOK && isHardwareError(err))
+        finalize(/*error_send*/ false, /*error_receive*/ true, fmt::format("Hardware error: {}", err));
 }
 
 

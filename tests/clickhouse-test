@@ -69,8 +69,6 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
-TEST_MAX_RUN_TIME_IN_SECONDS = 120
-
 
 class SharedEngineReplacer:
     ENGINES_NON_REPLICATED_REGEXP = r"[ =]((Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|)MergeTree\(?\)?)"
@@ -453,7 +451,8 @@ def get_processlist_size(args):
                 """
                 SELECT
                     count()
-                FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
+                FROM
+                    FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
                 """,
             ).strip()
@@ -683,9 +682,7 @@ class FailureReason(enum.Enum):
     STDERR = "having stderror: "
     EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
-    TOO_LONG = (
-        f"Test runs too long (> {TEST_MAX_RUN_TIME_IN_SECONDS}s). Make it faster."
-    )
+    TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
@@ -1424,7 +1421,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
+            and total_time > 120
             and "long" not in self.tags
         ):
             if debug_log:
@@ -3175,8 +3172,6 @@ def parse_args():
         help="Do not run shard related tests",
     )
 
-    # TODO: Remove upgrade-check option after release 24.3 and use
-    #       ignore_drop_queries_probability option in stress.py as in stress tests
     group.add_argument(
         "--upgrade-check",
         action="store_true",

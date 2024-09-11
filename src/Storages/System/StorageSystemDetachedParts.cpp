@@ -343,7 +343,7 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
 
         filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter)
-            VirtualColumnUtils::buildSetsForDAG(filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*filter, context);
     }
 }
 

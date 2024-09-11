@@ -225,6 +225,17 @@ public:
 
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
+    /** This is a special flags for functions which return constant value for the server,
+      * but the result could be different for different servers in distributed query.
+      *
+      * This functions can't support constant folding on the initiator, but can on the follower.
+      * We can't apply some optimizations as well (e.g. can't remove constant result from GROUP BY key).
+      * So, it is convenient to have a special flag for them.
+      *
+      * Examples are: "__getScalar" and every function from serverConstants.cpp
+      */
+    virtual bool isServerConstant() const { return false; }
+
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
       * And allows to use the index not only when it is written, for example `date >= const`, but also, for example, `toMonth(date) >= 11`.
@@ -483,6 +494,7 @@ public:
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
+    virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;

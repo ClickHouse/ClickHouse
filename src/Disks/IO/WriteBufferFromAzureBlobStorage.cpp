@@ -66,20 +66,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
-    LOG_TRACE(limitedLog, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
-
-    /// That destructor could be call with finalized=false in case of exceptions
-    if (!finalized)
-    {
-        LOG_INFO(
-            log,
-            "WriteBufferFromAzureBlobStorage is not finalized in destructor. "
-            "The file might not be written to AzureBlobStorage. "
-            "{}.",
-            blob_path);
-    }
-
-    task_tracker->safeWaitAll();
+    finalize();
 }
 
 void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, size_t num_tries, size_t cost)
@@ -111,13 +98,9 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
     }
 }
 
-void WriteBufferFromAzureBlobStorage::preFinalize()
+void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
-    if (is_prefinalized)
-        return;
-
-    // This function should not be run again
-    is_prefinalized = true;
+    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
     /// If there is only one block and size is less than or equal to max_single_part_upload_size
     /// then we use single part upload instead of multi part upload
@@ -126,7 +109,6 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         size_t data_size = size_t(position() - memory.data());
         if (data_size <= max_single_part_upload_size)
         {
-            auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
             Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(memory.data()), data_size);
             execWithRetry([&](){ block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, data_size);
             LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
@@ -134,23 +116,14 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         }
     }
 
-    writePart();
-}
 
-void WriteBufferFromAzureBlobStorage::finalizeImpl()
-{
-    LOG_TRACE(log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
+    execWithRetry([this](){ next(); }, max_unexpected_write_error_retries);
 
-    if (!is_prefinalized)
-        preFinalize();
+    task_tracker->waitAll();
 
-    if (!block_ids.empty())
-    {
-        task_tracker->waitAll();
-        auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-        execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
-        LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
-    }
+    execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
+
+    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
 }
 
 void WriteBufferFromAzureBlobStorage::nextImpl()

@@ -247,7 +247,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     }
 }
 
-bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
@@ -266,7 +266,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
         settings_changes == rhs_typed.settings_changes;
 }
 
-void QueryNode::updateTreeHashImpl(HashState & state) const
+void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_subquery);
     state.update(is_cte);

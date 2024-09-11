@@ -224,7 +224,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
-        if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)
+        if (column.name == BlockNumberColumn::name)
         {
             def.column_numbers_not_to_aggregate.push_back(i);
             continue;

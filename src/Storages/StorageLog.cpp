@@ -39,8 +39,6 @@
 #include <cassert>
 #include <chrono>
 
-#include <boost/range/adaptor/map.hpp>
-
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"

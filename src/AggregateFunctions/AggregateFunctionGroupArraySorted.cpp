@@ -53,6 +53,7 @@ enum class GroupArraySortedStrategy
     sort
 };
 
+
 constexpr size_t group_array_sorted_sort_strategy_max_elements_threshold = 1000000;
 
 template <typename T, GroupArraySortedStrategy strategy>
@@ -207,6 +208,14 @@ struct GroupArraySortedData
 
             for (size_t i = 0; i < values.size(); ++i)
                 result_array_data[result_array_data_insert_begin + i] = values[i];
+        }
+    }
+
+    ~GroupArraySortedData()
+    {
+        for (auto & value : values)
+        {
+            value.~T();
         }
     }
 };

@@ -73,7 +73,7 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
-CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
 
 # to create docker-compose env file
@@ -513,6 +513,7 @@ class ClickHouseCluster:
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
+        self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
 
         self.spark_session = None
 
@@ -4294,6 +4295,9 @@ class ClickHouseInstance:
         )
         return xml_str
 
+    def get_machine_name(self):
+        return platform.machine()
+
     @property
     def odbc_drivers(self):
         if self.odbc_ini_path:
@@ -4301,12 +4305,12 @@ class ClickHouseInstance:
                 "SQLite3": {
                     "DSN": "sqlite3_odbc",
                     "Database": "/tmp/sqliteodbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
                 },
                 "MySQL": {
                     "DSN": "mysql_odbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
                     "Pwd": odbc_mysql_pass,
@@ -4323,8 +4327,8 @@ class ClickHouseInstance:
                     "ReadOnly": "No",
                     "RowVersioning": "No",
                     "ShowSystemTables": "No",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/psqlodbca.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libodbcpsqlS.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/psqlodbca.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libodbcpsqlS.so",
                     "ConnSettings": "",
                 },
             }

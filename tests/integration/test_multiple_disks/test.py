@@ -5,7 +5,6 @@ import string
 import threading
 import time
 from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_eq_with_retry
 
 import pytest
 from helpers.client import QueryRuntimeException
@@ -1746,9 +1745,9 @@ def test_move_while_merge(start_cluster):
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
-def test_move_across_policies_work_for_attach_not_work_for_move(start_cluster):
+def test_move_across_policies_does_not_work(start_cluster):
     try:
-        name = "test_move_across_policies_work_for_attach_not_work_for_move"
+        name = "test_move_across_policies_does_not_work"
 
         node1.query(
             """
@@ -1784,18 +1783,25 @@ def test_move_across_policies_work_for_attach_not_work_for_move(start_cluster):
         except QueryRuntimeException:
             """All parts of partition 'all' are already on disk 'jbod2'."""
 
-        node1.query(
-            """ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(
-                name=name
-            )
-        )
-        assert_eq_with_retry(
-            node1,
-            """SELECT * FROM {name}2""".format(name=name),
+        with pytest.raises(
+            QueryRuntimeException,
+            match=".*because disk does not belong to storage policy.*",
+        ):
             node1.query(
-                """SELECT * FROM {name}""".format(name=name),
-            ),
-        )
+                """ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(
+                    name=name
+                )
+            )
+
+        with pytest.raises(
+            QueryRuntimeException,
+            match=".*because disk does not belong to storage policy.*",
+        ):
+            node1.query(
+                """ALTER TABLE {name}2 REPLACE PARTITION tuple() FROM {name}""".format(
+                    name=name
+                )
+            )
 
         with pytest.raises(
             QueryRuntimeException,
@@ -1806,6 +1812,10 @@ def test_move_across_policies_work_for_attach_not_work_for_move(start_cluster):
                     name=name
                 )
             )
+
+        assert node1.query(
+            """SELECT * FROM {name}""".format(name=name)
+        ).splitlines() == ["1"]
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")

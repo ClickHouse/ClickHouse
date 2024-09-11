@@ -15,13 +15,15 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <Common/randomDelay.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
+#include <iterator>
 #include <base/sort.h>
 
 
@@ -121,10 +123,6 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
-    static const auto test_delay = data.getContext()->getConfigRef().getUInt64("test.data_parts_exchange.delay_before_sending_part_ms", 0);
-    if (test_delay)
-        randomDelayForMaxMilliseconds(test_delay, log, "DataPartsExchange: Before sending part");
-
     MergeTreeData::DataPartPtr part;
 
     auto report_broken_part = [&]()
@@ -215,14 +213,18 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
+        if (e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+            && !isRetryableException(std::current_exception()))
+        {
             report_broken_part();
+        }
 
         throw;
     }
     catch (...)
     {
-        report_broken_part();
+        if (!isRetryableException(std::current_exception()))
+            report_broken_part();
         throw;
     }
 }
@@ -318,7 +320,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     }
 
     if (!from_remote_disk && isFullPartStorage(part->getDataPartStorage()))
-        part->checksums.checkEqual(data_checksums, false, part->name);
+        part->checksums.checkEqual(data_checksums, false);
 
     return data_checksums;
 }
@@ -803,7 +805,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`tmp_prefix` and `part_name` cannot be empty or contain '.' or '/' characters.");
 
     auto part_dir = tmp_prefix + part_name;
-    auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
+    auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
     /// Create temporary part storage to write sent files.
@@ -906,7 +908,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
-            new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
+            new_data_part->checksums.checkEqual(data_checksums, false);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

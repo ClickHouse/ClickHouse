@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
 static void replaceFilterToConstant(Block & block, const String & filter_column_name)
@@ -81,7 +82,11 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
             auto mutable_holder = ColumnUInt8::create(num_rows, 0);
             auto & data = mutable_holder->getData();
             for (auto idx : selected_by_indices)
+            {
+                if (idx >= num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range {}", idx, num_rows);
                 data[idx] = 1;
+            }
 
             /// AND two filters
             auto * begin = data.data();

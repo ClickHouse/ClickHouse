@@ -35,9 +35,9 @@ PostgreSQLSource<T>::PostgreSQLSource(
     const Block & sample_block,
     UInt64 max_block_size_)
     : ISource(sample_block.cloneEmpty())
-    , query_str(query_str_)
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
+    , query_str(query_str_)
 {
     init(sample_block);
 }
@@ -51,10 +51,10 @@ PostgreSQLSource<T>::PostgreSQLSource(
     UInt64 max_block_size_,
     bool auto_commit_)
     : ISource(sample_block.cloneEmpty())
-    , query_str(query_str_)
-    , tx(std::move(tx_))
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
+    , query_str(query_str_)
+    , tx(std::move(tx_))
 {
     init(sample_block);
 }
@@ -191,13 +191,19 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     {
         try
         {
-            stream.reset();
-            tx.reset();
+            if (stream)
+            {
+                tx->conn().cancel_query();
+                stream->close();
+            }
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+
+        stream.reset();
+        tx.reset();
 
         if (connection_holder)
             connection_holder->setBroken();

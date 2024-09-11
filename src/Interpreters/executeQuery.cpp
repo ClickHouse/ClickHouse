@@ -97,7 +97,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -645,6 +644,15 @@ void logExceptionBeforeStart(
     }
 }
 
+static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
+{
+    if (auto * ast_insert_into = ast->as<ASTInsertQuery>())
+    {
+        if (ast_insert_into->watch)
+            context->setSetting("output_format_enable_streaming", 1);
+    }
+}
+
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
@@ -890,6 +898,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
 
+        setQuerySpecificSettings(ast, context);
+
         /// There is an option of probabilistic logging of queries.
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
@@ -913,7 +923,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
         {
-            ApplyWithGlobalVisitor::visit(ast);
+            ApplyWithGlobalVisitor().visit(ast);
         }
 
         {
@@ -1087,7 +1097,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1188,29 +1198,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// top of the pipeline which stores the result in the query cache.
                     if (can_use_query_cache && settings.enable_writes_to_query_cache)
                     {
-                        /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-
                         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
-                        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
-
                         const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
-                        const QueryCacheSystemTableHandling system_table_handling = settings.query_cache_system_table_handling;
 
                         if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
                             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
                                 "The query result was not cached because the query contains a non-deterministic function."
                                 " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
-                                "The query result was not cached because the query contains a system table."
-                                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
-                            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
+                        if (!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
                         {
                             QueryCache::Key key(
-                                ast, res.pipeline.getHeader(),
+                                ast, context->getCurrentDatabase(), res.pipeline.getHeader(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
@@ -1454,7 +1453,6 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
     OutputFormatPtr output_format;
-    String format_name;
 
     auto update_format_on_exception_if_needed = [&]()
     {
@@ -1462,7 +1460,7 @@ void executeQuery(
         {
             try
             {
-                format_name = context->getDefaultFormat();
+                String format_name = context->getDefaultFormat();
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
                 {
@@ -1503,10 +1501,17 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+                handle_exception_in_output_format(*output_format);
         }
+        /// The timezone was already set before query was processed,
+        /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+        result_details.timezone = DateLUT::instance().getTimeZone();
         throw;
     }
+
+    /// The timezone was already set before query was processed,
+    /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+    result_details.timezone = DateLUT::instance().getTimeZone();
 
     auto & pipeline = streams.pipeline;
 
@@ -1545,7 +1550,7 @@ void executeQuery(
                 );
             }
 
-            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
@@ -1611,7 +1616,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+                handle_exception_in_output_format(*output_format);
         }
         throw;
     }

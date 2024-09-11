@@ -3,7 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
@@ -16,9 +16,6 @@ namespace DB
 
 /// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
-
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -44,8 +41,10 @@ public:
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
 
+
+        /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
-        const ASTPtr ast;
+        IAST::Hash ast_hash;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
@@ -86,6 +85,7 @@ public:
 
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
+            const String & current_database,
             Block header_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
@@ -93,7 +93,7 @@ public:
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_, const String & current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };

@@ -1135,7 +1135,7 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCirc
 
         if (it != container.end())
         {
-            set_value(key_index, getValueFromCell(it));
+            set_value(keys_found, getValueFromCell(it));
             default_mask[key_index] = 0;
 
             ++keys_found;
@@ -1143,7 +1143,7 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCirc
         // Need to consider items in is_nullable_sets as well, see blockToAttributes()
         else if (is_nullable && (*attribute.is_nullable_sets)[shard].find(key) != nullptr)
         {
-            set_null(key_index);
+            set_null(keys_found);
             default_mask[key_index] = 0;
 
             ++keys_found;

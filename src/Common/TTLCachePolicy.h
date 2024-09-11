@@ -220,6 +220,7 @@ public:
     std::vector<KeyMapped> dump() const override
     {
         std::vector<KeyMapped> res;
+        res.reserve(cache.size());
         for (const auto & [key, mapped] : cache)
             res.push_back({key, mapped});
         return res;

@@ -452,9 +452,6 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
-Konstantin
-kostik
-kostikConsistentHash
 Korzeniewski
 Kubernetes
 LDAP
@@ -557,17 +554,6 @@ Mongodb
 mortonDecode
 mortonEncode
 MsgPack
-multiSearchAllPositionsCaseInsensitive
-multiSearchAllPositionsCaseInsensitiveUTF
-multiSearchAnyCaseInsensitive
-multiSearchAnyCaseInsensitiveUTF
-multiSearchAnyUTF
-multiSearchFirstIndexCaseInsensitive
-multiSearchFirstIndexCaseInsensitiveUTF
-multiSearchFirstIndexUTF
-multiSearchFirstPositionCaseInsensitive
-multiSearchFirstPositionCaseInsensitiveUTF
-multiSearchFirstPositionUTF
 MultiPolygon
 Multiline
 Multiqueries
@@ -669,7 +655,6 @@ OTLP
 OUTFILE
 ObjectId
 Observability
-Oblakov
 Octonica
 Ok
 OnTime
@@ -875,7 +860,6 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
-SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -1696,7 +1680,6 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
-hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1951,7 +1934,6 @@ mmap
 mmapped
 modularization
 moduloOrZero
-moduli
 mongodb
 monthName
 moscow
@@ -2002,9 +1984,6 @@ nestjs
 netloc
 ngram
 ngramDistance
-ngramDistanceCaseInsensitive
-ngramDistanceCaseInsensitiveUTF
-ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -2014,9 +1993,6 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
-ngramSearchCaseInsensitive
-ngramSearchCaseInsensitiveUTF
-ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF
@@ -2663,12 +2639,6 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-tupleIntDiv
-tupleIntDivByNumber
-tupleIntDivOrZero
-tupleIntDivOrZeroByNumber
-tupleModulo
-tupleModuloByNumber
 turbostat
 txt
 typename
@@ -2783,7 +2753,6 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
-wyHash
 xcode
 xeus
 xkcd

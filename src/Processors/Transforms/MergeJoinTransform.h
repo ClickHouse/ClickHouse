@@ -193,11 +193,7 @@ private:
 class FullMergeJoinCursor : boost::noncopyable
 {
 public:
-    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_)
-        : sample_block(sample_block_.cloneEmpty())
-        , desc(description_)
-    {
-    }
+    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_);
 
     bool fullyCompleted() const;
     void setChunk(Chunk && chunk);

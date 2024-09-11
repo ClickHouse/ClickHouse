@@ -177,7 +177,7 @@ private:
     };
     std::shared_ptr<TaskContext> task;
 
-    std::unique_ptr<FileLogDirectoryWatcher> directory_watch;
+    std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
 
     void loadFiles();
 

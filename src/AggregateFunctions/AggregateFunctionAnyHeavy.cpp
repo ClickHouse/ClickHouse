@@ -68,7 +68,10 @@ public:
         if (data().isEqualTo(to.data()))
             counter += to.counter;
         else if (!data().has() || counter < to.counter)
+        {
             data().set(to.data(), arena);
+            counter = to.counter - counter;
+        }
         else
             counter -= to.counter;
     }
@@ -115,34 +118,34 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        data(place).add(*columns[0], row_num, arena);
+        this->data(place).add(*columns[0], row_num, arena);
     }
 
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
     {
-        data(place).addManyDefaults(*columns[0], 0, arena);
+        this->data(place).addManyDefaults(*columns[0], 0, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        data(place).add(data(rhs), arena);
+        this->data(place).add(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        data(place).write(buf, *serialization);
+        this->data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, arena);
     }
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type_index); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to);
     }
 };
 

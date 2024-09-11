@@ -1,25 +1,22 @@
-#include <Access/Common/AccessEntityType.h>
-#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
-#include <Backups/IBackupCoordination.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
+#include <Access/Common/AccessEntityType.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
-#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
-
-#include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-
+#include <base/scope_guard.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

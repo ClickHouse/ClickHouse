@@ -373,7 +373,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
                     auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    job.connection_entry = std::move(results.front().entry);
+                    auto result = shard_info.pool->getValidTryResult(results, settings.distributed_insert_skip_read_only_replicas);
+                    job.connection_entry = std::move(result.entry);
                 }
                 else
                 {
@@ -613,7 +614,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(cluster, key_column);
+    return storage.createSelector(cluster, key_column);
 }
 
 

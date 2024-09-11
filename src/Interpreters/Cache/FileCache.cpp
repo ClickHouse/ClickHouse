@@ -64,16 +64,16 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releas
     auto & local_stat = stat_by_kind[kind];
     if (releasable)
     {
-        total_stat.releasable_size += size;
-        ++total_stat.releasable_count;
+        stat.releasable_size += size;
+        ++stat.releasable_count;
 
         local_stat.releasable_size += size;
         ++local_stat.releasable_count;
     }
     else
     {
-        total_stat.non_releasable_size += size;
-        ++total_stat.non_releasable_count;
+        stat.non_releasable_size += size;
+        ++stat.non_releasable_count;
 
         local_stat.non_releasable_size += size;
         ++local_stat.non_releasable_count;
@@ -90,15 +90,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , metadata(settings.base_path, settings.background_download_queue_size_limit, settings.background_download_threads, write_cache_per_user_directory)
 {
     if (settings.cache_policy == "LRU")
-    {
-        main_priority = std::make_unique<LRUFileCachePriority>(
-            settings.max_size, settings.max_elements, nullptr, cache_name);
-    }
+        main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
     else if (settings.cache_policy == "SLRU")
-    {
-        main_priority = std::make_unique<SLRUFileCachePriority>(
-            settings.max_size, settings.max_elements, settings.slru_size_ratio, nullptr, nullptr, cache_name);
-    }
+        main_priority = std::make_unique<SLRUFileCachePriority>(settings.max_size, settings.max_elements, settings.slru_size_ratio);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy: {}", settings.cache_policy);
 
@@ -186,7 +180,6 @@ void FileCache::initialize()
     }
 
     metadata.startup();
-
     is_initialized = true;
 }
 
@@ -223,7 +216,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
             return false;
 
         FileSegmentPtr file_segment;
-        if (!file_segment_metadata.isEvicting(locked_key))
+        if (!file_segment_metadata.evicting())
         {
             file_segment = file_segment_metadata.file_segment;
         }
@@ -809,8 +802,9 @@ bool FileCache::tryReserve(
     }
 
     LOG_TEST(
-        log, "Trying to reserve space ({} bytes) for {}:{}, current usage: {}",
-        size, file_segment.key(), file_segment.offset(), main_priority->getStateInfoForLog(cache_lock));
+        log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
+        size, file_segment.key(), file_segment.offset(),
+        main_priority->getSize(cache_lock), main_priority->getSizeLimit(cache_lock));
 
     /// In case of per query cache limit (by default disabled), we add/remove entries from both
     /// (main_priority and query_priority) priority queues, but iterate entries in order of query_priority,
@@ -837,103 +831,60 @@ bool FileCache::tryReserve(
             file_segment.key(), file_segment.offset());
     }
 
-    auto queue_iterator = file_segment.getQueueIterator();
-
-    /// A file_segment_metadata acquires a priority iterator
-    /// on first successful space reservation attempt,
-    /// so queue_iterator == nullptr, if no space reservation took place yet.
-    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
-
-    /// If it is the first space reservatiob attempt for a file segment
-    /// we need to make space for 1 element in cache,
-    /// otherwise space is already taken and we need 0 elements to free.
-    size_t required_elements_num = queue_iterator ? 0 : 1;
-
     EvictionCandidates eviction_candidates;
+    IFileCachePriority::FinalizeEvictionFunc finalize_eviction_func;
 
-    /// If user has configured fs cache limit per query,
-    /// we take into account query limits here.
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
-        {
+                size, reserve_stat, eviction_candidates, {}, finalize_eviction_func, user.user_id, cache_lock))
             return false;
-        }
 
-        LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})",
-                 file_segment.key(), file_segment.offset());
-
+        LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})", file_segment.key(), file_segment.offset());
         /// If we have enough space in query_priority, we are not interested about stat there anymore.
         /// Clean the stat before iterating main_priority to avoid calculating any segment stat twice.
         reserve_stat.stat_by_kind.clear();
     }
 
+    /// A file_segment_metadata acquires a priority iterator on first successful space reservation attempt,
+    auto queue_iterator = file_segment.getQueueIterator();
+    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
+
     if (!main_priority->collectCandidatesForEviction(
-            size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
-    {
+            size, reserve_stat, eviction_candidates, queue_iterator, finalize_eviction_func, user.user_id, cache_lock))
         return false;
-    }
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
-    if (eviction_candidates.size() > 0)
-    {
-        cache_lock.unlock();
-        try
-        {
-            /// Remove eviction candidates from filesystem.
-            eviction_candidates.evict();
-        }
-        catch (...)
-        {
-            cache_lock.lock();
-            /// Invalidate queue entries if some succeeded to be removed.
-            eviction_candidates.finalize(query_context.get(), cache_lock);
-            throw;
-        }
+    eviction_candidates.evict(query_context.get(), cache_lock);
 
-        cache_lock.lock();
-
-        /// Invalidate and remove queue entries and execute finalize func.
-        eviction_candidates.finalize(query_context.get(), cache_lock);
-    }
-    else if (!main_priority->canFit(size, required_elements_num, cache_lock, queue_iterator))
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot fit {} in cache, but collection of eviction candidates succeeded with no candidates. "
-            "This is a bug. Queue entry type: {}. Cache info: {}",
-            size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
-            main_priority->getStateInfoForLog(cache_lock));
-    }
+    if (finalize_eviction_func)
+        finalize_eviction_func(cache_lock);
 
     if (queue_iterator)
     {
-        /// Increase size of queue entry.
-        queue_iterator->incrementSize(size, cache_lock);
+        queue_iterator->updateSize(size);
     }
     else
     {
-        /// Create a new queue entry and assign currently reserved size to it.
+        /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
+        /// and getQueueIterator() is assigned on first space reservation attempt.
         queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
         file_segment.setQueueIterator(queue_iterator);
     }
 
-    main_priority->check(cache_lock);
+    file_segment.reserved_size += size;
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
 
     if (query_context)
     {
         auto query_queue_it = query_context->tryGet(file_segment.key(), file_segment.offset(), cache_lock);
         if (query_queue_it)
-            query_queue_it->incrementSize(size, cache_lock);
+            query_queue_it->updateSize(size);
         else
             query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
     }
-
-    file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
@@ -1197,7 +1148,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                 auto lock = lockCache();
                 size_limit = main_priority->getSizeLimit(lock);
 
-                limits_satisfied = main_priority->canFit(size, 1, lock, nullptr, true);
+                limits_satisfied = main_priority->canFit(size, lock, nullptr, true);
                 if (limits_satisfied)
                     cache_it = main_priority->add(key_metadata, offset, size, user, lock, /* best_effort */true);
 
@@ -1385,86 +1336,37 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         }
     }
 
+
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
-        EvictionCandidates eviction_candidates;
-        bool modified_size_limit = false;
+        cache_is_being_resized.store(true, std::memory_order_relaxed);
+        SCOPE_EXIT({
+            cache_is_being_resized.store(false, std::memory_order_relaxed);
+        });
 
-        /// In order to not block cache for the duration of cache resize,
-        /// we do:
-        /// a. Take a cache lock.
-        ///     1. Collect eviction candidates,
-        ///     2. Remove queue entries of eviction candidates.
-        ///        This will release space we consider to be hold for them,
-        ///        so that we can safely modify size limits.
-        ///     3. Modify size limits of cache.
-        /// b. Release a cache lock.
-        ///     1. Do actual eviction from filesystem.
+        auto cache_lock = lockCache();
+        bool updated = false;
+        try
         {
-            cache_is_being_resized.store(true, std::memory_order_relaxed);
-            SCOPE_EXIT({
-                cache_is_being_resized.store(false, std::memory_order_relaxed);
-            });
-
-            auto cache_lock = lockCache();
-
-            FileCacheReserveStat stat;
-            if (main_priority->collectCandidatesForEviction(
-                    new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */,
-                    stat, eviction_candidates, cache_lock))
-            {
-                /// Remove only queue entries of eviction candidates.
-                eviction_candidates.removeQueueEntries(cache_lock);
-                /// Note that (in-memory) metadata about corresponding file segments
-                /// (e.g. file segment info in CacheMetadata) will be removed
-                /// only after eviction from filesystem. This is needed to avoid
-                /// a race on removal of file from filesystsem and
-                /// addition of the same file as part of a newly cached file segment.
-
-                /// Modify cache size limits.
-                /// From this point cache eviction will follow them.
-                main_priority->modifySizeLimits(
-                    new_settings.max_size, new_settings.max_elements,
-                    new_settings.slru_size_ratio, cache_lock);
-
-                modified_size_limit = true;
-            }
+            updated = main_priority->modifySizeLimits(
+                new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
+        }
+        catch (...)
+        {
+            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
+            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
+            throw;
         }
 
-        if (modified_size_limit)
+        if (updated)
         {
-            try
-            {
-                /// Do actual eviction from filesystem.
-                eviction_candidates.evict();
-            }
-            catch (...)
-            {
-                if (eviction_candidates.needFinalize())
-                    eviction_candidates.finalize(nullptr, lockCache());
-                throw;
-            }
-
-            if (eviction_candidates.needFinalize())
-                eviction_candidates.finalize(nullptr, lockCache());
-
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                     actual_settings.max_size, new_settings.max_size,
                     actual_settings.max_elements, new_settings.max_elements);
 
-            actual_settings.max_size = new_settings.max_size;
-            actual_settings.max_elements = new_settings.max_elements;
-        }
-        else
-        {
-            LOG_WARNING(
-                log, "Unable to modify size limit from {} to {}, elements limit from {} to {}. "
-                "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
-                "Next attempt to update them will happen on the next config reload. "
-                "You can trigger it with SYSTEM RELOAD CONFIG.",
-                actual_settings.max_size, new_settings.max_size,
-                actual_settings.max_elements, new_settings.max_elements);
+            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
+            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
         }
     }
 

@@ -669,6 +669,9 @@ struct ContextSharedPart : boost::noncopyable
             }
         }
 
+        LOG_TRACE(log, "Shutting down AccessControl");
+        access_control->shutdown();
+
         {
             std::lock_guard lock(mutex);
 
@@ -971,7 +974,7 @@ Strings Context::getWarnings() const
 /// TODO: remove, use `getTempDataOnDisk`
 VolumePtr Context::getGlobalTemporaryVolume() const
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(shared->mutex);
     /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
     /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
     if (shared->root_temp_data_on_disk)
@@ -1374,18 +1377,18 @@ std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 namespace
 {
 ALWAYS_INLINE inline void
-contextSanityCheckWithLock(const Context & context, const Settings & settings, const std::lock_guard<ContextSharedMutex> &)
+contextSanityClampSettingsWithLock(const Context & context, Settings & settings, const std::lock_guard<ContextSharedMutex> &)
 {
     const auto type = context.getApplicationType();
     if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
-        doSettingsSanityCheck(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
-ALWAYS_INLINE inline void contextSanityCheck(const Context & context, const Settings & settings)
+ALWAYS_INLINE inline void contextSanityClampSettings(const Context & context, Settings & settings)
 {
     const auto type = context.getApplicationType();
     if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
-        doSettingsSanityCheck(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 }
 
@@ -1498,7 +1501,7 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
     applySettingsChangesWithLock(profiles_info.settings, lock);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
-    contextSanityCheckWithLock(*this, settings, lock);
+    contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -2074,7 +2077,7 @@ void Context::setSettings(const Settings & settings_)
     std::lock_guard lock(mutex);
     settings = settings_;
     need_recalculate_access = true;
-    contextSanityCheck(*this, settings);
+    contextSanityClampSettings(*this, settings);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2087,7 +2090,7 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
     settings.set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
-    contextSanityCheckWithLock(*this, settings, lock);
+    contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2107,7 +2110,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     try
     {
         setSettingWithLock(change.name, change.value, lock);
-        contextSanityCheckWithLock(*this, settings, lock);
+        contextSanityClampSettingsWithLock(*this, settings, lock);
     }
     catch (Exception & e)
     {
@@ -2135,7 +2138,7 @@ void Context::setSetting(std::string_view name, const Field & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
-    contextSanityCheckWithLock(*this, settings, lock);
+    contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -2160,39 +2163,39 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     applySettingsChangesWithLock(changes, lock);
 }
 
-void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const
+void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheck(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const
+void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, change, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheck(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const
+void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheck(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const
+void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheck(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
-void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const
+void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheck(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2200,32 +2203,32 @@ void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings 
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
 }
 
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const
+void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source)
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(profile_elements, source);
 }
 
-void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source) const
+void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source)
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(change, source);
 }
 
-void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const
+void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
-    doSettingsSanityCheck(settings);
+    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const
+void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
-void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const
+void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
@@ -3255,18 +3258,22 @@ DDLWorker & Context::getDDLWorker() const
     if (shared->ddl_worker_startup_task)
         waitLoad(shared->ddl_worker_startup_task); // Just wait and do not prioritize, because it depends on all load and startup tasks
 
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->ddl_worker)
     {
-        if (!hasZooKeeper())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
-
-        if (!hasDistributedDDL())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
-
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
+        /// Only acquire the lock for reading ddl_worker field.
+        /// hasZooKeeper() and hasDistributedDDL() acquire the same lock as well and double acquisition of the lock in shared mode can lead
+        /// to a deadlock if an exclusive lock attempt is made in the meantime by another thread.
+        SharedLockGuard lock(shared->mutex);
+        if (shared->ddl_worker)
+            return *shared->ddl_worker;
     }
-    return *shared->ddl_worker;
+
+    if (!hasZooKeeper())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
+
+    if (!hasDistributedDDL())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
+
+    throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
@@ -4457,7 +4464,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name);
 
     applySettingsQuirks(settings, getLogger("SettingsQuirks"));
-    doSettingsSanityCheck(settings);
+    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());

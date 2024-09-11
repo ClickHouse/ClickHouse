@@ -194,12 +194,12 @@ ReturnType deserializeImpl(
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
         {
-            restore_column_if_needed();
             if constexpr (throw_exception)
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BOOL,
                     "Cannot continue parsing after parsed bool value because it will result in the loss of some data. It may happen if "
                     "bool_true_representation or bool_false_representation contains some delimiters of input format");
+            restore_column_if_needed();
             return ReturnType(false);
         }
         return ReturnType(true);

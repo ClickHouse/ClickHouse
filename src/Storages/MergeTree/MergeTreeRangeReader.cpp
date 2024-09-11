@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -872,8 +871,6 @@ size_t MergeTreeRangeReader::currentMark() const
     return stream.currentMark();
 }
 
-const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset"};
-
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
     size_t rows_between_marks = index_granularity->getRowsCountInRange(current_mark, last_mark);
@@ -1007,6 +1004,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 filterColumns(columns, read_result.final_filter);
             }
 
+            /// If columns not empty, then apply on-fly alter conversions if any required
+            if (!prewhere_info || prewhere_info->perform_alter_conversions)
+                merge_tree_reader->performRequiredConversions(columns);
+
             /// If some columns absent in part, then evaluate default values
             if (should_evaluate_missing_defaults)
             {
@@ -1017,10 +1018,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 addDummyColumnWithRowCount(additional_columns, read_result.num_rows);
                 merge_tree_reader->evaluateMissingDefaults(additional_columns, columns);
             }
-
-            /// If columns not empty, then apply on-fly alter conversions if any required
-            if (!prewhere_info || prewhere_info->perform_alter_conversions)
-                merge_tree_reader->performRequiredConversions(columns);
         }
 
         read_result.columns.reserve(read_result.columns.size() + columns.size());
@@ -1046,13 +1043,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             bool should_evaluate_missing_defaults;
             merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, read_result.num_rows);
 
-            /// If some columns absent in part, then evaluate default values
-            if (should_evaluate_missing_defaults)
-                merge_tree_reader->evaluateMissingDefaults({}, columns);
-
             /// If result not empty, then apply on-fly alter conversions if any required
             if (!prewhere_info || prewhere_info->perform_alter_conversions)
                 merge_tree_reader->performRequiredConversions(columns);
+
+            /// If some columns absent in part, then evaluate default values
+            if (should_evaluate_missing_defaults)
+                merge_tree_reader->evaluateMissingDefaults({}, columns);
 
             for (size_t i = 0; i < columns.size(); ++i)
                 read_result.columns[i] = std::move(columns[i]);
@@ -1146,35 +1143,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-    fillVirtualColumns(result, leading_begin_part_offset, leading_end_part_offset);
-    return result;
-}
-
-void MergeTreeRangeReader::fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
-{
-    ColumnPtr part_offset_column;
-
-    auto add_offset_column = [&](const auto & column_name)
-    {
-        size_t pos = read_sample_block.getPositionByName(column_name);
-        chassert(pos < result.columns.size());
-
-        /// Column may be persisted in part.
-        if (result.columns[pos])
-            return;
-
-        if (!part_offset_column)
-            part_offset_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
-
-        result.columns[pos] = part_offset_column;
-    };
-
     if (read_sample_block.has("_part_offset"))
-        add_offset_column("_part_offset");
+    {
+        size_t pos = read_sample_block.getPositionByName("_part_offset");
+        chassert(pos < result.columns.size());
+        chassert(result.columns[pos] == nullptr);
+        result.columns[pos] = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+    }
 
-    /// Column _block_offset is the same as _part_offset if it's not persisted in part.
-    if (read_sample_block.has(BlockOffsetColumn::name))
-        add_offset_column(BlockOffsetColumn::name);
+    return result;
 }
 
 ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)

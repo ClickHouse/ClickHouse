@@ -302,6 +302,27 @@ FROM
 )"
 run_query "$query"
 
+echo "-- presence of an inner OFFSET retains the ORDER BY"
+query="WITH
+  t1 AS (
+    SELECT a, b
+    FROM
+      VALUES (
+        'b UInt32, a Int32',
+        (1, 1),
+        (2, 0)
+      )
+  )
+SELECT
+  SUM(a)
+FROM (
+  SELECT a, b
+  FROM t1
+  ORDER BY 1 DESC, 2
+  OFFSET 1
+) t2"
+run_query "$query"
+
 echo "-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function"
 ENABLE_OPTIMIZATION="SET query_plan_enable_optimizations=0;$ENABLE_OPTIMIZATION"
 echo "-- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order"

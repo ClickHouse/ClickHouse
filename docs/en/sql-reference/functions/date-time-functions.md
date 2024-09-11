@@ -1670,7 +1670,7 @@ Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../.
 
 ## age
 
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 nanosecond.
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
 For an alternative to `age`, see function `date\_diff`.
@@ -1686,17 +1686,16 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `nanosecond`, `nanoseconds`, `ns`
-    - `microsecond`, `microseconds`, `us`, `u`
-    - `millisecond`, `milliseconds`, `ms`
-    - `second`, `seconds`, `ss`, `s`
-    - `minute`, `minutes`, `mi`, `n`
-    - `hour`, `hours`, `hh`, `h`
-    - `day`, `days`, `dd`, `d`
-    - `week`, `weeks`, `wk`, `ww`
-    - `month`, `months`, `mm`, `m`
-    - `quarter`, `quarters`, `qq`, `q`
-    - `year`, `years`, `yyyy`, `yy`
+    - `microsecond` `microseconds` `us` `u`
+    - `millisecond` `milliseconds` `ms`
+    - `second` `seconds` `ss` `s`
+    - `minute` `minutes` `mi` `n`
+    - `hour` `hours` `hh` `h`
+    - `day` `days` `dd` `d`
+    - `week` `weeks` `wk` `ww`
+    - `month` `months` `mm` `m`
+    - `quarter` `quarters` `qq` `q`
+    - `year` `years` `yyyy` `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1764,17 +1763,16 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `nanosecond`, `nanoseconds`, `ns`
-    - `microsecond`, `microseconds`, `us`, `u`
-    - `millisecond`, `milliseconds`, `ms`
-    - `second`, `seconds`, `ss`, `s`
-    - `minute`, `minutes`, `mi`, `n`
-    - `hour`, `hours`, `hh`, `h`
-    - `day`, `days`, `dd`, `d`
-    - `week`, `weeks`, `wk`, `ww`
-    - `month`, `months`, `mm`, `m`
-    - `quarter`, `quarters`, `qq`, `q`
-    - `year`, `years`, `yyyy`, `yy`
+    - `microsecond` `microseconds` `us` `u`
+    - `millisecond` `milliseconds` `ms`
+    - `second` `seconds` `ss` `s`
+    - `minute` `minutes` `mi` `n`
+    - `hour` `hours` `hh` `h`
+    - `day` `days` `dd` `d`
+    - `week` `weeks` `wk` `ww`
+    - `month` `months` `mm` `m`
+    - `quarter` `quarters` `qq` `q`
+    - `year` `years` `yyyy` `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -2970,7 +2968,7 @@ Result:
 
 ## fromModifiedJulianDay
 
-Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
+Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973483` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
 
 **Syntax**
 

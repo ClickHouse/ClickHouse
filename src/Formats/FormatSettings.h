@@ -152,6 +152,8 @@ struct FormatSettings
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
+        bool serialize_tuple_into_separate_columns = true;
+        bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
@@ -169,6 +171,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
         bool use_default_on_bad_values = false;
         bool try_infer_numbers_from_strings = true;
+        bool try_infer_strings_from_quoted_tuples = true;
     } csv{};
 
     struct HiveText
@@ -176,7 +179,6 @@ struct FormatSettings
         char fields_delimiter = '\x01';
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
-        bool allow_variable_number_of_columns = true;
         Names input_field_names;
     } hive_text{};
 
@@ -194,7 +196,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
     } custom{};
 
-    struct JSON
+    struct
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
@@ -222,7 +224,7 @@ struct FormatSettings
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
-        bool throw_on_bad_escape_sequence = true;
+
     } json{};
 
     struct

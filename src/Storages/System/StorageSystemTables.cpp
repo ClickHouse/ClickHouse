@@ -25,8 +25,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeUUID.h>
 
-#include <boost/range/adaptor/map.hpp>
-
 
 namespace DB
 {

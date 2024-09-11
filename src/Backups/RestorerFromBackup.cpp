@@ -24,9 +24,6 @@
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
 #include <boost/algorithm/string/join.hpp>
-
-#include <boost/range/adaptor/map.hpp>
-
 #include <filesystem>
 #include <ranges>
 
