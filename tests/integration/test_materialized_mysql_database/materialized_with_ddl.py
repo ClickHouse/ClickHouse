@@ -2353,7 +2353,7 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
     )
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
     show_db = clickhouse_node.query("SHOW CREATE DATABASE table_overrides")
-    assert "TABLE OVERRIDE `t1`\\n(\\n\\n)" in show_db, show_db
+    assert "TABLE OVERRIDE t1\\n(\\n\\n)" in show_db, show_db
 
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")

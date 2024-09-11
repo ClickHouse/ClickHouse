@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 check_replicas_read_in_order() {
     # NOTE: lack of "current_database = '$CLICKHOUSE_DATABASE'" filter is made on purpose
-    $CLICKHOUSE_CLIENT -nq "
+    $CLICKHOUSE_CLIENT -q "
         SYSTEM FLUSH LOGS;
 
         SELECT COUNT() > 0
@@ -22,7 +22,7 @@ check_replicas_read_in_order() {
 # at some point we had a bug in this logic (see https://github.com/ClickHouse/ClickHouse/pull/45892#issue-1566140414)
 test1() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
-    $CLICKHOUSE_CLIENT --query_id="$query_id" -nq "
+    $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
         SELECT URL, EventDate, max(URL)
@@ -39,7 +39,7 @@ test1() {
 # at some point we had a bug in this logic (see https://github.com/ClickHouse/ClickHouse/pull/45892#issue-1566140414)
 test2() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
-    $CLICKHOUSE_CLIENT --query_id="$query_id" -nq "
+    $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
         SELECT URL, EventDate, max(URL)
@@ -53,7 +53,7 @@ test2() {
 }
 
 test3() {
-    $CLICKHOUSE_CLIENT -nq "
+    $CLICKHOUSE_CLIENT -q "
         SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
         SET max_threads = 16, prefer_localhost_replica = 1, read_in_order_two_level_merge_threshold = 1000, query_plan_aggregation_in_order = 1, distributed_aggregation_memory_efficient = 1;
 
