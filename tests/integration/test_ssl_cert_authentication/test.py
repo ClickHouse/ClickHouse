@@ -334,6 +334,8 @@ def test_create_user():
         'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
     )
 
+     instance.query("DROP USER emma")
+
 
 def test_x509_san_support():
     assert (
@@ -370,6 +372,8 @@ def test_x509_san_support():
         == "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
     )
 
+    instance.query("DROP USER jemma")
+
 
 def test_x509_san_wildcard_support():
     assert (
@@ -404,3 +408,5 @@ def test_x509_san_wildcard_support():
         instance.query("SHOW CREATE USER brian")
         == "CREATE USER brian IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://bar.com/foo/*/far\\'\n"
     )
+
+    instance.query("DROP USER brian")
