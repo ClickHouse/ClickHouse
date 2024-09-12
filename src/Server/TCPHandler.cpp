@@ -1270,7 +1270,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out, client_tcp_protocol_version);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1280,7 +1280,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRanges
 void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out);
+    request.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1652,6 +1652,9 @@ void TCPHandler::receiveAddendum()
         readStringBinary(proto_send_chunked_cl, *in);
         readStringBinary(proto_recv_chunked_cl, *in);
     }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        readVarUInt(client_parallel_replicas_protocol_version, *in);
 }
 
 
@@ -1679,6 +1682,8 @@ void TCPHandler::sendHello()
     writeVarUInt(VERSION_MAJOR, *out);
     writeVarUInt(VERSION_MINOR, *out);
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)

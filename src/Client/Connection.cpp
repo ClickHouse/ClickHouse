@@ -455,6 +455,9 @@ void Connection::sendAddendum()
         writeStringBinary(proto_recv_chunked, *out);
     }
 
+    if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
+
     out->next();
 }
 
@@ -525,6 +528,8 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+            readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
             readStringBinary(server_timezone, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
@@ -959,7 +964,7 @@ void Connection::sendReadTaskResponse(const String & response)
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out);
+    response.serialize(*out, server_parallel_replicas_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1413,7 +1418,7 @@ ParallelReadRequest Connection::receiveParallelReadRequest() const
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in, server_revision);
+    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
 }
 
 

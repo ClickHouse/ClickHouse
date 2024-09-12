@@ -63,7 +63,7 @@ struct ParallelReadRequest
     /// Contains only data part names without mark ranges.
     RangesInDataPartsDescription description;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe() const;
     static ParallelReadRequest deserialize(ReadBuffer & in);
     void merge(ParallelReadRequest & other);
@@ -78,7 +78,7 @@ struct ParallelReadResponse
     bool finish{false};
     RangesInDataPartsDescription description;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 replica_protocol_version) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
 };
@@ -102,9 +102,9 @@ struct InitialAllRangesAnnouncement
     size_t replica_num;
     size_t mark_segment_size;
 
-    void serialize(WriteBuffer & out, UInt64 client_protocol_revision) const;
+    void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe();
-    static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 client_protocol_revisionn);
+    static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 replica_protocol_version);
 };
 
 
