@@ -18,6 +18,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int FORMAT_VERSION_TOO_OLD;
+}
+
 /// Storage for read-only integration with Apache Iceberg tables in Amazon S3 (see https://iceberg.apache.org/)
 /// Right now it's implemented on top of StorageS3 and right now it doesn't support
 /// many Iceberg features like schema evolution, partitioning, positional and equality deletes.
@@ -38,8 +43,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode)
     {
-        auto object_storage = base_configuration->createObjectStorage(context, /* is_readonly */true);
-        DataLakeMetadataPtr metadata;
+        auto object_storage = base_configuration->createObjectStorage(context, /* is_readonly */ true);
         NamesAndTypesList schema_from_metadata;
         const bool use_schema_from_metadata = columns_.empty();
 
@@ -48,28 +52,36 @@ public:
 
         ConfigurationPtr configuration = base_configuration->clone();
 
+        DataLakeMetadataPtr datalake_metadata;
+
         try
         {
-            metadata = DataLakeMetadata::create(object_storage, base_configuration, context);
-            configuration->setPaths(metadata->getDataFileInfos());
+            datalake_metadata = DataLakeMetadata::create(object_storage, base_configuration, context);
+            configuration->setPaths(datalake_metadata->getDataFileInfos());
             if (use_schema_from_metadata)
-                schema_from_metadata = metadata->getTableSchema();
+                schema_from_metadata = datalake_metadata->getTableSchema();
         }
         catch (...)
         {
             if (mode <= LoadingStrictnessLevel::CREATE)
                 throw;
 
-            metadata.reset();
+            datalake_metadata.reset();
             configuration->setPaths({});
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
         return std::make_shared<IStorageDataLake<DataLakeMetadata>>(
-            base_configuration, std::move(metadata), configuration, object_storage,
-            context, table_id_,
+            base_configuration,
+            std::move(datalake_metadata),
+            configuration,
+            object_storage,
+            context,
+            table_id_,
             use_schema_from_metadata ? ColumnsDescription(schema_from_metadata) : columns_,
-            constraints_, comment_, format_settings_);
+            constraints_,
+            comment_,
+            format_settings_);
     }
 
     String getName() const override { return DataLakeMetadata::name; }
@@ -102,14 +114,29 @@ public:
         Storage::updateConfiguration(local_context);
 
         auto new_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
-        if (current_metadata && *current_metadata == *new_metadata)
-            return;
+        if (!current_metadata || (*current_metadata != *new_metadata))
+        {
+            if constexpr (std::is_same_v<IcebergMetadata, DataLakeMetadata>)
+            {
+                throw Exception(
+                    ErrorCodes::FORMAT_VERSION_TOO_OLD,
+                    "Storage thinks that actual metadata version is {}, but actual metadata version is {} current",
+                    (dynamic_cast<IcebergMetadata *>(current_metadata.get()) != nullptr)
+                        ? dynamic_cast<IcebergMetadata *>(current_metadata.get())->getVersion()
+                        : -1,
+                    (dynamic_cast<IcebergMetadata *>(new_metadata.get()) != nullptr)
+                        ? dynamic_cast<IcebergMetadata *>(new_metadata.get())->getVersion()
+                        : -1);
+            }
+            else
+            {
+                current_metadata = std::move(new_metadata);
+            }
+        }
 
-        current_metadata = std::move(new_metadata);
         auto updated_configuration = base_configuration->clone();
         updated_configuration->setPaths(current_metadata->getDataFileInfos());
         updated_configuration->setPartitionColumns(current_metadata->getPartitionColumns());
-
 
         Storage::configuration = updated_configuration;
     }
@@ -136,9 +163,36 @@ public:
         }
     }
 
+    void updateExternalDynamicMetadata(ContextPtr context) override
+    {
+        if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
+        {
+            current_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, context);
+            ColumnsDescription column_description{current_metadata->getTableSchema()};
+            StorageInMemoryMetadata metadata;
+            metadata.setColumns(std::move(column_description));
+            setInMemoryMetadata(metadata);
+            return;
+        }
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
+    }
+
+    bool hasExternalDynamicMetadata() const override { return std::is_same_v<DataLakeMetadata, IcebergMetadata>; }
+
+
 private:
     ConfigurationPtr base_configuration;
     DataLakeMetadataPtr current_metadata;
+    std::optional<Int32> current_version;
+
+    void modifyColumnNames(Names & column_names) const override
+    {
+        if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
+        {
+            column_names = current_metadata->getTableSchema().getNames();
+        }
+    }
+
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,

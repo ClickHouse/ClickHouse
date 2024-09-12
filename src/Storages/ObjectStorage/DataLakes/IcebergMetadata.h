@@ -186,9 +186,9 @@ public:
         ConfigurationPtr configuration,
         ContextPtr local_context);
 
-private:
     size_t getVersion() const { return metadata_version; }
 
+private:
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     Int32 metadata_version;

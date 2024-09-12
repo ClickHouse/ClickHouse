@@ -263,9 +263,25 @@ void StorageObjectStorage::read(
                         "Reading from a partitioned {} storage is not implemented yet",
                         getName());
     }
+    for (const auto & column_name : column_names)
+    {
+        LOG_DEBUG(&Poco::Logger::get("Column Names"), "Column Name: {}", column_name);
+    }
 
-    const auto read_from_format_info = prepareReadingFromFormat(
-        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+
+    LOG_DEBUG(&Poco::Logger::get("Stack trace of read"), "{}", StackTrace().toString());
+
+    auto names = column_names;
+    modifyColumnNames(names);
+
+    for (const auto & column_name : names)
+    {
+        LOG_DEBUG(&Poco::Logger::get("New Column Names"), "Column Name: {}", column_name);
+    }
+
+
+    const auto read_from_format_info
+        = prepareReadingFromFormat(names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -273,7 +289,7 @@ void StorageObjectStorage::read(
         object_storage,
         configuration,
         getName(),
-        column_names,
+        names,
         getVirtualsList(),
         query_info,
         storage_snapshot,

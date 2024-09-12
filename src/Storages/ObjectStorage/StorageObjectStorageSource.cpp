@@ -20,7 +20,6 @@
 
 
 namespace fs = std::filesystem;
-
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
@@ -31,8 +30,7 @@ namespace CurrentMetrics
     extern const Metric StorageObjectStorageThreads;
     extern const Metric StorageObjectStorageThreadsActive;
     extern const Metric StorageObjectStorageThreadsScheduled;
-}
-
+    }
 namespace DB
 {
 
@@ -670,6 +668,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
         for (auto && key : keys)
         {
+            auto object_info = std::make_shared<ObjectInfo>(key.data_path, std::nullopt, key.initial_schema, key.schema_transform);
             read_keys_->emplace_back(object_info);
         }
     }

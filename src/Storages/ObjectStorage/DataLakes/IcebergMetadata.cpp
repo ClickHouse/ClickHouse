@@ -44,7 +44,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
-extern const int LOGICAL_ERROR:
+extern const int LOGICAL_ERROR;
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -365,6 +365,10 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
 {
     current_old_id = old_id;
     current_new_id = new_id;
+    SCOPE_EXIT({
+        current_old_id = -1;
+        current_new_id = -1;
+    });
     Poco::JSON::Object::Ptr old_schema, new_schema;
     if (transform_dags_by_ids.count({old_id, new_id}))
     {
@@ -390,10 +394,6 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
     }
-    SCOPE_EXIT({
-        current_old_id = -1;
-        current_new_id = -1;
-    });
     return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema, new_schema);
 }
 
