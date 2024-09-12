@@ -8,9 +8,11 @@ CREATE TABLE 03231_max_execution_time_t
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/03231_max_execution_time', 'r1')
 ORDER BY (key, value);
 
+SET max_rows_to_read = 100_000_000; -- to avoid DB::Exception: Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 20.00 million, current rows: 100.00 million. (TOO_MANY_ROWS)
 INSERT INTO 03231_max_execution_time_t SELECT number, toString(number) FROM numbers(100_000_000);
 
 SET allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree=1, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
+
 SELECT key, SUM(length(value)) FROM 03231_max_execution_time_t GROUP BY key SETTINGS max_execution_time=1; -- { serverError TIMEOUT_EXCEEDED }
 SELECT key, SUM(length(value)) FROM 03231_max_execution_time_t GROUP BY key SETTINGS max_execution_time_leaf=1; -- { serverError TIMEOUT_EXCEEDED }
 -- Can return partial result
