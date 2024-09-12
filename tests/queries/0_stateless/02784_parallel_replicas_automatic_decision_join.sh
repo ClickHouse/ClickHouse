@@ -9,17 +9,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
 function were_parallel_replicas_used () {
-    # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            concat('Distinct parallel subqueries: ' , countDistinctIf(query, initial_query_id != query_id)::String) as subqueries_parallelized,
-            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
+            concat('Used parallel replicas: ', (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String) as used
         FROM system.query_log
     WHERE event_date >= yesterday()
       AND initial_query_id LIKE '$1%'
-    GROUP BY initial_query_id
-    ORDER BY min(event_time_microseconds) ASC
+      AND query_id = initial_query_id
+      AND type = 'QueryFinish'
+      AND current_database = '$CLICKHOUSE_DATABASE'
+    ORDER BY event_time_microseconds ASC
     FORMAT TSV"
 }
 
