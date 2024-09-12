@@ -369,3 +369,6 @@
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
+[submodule "contrib/postgres"]
+	path = contrib/postgres
+	url = https://github.com/ClickHouse/postgres.git
