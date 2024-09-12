@@ -17,11 +17,12 @@
 
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
-#include <Poco/Net/MessageHeader.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
+#include <Poco/Net/MessageHeader.h>
 
 
 namespace DB
@@ -85,7 +86,15 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
         /// We use `formatWithPossiblyHidingSensitiveData` instead of `getColumnNameWithoutAlias` because `column->type` is an ASTFunction.
         /// `getColumnNameWithoutAlias` will return name of the function with `(arguments)` even if arguments is empty.
         if (column)
-            structure.emplace_back(column->name, column->type->formatWithPossiblyHidingSensitiveData(0, true, true, false));
+            structure.emplace_back(
+                column->name,
+                column->type->formatWithPossiblyHidingSensitiveData(
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*always_quote_identifiers=*/false,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: expected column definition, got {}", child->formatForErrorMessage());
     }
@@ -102,7 +111,15 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: {}", error);
 
     for (size_t i = 0; i < type_list_raw->children.size(); ++i)
-        structure.emplace_back("_" + toString(i + 1), type_list_raw->children[i]->formatWithPossiblyHidingSensitiveData(0, true, true, false));
+        structure.emplace_back(
+            "_" + toString(i + 1),
+            type_list_raw->children[i]->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*always_quote_identifiers=*/false,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
 
 void BaseExternalTable::initSampleBlock()

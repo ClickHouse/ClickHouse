@@ -83,7 +83,11 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
         return;
 
     if (!headers_started_sending)
+    {
+        if (compression_method != CompressionMethod::None)
+            response.set("Content-Encoding", toContentEncodingName(compression_method));
         startSendHeaders();
+    }
 
     writeHeaderSummary();
     writeExceptionCode();
@@ -105,7 +109,13 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         initialized = true;
 
         if (compression_method != CompressionMethod::None)
-            response.set("Content-Encoding", toContentEncodingName(compression_method));
+        {
+            /// If we've already sent headers, just send the `Content-Encoding` down the socket directly
+            if (headers_started_sending)
+                socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
+            else
+                response.set("Content-Encoding", toContentEncodingName(compression_method));
+        }
 
         startSendHeaders();
         finishSendHeaders();
@@ -177,8 +187,12 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
         /// If no body data just send header
         startSendHeaders();
 
+        /// `finalizeImpl` must be idempotent, so set `initialized` here to not send stuff twice
         if (!initialized && offset() && compression_method != CompressionMethod::None)
+        {
+            initialized = true;
             socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
+        }
 
         finishSendHeaders();
     }
