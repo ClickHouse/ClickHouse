@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
+#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -688,8 +689,25 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeDataPartType part_type;
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
+
+    // If not temporary insert try to reserve respecting min free disk bytes
+    size_t reserve_extra = 0;
+
+    if (!is_temp)
+    {
+        const auto context = CurrentThread::getQueryContext();
+        const auto * settings = context ? &context->getSettingsRef() : nullptr;
+
+        const UInt64 min_bytes = settings->min_free_disk_bytes_to_throw_insert;
+        const Float64 min_ratio = settings->min_free_disk_ratio_to_throw_insert;
+
+        const auto total_disk_space = parent_part->getDataPartStorage().calculateTotalSizeOnDisk();
+        const UInt64 min_bytes_from_ratio = static_cast<UInt64>(min_ratio * total_disk_space);
+        reserve_extra = std::min(min_bytes, min_bytes_from_ratio);
+    }
+
     // just check if there is enough space on parent volume
-    MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
+    MergeTreeData::reserveSpace(expected_size + reserve_extra, parent_part->getDataPartStorage());
     part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
