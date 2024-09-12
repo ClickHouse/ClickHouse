@@ -24,6 +24,9 @@ struct WriteSettings
     bool s3_allow_parallel_part_upload = true;
     bool azure_allow_parallel_part_upload = true;
 
+    bool use_adaptive_write_buffer = false;
+    size_t adaptive_write_buffer_initial_size = 16 * 1024;
+
     bool operator==(const WriteSettings & other) const = default;
 };
 

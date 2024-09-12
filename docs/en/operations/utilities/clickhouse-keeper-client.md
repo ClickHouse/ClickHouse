@@ -47,6 +47,8 @@ keeper foo bar
 
 -   `ls '[path]'` -- Lists the nodes for the given path (default: cwd)
 -   `cd '[path]'` -- Changes the working path (default `.`)
+-   `cp '<src>' '<dest>'`  -- Copies 'src' node to 'dest' path
+-   `mv '<src>' '<dest>'`  -- Moves 'src' node to the 'dest' path
 -   `exists '<path>'` -- Returns `1` if node exists, `0` otherwise
 -   `set '<path>' <value> [version]` -- Updates the node's value. Only updates if version matches (default: -1)
 -   `create '<path>' <value> [mode]` -- Creates new node with the set value

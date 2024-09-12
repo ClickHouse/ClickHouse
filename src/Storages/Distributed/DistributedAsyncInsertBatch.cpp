@@ -242,8 +242,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
                 auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                auto result = results.front();
-                parent.pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+                auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
                 connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
@@ -302,8 +301,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
             auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            auto result = results.front();
-            parent.pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+            auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
             auto connection = std::move(result.entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
