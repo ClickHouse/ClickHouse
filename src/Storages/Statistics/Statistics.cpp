@@ -213,9 +213,9 @@ void Statistics::merge(const Statistics & other)
     for (const auto & [column_name, column_stat] : other.column_stats)
     {
         if (!column_stats.contains(column_name))
-            column_stats[column_name]->merge(*column_stat);
-        else
             column_stats[column_name]= column_stat;
+        else
+            column_stats[column_name]->merge(*column_stat);
     }
 }
 
