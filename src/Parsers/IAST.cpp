@@ -219,6 +219,7 @@ String IAST::getColumnNameWithoutAlias() const
 
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
+    checkIdentifier(name);
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
@@ -260,6 +261,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
 
 void IAST::FormatSettings::quoteIdentifier(const String & name) const
 {
+    checkIdentifier(name);
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
@@ -281,6 +283,20 @@ void IAST::FormatSettings::quoteIdentifier(const String & name) const
         {
             writeBackQuotedStringMySQL(name, ostr);
             break;
+        }
+    }
+}
+
+void IAST::FormatSettings::checkIdentifier(const String & name) const
+{
+    if (enable_secure_identifiers)
+    {
+        for (char c : name)
+        {
+            if (!std::isalnum(c) && c != '_')
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a secure identifier: `{}`", name);
+            }
         }
     }
 }

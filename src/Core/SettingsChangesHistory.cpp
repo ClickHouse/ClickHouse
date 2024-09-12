@@ -79,6 +79,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
             {"database_replicated_allow_replicated_engine_arguments", 1, 0, "Don't allow explicit arguments by default"},
             {"database_replicated_allow_explicit_uuid", 0, 0, "Added a new setting to disallow explicitly specifying table UUID"},
+            {"enable_secure_identifiers", false, false, "New setting."},
         }
     },
     {"24.8",

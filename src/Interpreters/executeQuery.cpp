@@ -929,6 +929,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, context->getSettingsRef().allow_experimental_analyzer);
 
+        if (settings.enable_secure_identifiers)
+        {
+            WriteBufferFromOwnString buf;
+            IAST::FormatSettings enable_secure_identifiers_settings(buf, true);
+            enable_secure_identifiers_settings.enable_secure_identifiers = true;
+            ast->format(enable_secure_identifiers_settings);
+        }
+
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
 
