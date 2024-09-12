@@ -122,8 +122,7 @@ struct ReadSettings
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;
 
-    // Resource to be used during reading
-    ResourceLink resource_link;
+    IOSchedulingSettings io_scheduling;
 
     size_t http_max_tries = 10;
     size_t http_retry_initial_backoff_ms = 100;

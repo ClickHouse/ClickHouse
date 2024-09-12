@@ -41,6 +41,21 @@ Special cases
 6	[1,9.3]	0.005731362878640178
 1	[2,3.2]	0.15200169244542905
 7	[5.5,4.7]	0.3503476876550442
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
 -- Setting "max_limit_for_ann_queries"
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
@@ -53,6 +68,24 @@ Expression (Projection)
             Parts: 1/1
             Granules: 4/4
 -- Non-default quantization
+1	[2,3.2]	2.3323807824711897
+2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab_f64)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
 1	[2,3.2]	2.3323807824711897
 2	[4.2,3.4]	4.427188573446585
 0	[4.6,2.3]	4.609772130377966
@@ -79,6 +112,24 @@ Expression (Projection)
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
         ReadFromMergeTree (default.tab_f16)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+1	[2,3.2]	2.3323807824711897
+2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab_bf16)
         Indexes:
           PrimaryKey
             Condition: true
