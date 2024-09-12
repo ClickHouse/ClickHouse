@@ -1065,6 +1065,11 @@ namespace
 
     void setNullTableEngine(ASTStorage & storage)
     {
+        storage.forEachPointerToChild([](void ** ptr) mutable
+        {
+            *ptr = nullptr;
+        });
+
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Null";
         engine_ast->no_empty_args = true;
@@ -1151,7 +1156,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
         {
             if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
+            {
                 setNullTableEngine(*create.storage);
+            }
         }
         return;
     }
