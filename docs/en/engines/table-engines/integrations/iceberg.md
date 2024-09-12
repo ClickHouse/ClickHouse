@@ -6,6 +6,10 @@ sidebar_label: Iceberg
 
 # Iceberg Table Engine
 
+:::warning 
+We strongly advise against using the Iceberg Table Engine right now because ClickHouse wasn’t originally designed to support tables that have externally changing schemas. As a result, some features that work with regular tables may be unavailable or may not function correctly. We recommend using the [Iceberg Table Function]((/docs/en/sql-reference/table-functions/iceberg.md)) instead."
+:::
+
 This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure and locally stored tables.
 
 ## Create Table
