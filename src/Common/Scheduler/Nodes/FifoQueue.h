@@ -34,6 +34,17 @@ public:
         : ISchedulerQueue(event_queue_, info_)
     {}
 
+    ~FifoQueue() override
+    {
+        while (!requests.empty())
+        {
+            ResourceRequest * request = &requests.front();
+            requests.pop_front();
+            request->failed(std::make_exception_ptr(
+                Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request was destructed")));
+        }
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))

@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <barrier>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -119,6 +120,7 @@ class ResourceTestClass : public ResourceTestBase
     struct Request : public ResourceRequest
     {
         String name;
+        std::exception_ptr exception;
 
         Request(ResourceCost cost_, const String & name_)
             : ResourceRequest(cost_)
@@ -127,6 +129,11 @@ class ResourceTestClass : public ResourceTestBase
 
         void execute() override
         {
+        }
+
+        void failed(const std::exception_ptr & ptr) override
+        {
+            exception = ptr;
         }
     };
 

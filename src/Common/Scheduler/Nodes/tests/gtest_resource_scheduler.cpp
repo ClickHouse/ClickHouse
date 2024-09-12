@@ -101,6 +101,11 @@ struct MyRequest : public ResourceRequest
         if (on_execute)
             on_execute();
     }
+
+    void failed(const std::exception_ptr &) override
+    {
+        FAIL();
+    }
 };
 
 TEST(SchedulerRoot, Smoke)

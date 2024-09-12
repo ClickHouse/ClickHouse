@@ -12,7 +12,6 @@
 
 #include <memory>
 #include <unordered_map>
-#include <vector>
 
 namespace DB
 {
@@ -192,7 +191,8 @@ private:
 
         void removeQueue(EventQueue *)
         {
-            // TODO(serxa): cancel all requests, this unified node is not capable of service resoruce requests now
+            // This unified node will not be able to process resource requests any longer
+            // All remaining resource requests are be aborted on queue destruction
             queue.reset();
         }
     };
