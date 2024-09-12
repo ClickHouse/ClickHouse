@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int NO_ACTIVE_REPLICAS;
     extern const int CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1740,6 +1741,9 @@ bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
 {
     waitDatabaseStarted();
+
+    if (!local_context->getServerSettings().database_replicated_allow_detach_permanently)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for DETACH TABLE PERMANENTLY is disabled");
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
