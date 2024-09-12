@@ -1,5 +1,4 @@
 #include "NativeORCBlockInputFormat.h"
-#include "Columns/ColumnsCommon.h"
 
 #if USE_ORC
 #    include <Columns/ColumnDecimal.h>
@@ -7,6 +6,7 @@
 #    include <Columns/ColumnMap.h>
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsCommon.h>
 #    include <Columns/ColumnsDateTime.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypeArray.h>
@@ -17,13 +17,13 @@
 #    include <DataTypes/DataTypeIPv4andIPv6.h>
 #    include <DataTypes/DataTypeLowCardinality.h>
 #    include <DataTypes/DataTypeMap.h>
+#    include <DataTypes/DataTypeNested.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypeTuple.h>
 #    include <DataTypes/DataTypesDecimal.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/NestedUtils.h>
-#    include <DataTypes/DataTypeNested.h>
 #    include <Formats/FormatFactory.h>
 #    include <Formats/SchemaInferenceUtils.h>
 #    include <Formats/insertNullAsDefaultIfNeeded.h>
