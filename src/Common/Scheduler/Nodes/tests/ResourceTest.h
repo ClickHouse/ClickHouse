@@ -166,7 +166,7 @@ public:
 
     void enqueue(const UnifiedSchedulerNodePtr & node, const std::vector<ResourceCost> & costs)
     {
-        enqueueImpl(node->getQueue(), costs);
+        enqueueImpl(node->getQueue(), costs, node->basename);
     }
 
     void enqueue(const String & path, const std::vector<ResourceCost> & costs)
@@ -192,11 +192,11 @@ public:
         enqueueImpl(dynamic_cast<ISchedulerQueue *>(node), costs);
     }
 
-    void enqueueImpl(ISchedulerQueue * queue, const std::vector<ResourceCost> & costs)
+    void enqueueImpl(ISchedulerQueue * queue, const std::vector<ResourceCost> & costs, const String & name = {})
     {
         ASSERT_TRUE(queue != nullptr); // not a queue
         for (ResourceCost cost : costs)
-            queue->enqueueRequest(new Request(cost, queue->basename));
+            queue->enqueueRequest(new Request(cost, name.empty() ? queue->basename : name));
         processEvents(); // to activate queues
     }
 
