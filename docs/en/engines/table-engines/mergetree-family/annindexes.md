@@ -109,7 +109,7 @@ The vector similarity index currently does not work with per-table, non-default 
 
 Vector index creation is known to be slow. To speed the process up, index creation can be parallelized. The maximum number of threads can be
 configured using server configuration
-setting [max_build_vector_similarity_index_thread_pool_size](server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
+setting [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
 
 ANN indexes are built during column insertion and merge. As a result, `INSERT` and `OPTIMIZE` statements will be slower than for ordinary
 tables. ANNIndexes are ideally used only with immutable or rarely changed data, respectively when are far more read requests than write
