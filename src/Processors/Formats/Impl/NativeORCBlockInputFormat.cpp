@@ -164,6 +164,9 @@ static DataTypePtr parseORCType(
             else
                 type = std::make_shared<DataTypeString>();
 
+            // std::cout << "type:" << type->getName() << std::endl;
+            // std::cout << "dictionary_as_low_cardinality:" << dictionary_as_low_cardinality << std::endl;
+
             /// Wrap type in LowCardinality if orc column is dictionary encoded and dictionary_as_low_cardinality is true
             if (dictionary_as_low_cardinality && isDictionaryEncoded(stripe_info, orc_type))
                 type = std::make_shared<DataTypeLowCardinality>(type);
@@ -887,11 +890,18 @@ void NativeORCBlockInputFormat::prepareFileReader()
     total_stripes = static_cast<int>(file_reader->getNumberOfStripes());
     current_stripe = -1;
 
+
+    std::unique_ptr<orc::StripeInformation> stripe_info;
+    if (file_reader->getNumberOfStripes())
+        stripe_info = file_reader->getStripe(0);
+
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         getPort().getHeader(),
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
-        format_settings.orc.case_insensitive_column_matching);
+        format_settings.orc.case_insensitive_column_matching,
+        format_settings.orc.dictionary_as_low_cardinality,
+        std::move(stripe_info));
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
@@ -1192,7 +1202,6 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         holder_type = std::make_shared<DataTypeString>();
 
     auto holder_column = holder_type->createColumn();
-
     if constexpr (fixed_string)
     {
         const size_t n = orc_type->getMaximumLength();
@@ -1250,34 +1259,28 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             return nullptr;
 
         const auto & index_data = concrete_index_column->getData();
-        auto res_column = ColumnVector<IndexType>::create(rows);
-        auto & res_data = dynamic_cast<ColumnVector<IndexType> &>(*res_column).getData();
+        auto new_index_column = ColumnVector<IndexType>::create(rows);
+        auto & new_index_data = dynamic_cast<ColumnVector<IndexType> &>(*new_index_column).getData();
 
         if (!orc_str_column->hasNulls)
         {
             for (size_t i = 0; i < rows; ++i)
             {
                 /// First map row index to orc dictionary index, then map orc dictionary index to CH dictionary index
-                res_data[i] = index_data[orc_str_column->index[i]];
+                new_index_data[i] = index_data[orc_str_column->index[i]];
             }
         }
         else
         {
             for (size_t i = 0; i < rows; ++i)
             {
-                if (orc_str_column->notNull[i])
-                    res_data[i] = index_data[orc_str_column->index[i]];
-                else
-                {
-                    /// Set index of null values to 0
-                    /// If dictionary_column is nullable, 0 represents null value.
-                    /// Otherwise, 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
-                    res_data[i] = 0;
-                }
+                /// Set index 0 if we meet null value. If dictionary_column is nullable, 0 represents null value.
+                /// Otherwise 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
+                new_index_data[i] = orc_str_column->notNull[i] ? index_data[orc_str_column->index[i]] : 0;
             }
         }
 
-        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(index_column));
+        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(new_index_column));
     };
 
     MutableColumnPtr internal_column;
@@ -1289,7 +1292,6 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         internal_column = call_by_type(UInt32());
     if (!internal_column)
         internal_column = call_by_type(UInt64());
-
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
@@ -1591,7 +1593,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             if (orc_column->isEncoded && dictionary_as_low_cardinality)
             {
                 bool nullable = type_hint ? isNullableOrLowCardinalityNullable(type_hint) : true;
-                return readColumnWithEncodedStringOrFixedStringData<true>(orc_column, orc_type, column_name, nullable);
+                return readColumnWithEncodedStringOrFixedStringData<false>(orc_column, orc_type, column_name, nullable);
             }
             else
                 return readColumnWithStringData(orc_column, orc_type, column_name);
@@ -1616,7 +1618,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             if (orc_column->isEncoded && dictionary_as_low_cardinality)
             {
                 bool nullable = type_hint ? isNullableOrLowCardinalityNullable(type_hint) : true;
-                return readColumnWithEncodedStringOrFixedStringData<false>(orc_column, orc_type, column_name, nullable);
+                return readColumnWithEncodedStringOrFixedStringData<true>(orc_column, orc_type, column_name, nullable);
             }
             else
                 return readColumnWithFixedStringData(orc_column, orc_type, column_name);
