@@ -24,6 +24,7 @@ Aggregatefunction
 AggregatingMergeTree
 AggregatorThreads
 AggregatorThreadsActive
+AzureQueue
 Akka
 AlertManager
 Alexey
@@ -120,6 +121,7 @@ CMPLNT
 CMake
 CMakeLists
 CODECS
+CountMin
 COVID
 CPUFrequencyMHz
 CPUs
@@ -151,6 +153,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+CKibana
 Clangd
 ClickBench
 ClickCat
@@ -247,6 +250,7 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
+ElasticSearch
 ETag
 Ecto
 EdgeAngle
@@ -421,6 +425,7 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
+JSONCompactWithProgress
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -471,6 +476,7 @@ KeeperMap
 KeeperOutstandingRequests
 Kerberos
 Khanna
+Kibana
 KittenHouse
 Klickhouse
 Kolmogorov
@@ -975,6 +981,7 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+TimescaleDB's
 TimeSeries
 Timeunit
 TinyLog
@@ -1367,6 +1374,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckibana
 ckman
 clangd
 cli
@@ -1915,6 +1923,7 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
+jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -2583,6 +2592,7 @@ sqlinsert
 sqlite
 sqrt
 src
+dest
 srcReplicas
 sshkey
 stackoverflow

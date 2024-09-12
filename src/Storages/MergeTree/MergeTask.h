@@ -40,6 +40,7 @@ namespace DB
 
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
+class RowsSourcesTemporaryFile;
 
 /**
  * Overview of the merge algorithm
@@ -227,14 +228,12 @@ private:
         bool need_prefix;
         MergeTreeData::MergingParams merging_params{};
 
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
         DiskPtr disk{nullptr};
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
         /// For projections to rebuild
@@ -269,12 +268,12 @@ private:
     {
         bool execute() override;
 
-        bool prepare();
-        bool executeImpl();
+        bool prepare() const;
+        bool executeImpl() const;
         void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
@@ -289,10 +288,10 @@ private:
         void calculateProjections(const Block & block) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections();
+        bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
-        void createMergedStream();
+        void createMergedStream() const;
         void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
@@ -314,11 +313,9 @@ private:
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool read_with_direct_io{false};
         bool need_sync{false};
@@ -334,14 +331,22 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::optional<Pipe> prepared_pipe;
+
+        /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
+        /// and it initiates prefetching of the first range of that column.
+        struct PreparedColumnPipeline
+        {
+            QueryPipeline pipeline;
+            MergeTreeIndices indexes_to_recalc;
+        };
+
+        std::optional<PreparedColumnPipeline> prepared_pipeline;
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
-        std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
         UInt64 elapsed_execute_ns{0};
     };
 
@@ -379,7 +384,7 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
-        Pipe createPipeForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
