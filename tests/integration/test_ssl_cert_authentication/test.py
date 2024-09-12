@@ -334,7 +334,7 @@ def test_create_user():
         'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
     )
 
-     instance.query("DROP USER emma")
+    instance.query("DROP USER emma")
 
 
 def test_x509_san_support():
