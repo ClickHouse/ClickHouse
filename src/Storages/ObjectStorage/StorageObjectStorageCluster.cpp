@@ -68,7 +68,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     if (sample_path.empty() && context_->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context_, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
     setInMemoryMetadata(metadata);
 }
 
