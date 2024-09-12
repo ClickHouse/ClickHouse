@@ -5,6 +5,7 @@
 #include <Common/Scheduler/Nodes/FairPolicy.h>
 #include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/SchedulingSettings.h>
@@ -69,6 +70,13 @@ private:
         if (node->parent)
             node->parent->removeChild(node.get());
         new_parent->attachChild(node);
+    }
+
+    /// Helper function for managing a parent of a node
+    static void detach(const SchedulerNodePtr & node)
+    {
+        if (node->parent)
+            node->parent->removeChild(node.get());
     }
 
     /// A branch of the tree for a specific priority value
@@ -193,6 +201,8 @@ private:
         {
             // This unified node will not be able to process resource requests any longer
             // All remaining resource requests are be aborted on queue destruction
+            detach(queue);
+            std::static_pointer_cast<ISchedulerQueue>(queue)->purgeQueue();
             queue.reset();
         }
     };
@@ -276,9 +286,9 @@ public:
     }
 
     /// Returns the queue to be used for resource requests or `nullptr` if it has unified children
-    ISchedulerQueue * getQueue()
+    std::shared_ptr<ISchedulerQueue> getQueue()
     {
-        return static_cast<ISchedulerQueue *>(impl.branch.queue.get());
+        return static_pointer_cast<ISchedulerQueue>(impl.branch.queue);
     }
 
 protected: // Hide all the ISchedulerNode interface methods as an implementation details

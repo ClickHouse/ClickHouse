@@ -51,6 +51,11 @@ public:
     /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
     virtual bool cancelRequest(ResourceRequest * request) = 0;
 
+    /// Fails all the resource requests in queue and marks this queue as not usable.
+    /// Afterwards any new request will be failed on `enqueueRequest()`.
+    /// NOTE: This is done for queues that are about to be destructed.
+    virtual void purgeQueue() = 0;
+
     /// For introspection
     ResourceCost getBudget() const
     {

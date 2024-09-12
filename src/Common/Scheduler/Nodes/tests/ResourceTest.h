@@ -119,11 +119,12 @@ class ResourceTestClass : public ResourceTestBase
 {
     struct Request : public ResourceRequest
     {
+        ResourceTestClass * test;
         String name;
-        std::exception_ptr exception;
 
-        Request(ResourceCost cost_, const String & name_)
+        Request(ResourceTestClass * test_, ResourceCost cost_, const String & name_)
             : ResourceRequest(cost_)
+            , test(test_)
             , name(name_)
         {}
 
@@ -131,13 +132,19 @@ class ResourceTestClass : public ResourceTestBase
         {
         }
 
-        void failed(const std::exception_ptr & ptr) override
+        void failed(const std::exception_ptr &) override
         {
-            exception = ptr;
+            test->failed_cost += cost;
+            delete this;
         }
     };
 
 public:
+    ~ResourceTestClass()
+    {
+        dequeue(); // Just to avoid any leaks of `Request` object
+    }
+
     template <class TClass>
     void add(const String & path, const String & xml = {})
     {
@@ -173,7 +180,7 @@ public:
 
     void enqueue(const UnifiedSchedulerNodePtr & node, const std::vector<ResourceCost> & costs)
     {
-        enqueueImpl(node->getQueue(), costs, node->basename);
+        enqueueImpl(node->getQueue().get(), costs, node->basename);
     }
 
     void enqueue(const String & path, const std::vector<ResourceCost> & costs)
@@ -203,7 +210,7 @@ public:
     {
         ASSERT_TRUE(queue != nullptr); // not a queue
         for (ResourceCost cost : costs)
-            queue->enqueueRequest(new Request(cost, name.empty() ? queue->basename : name));
+            queue->enqueueRequest(new Request(this, cost, name.empty() ? queue->basename : name));
         processEvents(); // to activate queues
     }
 
@@ -259,6 +266,12 @@ public:
         consumed_cost[name] -= value;
     }
 
+    void failed(ResourceCost value)
+    {
+        EXPECT_EQ(failed_cost, value);
+        failed_cost -= value;
+    }
+
     void processEvents()
     {
         while (event_queue.tryProcess()) {}
@@ -268,6 +281,7 @@ private:
     EventQueue event_queue;
     SchedulerNodePtr root_node;
     std::unordered_map<String, ResourceCost> consumed_cost;
+    ResourceCost failed_cost = 0;
 };
 
 template <class TManager>
