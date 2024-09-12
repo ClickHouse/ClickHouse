@@ -63,7 +63,7 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     {
         const auto & err = response.GetError();
         throw S3Exception(
-            fmt::format("{} (Code: {}, s3 exception: {})",
+            fmt::format("{} (Code: {}, S3 exception: '{}')",
                         err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
             err.GetErrorType());
     }
@@ -282,7 +282,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         client.get(),
         uri.bucket,
         object.remote_path,
-        buf_size,
+        write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
         request_settings,
         std::move(blob_storage_log),
         attributes,

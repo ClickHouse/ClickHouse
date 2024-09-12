@@ -65,7 +65,7 @@ TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, Cu
 
 std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(size_t max_file_size)
 {
-    if (file_cache)
+    if (file_cache && file_cache->isInitialized())
     {
         auto holder = createCacheFile(max_file_size);
         return std::make_unique<WriteBufferToFileSegment>(std::move(holder));
@@ -81,7 +81,7 @@ std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(si
 
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
-    if (file_cache)
+    if (file_cache && file_cache->isInitialized())
     {
         auto holder = createCacheFile(max_file_size);
 

@@ -32,8 +32,10 @@ WriteBufferFromFile::WriteBufferFromFile(
     ThrottlerPtr throttler_,
     mode_t mode,
     char * existing_memory,
-    size_t alignment)
-    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, throttler_, alignment, file_name_)
+    size_t alignment,
+    bool use_adaptive_buffer_size_,
+    size_t adaptive_buffer_initial_size)
+    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, throttler_, alignment, file_name_, use_adaptive_buffer_size_, adaptive_buffer_initial_size)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -66,8 +68,10 @@ WriteBufferFromFile::WriteBufferFromFile(
     size_t buf_size,
     ThrottlerPtr throttler_,
     char * existing_memory,
-    size_t alignment)
-    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, throttler_, alignment, original_file_name)
+    size_t alignment,
+    bool use_adaptive_buffer_size_,
+    size_t adaptive_buffer_initial_size)
+    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, throttler_, alignment, original_file_name, use_adaptive_buffer_size_, adaptive_buffer_initial_size)
 {
     fd_ = -1;
 }

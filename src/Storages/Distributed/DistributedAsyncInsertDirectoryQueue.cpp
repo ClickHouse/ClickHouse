@@ -273,6 +273,8 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.default_database,
             address.user,
             address.password,
+            address.proto_send_chunked,
+            address.proto_recv_chunked,
             address.quota_key,
             address.cluster,
             address.cluster_secret,
@@ -413,10 +415,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
         auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = results.front();
-        if (pool->isTryResultInvalid(result, insert_settings.distributed_insert_skip_read_only_replicas))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
-
+        auto result = pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
