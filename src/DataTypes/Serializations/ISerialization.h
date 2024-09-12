@@ -241,6 +241,10 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
+        /// If set to false, don't enumerate dynamic subcolumns
+        /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
+        /// It may be needed when dynamic subcolumns are processed separately.
+        bool enumerate_dynamic_streams = true;
     };
 
     virtual void enumerateStreams(
@@ -452,6 +456,9 @@ public:
     /// Returns true if subcolumn doesn't actually stores any data in column and doesn't require a separate stream
     /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.
     static bool isEphemeralSubcolumn(const SubstreamPath & path, size_t prefix_len);
+
+    /// Returns true if stream with specified path corresponds to dynamic subcolumn.
+    static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>

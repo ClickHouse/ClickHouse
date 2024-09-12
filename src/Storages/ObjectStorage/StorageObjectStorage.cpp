@@ -94,7 +94,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (sample_path.empty() && context->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context, sample_path, format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
 }
 
@@ -463,6 +463,12 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
             context->getConfigRef().getUInt(
                 "schema_inference_cache_max_elements_for_azure",
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    else if (storage_type_name == "local")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     else

@@ -2112,6 +2112,7 @@ class ClickHouseCluster:
             self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name]
         )
         node.ip_address = self.get_instance_ip(node.name)
+        node.ipv6_address = self.get_instance_global_ipv6(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
 
         logging.info("Restart node with ip change")
@@ -3182,6 +3183,7 @@ class ClickHouseCluster:
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
+                instance.ipv6_address = self.get_instance_global_ipv6(instance.name)
 
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."

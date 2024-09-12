@@ -420,6 +420,21 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
     return path[last_elem].type == Substream::VariantElementNullMap;
 }
 
+bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    for (size_t i = 0; i != prefix_len; ++i)
+    {
+        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
+            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
+            return true;
+    }
+
+    return false;
+}
+
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     assert(prefix_len <= path.size());
