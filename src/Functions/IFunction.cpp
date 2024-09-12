@@ -236,7 +236,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// Do not actually execute function if each row contains at least one null value.
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
         }
-        else if (!mask_info.has_zeros || !allow_short_circuit_default_implementation_for_nulls)
+        else if (!mask_info.has_zeros || !short_circuit_default_implementation_for_nulls)
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
@@ -339,8 +339,8 @@ IExecutableFunction::IExecutableFunction()
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().allow_short_circuit_default_implementation_for_nulls)
-            allow_short_circuit_default_implementation_for_nulls = true;
+        if (query_context && query_context->getSettingsRef().short_circuit_default_implementation_for_nulls)
+            short_circuit_default_implementation_for_nulls = true;
     }
 }
 
