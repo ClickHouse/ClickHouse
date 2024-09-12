@@ -420,3 +420,31 @@ TEST(SchedulerUnifiedNode, ThrottlerAndFairness)
         consumedB = arrival_curve * shareB;
     }
 }
+
+TEST(SchedulerUnifiedNode, QueueWithRequestsDestruction)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+
+    t.enqueue(all, {10, 10}); // enqueue reqeuests to be canceled
+
+    // This will destory the queue and fail both requests
+    auto a = t.createUnifiedNode("A", all);
+    t.failed(20);
+
+    // Check that everything works fine after destruction
+    auto b = t.createUnifiedNode("B", all);
+    t.enqueue(a, {10, 10}); // make sure A is never empty
+    for (int i = 0; i < 10; i++)
+    {
+        t.enqueue(a, {10, 10, 10, 10});
+        t.enqueue(b, {10, 10});
+
+        t.dequeue(6);
+        t.consumed("A", 40);
+        t.consumed("B", 20);
+    }
+    t.dequeue(2);
+    t.consumed("A", 20);
+}
