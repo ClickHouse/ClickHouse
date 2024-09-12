@@ -282,12 +282,8 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
-<<<<<<< LessReadInOrder
-
     bool enable_virtual_row = false;
-=======
     std::optional<size_t> number_of_current_replica;
->>>>>>> master
 };
 
 }
