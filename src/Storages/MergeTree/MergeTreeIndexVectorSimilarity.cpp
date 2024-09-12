@@ -4,12 +4,10 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/BitHelpers.h>
-#include <Common/ThreadPool.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -31,7 +29,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
@@ -133,8 +130,7 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", String(result.error.release()));
 
-    if (!try_reserve(limits()))
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
+    try_reserve(limits());
 }
 
 USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
@@ -272,21 +268,27 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
     /// Reserving space is mandatory
-    if (!index->try_reserve(roundUpToPowerOfTwoOrZero(index->size() + rows)))
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
+    index->reserve(roundUpToPowerOfTwoOrZero(index->size() + rows));
 
-    auto & thread_pool = Context::getGlobalContextInstance()->getVectorSimilarityIndexCreationThreadPool();
+    /// Vector index creation is slooooow. Add the new rows in parallel. The threadpool is global to avoid oversubscription when multiple
+    /// indexes are build simultaneously (e.g. multiple merges run at the same time).
+    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row, ThreadGroupPtr thread_group)
     {
-        SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachFromGroupIfNotDetached();
+        );
 
         if (thread_group)
             CurrentThread::attachToGroupIfDetached(thread_group);
 
+        /// add is thread-safe
         if (auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
+        }
         else
         {
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
@@ -295,14 +297,15 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
         }
     };
 
-    size_t current_index_size = index->size();
+    size_t index_size = index->size();
 
     for (size_t row = 0; row < rows; ++row)
     {
-        auto key = static_cast<USearchIndex::vector_key_t>(current_index_size + row);
+        auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
         auto task = [group = CurrentThread::getGroup(), &add_vector_to_index, key, row] { add_vector_to_index(key, row, group); };
         thread_pool.scheduleOrThrowOnError(task);
     }
+
     thread_pool.wait();
 }
 

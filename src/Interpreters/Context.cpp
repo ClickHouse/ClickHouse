@@ -164,14 +164,14 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderForegroundThreadsActive;
     extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
+    extern const Metric BuildVectorSimilarityIndexThreads;
+    extern const Metric BuildVectorSimilarityIndexThreadsActive;
+    extern const Metric BuildVectorSimilarityIndexThreadsScheduled;
     extern const Metric AttachedTable;
     extern const Metric AttachedView;
     extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
-    extern const Metric UsearchUpdateThreads;
-    extern const Metric UsearchUpdateThreadsActive;
-    extern const Metric UsearchUpdateThreadsScheduled;
 }
 
 
@@ -300,8 +300,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
-    mutable OnceFlag vector_similarity_index_creation_threadpool_initialized;
-    mutable std::unique_ptr<ThreadPool> vector_similarity_index_creation_threadpool; /// Threadpool for vector-similarity index creation.
+    mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
+    mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
@@ -3101,25 +3101,6 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
-ThreadPool & Context::getVectorSimilarityIndexCreationThreadPool() const
-{
-    callOnce(
-        shared->vector_similarity_index_creation_threadpool_initialized,
-        [&]
-        {
-            const auto & server_setting = getServerSettings();
-            size_t max_thread_pool_size = server_setting.max_thread_pool_size_for_vector_similarity_index_creation > 0
-                ? server_setting.max_thread_pool_size_for_vector_similarity_index_creation
-                : getNumberOfPhysicalCPUCores();
-            shared->vector_similarity_index_creation_threadpool = std::make_unique<ThreadPool>(
-                CurrentMetrics::UsearchUpdateThreads,
-                CurrentMetrics::UsearchUpdateThreadsActive,
-                CurrentMetrics::UsearchUpdateThreadsScheduled,
-                max_thread_pool_size);
-        });
-    return *shared->vector_similarity_index_creation_threadpool;
-}
-
 void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -3319,6 +3300,21 @@ size_t Context::getPrefetchThreadpoolSize() const
 {
     const auto & config = getConfigRef();
     return config.getUInt(".prefetch_threadpool_pool_size", 100);
+}
+
+ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
+{
+    callOnce(shared->build_vector_similarity_index_threadpool_initialized, [&] {
+            size_t pool_size = shared->server_settings.max_build_vector_similarity_index_thread_pool_size > 0
+                ? shared->server_settings.max_build_vector_similarity_index_thread_pool_size
+                : getNumberOfPhysicalCPUCores();
+            shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
+                CurrentMetrics::BuildVectorSimilarityIndexThreads,
+                CurrentMetrics::BuildVectorSimilarityIndexThreadsActive,
+                CurrentMetrics::BuildVectorSimilarityIndexThreadsScheduled,
+                pool_size);
+        });
+    return *shared->build_vector_similarity_index_threadpool;
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const

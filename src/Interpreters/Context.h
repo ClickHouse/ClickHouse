@@ -1097,7 +1097,7 @@ public:
     /// and make a prefetch by putting a read task to threadpoolReader.
     size_t getPrefetchThreadpoolSize() const;
 
-    ThreadPool & getVectorSimilarityIndexCreationThreadPool() const;
+    ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
