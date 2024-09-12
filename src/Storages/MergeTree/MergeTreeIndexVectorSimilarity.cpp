@@ -6,7 +6,6 @@
 #include <Common/BitHelpers.h>
 #include <Common/ThreadPool.h>
 #include <Common/formatReadable.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -25,13 +24,6 @@ namespace ProfileEvents
     extern const Event USearchSearchCount;
     extern const Event USearchSearchVisitedMembers;
     extern const Event USearchSearchComputedDistances;
-}
-
-namespace CurrentMetrics
-{
-extern const Metric UsearchUpdateThreads;
-extern const Metric UsearchUpdateThreadsActive;
-extern const Metric UsearchUpdateThreadsScheduled;
 }
 
 namespace DB
@@ -283,14 +275,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     if (!index->try_reserve(roundUpToPowerOfTwoOrZero(index->size() + rows)))
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
 
-    size_t max_threads = Context::getGlobalContextInstance()->getSettingsRef().max_threads;
-    max_threads = max_threads > 0 ? max_threads : getNumberOfPhysicalCPUCores();
-
-    auto thread_pool = std::make_unique<ThreadPool>(
-        CurrentMetrics::UsearchUpdateThreads,
-        CurrentMetrics::UsearchUpdateThreadsActive,
-        CurrentMetrics::UsearchUpdateThreadsScheduled,
-        max_threads);
+    auto & thread_pool = Context::getGlobalContextInstance()->getVectorSimilarityIndexCreationThreadPool();
 
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row, ThreadGroupPtr thread_group)
     {
@@ -316,9 +301,9 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     {
         auto key = static_cast<USearchIndex::vector_key_t>(current_index_size + row);
         auto task = [group = CurrentThread::getGroup(), &add_vector_to_index, key, row] { add_vector_to_index(key, row, group); };
-        thread_pool->scheduleOrThrowOnError(task);
+        thread_pool.scheduleOrThrowOnError(task);
     }
-    thread_pool->wait();
+    thread_pool.wait();
 }
 
 }
