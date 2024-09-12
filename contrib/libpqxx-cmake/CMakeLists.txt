@@ -1,4 +1,4 @@
-option(ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
+option(ENABLE_LIBPQXX "Enable libpqxx" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_LIBPQXX)
     message(STATUS "Not using libpqxx")
