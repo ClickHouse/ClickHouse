@@ -5,6 +5,7 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
