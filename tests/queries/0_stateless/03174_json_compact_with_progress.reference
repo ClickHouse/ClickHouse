@@ -1,0 +1,15 @@
+1
+{"meta": [{"name":"value", "type":"UInt8"}, {"name":"name", "type":"String"}]}
+{"data":[1, "a"]}
+{"data":[2, "b"]}
+{"data":[3, "c"]}
+{"statistics": {"rows":3, "elapsed":ELAPSED, "rows_read":3, "bytes_read":33}}
+2
+{"meta": [{"name":"name", "type":"String"}, {"name":"c", "type":"UInt64"}]}
+{"data":["a", "1"]}
+{"data":["b", "1"]}
+{"data":["c", "1"]}
+{"totals": ["", "3"]}
+{"statistics": {"rows":3, "elapsed":ELAPSED, "rows_read":3, "bytes_read":30}}
+3
+Value passed to 'throwIf' function is non-zero:

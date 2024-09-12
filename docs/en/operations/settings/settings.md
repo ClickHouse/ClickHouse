@@ -3226,7 +3226,7 @@ Default value: `0`.
 
 ## lightweight_deletes_sync {#lightweight_deletes_sync}
 
-The same as 'mutation_sync', but controls only execution of lightweight deletes.
+The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
 
 Possible values:
 
@@ -5633,7 +5633,6 @@ Default value: `1GiB`.
 ## use_json_alias_for_old_object_type
 
 When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
-This setting requires server restart to take effect when changed.
 
 Default value: `false`.
 
