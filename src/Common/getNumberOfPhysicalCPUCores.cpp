@@ -9,7 +9,8 @@
 #include <boost/algorithm/string/split.hpp>
 #include <base/cgroupsv2.h>
 #include <base/range.h>
-
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
 #include <filesystem>
 #include <thread>
 #include <set>
@@ -176,8 +177,16 @@ unsigned getNumberOfPhysicalCPUCoresImpl()
     ///
     /// On really big machines, SMT is detrimental to performance (+ ~5% overhead in ClickBench). On such machines, we limit ourself to the physical cores.
     /// Few cores indicate it is a small machine, runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
-    if (cores >= 32)
-        cores = physical_concurrency();
+    if (DB::Context::getGlobalContextInstance())
+    {
+        if (cores >= DB::Context::getGlobalContextInstance()->getServerSettings().max_vCPUs_num_to_use_hyper_threading)
+            cores = physical_concurrency();
+    }
+    else
+    {
+        if (cores >= 64)
+            cores = physical_concurrency();
+    }
 #endif
 
 #if defined(OS_LINUX)
