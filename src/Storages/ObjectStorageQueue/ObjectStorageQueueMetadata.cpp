@@ -239,6 +239,8 @@ void ObjectStorageQueueMetadata::syncWithKeeper(
             const auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata");
             const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
 
+            LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
+
             table_metadata.checkEquals(metadata_from_zk);
             return;
         }
