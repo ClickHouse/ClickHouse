@@ -13,7 +13,8 @@ opts=(
 
 DATABASE_ORDINARY="${CLICKHOUSE_DATABASE}_ordinary"
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --allow_deprecated_database_ordinary=1 --multiquery "
+$CLICKHOUSE_CLIENT "${opts[@]}" --query "
+    SET allow_deprecated_database_ordinary = 1;
     SET allow_experimental_window_view = 1;
     SET window_view_clean_interval = 1;
 
@@ -28,8 +29,7 @@ $CLICKHOUSE_CLIENT "${opts[@]}" --allow_deprecated_database_ordinary=1 --multiqu
     INSERT INTO ${DATABASE_ORDINARY}.mt VALUES (1, 2, toDateTime('1990/01/01 12:00:01', 'US/Samoa'));
     INSERT INTO ${DATABASE_ORDINARY}.mt VALUES (1, 3, toDateTime('1990/01/01 12:00:02', 'US/Samoa'));
     INSERT INTO ${DATABASE_ORDINARY}.mt VALUES (1, 4, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));
-    INSERT INTO ${DATABASE_ORDINARY}.mt VALUES (1, 5, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));
-"
+    INSERT INTO ${DATABASE_ORDINARY}.mt VALUES (1, 5, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
 
 while true; do
 	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM ${DATABASE_ORDINARY}.\`.inner.wv\`" | grep -q "5" && break || sleep .5 ||:

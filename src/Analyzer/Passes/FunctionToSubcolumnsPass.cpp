@@ -68,10 +68,10 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
 String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & data_type_tuple)
 {
     if (value.getType() == Field::Types::String)
-        return value.get<const String &>();
+        return value.safeGet<const String &>();
 
     if (value.getType() == Field::Types::UInt64)
-        return data_type_tuple.getNameByPosition(value.get<UInt64>());
+        return data_type_tuple.getNameByPosition(value.safeGet<UInt64>());
 
     return "";
 }
@@ -79,7 +79,7 @@ String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & dat
 String getSubcolumnNameForElement(const Field & value, const DataTypeVariant &)
 {
     if (value.getType() == Field::Types::String)
-        return value.get<const String &>();
+        return value.safeGet<const String &>();
 
     return "";
 }

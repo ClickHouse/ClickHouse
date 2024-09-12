@@ -75,7 +75,7 @@ Data are received by this protocol and written to a [TimeSeries](/en/engines/tab
         <my_rule_1>
             <url>/write</url>
             <handler>
-                <type>remote_write</type
+                <type>remote_write</type>
                 <database>db_name</database>
                 <table>time_series_table</table>
             </handler>
@@ -105,7 +105,7 @@ Data are read from a [TimeSeries](/en/engines/table-engines/special/time_series)
         <my_rule_1>
             <url>/read</url>
             <handler>
-                <type>remote_read</type
+                <type>remote_read</type>
                 <database>db_name</database>
                 <table>time_series_table</table>
             </handler>
@@ -144,14 +144,14 @@ Multiple protocols can be specified together in one place:
         <my_rule_2>
             <url>/write</url>
             <handler>
-                <type>remote_write</type
+                <type>remote_write</type>
                 <table>db_name.time_series_table</table>
             </handler>
         </my_rule_2>
         <my_rule_3>
             <url>/read</url>
             <handler>
-                <type>remote_read</type
+                <type>remote_read</type>
                 <table>db_name.time_series_table</table>
             </handler>
         </my_rule_3>

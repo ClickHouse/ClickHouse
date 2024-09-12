@@ -59,7 +59,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = x.get<const String &>();
+    const String & s = x.safeGet<const String &>();
     insertData(s.data(), s.size());
 }
 
@@ -67,7 +67,7 @@ bool ColumnFixedString::tryInsert(const Field & x)
 {
     if (x.getType() != Field::Types::Which::String)
         return false;
-    const String & s = x.get<const String &>();
+    const String & s = x.safeGet<const String &>();
     if (s.size() > n)
         return false;
     insertData(s.data(), s.size());
