@@ -355,8 +355,6 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
             const auto & constant = dag->addColumn({default_type_column, type, name});
             outputs.push_back(&constant);
         }
-        LOG_DEBUG(
-            &Poco::Logger::get("New schema"), "Id: {}, Name: {}, type: {}", id, name, getFieldType(field, "type", required)->getName());
     }
     return dag;
 }
@@ -740,12 +738,6 @@ DataFileInfos IcebergMetadata::getDataFileInfos() const
 
     for (const auto & [file_path, schema_object_id] : files)
     {
-        LOG_DEBUG(
-            &Poco::Logger::get("Adding not empty stuff"),
-            "File path: {}, Old schema: {}, New schema: {}",
-            file_path,
-            schema_object_id,
-            current_schema_id);
         data_file_infos.emplace_back(
             file_path,
             schema_processor.getClickhouseTableSchemaById(schema_object_id),

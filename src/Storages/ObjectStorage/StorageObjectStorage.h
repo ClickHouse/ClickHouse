@@ -124,8 +124,6 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
-    virtual void modifyColumnNames(Names &) const { }
-
     static ColumnsDescription resolveSchemaFromData(
         const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,

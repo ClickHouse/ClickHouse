@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FORMAT_VERSION_TOO_OLD;
+extern const int NOT_IMPLEMENTED;
 }
 
 /// Storage for read-only integration with Apache Iceberg tables in Amazon S3 (see https://iceberg.apache.org/)
@@ -183,16 +184,6 @@ public:
 private:
     ConfigurationPtr base_configuration;
     DataLakeMetadataPtr current_metadata;
-    std::optional<Int32> current_version;
-
-    void modifyColumnNames(Names & column_names) const override
-    {
-        if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
-        {
-            column_names = current_metadata->getTableSchema().getNames();
-        }
-    }
-
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,

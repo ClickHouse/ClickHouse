@@ -364,7 +364,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
         }
 
-        /*Temporary decision. Need better anstraction here.*/
         Block initial_header = read_from_format_info.format_header;
 
         if (object_info->initial_schema)

@@ -6,7 +6,7 @@
 #include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#    include "Storages/ObjectStorage/DataFileInfo.h"
+#include "Storages/ObjectStorage/DataFileInfo.h"
 
 namespace DB
 {

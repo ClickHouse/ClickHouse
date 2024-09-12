@@ -37,8 +37,6 @@ public:
       */
     void updateStorage(StoragePtr storage_value, const ContextPtr & context);
 
-    void updateStorage(const ContextPtr & context);
-
     /// Get storage
     const StoragePtr & getStorage() const
     {

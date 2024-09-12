@@ -22,7 +22,7 @@ public:
         ConfigurationPtr configuration_,
         ContextPtr context_);
 
-    std::vector<DataFileInfo> getDataFileInfos() const override { return data_files; }
+    DataFileInfos getDataFileInfos() const override { return data_files; }
 
     NamesAndTypesList getTableSchema() const override { return schema; }
 
@@ -47,7 +47,7 @@ public:
     }
 
 private:
-    mutable std::vector<DataFileInfo> data_files;
+    mutable DataFileInfos data_files;
     NamesAndTypesList schema;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
