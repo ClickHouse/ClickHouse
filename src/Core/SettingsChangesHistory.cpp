@@ -80,6 +80,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"database_replicated_allow_replicated_engine_arguments", 1, 0, "Don't allow explicit arguments by default"},
             {"database_replicated_allow_explicit_uuid", 0, 0, "Added a new setting to disallow explicitly specifying table UUID"},
             {"parallel_replicas_local_plan", false, false, "Use local plan for local replica in a query with parallel replicas"},
+            {"min_free_disk_bytes_to_throw_insert", 0, 0, "Maintain some free disk space bytes from inserts while still allowing for temporary writing."},
+            {"min_free_disk_ratio_to_throw_insert", 0.0, 0.0, "Maintain some free disk space bytes expressed as ratio to total disk space from inserts while still allowing for temporary writing."},
         }
     },
     {"24.8",

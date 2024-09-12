@@ -707,6 +707,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     }
 
     // just check if there is enough space on parent volume
+    // down the line in reserving space there is concurrency safety so no need to worry about 'over-reserving'
     MergeTreeData::reserveSpace(expected_size + reserve_extra, parent_part->getDataPartStorage());
     part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
 
