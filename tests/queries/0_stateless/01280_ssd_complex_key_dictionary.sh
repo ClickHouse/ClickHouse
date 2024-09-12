@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
     DROP DATABASE IF EXISTS 01280_db;
     CREATE DATABASE 01280_db;
     DROP TABLE IF EXISTS 01280_db.table_for_dict;
@@ -39,9 +39,9 @@ $CLICKHOUSE_CLIENT -n --query="
     LIFETIME(MIN 1000 MAX 2000)
     LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '$USER_FILES_PATH/0d'));"
 
-$CLICKHOUSE_CLIENT -nq "SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 43 }"
+$CLICKHOUSE_CLIENT -q "SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 43 }"
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
     SELECT 'TEST_SMALL';
     SELECT 'VALUE FROM RAM BUFFER';
     SELECT dictGetUInt64('01280_db.ssd_dict', 'a', tuple('1', toInt32(3)));
@@ -63,9 +63,9 @@ $CLICKHOUSE_CLIENT -n --query="
     SELECT dictGetInt32('01280_db.ssd_dict', 'b', tuple('10', toInt32(-20)));
     SELECT dictGetString('01280_db.ssd_dict', 'c', tuple('10', toInt32(-20)));"
 
-$CLICKHOUSE_CLIENT -nq "SELECT dictGetUInt64('01280_db.ssd_dict', 'a', tuple(toInt32(3))); -- { serverError 53 }"
+$CLICKHOUSE_CLIENT -q "SELECT dictGetUInt64('01280_db.ssd_dict', 'a', tuple(toInt32(3))); -- { serverError 53 }"
 
-$CLICKHOUSE_CLIENT -n --query="DROP DICTIONARY 01280_db.ssd_dict;
+$CLICKHOUSE_CLIENT --query="DROP DICTIONARY 01280_db.ssd_dict;
     DROP TABLE IF EXISTS 01280_db.keys_table;
     CREATE TABLE 01280_db.keys_table
     (
@@ -122,4 +122,4 @@ $CLICKHOUSE_CLIENT -n --query="DROP DICTIONARY 01280_db.ssd_dict;
     DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
     DROP TABLE IF EXISTS database_for_dict.keys_table;"
 
-$CLICKHOUSE_CLIENT -n --query="DROP DATABASE IF EXISTS 01280_db;"
+$CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS 01280_db;"

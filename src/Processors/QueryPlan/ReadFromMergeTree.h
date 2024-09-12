@@ -121,7 +121,16 @@ public:
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading);
+        bool enable_parallel_reading_,
+        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
+        std::optional<size_t> number_of_current_replica_ = std::nullopt);
+
+    std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
+        AnalysisResultPtr analyzed_result_ptr_,
+        MergeTreeAllRangesCallback all_ranges_callback_,
+        MergeTreeReadTaskCallback read_task_callback_,
+        size_t replica_number);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -143,6 +152,11 @@ public:
 
     struct Indexes
     {
+        explicit Indexes(KeyCondition key_condition_)
+            : key_condition(std::move(key_condition_))
+            , use_skip_indexes(false)
+        {}
+
         KeyCondition key_condition;
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
@@ -268,6 +282,7 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
+    std::optional<size_t> number_of_current_replica;
 };
 
 }

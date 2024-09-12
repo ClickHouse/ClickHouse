@@ -64,9 +64,7 @@ namespace
 
     void checkAndAdjustSettings(
         ObjectStorageQueueSettings & queue_settings,
-        ASTStorage * engine_args,
-        bool is_attach,
-        const LoggerPtr & log)
+        bool is_attach)
     {
         if (!is_attach && !queue_settings.mode.changed)
         {
@@ -84,16 +82,6 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
-        }
-
-        if (!is_attach && !queue_settings.processing_threads_num.changed)
-        {
-            queue_settings.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
-            engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
-                "processing_threads_num",
-                queue_settings.processing_threads_num.value);
-
-            LOG_TRACE(log, "Set `processing_threads_num` to {}", queue_settings.processing_threads_num);
         }
     }
 
@@ -130,7 +118,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args,
+    ASTStorage * /* engine_args */,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -154,7 +142,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);
+    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
