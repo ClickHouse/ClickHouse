@@ -170,9 +170,6 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
-[submodule "contrib/libpq"]
-	path = contrib/libpq
-	url = https://github.com/ClickHouse/libpq
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft

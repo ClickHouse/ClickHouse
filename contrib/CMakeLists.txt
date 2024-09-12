@@ -148,8 +148,8 @@ add_contrib (cppkafka-cmake cppkafka)
 
 option(ENABLE_LIBPQXX "Enable PostgreSQL" ${ENABLE_LIBRARIES})
 if (ENABLE_LIBPQXX)
+    add_contrib (postgres-cmake postgres)
     add_contrib (libpqxx-cmake libpqxx)
-    add_contrib (libpq-cmake libpq)
 endif()
 
 add_contrib (rocksdb-cmake rocksdb) # requires: jemalloc, snappy, zlib, lz4, zstd, liburing
