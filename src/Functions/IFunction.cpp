@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Core/Block.h>
 #include <Core/TypeId.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
