@@ -49,6 +49,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/StorageDummy.h>
@@ -875,20 +876,34 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     auto sample_block = storage_snapshot->getSampleBlockForColumns(columns_names);
 
-                    String table_name;
-                    if (table_node && !table_node->getTemporaryTableName().empty())
-                        table_name = table_node->getTemporaryTableName();
-                    else
+                    if (table_node)
                     {
-                        const auto & table_id = (table_node ? table_node->getStorageID() : table_function_node->getStorageID());
-                         table_name = table_id.getFullTableName();
-                    }
+                        String table_name;
+                        if (!table_node->getTemporaryTableName().empty())
+                            table_name = table_node->getTemporaryTableName();
+                        else
+                            table_name = table_node->getStorageID().getFullTableName();
 
-                    auto reading_from_table = std::make_unique<ReadFromTableStep>(
-                        sample_block,
-                        table_name,
-                        table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
-                    query_plan.addStep(std::move(reading_from_table));
+                        auto reading_from_table = std::make_unique<ReadFromTableStep>(
+                            sample_block,
+                            table_name,
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+
+                        query_plan.addStep(std::move(reading_from_table));
+                    }
+                    else if (table_function_node)
+                    {
+                        auto table_function_ast = table_function_node->toAST();
+                        table_function_ast->setAlias({});
+                        auto table_function_serialized_ast = queryToString(table_function_ast);
+
+                        auto reading_from_table_function = std::make_unique<ReadFromTableFunctionStep>(
+                            sample_block,
+                            table_function_serialized_ast,
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+
+                        query_plan.addStep(std::move(reading_from_table_function));
+                    }
                 }
                 else
                     storage->read(

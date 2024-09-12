@@ -48,6 +48,7 @@ void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
+void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 
 void QueryPlanStepRegistry::registerPlanSteps()
 {
@@ -65,6 +66,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerFilterStep(registry);
 
     registerReadFromTableStep(registry);
+    registerReadFromTableFunctionStep(registry);
 }
 
 }

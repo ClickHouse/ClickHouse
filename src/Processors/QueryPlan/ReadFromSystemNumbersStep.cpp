@@ -348,6 +348,9 @@ namespace
 /// Whether we should push limit down to scan.
 bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
 {
+    if (!query_info.query)
+        return false;
+
     const auto & query = query_info.query->as<ASTSelectQuery &>();
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
@@ -409,7 +412,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
+    , limit_length_and_offset(query_info.query ? InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context) : std::make_pair(UInt64(0), UInt64(0)))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , query_info_limit(query_info.trivial_limit)
     , storage_limits(query_info.storage_limits)

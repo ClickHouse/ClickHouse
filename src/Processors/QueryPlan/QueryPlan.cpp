@@ -25,12 +25,21 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Sources/NullSource.h>
 
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
+
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Parsers/queryToString.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -944,6 +953,17 @@ static std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, co
     return table_node_ptr;
 }
 
+static QueryTreeNodePtr resolveTableFunction(const ASTPtr & table_function, const ContextPtr & context)
+{
+    QueryTreeNodePtr query_tree_node = buildTableFunctionQueryTree(table_function, context);
+
+    bool only_analyze = false;
+    QueryAnalyzer analyzer(only_analyze);
+    analyzer.resolve(query_tree_node, nullptr, context);
+
+    return query_tree_node;
+}
+
 static void makeSetsFromStorageSet(QueryPlanAndSets::SetsFromStorage sets, const ContextPtr & context)
 {
     for (auto & set : sets)
@@ -963,22 +983,63 @@ static void makeSetsFromStorageSet(QueryPlanAndSets::SetsFromStorage sets, const
 static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
-    if (!reading_from_table)
+    const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
+    if (!reading_from_table && !reading_from_table_function)
         return {};
 
-    Identifier identifier(reading_from_table->getTable());
-    auto table_node = resolveTable(identifier, context);
-
+    StoragePtr storage;
+    StorageSnapshotPtr snapshot;
     SelectQueryInfo select_query_info;
-    select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
 
-    auto column_names = reading_from_table->getOutputStream().header.getNames();
+    if (reading_from_table)
+    {
+        Identifier identifier(reading_from_table->getTable());
+        auto table_node = resolveTable(identifier, context);
+
+        storage = table_node->getStorage();
+        snapshot = table_node->getStorageSnapshot();
+        select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
+    }
+    else
+    {
+        auto serialized_ast = reading_from_table_function->getSerializedAST();
+        ParserFunction parser(false, true);
+        const auto & settings = context->getSettingsRef();
+        auto ast = parseQuery(
+            parser,
+            serialized_ast,
+            settings.max_query_size,
+            settings.max_parser_depth,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        auto query_tree_node = resolveTableFunction(ast, context);
+        if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
+        {
+            storage = table_function_node->getStorage();
+            snapshot = table_function_node->getStorageSnapshot();
+        }
+        else if (auto * table_node = query_tree_node->as<TableNode>())
+        {
+            storage = table_node->getStorage();
+            snapshot = table_node->getStorageSnapshot();
+        }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected query tree node type {}\n{}",
+                query_tree_node->getNodeTypeName(),
+                query_tree_node->dumpTree());
+
+        select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
+    }
+
+    const auto & header = node.step->getOutputStream().header;
+    auto column_names = header.getNames();
 
     QueryPlan reading_plan;
-    table_node->getStorage()->read(
+    storage->read(
         reading_plan,
         column_names,
-        table_node->getStorageSnapshot(),
+        snapshot,
         select_query_info,
         context,
         QueryProcessingStage::FetchColumns,
@@ -989,7 +1050,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     if (!reading_plan.isInitialized())
     {
         /// Create step which reads from empty source if storage has no data.
-        auto source_header = table_node->getStorageSnapshot()->getSampleBlockForColumns(column_names);
+        auto source_header = snapshot->getSampleBlockForColumns(column_names);
         Pipe pipe(std::make_shared<NullSource>(source_header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_pipe->setStepDescription("Read from NullSource");
@@ -998,7 +1059,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     auto converting_actions = ActionsDAG::makeConvertingActions(
         reading_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-        reading_from_table->getOutputStream().header.getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentDataStream(), std::move(converting_actions));
@@ -1042,7 +1103,12 @@ static void addSetsFromSubqueries(QueryPlan & plan, std::vector<QueryPlanAndSets
         subqueries.push_back(std::move(item.subquery));
     }
 
-    addCreatingSetsStep(plan, std::move(subqueries), context);
+    auto step = std::make_unique<DelayedCreatingSetsStep>(
+        plan.getCurrentDataStream(),
+        std::move(subqueries),
+        context);
+
+    plan.addStep(std::move(step));
 }
 
 QueryPlan QueryPlan::resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context)

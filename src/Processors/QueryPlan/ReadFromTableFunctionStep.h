@@ -5,23 +5,23 @@
 namespace DB
 {
 
-class ReadFromTableStep : public ISourceStep
+class ReadFromTableFunctionStep : public ISourceStep
 {
 public:
-    ReadFromTableStep(Block output_header, String table_name_, TableExpressionModifiers table_expression_modifiers_);
+    ReadFromTableFunctionStep(Block output_header, std::string serialized_ast_, TableExpressionModifiers table_expression_modifiers_);
 
-    String getName() const override { return "ReadFromTable"; }
+    String getName() const override { return "ReadFromTableFunction"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
-    const String & getTable() const { return table_name; }
+    const std::string & getSerializedAST() const { return serialized_ast; }
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
 
 private:
-    String table_name;
+    std::string serialized_ast;
     TableExpressionModifiers table_expression_modifiers;
 };
 
