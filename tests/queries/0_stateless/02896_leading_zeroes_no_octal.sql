@@ -102,13 +102,13 @@ INSERT INTO t_leading_zeroes_f VALUES (2069, '0x01P-01', 0x01P-01, 0.5, 'Hex sho
 
 -- Binary should not work with input_format_values_interpret_expressions = 0
 
-INSERT INTO t_leading_zeroes_f VALUES (2050, '0b10000', 0b10000, 16, 'Binary should not be parsed'); -- { clientError SYNTAX_ERROR }
-INSERT INTO t_leading_zeroes_f VALUES (2051, '-0b10000', -0b10000, -16, 'Binary should not be parsed'); -- { clientError SYNTAX_ERROR }
-INSERT INTO t_leading_zeroes_f VALUES (2052, '+0b10000', +0b10000, 16, 'Binary should not be parsed'); -- { clientError SYNTAX_ERROR }
+INSERT INTO t_leading_zeroes_f VALUES (2050, '0b10000', 0b10000, 16, 'Binary should not be parsed'); -- { serverError SYNTAX_ERROR }
+INSERT INTO t_leading_zeroes_f VALUES (2051, '-0b10000', -0b10000, -16, 'Binary should not be parsed'); -- { serverError SYNTAX_ERROR }
+INSERT INTO t_leading_zeroes_f VALUES (2052, '+0b10000', +0b10000, 16, 'Binary should not be parsed'); -- { serverError SYNTAX_ERROR }
 
-INSERT INTO t_leading_zeroes VALUES (1050, '0b10000', 0b10000, 16, 'Binary should not be parsed'); -- { clientError SYNTAX_ERROR }
-INSERT INTO t_leading_zeroes VALUES (1051, '-0b10000', -0b10000, -16, 'Binary should not be parsed'); -- { clientError SYNTAX_ERROR }
-INSERT INTO t_leading_zeroes VALUES (1052, '+0b10000', +0b10000, 16, 'Binary should not be parsed'); -- { clientError SYNTAX_ERROR }
+INSERT INTO t_leading_zeroes VALUES (1050, '0b10000', 0b10000, 16, 'Binary should not be parsed'); -- { serverError SYNTAX_ERROR }
+INSERT INTO t_leading_zeroes VALUES (1051, '-0b10000', -0b10000, -16, 'Binary should not be parsed'); -- { serverError SYNTAX_ERROR }
+INSERT INTO t_leading_zeroes VALUES (1052, '+0b10000', +0b10000, 16, 'Binary should not be parsed'); -- { serverError SYNTAX_ERROR }
 
 
 
