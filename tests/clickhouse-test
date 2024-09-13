@@ -916,6 +916,7 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
+        "parallel_replicas_local_plan": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1637,6 +1638,19 @@ class TestCase:
         if args.client_log:
             log_opt = " --client_logs_file=" + args.client_log + " "
             client_options += log_opt
+
+            for env_name in [
+                "TSAN_OPTIONS",
+                "ASAN_OPTIONS",
+                "MSAN_OPTIONS",
+                "UBSAN_OPTIONS",
+            ]:
+                current_options = os.environ.get(env_name, None)
+                if current_options is None:
+                    os.environ[env_name] = f"log_path={args.client_log}"
+                elif "log_path=" not in current_options:
+                    os.environ[env_name] += f":log_path={args.client_log}"
+
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 os.environ["CLICKHOUSE_CLIENT_OPT"]
                 if "CLICKHOUSE_CLIENT_OPT" in os.environ
@@ -3108,13 +3122,15 @@ def main(args):
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
     if args.client_log:
-        if os.path.exists(args.client_log):
-            with open(args.client_log, "rb") as stream:
+        for log_file in [args.client_log, *glob.glob(f"{args.client_log}.*")]:
+            if not os.path.exists(log_file):
+                continue
+            with open(log_file, "rb") as stream:
                 content = stream.read().decode()
                 if len(content):
-                    print("Has fatal logs from client:\n")
+                    print(f"Has fatal logs from client in '{log_file}':\n")
                     print(content)
-            os.remove(args.client_log)
+            os.remove(log_file)
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
