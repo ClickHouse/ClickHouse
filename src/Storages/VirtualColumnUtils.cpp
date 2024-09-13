@@ -285,7 +285,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-    for (size_t i = 0; i != paths.size(); ++i)
+    for (size_t i = 0; i != partitioning_columns.size(); ++i)
         addFilterDataToVirtualColumns(block, paths[i], i, partitioning_columns[i], context);
 
     filterBlockWithExpression(actions, block);
