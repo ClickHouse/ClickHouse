@@ -32,6 +32,8 @@ void KeystrokeInterceptor::startIntercept()
 
     chassert(!orig_termios);
 
+    stop_requested = false;
+
     /// Save terminal state.
     orig_termios = std::make_unique<struct termios>();
     tcgetattr(fd, orig_termios.get());
