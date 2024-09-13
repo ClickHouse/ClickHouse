@@ -14,7 +14,7 @@ struct DataFileInfo
     std::shared_ptr<NamesAndTypesList> initial_schema;
     std::shared_ptr<const ActionsDAG> schema_transform;
 
-    DataFileInfo(
+    explicit DataFileInfo(
         String data_path_,
         std::shared_ptr<NamesAndTypesList> initial_schema_ = nullptr,
         std::shared_ptr<const ActionsDAG> schema_transform_ = nullptr)

@@ -35,7 +35,7 @@ public:
 
     struct ObjectInfo : public RelativePathWithMetadata
     {
-        ObjectInfo(
+        explicit ObjectInfo(
             String relative_path_,
             std::optional<ObjectMetadata> metadata_ = std::nullopt,
             std::shared_ptr<NamesAndTypesList> initial_schema_ = nullptr,

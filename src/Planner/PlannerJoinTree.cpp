@@ -643,11 +643,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     if (table_node || table_function_node)
     {
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (table_node && storage->hasExternalDynamicMetadata())
-        {
-            storage->updateExternalDynamicMetadata(query_context);
-            table_node->updateStorage(storage, query_context);
-        }
 
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
@@ -1767,6 +1762,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
       * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
       *
+      * Examples: Distributed, LiveView, Merge storages.
       * Examples: Distributed, LiveView, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
