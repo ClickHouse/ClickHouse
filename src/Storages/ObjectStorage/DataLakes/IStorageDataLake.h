@@ -81,7 +81,7 @@ public:
         auto metadata = DataLakeMetadata::create(object_storage_, base_configuration, local_context);
 
         auto schema_from_metadata = metadata->getTableSchema();
-        if (!schema_from_metadata.empty())
+        if (schema_from_metadata != NamesAndTypesList{})
         {
             return ColumnsDescription(std::move(schema_from_metadata));
         }
@@ -99,13 +99,13 @@ public:
         Storage::updateConfiguration(local_context);
 
         auto new_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
+
         if (current_metadata && *current_metadata == *new_metadata)
             return;
 
         current_metadata = std::move(new_metadata);
         auto updated_configuration = base_configuration->clone();
         updated_configuration->setPaths(current_metadata->getDataFiles());
-        updated_configuration->setPartitionColumns(current_metadata->getPartitionColumns());
 
         Storage::configuration = updated_configuration;
     }
@@ -123,42 +123,11 @@ public:
         {
             base_configuration->format = Storage::configuration->format;
         }
-
-        if (current_metadata)
-        {
-            const auto & columns = current_metadata->getPartitionColumns();
-            base_configuration->setPartitionColumns(columns);
-            Storage::configuration->setPartitionColumns(columns);
-        }
     }
 
 private:
     ConfigurationPtr base_configuration;
     DataLakeMetadataPtr current_metadata;
-
-    ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        bool supports_subset_of_columns,
-        ContextPtr local_context) override
-    {
-        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
-        if (!current_metadata)
-        {
-            Storage::updateConfiguration(local_context);
-            current_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
-        }
-        auto column_mapping = current_metadata->getColumnNameToPhysicalNameMapping();
-        if (!column_mapping.empty())
-        {
-            for (const auto & [column_name, physical_name] : column_mapping)
-            {
-                auto & column = info.format_header.getByName(column_name);
-                column.name = physical_name;
-            }
-        }
-        return info;
-    }
 };
 
 using StorageIceberg = IStorageDataLake<IcebergMetadata>;

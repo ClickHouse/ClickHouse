@@ -11,7 +11,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -19,18 +18,19 @@ namespace DB
 namespace
 {
 
-class ComparisonTupleEliminationPassVisitor : public InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>
+class ComparisonTupleEliminationPassVisitor : public InDepthQueryTreeVisitor<ComparisonTupleEliminationPassVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>;
-    using Base::Base;
+    explicit ComparisonTupleEliminationPassVisitor(ContextPtr context_)
+        : context(std::move(context_))
+    {}
 
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
         return child->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION;
     }
 
-    void enterImpl(QueryTreeNodePtr & node) const
+    void visitImpl(QueryTreeNodePtr & node) const
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
@@ -171,13 +171,13 @@ private:
     {
         auto result_function = std::make_shared<FunctionNode>("and");
         result_function->getArguments().getNodes() = std::move(tuple_arguments_equals_functions);
-        resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
+        resolveOrdinaryFunctionNode(*result_function, result_function->getFunctionName());
 
         if (comparison_function_name == "notEquals")
         {
             auto not_function = std::make_shared<FunctionNode>("not");
             not_function->getArguments().getNodes().push_back(std::move(result_function));
-            resolveOrdinaryFunctionNodeByName(*not_function, not_function->getFunctionName(), getContext());
+            resolveOrdinaryFunctionNode(*not_function, not_function->getFunctionName());
             result_function = std::move(not_function);
         }
 
@@ -197,10 +197,18 @@ private:
         comparison_function->getArguments().getNodes().push_back(std::move(lhs_argument));
         comparison_function->getArguments().getNodes().push_back(std::move(rhs_argument));
 
-        resolveOrdinaryFunctionNodeByName(*comparison_function, comparison_function->getFunctionName(), getContext());
+        resolveOrdinaryFunctionNode(*comparison_function, comparison_function->getFunctionName());
 
         return comparison_function;
     }
+
+    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    {
+        auto function = FunctionFactory::instance().get(function_name, context);
+        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+    }
+
+    ContextPtr context;
 };
 
 }

@@ -283,12 +283,13 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         }
     }
 
-    /// When data path or file not exists, ignore the format_version check
+
+    // When data path or file not exists, ignore the format_version check
     if (!attach || !read_format_version)
     {
         format_version = min_format_version;
 
-        /// Try to write to first non-readonly disk
+        // try to write to first non-readonly disk
         for (const auto & disk : getStoragePolicy()->getDisks())
         {
             if (disk->isBroken())
@@ -1141,7 +1142,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr, /*allow_partial_result=*/ false);
     if (!filter_dag)
         return {};
 
@@ -1758,14 +1759,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
 
-    bool all_disks_are_readonly = true;
     for (size_t i = 0; i < disks.size(); ++i)
     {
         const auto & disk_ptr = disks[i];
         if (disk_ptr->isBroken())
             continue;
-        if (!disk_ptr->isReadOnly())
-            all_disks_are_readonly = false;
 
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
@@ -1918,6 +1916,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (suspicious_broken_unexpected_parts != 0)
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
+
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
@@ -1962,8 +1961,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// By the way, if all disks are readonly, it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly)
+    if (!unloaded_parts.empty())
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -3342,6 +3340,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (command.type == AlterCommand::MODIFY_REFRESH)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "ALTER MODIFY REFRESH is not supported by MergeTree engines family");
+
+        if (command.type == AlterCommand::MODIFY_SQL_SECURITY)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "ALTER MODIFY SQL SECURITY is not supported by MergeTree engines family");
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
@@ -6892,7 +6894,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         const auto * predicate = filter_dag->getOutputs().at(0);
 
         // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
+        VirtualColumnUtils::filterBlockWithPredicate(
+            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
         part_name_column = virtual_columns_block.getByName("_part").column;
@@ -7063,7 +7066,7 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
         filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
 
     if (before_where)
-        filter_nodes.nodes.push_back(&before_where->dag.findInOutputs(where_column_name));
+        filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
 
     return filter_nodes;
 }
@@ -7113,8 +7116,8 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         query_context->getSettingsRef().max_threads);
 
     UInt64 total_rows = result_ptr->selected_rows;
-    if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
-        total_rows = query_info.trivial_limit;
+    if (query_info.limit > 0 && query_info.limit < total_rows)
+        total_rows = query_info.limit;
     return total_rows;
 }
 
@@ -8085,13 +8088,6 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                         throw_exception(mutation_name, "column", command.column_name);
                 }
             }
-            else if (command.type == AlterCommand::DROP_STATISTICS)
-            {
-                for (const auto & stats_col1 : command.statistics_columns)
-                    for (const auto & stats_col2 : mutation_command.statistics_columns)
-                        if (stats_col1 == stats_col2)
-                            throw_exception(mutation_name, "statistics", stats_col1);
-            }
         }
     }
 }
@@ -8606,38 +8602,6 @@ void MergeTreeData::unloadPrimaryKeys()
     {
         const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
     }
-}
-
-size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
-{
-    /// If the method is already called from another thread, then we don't need to do anything.
-    std::unique_lock lock(unload_primary_key_mutex, std::defer_lock);
-    if (!lock.try_lock())
-        return 0;
-
-    DataPartsVector parts_to_unload_index;
-
-    {
-        auto parts_lock = lockParts();
-        auto parts_range = getDataPartsStateRange(DataPartState::Outdated);
-
-        for (const auto & part : parts_range)
-        {
-            /// Outdated part may be hold by SELECT query and still needs the index.
-            /// This check requires lock of index_mutex but if outdated part is unique then there is no
-            /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
-            if (part.unique() && part->isIndexLoaded())
-                parts_to_unload_index.push_back(part);
-        }
-    }
-
-    for (const auto & part : parts_to_unload_index)
-    {
-        const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
-        LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
-    }
-
-    return parts_to_unload_index.size();
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)

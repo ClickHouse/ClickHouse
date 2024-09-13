@@ -89,7 +89,6 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
@@ -128,7 +127,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
+    static void parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax);
 
     static ArchiveInfo getArchiveInfo(
         const std::string & path_to_archive,

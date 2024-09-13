@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/singlevalueornull
-sidebar_position: 184
+sidebar_position: 220
 ---
 
 # singleValueOrNull

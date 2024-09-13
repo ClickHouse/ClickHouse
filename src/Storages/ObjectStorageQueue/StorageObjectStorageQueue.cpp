@@ -63,9 +63,7 @@ namespace
 
     void checkAndAdjustSettings(
         ObjectStorageQueueSettings & queue_settings,
-        ASTStorage * engine_args,
-        bool is_attach,
-        const LoggerPtr & log)
+        bool is_attach)
     {
         if (!is_attach && !queue_settings.mode.changed)
         {
@@ -83,16 +81,6 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
-        }
-
-        if (!is_attach && !queue_settings.processing_threads_num.changed)
-        {
-            queue_settings.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
-            engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
-                "processing_threads_num",
-                queue_settings.processing_threads_num.value);
-
-            LOG_TRACE(log, "Set `processing_threads_num` to {}", queue_settings.processing_threads_num);
         }
     }
 
@@ -129,7 +117,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args,
+    ASTStorage * /* engine_args */,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -153,7 +141,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);
+    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -352,43 +340,14 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed)
 {
-    auto internal_source = std::make_unique<StorageObjectStorageSource>(
-        getName(),
-        object_storage,
-        configuration,
-        info,
-        format_settings,
-        local_context,
-        max_block_size,
-        file_iterator,
-        local_context->getSettingsRef().max_download_threads,
-        false);
-
-    auto file_deleter = [=, this](const std::string & path) mutable
-    {
-        object_storage->removeObject(StoredObject(path));
-    };
-
     return std::make_shared<ObjectStorageQueueSource>(
-        getName(),
-        processor_id,
-        info.source_header,
-        std::move(internal_source),
-        files_metadata,
-        queue_settings->after_processing,
-        file_deleter,
-        info.requested_virtual_columns,
-        local_context,
-        shutdown_called,
-        table_is_being_dropped,
+        getName(), processor_id,
+        file_iterator, configuration, object_storage,
+        info, format_settings,
+        *queue_settings, files_metadata,
+        local_context, max_block_size, shutdown_called, table_is_being_dropped,
         getQueueLog(object_storage, local_context, *queue_settings),
-        getStorageID(),
-        log,
-        queue_settings->max_processed_files_before_commit,
-        queue_settings->max_processed_rows_before_commit,
-        queue_settings->max_processed_bytes_before_commit,
-        queue_settings->max_processing_time_sec_before_commit,
-        commit_once_processed);
+        getStorageID(), log, commit_once_processed);
 }
 
 bool StorageObjectStorageQueue::hasDependencies(const StorageID & table_id)
@@ -483,13 +442,7 @@ bool StorageObjectStorageQueue::streamToViews()
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        InterpreterInsertQuery interpreter(
-            insert,
-            queue_context,
-            /* allow_materialized */ false,
-            /* no_squash */ true,
-            /* no_destination */ true,
-            /* async_isnert */ false);
+        InterpreterInsertQuery interpreter(insert, queue_context, false, true, true);
         auto block_io = interpreter.execute();
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),

@@ -1,13 +1,9 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/SharedThreadPools.h>
-#include <IO/S3Common.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
-
 
 namespace DB
 {
@@ -26,78 +22,34 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
 {
     MetadataStorageFromPlainObjectStorage::PathMap result;
 
-    ThreadPool & pool = getIOThreadPool().get();
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
-    std::mutex mutex;
-
-    LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
-
-    ReadSettings settings;
-    settings.enable_filesystem_cache = false;
-    settings.remote_fs_method = RemoteFSReadMethod::read;
-    settings.remote_fs_buffer_size = 1024;  /// These files are small.
-
-    LOG_DEBUG(log, "Loading metadata");
-    size_t num_files = 0;
-    for (auto iterator = object_storage->iterate(root, 0); iterator->isValid(); iterator->next())
+    RelativePathsWithMetadata files;
+    object_storage->listObjects(root, files, 0);
+    for (const auto & file : files)
     {
-        ++num_files;
-        auto file = iterator->current();
-        String path = file->getPath();
-        auto remote_path = std::filesystem::path(path);
+        auto remote_path = std::filesystem::path(file->relative_path);
         if (remote_path.filename() != PREFIX_PATH_FILE_NAME)
             continue;
 
-        runner([remote_path, path, &object_storage, &result, &mutex, &log, &settings]
-        {
-            setThreadName("PlainRWMetaLoad");
+        StoredObject object{file->relative_path};
 
-            StoredObject object{path};
-            String local_path;
+        auto read_buf = object_storage->readObject(object);
+        String local_path;
+        readStringUntilEOF(local_path, *read_buf);
 
-            try
-            {
-                auto read_buf = object_storage->readObject(object, settings);
-                readStringUntilEOF(local_path, *read_buf);
-            }
-#if USE_AWS_S3
-            catch (const S3Exception & e)
-            {
-                /// It is ok if a directory was removed just now.
-                /// We support attaching a filesystem that is concurrently modified by someone else.
-                if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
-                    return;
-                throw;
-            }
-#endif
-            catch (...)
-            {
-                throw;
-            }
+        chassert(remote_path.has_parent_path());
+        auto res = result.emplace(local_path, remote_path.parent_path());
 
-            chassert(remote_path.has_parent_path());
-            std::pair<MetadataStorageFromPlainObjectStorage::PathMap::iterator, bool> res;
-            {
-                std::lock_guard lock(mutex);
-                res = result.emplace(local_path, remote_path.parent_path());
-            }
-
-            /// This can happen if table replication is enabled, then the same local path is written
-            /// in `prefix.path` of each replica.
-            /// TODO: should replicated tables (e.g., RMT) be explicitly disallowed?
-            if (!res.second)
-                LOG_WARNING(
-                    log,
-                    "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
-                    local_path,
-                    res.first->second,
-                    remote_path.parent_path().string());
-        });
+        /// This can happen if table replication is enabled, then the same local path is written
+        /// in `prefix.path` of each replica.
+        /// TODO: should replicated tables (e.g., RMT) be explicitly disallowed?
+        if (!res.second)
+            LOG_WARNING(
+                getLogger("MetadataStorageFromPlainObjectStorage"),
+                "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
+                local_path,
+                res.first->second,
+                remote_path.parent_path().string());
     }
-
-    runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, result.size());
-
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
     CurrentMetrics::add(metric, result.size());
     return result;

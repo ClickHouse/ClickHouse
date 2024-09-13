@@ -16,12 +16,10 @@
 namespace ProfileEvents
 {
     extern const Event AzureCopyObject;
-    extern const Event AzureStageBlock;
-    extern const Event AzureCommitBlockList;
+    extern const Event AzureUploadPart;
 
     extern const Event DiskAzureCopyObject;
-    extern const Event DiskAzureStageBlock;
-    extern const Event DiskAzureCommitBlockList;
+    extern const Event DiskAzureUploadPart;
 }
 
 
@@ -158,10 +156,6 @@ namespace
         void completeMultipartUpload()
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-            if (client->GetClickhouseOptions().IsClientForDisk)
-                ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
-
             block_blob_client.CommitBlockList(block_ids);
         }
 
@@ -265,9 +259,9 @@ namespace
 
         void processUploadPartRequest(UploadPartTask & task)
         {
-            ProfileEvents::increment(ProfileEvents::AzureStageBlock);
+            ProfileEvents::increment(ProfileEvents::AzureUploadPart);
             if (client->GetClickhouseOptions().IsClientForDisk)
-                ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
+                ProfileEvents::increment(ProfileEvents::DiskAzureUploadPart);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), task.part_offset, task.part_size);
@@ -339,6 +333,7 @@ void copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
+
     if (settings->use_native_copy)
     {
         LOG_TRACE(getLogger("copyAzureBlobStorageFile"), "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);

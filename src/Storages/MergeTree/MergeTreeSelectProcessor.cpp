@@ -145,12 +145,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 ordered_columns.push_back(res.block.getByName(name).column);
             }
 
-            auto chunk = Chunk(ordered_columns, res.row_count);
-            if (add_part_level)
-                chunk.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level));
-
             return ChunkAndProgress{
-                .chunk = std::move(chunk),
+                .chunk = Chunk(ordered_columns, res.row_count, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level) : nullptr),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};

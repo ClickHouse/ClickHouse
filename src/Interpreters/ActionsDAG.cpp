@@ -786,6 +786,9 @@ Block ActionsDAG::updateHeader(const Block & header) const
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
+    if (isInputProjected())
+        return res;
+
     res.reserve(header.columns() - pos_to_remove.size());
     for (size_t i = 0; i < header.columns(); i++)
     {
@@ -1147,33 +1150,8 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     }
 
     removeUnusedActions();
-}
-
-void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
-{
-    std::unordered_map<std::string_view, std::list<size_t>> names_map;
-    size_t num_columns = sample_block.columns();
-    for (size_t pos = 0; pos < num_columns; ++pos)
-        names_map[sample_block.getByPosition(pos).name].push_back(pos);
-
-    for (const auto * input : inputs)
-    {
-        auto & positions = names_map[input->result_name];
-        if (positions.empty())
-            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                            "Not found column {} in block {}", input->result_name, sample_block.dumpStructure());
-
-        positions.pop_front();
-    }
-
-    for (const auto & [_, positions] : names_map)
-    {
-        for (auto pos : positions)
-        {
-            const auto & col = sample_block.getByPosition(pos);
-            addInput(col.name, col.type);
-        }
-    }
+    projectInput();
+    projected_output = true;
 }
 
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
@@ -1249,6 +1227,8 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 ActionsDAGPtr ActionsDAG::clone() const
 {
     auto actions = std::make_shared<ActionsDAG>();
+    actions->project_input = project_input;
+    actions->projected_output = projected_output;
 
     std::unordered_map<const Node *, Node *> copy_map;
 
@@ -1342,6 +1322,9 @@ std::string ActionsDAG::dumpDAG() const
         out << ' ' << map[node];
     out << '\n';
 
+    out << "Project input: " << project_input << '\n';
+    out << "Projected output: " << projected_output << '\n';
+
     return out.str();
 }
 
@@ -1426,7 +1409,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 
     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
-    std::unordered_map<std::string_view, std::list<size_t>> inputs;
+    std::map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
     {
         size_t input_nodes_size = actions_dag->inputs.size();
@@ -1542,7 +1525,8 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     }
 
     actions_dag->outputs.swap(projection);
-    actions_dag->removeUnusedActions(false);
+    actions_dag->removeUnusedActions();
+    actions_dag->projectInput();
 
     return actions_dag;
 }
@@ -1600,6 +1584,10 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
             auto it = first_result.find(input_node->result_name);
             if (it == first_result.end() || it->second.empty())
             {
+                if (first.project_input)
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                                    "Cannot find column {} in ActionsDAG result", input_node->result_name);
+
                 first.inputs.push_back(input_node);
             }
             else
@@ -1635,6 +1623,13 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
         }
     }
 
+    /// Update output nodes.
+    if (second.project_input)
+    {
+        first.outputs.swap(second.outputs);
+        first.project_input = true;
+    }
+    else
     {
         /// Add not removed result from first actions.
         for (const auto * output_node : first.outputs)
@@ -1650,6 +1645,8 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     }
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
+
+    first.projected_output = second.projected_output;
 }
 
 void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
@@ -2045,6 +2042,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     }
 
     auto res = split(split_nodes);
+    res.second->project_input = project_input;
     return res;
 }
 
@@ -2088,6 +2086,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameS
                 dumpDAG());
 
     auto res = split(split_nodes);
+    res.second->project_input = project_input;
     return res;
 }
 
@@ -2159,6 +2158,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
 
     std::unordered_set<const Node *> split_nodes = {node};
     auto res = split(split_nodes);
+    res.second->project_input = project_input;
     return res;
 }
 
@@ -2745,7 +2745,11 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
     std::unordered_set<const Node *> used_inputs;
     for (const auto * input : inputs)
+    {
+        if (removes_filter && input == predicate)
+            continue;
         used_inputs.insert(input);
+    }
 
     removeUnusedActions(used_inputs);
 }

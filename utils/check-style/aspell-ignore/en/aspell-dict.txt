@@ -222,6 +222,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -293,6 +294,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
+flameGraph
 Flink
 ForEach
 FreeBSD
@@ -572,7 +574,6 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
-NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -715,8 +716,6 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
-PostHistory
-PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -992,8 +991,6 @@ UPDATEs
 URIs
 URL
 URL's
-URLDecode
-URLEncode
 URLHash
 URLHierarchy
 URLPathHierarchy
@@ -1015,6 +1012,8 @@ Updatable
 Uppercased
 Uptime
 Uptrace
+URLDecode
+URLEncode
 UserID
 Util
 VARCHAR
@@ -1220,7 +1219,6 @@ basename
 bcrypt
 benchmarking
 bfloat
-bigrams
 binlog
 bitAnd
 bitCount
@@ -1470,7 +1468,6 @@ dbeaver
 dbgen
 dbms
 ddl
-deallocated
 deallocation
 deallocations
 debian
@@ -1513,8 +1510,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
-detectTonality
 determinator
 deterministically
 dictGet
@@ -1530,7 +1525,6 @@ dictIsIn
 disableProtocols
 disjunction
 disjunctions
-displayName
 displaySecretsInShowAndSelect
 distro
 divideDecimal
@@ -1581,10 +1575,6 @@ evalMLMethod
 exFAT
 expiryMsec
 exponentialMovingAverage
-exponentialTimeDecayedAvg
-exponentialTimeDecayedCount
-exponentialTimeDecayedMax
-exponentialTimeDecayedSum
 exponentialmovingaverage
 expr
 exprN
@@ -1622,7 +1612,6 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 fixedstring
-flameGraph
 flamegraph
 flatbuffers
 flattenTuple
@@ -1658,7 +1647,6 @@ fuzzBits
 fuzzJSON
 fuzzer
 fuzzers
-fuzzQuery
 gRPC
 gccMurmurHash
 gcem
@@ -1807,7 +1795,6 @@ indexHint
 indexOf
 infi
 inflight
-infty
 initcap
 initcapUTF
 initialQueryID
@@ -1955,9 +1942,9 @@ loghouse
 london
 lookups
 loongarch
+lowcardinality
 lowCardinalityIndices
 lowCardinalityKeys
-lowcardinality
 lowerUTF
 lowercased
 lttb
@@ -2267,7 +2254,6 @@ proportionsZTest
 proto
 protobuf
 protobufsingle
-protocol
 proxied
 pseudorandom
 pseudorandomize
@@ -2519,7 +2505,6 @@ sqlite
 sqrt
 src
 srcReplicas
-stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2759,9 +2744,6 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
-transactionID
-transactionLatestSnapshot
-transactionOldestSnapshot
 transactional
 transactionally
 translateUTF
@@ -2815,7 +2797,6 @@ unescaping
 unhex
 unicode
 unidimensional
-unigrams
 unintuitive
 uniq
 uniqCombined
@@ -2862,7 +2843,6 @@ userver
 utils
 uuid
 uuidv
-vCPU
 varPop
 varPopStable
 varSamp
@@ -2872,9 +2852,7 @@ variantElement
 variantType
 varint
 varpop
-varpopstable
 varsamp
-varsampstable
 vectorized
 vectorscan
 vendoring

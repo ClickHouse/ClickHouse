@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -162,9 +163,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
     }
 
-    void updateWeakHash32(WeakHash32 &) const override
+    WeakHash32 getWeakHash32() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateWeakHash32 is not supported for ColumnUnique.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for ColumnUnique.");
     }
 
     void updateHashFast(SipHash &) const override

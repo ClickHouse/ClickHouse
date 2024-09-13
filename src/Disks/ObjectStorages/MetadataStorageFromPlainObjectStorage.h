@@ -22,7 +22,8 @@ using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFile
 /// Also it has excessive API calls.
 ///
 /// It is used to allow BACKUP/RESTORE to ObjectStorage (S3/...) with the same
-/// structure as on disk MergeTree, and does not require metadata from a local disk to restore.
+/// structure as on disk MergeTree, and does not requires metadata from local
+/// disk to restore.
 class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
 public:

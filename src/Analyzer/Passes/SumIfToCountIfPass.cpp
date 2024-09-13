@@ -5,7 +5,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Analyzer/Utils.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -33,7 +32,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction())
+        if (!function_node || !function_node->isAggregateFunction() || !function_node->getResultType()->equals(DataTypeUInt64()))
             return;
 
         auto function_name = function_node->getFunctionName();
@@ -66,8 +65,7 @@ public:
             auto multiplier_node = function_node_arguments_nodes[0];
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
             function_node_arguments_nodes.resize(1);
-
-            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
 
             if (constant_value_literal.get<UInt64>() != 1)
             {
@@ -117,7 +115,7 @@ public:
             function_node_arguments_nodes[0] = nested_if_function_arguments_nodes[0];
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
 
             if (if_true_condition_value != 1)
             {
@@ -146,7 +144,7 @@ public:
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
 
             if (if_false_condition_value != 1)
             {
@@ -158,6 +156,15 @@ public:
     }
 
 private:
+    static void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
+    {
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get(
+            "countIf", NullsAction::EMPTY, {argument_type}, function_node.getAggregateFunction()->getParameters(), properties);
+
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+    }
+
     QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
     {
         auto multiply_function_node = std::make_shared<FunctionNode>("multiply");

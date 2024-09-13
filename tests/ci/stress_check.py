@@ -3,6 +3,7 @@
 import csv
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,18 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
+
+
 def get_additional_envs(check_name: str) -> List[str]:
     result = []
     azure_connection_string = get_parameter_from_ssm("azure_connection_string")
@@ -29,9 +42,6 @@ def get_additional_envs(check_name: str) -> List[str]:
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
     if "azure" in check_name:
         result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
-
-    if "s3" in check_name:
-        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
     return result
 
@@ -117,6 +127,9 @@ def process_results(
 
 def run_stress_test(docker_image_name: str) -> None:
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)

@@ -204,7 +204,7 @@ public:
         hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {

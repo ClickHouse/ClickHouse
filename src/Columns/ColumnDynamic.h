@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/IDataType.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
@@ -167,9 +168,9 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    void updateWeakHash32(WeakHash32 & hash) const override
+    WeakHash32 getWeakHash32() const override
     {
-        variant_column->updateWeakHash32(hash);
+        return variant_column->getWeakHash32();
     }
 
     void updateHashFast(SipHash & hash) const override

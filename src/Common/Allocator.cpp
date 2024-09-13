@@ -187,12 +187,9 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
 #if USE_GWP_ASAN
     if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
+        auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(new_size, alignment))
         {
-            auto trace_free = CurrentMemoryTracker::free(old_size);
-            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-            trace_free.onFree(buf, old_size);
-
             memcpy(ptr, buf, std::min(old_size, new_size));
             free(buf, old_size);
             trace_alloc.onAlloc(buf, new_size);
@@ -209,6 +206,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         }
         else
         {
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
         }
     }
@@ -231,13 +229,17 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     if (alignment <= MALLOC_MIN_ALIGNMENT)
     {
         /// Resize malloc'd memory region with no special alignment requirement.
-        auto trace_free = CurrentMemoryTracker::free(old_size);
+        /// Realloc can do 2 possible things:
+        /// - expand existing memory region
+        /// - allocate new memory block and free the old one
+        /// Because we don't know which option will be picked we need to make sure there is enough
+        /// memory for all options
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-        trace_free.onFree(buf, old_size);
 
         void * new_buf = ::realloc(buf, new_size);
         if (nullptr == new_buf)
         {
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             throw DB::ErrnoException(
                 DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
                 "Allocator: Cannot realloc from {} to {}",
@@ -246,6 +248,8 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         }
 
         buf = new_buf;
+        auto trace_free = CurrentMemoryTracker::free(old_size);
+        trace_free.onFree(buf, old_size);
         trace_alloc.onAlloc(buf, new_size);
 
         if constexpr (clear_memory)

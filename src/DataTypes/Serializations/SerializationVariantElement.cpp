@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 struct DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -156,26 +157,20 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             assert_cast<ColumnLowCardinality &>(*variant_element_state->variant->assumeMutable()).nestedRemoveNullable();
     }
 
-    /// If nothing to deserialize, just insert defaults.
-    if (variant_limit == 0)
-    {
-        mutable_column->insertManyDefaults(limit);
-        return;
-    }
-
     addVariantToPath(settings.path);
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
-    /// If nothing was deserialized when variant_limit > 0
-    /// it means that we don't have a stream for such sub-column.
-    /// It may happen during ALTER MODIFY column with Variant extension.
-    /// In this case we should just insert default values.
-    if (variant_element_state->variant->empty())
+    /// If there was nothing to deserialize or nothing was actually deserialized when variant_limit > 0, just insert defaults.
+    /// The second case means that we don't have a stream for such sub-column. It may happen during ALTER MODIFY column with Variant extension.
+    if (variant_limit == 0 || variant_element_state->variant->empty())
     {
         mutable_column->insertManyDefaults(limit);
         return;
     }
+
+    if (variant_element_state->variant->size() < variant_limit)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of deserialized variant column less than the limit: {} < {}", variant_element_state->variant->size(), variant_limit);
 
     size_t variant_offset = variant_element_state->variant->size() - variant_limit;
 

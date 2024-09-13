@@ -5,7 +5,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 
 namespace DB
 {
@@ -118,12 +117,6 @@ public:
 protected:
     virtual void updateConfiguration(ContextPtr local_context);
 
-    virtual ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        bool supports_subset_of_columns,
-        ContextPtr local_context);
-
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
@@ -195,9 +188,6 @@ public:
     virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
-    void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
-    const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
-
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
@@ -209,7 +199,6 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
-    DataLakePartitionColumns partition_columns;
 };
 
 }

@@ -68,7 +68,7 @@ public:
         {
             {"readable_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
         DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
         if constexpr (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(return_type);

@@ -7,8 +7,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include "Storages/IndicesDescription.h"
-#include "base/types.h"
+#include <base/types.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
@@ -312,19 +311,10 @@ const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
     return getDictionary().skipSerializedInArena(pos);
 }
 
-void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnLowCardinality::getWeakHash32() const
 {
-    auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
-
-    const auto & dict = getDictionary().getNestedColumn();
-    WeakHash32 dict_hash(dict->size());
-    dict->updateWeakHash32(dict_hash);
-
-    idx.updateWeakHash(hash, dict_hash);
+    WeakHash32 dict_hash = getDictionary().getNestedColumn()->getWeakHash32();
+    return idx.getWeakHash(dict_hash);
 }
 
 void ColumnLowCardinality::updateHashFast(SipHash & hash) const
@@ -820,10 +810,11 @@ bool ColumnLowCardinality::Index::containsDefault() const
     return contains;
 }
 
-void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const
+WeakHash32 ColumnLowCardinality::Index::getWeakHash(const WeakHash32 & dict_hash) const
 {
+    WeakHash32 hash(positions->size());
     auto & hash_data = hash.getData();
-    auto & dict_hash_data = dict_hash.getData();
+    const auto & dict_hash_data = dict_hash.getData();
 
     auto update_weak_hash = [&](auto x)
     {
@@ -832,10 +823,11 @@ void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 &
         auto size = data.size();
 
         for (size_t i = 0; i < size; ++i)
-            hash_data[i] = static_cast<UInt32>(intHashCRC32(dict_hash_data[data[i]], hash_data[i]));
+            hash_data[i] = dict_hash_data[data[i]];
     };
 
     callForType(std::move(update_weak_hash), size_of_type);
+    return hash;
 }
 
 void ColumnLowCardinality::Index::collectSerializedValueSizes(

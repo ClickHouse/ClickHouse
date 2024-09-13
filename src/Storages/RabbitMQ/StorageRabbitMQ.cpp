@@ -1129,13 +1129,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(
-        insert,
-        rabbitmq_context,
-        /* allow_materialized */ false,
-        /* no_squash */ true,
-        /* no_destination */ true,
-        /* async_isnert */ false);
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, /* allow_materialized_ */ false, /* no_squash_ */ true, /* no_destination_ */ true);
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));

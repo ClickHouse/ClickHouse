@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/covarpop
-sidebar_position: 121
+sidebar_position: 37
 ---
 
 # covarPop

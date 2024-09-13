@@ -136,8 +136,7 @@ WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {
     try
     {
-        if (!canceled)
-            finalize();
+        finalize();
     }
     catch (...)
     {

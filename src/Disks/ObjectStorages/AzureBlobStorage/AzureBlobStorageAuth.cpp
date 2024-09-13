@@ -181,7 +181,7 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     if (config.getBool(config_prefix + ".use_workload_identity", false))
     {
         auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-        return std::make_unique<T>(url, workload_identity_credential, client_options);
+        return std::make_unique<T>(url, workload_identity_credential);
     }
 
     auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();

@@ -1129,11 +1129,11 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
 
     if (hex)
     {
-        hexStringDecode(str_begin, str_end, res_pos);
+        hexStringDecode(str_begin, str_end, res_pos, word_size);
     }
     else
     {
-        binStringDecode(str_begin, str_end, res_pos);
+        binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
     return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));

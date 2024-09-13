@@ -14,15 +14,6 @@ namespace ProfileEvents
 {
     extern const Event RemoteWriteThrottlerBytes;
     extern const Event RemoteWriteThrottlerSleepMicroseconds;
-
-    extern const Event AzureUpload;
-    extern const Event AzureStageBlock;
-    extern const Event AzureCommitBlockList;
-
-    extern const Event DiskAzureUpload;
-    extern const Event DiskAzureStageBlock;
-    extern const Event DiskAzureCommitBlockList;
-
 }
 
 namespace DB
@@ -143,10 +134,6 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
     /// then we use single part upload instead of multi part upload
     if (block_ids.empty() && detached_part_data.size() == 1 && detached_part_data.front().data_size <= max_single_part_upload_size)
     {
-        ProfileEvents::increment(ProfileEvents::AzureUpload);
-        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
-            ProfileEvents::increment(ProfileEvents::DiskAzureUpload);
-
         auto part_data = std::move(detached_part_data.front());
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
@@ -177,10 +164,6 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
     if (!block_ids.empty())
     {
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-        ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
-            ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
-
         execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
         LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
     }
@@ -285,10 +268,6 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         auto & data_size = std::get<1>(*worker_data).data_size;
         auto & data_block_id = std::get<0>(*worker_data);
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-
-        ProfileEvents::increment(ProfileEvents::AzureStageBlock);
-        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
-            ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);
         execWithRetry([&](){ block_blob_client.StageBlock(data_block_id, memory_stream); }, max_unexpected_write_error_retries, data_size);

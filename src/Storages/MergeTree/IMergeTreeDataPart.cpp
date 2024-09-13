@@ -375,12 +375,6 @@ void IMergeTreeDataPart::unloadIndex()
     index_loaded = false;
 }
 
-bool IMergeTreeDataPart::isIndexLoaded() const
-{
-    std::scoped_lock lock(index_mutex);
-    return index_loaded;
-}
-
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;
@@ -1583,7 +1577,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
-        if (loaded_columns.empty())
+        if (columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         if (!is_readonly_storage)
@@ -2033,6 +2027,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
+        .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
@@ -2328,26 +2323,21 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
-UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
-{
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    return hash.get128();
-}
-
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
+    SipHash hash;
     if (token.empty())
     {
-        const auto hash_value = getPartBlockIDHash();
-        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+        checksums.computeTotalChecksumDataOnly(hash);
+    }
+    else
+    {
+        hash.update(token.data(), token.size());
     }
 
-    SipHash hash;
-    hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }

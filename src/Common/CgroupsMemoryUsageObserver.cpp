@@ -25,6 +25,7 @@
 #endif
 
 using namespace DB;
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -129,8 +130,9 @@ std::optional<std::string> getCgroupsV2Path()
     if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
-    String cgroup = cgroupV2OfProcess();
-    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
+    fs::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
+        return {};
 
     /// Return the bottom-most nested current memory file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.
@@ -148,7 +150,7 @@ std::optional<std::string> getCgroupsV2Path()
 std::optional<std::string> getCgroupsV1Path()
 {
     auto path = default_cgroups_mount / "memory/memory.stat";
-    if (!std::filesystem::exists(path))
+    if (!fs::exists(path))
         return {};
     return {default_cgroups_mount / "memory"};
 }

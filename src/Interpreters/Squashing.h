@@ -8,18 +8,9 @@
 namespace DB
 {
 
-class ChunksToSquash : public ChunkInfoCloneable<ChunksToSquash>
+struct ChunksToSquash : public ChunkInfo
 {
-public:
-    ChunksToSquash() = default;
-    ChunksToSquash(const ChunksToSquash & other)
-    {
-        chunks.reserve(other.chunks.size());
-        for (const auto & chunk: other.chunks)
-           chunks.push_back(chunk.clone());
-    }
-
-    std::vector<Chunk> chunks = {};
+    mutable std::vector<Chunk> chunks = {};
 };
 
 /** Merging consecutive passed blocks to specified minimum size.
@@ -45,35 +36,32 @@ public:
     static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
-    void setHeader(Block header_) { header = std::move(header_); }
-    const Block & getHeader() const { return header; }
-
-private:
-    class CurrentSize
+    bool isDataLeft()
     {
-        std::vector<Chunk> chunks = {};
+        return !chunks_to_merge_vec.empty();
+    }
+
+    Block header;
+private:
+    struct CurrentSize
+    {
         size_t rows = 0;
         size_t bytes = 0;
-
-    public:
-        explicit operator bool () const { return !chunks.empty(); }
-        size_t getRows() const { return rows; }
-        size_t getBytes() const { return bytes; }
-        void add(Chunk && chunk);
-        std::vector<Chunk> extract();
     };
 
-    const size_t min_block_size_rows;
-    const size_t min_block_size_bytes;
-    Block header;
+    std::vector<Chunk> chunks_to_merge_vec = {};
+    size_t min_block_size_rows;
+    size_t min_block_size_bytes;
 
-    CurrentSize accumulated;
+    CurrentSize accumulated_size;
 
-    static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos);
+    static const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
-    bool isEnoughSize() const;
+    static Chunk squash(std::vector<Chunk> & input_chunks);
+
+    void expandCurrentSize(size_t rows, size_t bytes);
+    void changeCurrentSize(size_t rows, size_t bytes);
     bool isEnoughSize(size_t rows, size_t bytes) const;
-    bool isEnoughSize(const Chunk & chunk) const;
 
     Chunk convertToChunk(std::vector<Chunk> && chunks) const;
 };

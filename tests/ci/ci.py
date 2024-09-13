@@ -636,7 +636,9 @@ def _upload_build_artifacts(
         int(job_report.duration),
         GITHUB_JOB_API_URL(),
         head_ref=pr_info.head_ref,
-        pr_number=pr_info.number,
+        # PRInfo fetches pr number for release branches as well - set pr_number to 0 for release
+        #   so that build results are not mistakenly treated as feature branch builds
+        pr_number=pr_info.number if pr_info.is_pr else 0,
     )
     report_url = ci_cache.upload_build_report(build_result)
     print(f"Report file has been uploaded to [{report_url}]")
@@ -1065,20 +1067,18 @@ def main() -> int:
             )
 
             # rerun helper check
-            # FIXME: Find a way to identify if job restarted manually (by developer) or by automatic workflow restart (died spot-instance)
-            #  disable rerun check for the former
+            # FIXME: remove rerun_helper check and rely on ci cache only
             if check_name not in (
                 CI.JobNames.BUILD_CHECK,
             ):  # we might want to rerun build report job
                 rerun_helper = RerunHelper(commit, check_name_with_group)
                 if rerun_helper.is_already_finished_by_status():
-                    print("WARNING: Rerunning job with GH status ")
                     status = rerun_helper.get_finished_status()
                     assert status
+                    previous_status = status.state
                     print("::group::Commit Status")
                     print(status)
                     print("::endgroup::")
-                    previous_status = status.state
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:
