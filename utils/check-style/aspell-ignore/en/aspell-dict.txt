@@ -24,6 +24,7 @@ Aggregatefunction
 AggregatingMergeTree
 AggregatorThreads
 AggregatorThreadsActive
+AzureQueue
 Akka
 AlertManager
 Alexey
