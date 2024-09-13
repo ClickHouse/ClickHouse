@@ -8,8 +8,9 @@ CREATE TABLE 03231_max_execution_time_t
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/03231_max_execution_time', 'r1')
 ORDER BY (key, value);
 
-SET max_rows_to_read = 100_000_000; -- to avoid DB::Exception: Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 20.00 million, current rows: 100.00 million. (TOO_MANY_ROWS)
-INSERT INTO 03231_max_execution_time_t SELECT number, toString(number) FROM numbers_mt(100_000_000) SETTINGS max_threads=0, max_insert_threads=0;
+SET max_rows_to_read = 20_000_000;
+SYSTEM STOP MERGES 03231_max_execution_time_t;
+INSERT INTO 03231_max_execution_time_t SELECT number, toString(number) FROM numbers_mt(20_000_000) SETTINGS max_threads=0, max_insert_threads=0;
 
 SET allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 SET use_query_cache = false;
