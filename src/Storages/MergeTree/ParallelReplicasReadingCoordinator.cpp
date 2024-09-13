@@ -869,7 +869,7 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
     /// To get rid of duplicates
     for (auto && part: announcement.description)
     {
-        auto the_same_it = all_parts_to_read.find(Part{.description = part});
+        auto the_same_it = all_parts_to_read.find(Part{.description = part, .replicas = {}});
 
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
@@ -882,14 +882,14 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
             continue;
 
         /// Look for the first part >= current
-        auto covering_it = all_parts_to_read.lower_bound(Part{.description = part});
+        auto covering_it = all_parts_to_read.lower_bound(Part{.description = part, .replicas = {}});
 
         if (covering_it != all_parts_to_read.end())
         {
             /// Checks if other part covers this one or this one covers the other
             auto is_covered_or_covering = [&part] (const Part & other)
                 {
-                    return other.description.info.contains(part.info) ||  part.info.contains(other.description.info);
+                    return other.description.info.contains(part.info) || part.info.contains(other.description.info);
                 };
 
             if (is_covered_or_covering(*covering_it))
