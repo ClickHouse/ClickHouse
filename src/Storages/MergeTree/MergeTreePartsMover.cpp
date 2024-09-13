@@ -232,6 +232,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
     MutableDataPartStoragePtr cloned_part_storage;
+    bool preserve_blobs = false;
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
@@ -259,6 +260,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         if (zero_copy_part)
         {
             /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
+            preserve_blobs = true;
             zero_copy_part->is_temp = false;    /// Do not remove it in dtor
             cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
         }
@@ -284,7 +286,10 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         cloned_part.part->is_temp = true;
         /// Setting it in case connection to zookeeper is lost while moving
         /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
-        cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
+        if (preserve_blobs)
+            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
+        else
+            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
     }
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
     cloned_part.part->loadVersionMetadata();
