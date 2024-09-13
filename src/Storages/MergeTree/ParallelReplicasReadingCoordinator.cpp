@@ -869,8 +869,7 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
     /// To get rid of duplicates
     for (auto && part: announcement.description)
     {
-        auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return other.description.info == part.info; });
+        auto the_same_it = all_parts_to_read.find(Part{.description = part});
 
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
@@ -882,12 +881,28 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
         if (state_initialized)
             continue;
 
-        auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return other.description.info.contains(part.info) ||  part.info.contains(other.description.info); });
+        /// Look for the first part >= current
+        auto covering_it = all_parts_to_read.lower_bound(Part{.description = part});
 
-        /// It is covering part or we have covering - skip it
-        if (covering_or_the_same_it != all_parts_to_read.end())
-            continue;
+        if (covering_it != all_parts_to_read.end())
+        {
+            /// Checks if other part covers this one or this one covers the other
+            auto is_covered_or_covering = [&part] (const Part & other)
+                {
+                    return other.description.info.contains(part.info) ||  part.info.contains(other.description.info);
+                };
+
+            if (is_covered_or_covering(*covering_it))
+                continue;
+
+            /// Also look at the previous part, it could be covering the current one
+            if (covering_it != all_parts_to_read.begin())
+            {
+                --covering_it;
+                if (is_covered_or_covering(*covering_it))
+                    continue;
+            }
+        }
 
         new_rows_to_read += part.rows;
 
