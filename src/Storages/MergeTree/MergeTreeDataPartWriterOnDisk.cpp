@@ -85,11 +85,11 @@ MergeTreeDataPartWriterOnDisk::Stream<false>::Stream(
     marks_file_extension{marks_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
     marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
     marks_hashing(*marks_file),
-    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
+    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)
 {
@@ -108,7 +108,7 @@ MergeTreeDataPartWriterOnDisk::Stream<true>::Stream(
     data_file_extension{data_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
     compress_marks(false)
 {
