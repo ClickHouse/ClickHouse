@@ -1300,7 +1300,9 @@ bool KeyCondition::tryPrepareSetIndex(
             set_column = nested_column;
         }
 
-        ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        ColumnWithTypeAndName set_column_with_type_and_name(set_column, set_element_type, "");
+
+        ColumnPtr nullable_set_column = castColumnAccurateOrNull(set_column_with_type_and_name, key_column_type);
         const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
         if (!nullable_set_column_typed)
             return false;
