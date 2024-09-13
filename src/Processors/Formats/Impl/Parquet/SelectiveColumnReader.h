@@ -515,42 +515,6 @@ private:
     arrow::util::RleDecoder idx_decoder;
 };
 
-class ParquetReader;
-
-class RowGroupChunkReader
-{
-public:
-    struct ReadMetrics
-    {
-        size_t output_rows = 0;
-        size_t filtered_rows = 0;
-        size_t skipped_rows = 0;
-    };
-    RowGroupChunkReader(
-        ParquetReader * parquetReader,
-        size_t row_group_idx,
-        std::unordered_map<String, ColumnFilterPtr> filters);
-    ~RowGroupChunkReader()
-    {
-//        printMetrics(std::cerr);
-    }
-    Chunk readChunk(size_t rows);
-    bool hasMoreRows() const { return remain_rows > 0; }
-    void printMetrics(std::ostream & out) const
-    {
-        out << fmt::format("metrics.output_rows: {} \n metrics.filtered_rows: {} \n metrics.skipped_rows: {} \n", metrics.output_rows, metrics.filtered_rows, metrics.skipped_rows);
-    }
-private:
-    ParquetReader * parquet_reader;
-    std::shared_ptr<parquet::RowGroupMetaData> row_group_meta;
-    std::vector<String> filter_columns;
-    std::unordered_map<String, SelectiveColumnReaderPtr> reader_columns_mapping;
-    std::vector<SelectiveColumnReaderPtr> column_readers;
-    std::vector<PaddedPODArray<UInt8>> column_buffers;
-    size_t remain_rows = 0;
-    ReadMetrics metrics;
-};
-
 class OptionalColumnReader : public SelectiveColumnReader
 {
 public:

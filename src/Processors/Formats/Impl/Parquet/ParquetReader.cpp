@@ -2,6 +2,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <arrow/io/util_internal.h>
 
 namespace DB
 {
@@ -9,6 +10,7 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int PARQUET_EXCEPTION;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 #define THROW_PARQUET_EXCEPTION(s) \
@@ -56,14 +58,13 @@ ParquetReader::ParquetReader(
     if (row_groups_indices.empty())
         for (int i = 0; i < meta_data->num_row_groups(); i++)
             row_groups_indices.push_back(i);
-    chunk_reader = std::make_unique<SubRowGroupRangeReader>(row_groups_indices, [&](const size_t idx) { return getRowGroupChunkReader(idx); });
-    async_downloader = std::make_unique<FileAsyncDownloader>(file, file_mutex);
     const auto * root = meta_data->schema()->group_node();
     for (int i = 0; i < root->field_count(); ++i)
     {
         const auto & node = root->field(i);
         parquet_columns.emplace(node->name(), node);
     }
+    chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
 }
 
 Block ParquetReader::read()
@@ -90,19 +91,20 @@ void ParquetReader::setRemainFilter(std::optional<ActionsDAG> & expr)
         remain_filter = std::optional<ExpressionActions>(std::move(actions));
     }
 }
-std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_t row_group_idx)
+std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr prefetch)
 {
-    return std::make_unique<RowGroupChunkReader>(this, row_group_idx, filters);
+    return std::make_unique<RowGroupChunkReader>(this, row_group_idx, std::move(prefetch), filters);
 }
 
-extern std::pair<size_t, size_t> getColumnRange(const parquet::ColumnChunkMetaData & column_metadata);
+extern arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_metadata);
 
 
 std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader(std::vector<Int32> row_group_indices_)
 {
-
+    std::vector<RowGroupPrefetchPtr> row_group_prefetches;
     for (auto row_group_idx : row_group_indices_)
     {
+        RowGroupPrefetchPtr prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties);
         auto row_group_meta = meta_data->RowGroup(row_group_idx);
         for (const auto & name : header.getNames())
         {
@@ -110,16 +112,19 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
                 throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", name);
             auto idx = meta_data->schema()->ColumnIndex(*parquet_columns[name]);
             auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
-            async_downloader->downloadColumnChunkData(row_group_idx, name, range.first, range.second);
+            prefetch->prefetchRange(range);
         }
+        row_group_prefetches.push_back(std::move(prefetch));
     }
-    return std::make_unique<SubRowGroupRangeReader>(row_group_indices_, [&](const size_t idx) { return getRowGroupChunkReader(idx); });
+    return std::make_unique<SubRowGroupRangeReader>(row_group_indices_, std::move(row_group_prefetches), [&](const size_t idx, RowGroupPrefetchPtr prefetch) { return getRowGroupChunkReader(idx, std::move(prefetch)); });
 }
 
 
-SubRowGroupRangeReader::SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, RowGroupReaderCreator && creator)
-    : row_group_indices(rowGroupIndices), row_group_reader_creator(creator)
+SubRowGroupRangeReader::SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, std::vector<RowGroupPrefetchPtr>&& row_group_prefetches_, RowGroupReaderCreator && creator)
+    : row_group_indices(rowGroupIndices), row_group_prefetches(std::move(row_group_prefetches_)), row_group_reader_creator(creator)
 {
+    if (row_group_indices.size() != row_group_prefetches.size())
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "row group indices and prefetches size mismatch");
 }
 DB::Chunk SubRowGroupRangeReader::read(size_t rows)
 {
@@ -137,58 +142,13 @@ bool SubRowGroupRangeReader::loadRowGroupChunkReaderIfNeeded()
         return false;
     if ((!row_group_chunk_reader || !row_group_chunk_reader->hasMoreRows()) && next_row_group_idx < row_group_indices.size())
     {
-        row_group_chunk_reader = row_group_reader_creator(row_group_indices[next_row_group_idx]);
+        if (next_row_group_idx == 0) row_group_prefetches.front()->startPrefetch();
+        row_group_chunk_reader = row_group_reader_creator(row_group_indices[next_row_group_idx], std::move(row_group_prefetches[next_row_group_idx]));
         next_row_group_idx++;
+        if (next_row_group_idx < row_group_indices.size())
+            row_group_prefetches[next_row_group_idx]->startPrefetch();
     }
     return true;
 }
-
-FileAsyncDownloader::FileAsyncDownloader(SeekableReadBuffer & file_, std::mutex & mutex) : file(file_), file_mutex(mutex)
-{
-   callback_runner = threadPoolCallbackRunnerUnsafe<ColumnChunkDataPtr>(getIOThreadPool().get(), "ParquetRead");
-}
-
-
-void FileAsyncDownloader::downloadColumnChunkData(int row_group_idx, const String & column_name, size_t offset, size_t len)
-{
-    auto task = [this, offset, len]() -> ColumnChunkDataPtr {
-        ColumnChunkDataPtr data = std::make_unique<ColumnChunkData>();
-        data->data.resize(len);
-        size_t count = 0;
-        if (file.supportsReadAt())
-        {
-            auto pb = [](size_t) { return true; };
-            count = file.readBigAt(reinterpret_cast<char *>(data->data.data()), len, offset, pb);
-        }
-        else
-        {
-            std::lock_guard lock(file_mutex);
-            file.seek(offset, SEEK_SET);
-            count = file.readBig(reinterpret_cast<char *>(data->data.data()), len);
-
-        }
-        if (count != len)
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column data");
-        return data;
-    };
-
-    // Assuming Priority is an enum or a type that is defined elsewhere
-    Priority priority = {0}; // Set the appropriate priority value
-    auto future =  callback_runner(std::move(task), priority);
-    std::lock_guard lock(chunks_mutex);
-    column_chunks[row_group_idx][column_name] = std::move(future);
-}
-std::shared_ptr<ColumnChunkData>
-FileAsyncDownloader::readColumnChunkData(int row_group_idx, const String & column_name)
-{
-    std::lock_guard lock(chunks_mutex);
-    if (column_chunks.contains(row_group_idx) && column_chunks[row_group_idx].contains(column_name))
-    {
-        auto data = std::move(column_chunks[row_group_idx][column_name]);
-        return data.get();
-    }
-    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Column chunk data not found {}, {}", row_group_idx, column_name);
-}
-
 
 }

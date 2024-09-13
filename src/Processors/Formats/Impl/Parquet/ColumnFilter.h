@@ -105,6 +105,7 @@ protected:
 public:
     virtual ~ColumnFilter() = default;
     virtual ColumnFilterKind kind() const { return kind_; }
+    virtual ColumnPtr testByExpression(ColumnPtr) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testByExpression not implemented"); }
     virtual bool testNull() const { return null_allowed; }
     virtual bool testNotNull() const { return true; }
     virtual bool testInt64(Int64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64 not implemented"); }

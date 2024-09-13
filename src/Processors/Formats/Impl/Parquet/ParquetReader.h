@@ -5,6 +5,7 @@
 #include <Processors/Chunk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
+#include <Processors/Formats/Impl/Parquet/RowGroupChunkReader.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <arrow/io/interfaces.h>
@@ -16,38 +17,18 @@
 namespace DB
 {
 
-struct ColumnChunkData
-{
-    PaddedPODArray<UInt8> data;
-};
-
-using ColumnChunkDataPtr = std::shared_ptr<ColumnChunkData>;
-
-class FileAsyncDownloader
-{
-public:
-    FileAsyncDownloader(SeekableReadBuffer & file_, std::mutex & mutex);
-    void downloadColumnChunkData(int row_group_idx, const String & column_name, size_t offset, size_t size);
-    std::shared_ptr<ColumnChunkData> readColumnChunkData(int row_group_idx, const String & column_name);
-private:
-    ThreadPoolCallbackRunnerUnsafe<ColumnChunkDataPtr> callback_runner;
-    SeekableReadBuffer& file;
-    std::mutex& file_mutex;
-    std::unordered_map<int, std::unordered_map<String, std::future<std::shared_ptr<ColumnChunkData>>>> column_chunks;
-    std::mutex chunks_mutex;
-};
-
 class SubRowGroupRangeReader
 {
 public:
-    using RowGroupReaderCreator = std::function<std::unique_ptr<RowGroupChunkReader>(size_t)>;
-    SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, RowGroupReaderCreator&& creator);
+    using RowGroupReaderCreator = std::function<std::unique_ptr<RowGroupChunkReader>(size_t, RowGroupPrefetchPtr)>;
+    SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, std::vector<RowGroupPrefetchPtr> && row_group_prefetches, RowGroupReaderCreator&& creator);
     DB::Chunk read(size_t rows);
 
 private:
     bool loadRowGroupChunkReaderIfNeeded();
 
     std::vector<Int32> row_group_indices;
+    std::vector<RowGroupPrefetchPtr> row_group_prefetches;
     std::unique_ptr<RowGroupChunkReader> row_group_chunk_reader;
     size_t next_row_group_idx = 0;
     RowGroupReaderCreator row_group_reader_creator;
@@ -70,7 +51,7 @@ public:
     Block read();
     void addFilter(const String & column_name, ColumnFilterPtr filter);
     void setRemainFilter(std::optional<ActionsDAG> & expr);
-    std::unique_ptr<RowGroupChunkReader> getRowGroupChunkReader(size_t row_group_idx);
+    std::unique_ptr<RowGroupChunkReader> getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr prefetch);
     std::unique_ptr<SubRowGroupRangeReader> getSubRowGroupRangeReader(std::vector<Int32> row_group_indices);
 private:
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
@@ -91,7 +72,6 @@ private:
     size_t next_row_group_idx = 0;
     std::shared_ptr<parquet::FileMetaData> meta_data;
     std::unordered_map<String, parquet::schema::NodePtr> parquet_columns;
-    std::unique_ptr<FileAsyncDownloader> async_downloader;
 };
 
 }
