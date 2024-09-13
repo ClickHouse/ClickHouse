@@ -61,7 +61,7 @@ def test_initiator_snapshot_is_used_for_reading(start_cluster):
         expected = 499500 + idx  # sum of all integers 0..999 + idx
         assert (
             node.query(
-                "SELECT sum(value) FROM {table_name}",
+                f"SELECT sum(value) FROM {table_name}",
                 settings={
                     "allow_experimental_parallel_reading_from_replicas": 2,
                     "max_parallel_replicas": 100,
