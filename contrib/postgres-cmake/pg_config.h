@@ -296,9 +296,6 @@
 /* Define to 1 if you have the `ldap' library (-lldap). */
 //#define HAVE_LIBLDAP 0
 
-/* Define to 1 if you have the `ldap_r' library (-lldap_r). */
-#define HAVE_LIBLDAP_R 0
-
 /* Define to 1 if you have the `m' library (-lm). */
 #define HAVE_LIBM 1
 
@@ -384,6 +381,15 @@
 /* Define to 1 if you have the `posix_fadvise' function. */
 #define HAVE_POSIX_FADVISE 1
 
+/* Define to 1 if you have the declaration of `preadv', and to 0 if you don't. */
+/* #undef HAVE_DECL_PREADV */
+
+/* Define to 1 if you have the declaration of `pwritev', and to 0 if you don't. */
+/* #define HAVE_DECL_PWRITEV */
+
+/* Define to 1 if you have the `X509_get_signature_info' function. */
+/* #undef HAVE_X509_GET_SIGNATURE_INFO */
+
 /* Define to 1 if you have the POSIX signal interface. */
 #define HAVE_POSIX_SIGNALS 1
 
@@ -462,6 +468,9 @@
 
 /* Define to 1 if you have the `srandom' function. */
 #define HAVE_SRANDOM 1
+
+/* Define to 1 if you have the `SSL_CTX_set_num_tickets' function. */
+/* #define HAVE_SSL_CTX_SET_NUM_TICKETS */
 
 /* Define to 1 if you have the `SSL_get_current_compression' function. */
 #define HAVE_SSL_GET_CURRENT_COMPRESSION 0
@@ -551,6 +560,9 @@
 /* Define to 1 if you have the <sys/ipc.h> header file. */
 #define HAVE_SYS_IPC_H 1
 
+/* Define to 1 if you have the <sys/personality.h> header file. */
+/* #undef HAVE_SYS_PERSONALITY_H */
+
 /* Define to 1 if you have the <sys/poll.h> header file. */
 #define HAVE_SYS_POLL_H 1
 
@@ -568,6 +580,9 @@
 
 /* Define to 1 if you have the <sys/shm.h> header file. */
 #define HAVE_SYS_SHM_H 1
+
+/* Define to 1 if you have the <sys/signalfd.h> header file. */
+/* #undef HAVE_SYS_SIGNALFD_H */
 
 /* Define to 1 if you have the <sys/socket.h> header file. */
 #define HAVE_SYS_SOCKET_H 1
@@ -683,6 +698,9 @@
 
 /* Define to 1 if your compiler understands __builtin_constant_p. */
 #define HAVE__BUILTIN_CONSTANT_P 1
+
+/* Define to 1 if your compiler understands __builtin_frame_address. */
+/* #undef HAVE__BUILTIN_FRAME_ADDRESS */
 
 /* Define to 1 if your compiler understands __builtin_types_compatible_p. */
 #define HAVE__BUILTIN_TYPES_COMPATIBLE_P 1
@@ -834,8 +852,6 @@
 #define USE_OPENSSL 0
 
 #define USE_OPENSSL_RANDOM 0
-
-#define HAVE_BIO_GET_DATA 0
 
 #define FRONTEND 1
 
