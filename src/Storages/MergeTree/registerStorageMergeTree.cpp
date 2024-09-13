@@ -277,7 +277,7 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     if (has_valid_arguments)
     {
-        if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "It's not allowed to specify explicit zookeeper_path and replica_name "
@@ -285,7 +285,7 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
                             "specify them explicitly, enable setting "
                             "database_replicated_allow_replicated_engine_arguments.");
         }
-        else if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 1)
+        else if (!query.attach && is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 1)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "It's not recommended to explicitly specify "
                                                             "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
@@ -305,7 +305,7 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
 
 
-        if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 2)
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 2)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
                                                                      "with default arguments", zookeeper_path, replica_name);

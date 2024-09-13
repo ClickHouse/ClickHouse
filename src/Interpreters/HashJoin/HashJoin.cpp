@@ -1236,6 +1236,7 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
 
 void HashJoin::reuseJoinedData(const HashJoin & join)
 {
+    have_compressed = join.have_compressed;
     data = join.data;
     from_storage_join = true;
 
