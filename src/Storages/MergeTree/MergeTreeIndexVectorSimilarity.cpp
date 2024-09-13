@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -268,7 +269,9 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
     /// Reserving space is mandatory
-    index->reserve(roundUpToPowerOfTwoOrZero(index->size() + rows));
+    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings().max_build_vector_similarity_index_thread_pool_size;
+    unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(index->size() + rows), max_thread_pool_size);
+    index->reserve(limits);
 
     /// Vector index creation is slooooow. Add the new rows in parallel. The threadpool is global to avoid oversubscription when multiple
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
