@@ -233,8 +233,6 @@ static void addFilterDataToVirtualColumns(Block & block, const String & path, si
         auto it = keys.find(virt_column.name);
         if (it != keys.end())
         {
-            if (!block.has(virt_column.name))
-                block.insert({virt_column.type->createColumn(), virt_column.type, virt_column.name});
             auto & column = block.getByName(virt_column.name).column;
             ReadBufferFromString buf(it->second);
             virt_column.type->getDefaultSerialization()->deserializeWholeText(column->assumeMutableRef(), buf, getFormatSettings(context));
