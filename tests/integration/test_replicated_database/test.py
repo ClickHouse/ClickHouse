@@ -1219,6 +1219,9 @@ def test_sync_replica(started_cluster):
 
 
 def test_force_synchronous_settings(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings")
+    dummy_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings")
+    snapshotting_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings")
     main_node.query(
         "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard1', 'replica1');"
     )
@@ -1338,6 +1341,7 @@ def test_recover_digest_mismatch(started_cluster):
 def test_replicated_table_structure_alter(started_cluster):
     main_node.query("DROP DATABASE IF EXISTS table_structure")
     dummy_node.query("DROP DATABASE IF EXISTS table_structure")
+    competing_node.query("DROP DATABASE IF EXISTS table_structure")
 
     main_node.query(
         "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica1');"
@@ -1484,7 +1488,12 @@ def test_table_metadata_corruption(started_cluster):
 
 def test_auto_recovery(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS auto_recovery")
-    bad_settings_node.query("DROP DATABASE IF EXISTS auto_recovery")
+    bad_settings_node.query(
+        "DROP DATABASE IF EXISTS auto_recovery",
+        settings={
+            "throw_on_unsupported_query_inside_transaction": 0,
+        },
+    )
 
     dummy_node.query(
         "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica1');"
