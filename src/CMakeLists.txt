@@ -176,7 +176,7 @@ add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
-    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
