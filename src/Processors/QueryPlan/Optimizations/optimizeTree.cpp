@@ -217,7 +217,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     applyOrder(optimization_settings, root);
 }
 
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});

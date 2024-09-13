@@ -147,6 +147,61 @@ const SortDescription & AggregatingStep::getSortDescription() const
     return IQueryPlanStep::getSortDescription();
 }
 
+ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
+    const Block & in_header,
+    const Block & out_header,
+    const GroupingSetsParamsList & grouping_sets_params,
+    UInt64 group,
+    bool group_by_use_nulls)
+{
+    /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
+    ActionsDAG dag(in_header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.reserve(out_header.columns() + 1);
+
+    auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, group), 0);
+    const auto * grouping_node = &dag.addColumn(
+        {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+
+    grouping_node = &dag.materializeNode(*grouping_node);
+    outputs.push_back(grouping_node);
+
+    const auto & missing_columns = grouping_sets_params[group].missing_keys;
+    const auto & used_keys = grouping_sets_params[group].used_keys;
+
+    auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
+    for (size_t i = 0; i < out_header.columns(); ++i)
+    {
+        const auto & col = out_header.getByPosition(i);
+        const auto missing_it = std::find_if(
+            missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
+        const auto used_it = std::find_if(
+            used_keys.begin(), used_keys.end(), [&](const auto & used_col) { return used_col == col.name; });
+        if (missing_it != missing_columns.end())
+        {
+            auto column_with_default = col.column->cloneEmpty();
+            col.type->insertDefaultInto(*column_with_default);
+            column_with_default->finalize();
+
+            auto column = ColumnConst::create(std::move(column_with_default), 0);
+            const auto * node = &dag.addColumn({ColumnPtr(std::move(column)), col.type, col.name});
+            node = &dag.materializeNode(*node);
+            outputs.push_back(node);
+        }
+        else
+        {
+            const auto * column_node = dag.getOutputs()[in_header.getPositionByName(col.name)];
+            if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+                outputs.push_back(&dag.addFunction(to_nullable_function, { column_node }, col.name));
+            else
+                outputs.push_back(column_node);
+        }
+    }
+
+    dag.getOutputs().swap(outputs);
+    return dag;
+}
+
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
@@ -296,51 +351,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 const auto & header = ports[set_counter]->getHeader();
 
-                /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
-                ActionsDAG dag(header.getColumnsWithTypeAndName());
-                ActionsDAG::NodeRawConstPtrs outputs;
-                outputs.reserve(output_header.columns() + 1);
-
-                auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
-                const auto * grouping_node = &dag.addColumn(
-                    {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
-
-                grouping_node = &dag.materializeNode(*grouping_node);
-                outputs.push_back(grouping_node);
-
-                const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
-                const auto & used_keys = grouping_sets_params[set_counter].used_keys;
-
-                auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
-                for (size_t i = 0; i < output_header.columns(); ++i)
-                {
-                    auto & col = output_header.getByPosition(i);
-                    const auto missing_it = std::find_if(
-                        missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
-                    const auto used_it = std::find_if(
-                        used_keys.begin(), used_keys.end(), [&](const auto & used_col) { return used_col == col.name; });
-                    if (missing_it != missing_columns.end())
-                    {
-                        auto column_with_default = col.column->cloneEmpty();
-                        col.type->insertDefaultInto(*column_with_default);
-                        column_with_default->finalize();
-
-                        auto column = ColumnConst::create(std::move(column_with_default), 0);
-                        const auto * node = &dag.addColumn({ColumnPtr(std::move(column)), col.type, col.name});
-                        node = &dag.materializeNode(*node);
-                        outputs.push_back(node);
-                    }
-                    else
-                    {
-                        const auto * column_node = dag.getOutputs()[header.getPositionByName(col.name)];
-                        if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
-                            outputs.push_back(&dag.addFunction(to_nullable_function, { column_node }, col.name));
-                        else
-                            outputs.push_back(column_node);
-                    }
-                }
-
-                dag.getOutputs().swap(outputs);
+                auto dag = makeCreatingMissingKeysForGroupingSetDAG(header, output_header, grouping_sets_params, set_counter, group_by_use_nulls);
                 auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 

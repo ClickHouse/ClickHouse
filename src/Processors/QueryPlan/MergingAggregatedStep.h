@@ -16,6 +16,7 @@ public:
     MergingAggregatedStep(
         const DataStream & input_stream_,
         Aggregator::Params params_,
+        GroupingSetsParamsList grouping_sets_params_,
         bool final_,
         bool memory_efficient_aggregation_,
         size_t max_threads_,
@@ -44,6 +45,7 @@ private:
 
 
     Aggregator::Params params;
+    GroupingSetsParamsList grouping_sets_params;
     bool final;
     const bool memory_efficient_aggregation;
     size_t max_threads;

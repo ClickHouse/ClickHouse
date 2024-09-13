@@ -13,7 +13,9 @@ public:
 
     static ObjectStorageQueueMetadataFactory & instance();
 
-    FilesMetadataPtr getOrCreate(const std::string & zookeeper_path, const ObjectStorageQueueSettings & settings);
+    FilesMetadataPtr getOrCreate(
+        const std::string & zookeeper_path,
+        ObjectStorageQueueMetadataPtr metadata);
 
     void remove(const std::string & zookeeper_path);
 

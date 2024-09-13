@@ -79,3 +79,7 @@ def test_file_path_escaping(started_cluster):
             "test -f /var/lib/clickhouse/shadow/2/store/123/12345678-1000-4000-8000-000000000001/1_1_1_0/%7EId.bin",
         ]
     )
+    node.query("DROP TABLE test.`T.a_b,l-e!` SYNC")
+    node.query("DROP TABLE `test 2`.`T.a_b,l-e!` SYNC")
+    node.query("DROP DATABASE test")
+    node.query("DROP DATABASE `test 2`")
