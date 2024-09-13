@@ -8,7 +8,7 @@ runs:
       shell: bash
       run: |
           echo "::group::Envs"
-          env
+          env | sort
           echo "::endgroup::"
     - name: Print Event.json
       shell: bash
@@ -16,3 +16,23 @@ runs:
           echo "::group::Event.json"
           python3 -m json.tool "$GITHUB_EVENT_PATH"
           echo "::endgroup::"
+    - name: Pring contexts
+      shell: bash
+      run: |
+          cat << 'EOF'
+          ::group::github
+          ${{ toJSON(github) }}
+          ::endgroup::
+
+          ::group::runner
+          ${{ toJSON(runner) }}
+          ::endgroup::
+
+          ::group::env
+          ${{ toJSON(env) }}
+          ::endgroup::
+
+          ::group::job
+          ${{ toJSON(job) }}
+          ::endgroup::
+          EOF
