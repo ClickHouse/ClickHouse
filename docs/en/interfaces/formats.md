@@ -39,6 +39,7 @@ The supported formats are:
 | [JSONCompact](#jsoncompact)                                                               | ✔    | ✔     |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔     |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔     |
+| [JSONCompactWithProgress](#jsoncompactwithprogress)                                       | ✗    | ✔     |
 | [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔     |
 | [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔     |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔     |
@@ -987,6 +988,59 @@ Example:
 ```
 
 Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
+
+## JSONCompactWithProgress (#jsoncompactwithprogress)
+
+In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
+
+Each row is either a metadata object, data object, progress information or statistics object:
+
+1. **Metadata Object (`meta`)**
+    - Describes the structure of the data rows.
+    - Fields: `name` (column name), `type` (data type, e.g., `UInt32`, `String`, etc.).
+    - Example: `{"meta": [{"name":"id", "type":"UInt32"}, {"name":"name", "type":"String"}]}`
+    - Appears before any data objects.
+
+2. **Data Object (`data`)**
+    - Represents a row of query results.
+    - Fields: An array with values corresponding to the columns defined in the metadata.
+    - Example: `{"data":["1", "John Doe"]}`
+    - Appears after the metadata object, one per row.
+
+3. **Progress Information Object (`progress`)**
+    - Provides real-time progress feedback during query execution.
+    - Fields: `read_rows`, `read_bytes`, `written_rows`, `written_bytes`, `total_rows_to_read`, `result_rows`, `result_bytes`, `elapsed_ns`.
+    - Example: `{"progress":{"read_rows":"8","read_bytes":"168"}}`
+    - May appear intermittently.
+
+4. **Statistics Object (`statistics`)**
+    - Summarizes query execution statistics.
+    - Fields: `rows`, `rows_before_limit_at_least`, `elapsed`, `rows_read`, `bytes_read`.
+    - Example: `{"statistics": {"rows":2, "elapsed":0.001995, "rows_read":8}}`
+    - Appears at the end.
+
+5. **Exception Object (`exception`)**
+    - Represents an error that occurred during query execution.
+    - Fields: A single text field containing the error message.
+    - Example: `{"exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero..."}`
+    - Appears when an error is encountered.
+
+6. **Totals Object (`totals`)**
+    - Provides the totals for each numeric column in the result set.
+    - Fields: An array with total values corresponding to the columns defined in the metadata.
+    - Example: `{"totals": ["", "3"]}`
+    - Appears at the end of the data rows, if applicable.
+
+Example:
+
+```json
+{"meta": [{"name":"id", "type":"UInt32"}, {"name":"name", "type":"String"}]}
+{"progress":{"read_rows":"8","read_bytes":"168","written_rows":"0","written_bytes":"0","total_rows_to_read":"2","result_rows":"0","result_bytes":"0","elapsed_ns":"0"}}
+{"data":["1", "John Doe"]}
+{"data":["2", "Joe Doe"]}
+{"statistics": {"rows":2, "rows_before_limit_at_least":8, "elapsed":0.001995, "rows_read":8, "bytes_read":168}}
+```
+
 
 ## JSONEachRow {#jsoneachrow}
 

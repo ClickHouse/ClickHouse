@@ -343,6 +343,13 @@ def test_increment_backup_without_changes():
 
 
 def test_incremental_backup_overflow():
+    if (
+        instance.is_built_with_thread_sanitizer()
+        or instance.is_built_with_memory_sanitizer()
+        or instance.is_built_with_address_sanitizer()
+    ):
+        pytest.skip("The test is slow in builds with sanitizer")
+
     backup_name = new_backup_name()
     incremental_backup_name = new_backup_name()
 

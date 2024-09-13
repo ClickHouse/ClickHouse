@@ -1463,26 +1463,29 @@ Examples:
 
 ## logger {#logger}
 
-Logging settings.
+The location and format of log messages.
 
 Keys:
 
-- `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
-- `log` – The log file. Contains all the entries according to `level`.
-- `errorlog` – Error log file.
-- `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
-- `count` – The number of archived log files that ClickHouse stores.
-- `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
-- `console_log_level` – Logging level for console. Default to `level`.
-- `use_syslog` - Log to syslog as well.
-- `syslog_level` - Logging level for logging to syslog.
-- `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
-- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
+- `level` – Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,
+  `debug`, `trace`, `test`
+- `log` – The path to the log file.
+- `errorlog` – The path to the error log file.
+- `size` – Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.
+- `count` – Rotation policy: How many historical log files Clickhouse are kept at most.
+- `stream_compress` – Compress log messages using LZ4. Set to `1` or `true` to enable.
+- `console` – Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is
+  `1` if Clickhouse does not run in daemon mode, `0` otherwise.
+- `console_log_level` – Log level for console output. Defaults to `level`.
+- `formatting` – Log format for console output. Currently, only `json` is supported).
+- `use_syslog` - Also forward log output to syslog.
+- `syslog_level` - Log level for logging to syslog.
 
-Both log and error log file names (only file names, not directories) support date and time format specifiers.
+**Log format specifiers**
 
-**Format specifiers**
-Using the following format specifiers, you can define a pattern for the resulting file name. “Example” column shows possible results for `2023-07-06 18:32:07`.
+File names in `log` and `errorLog` paths support below format specifiers for the resulting file name (the directory part does not support them).
+
+Column “Example” shows the output at `2023-07-06 18:32:07`.
 
 | Specifier   | Description                                                                                                         | Example                  |
 |-------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
@@ -1537,18 +1540,37 @@ Using the following format specifiers, you can define a pattern for the resultin
 </logger>
 ```
 
-Writing to the console can be configured. Config example:
+To print log messages only in the console:
 
 ``` xml
 <logger>
     <level>information</level>
-    <console>1</console>
+    <console>true</console>
+</logger>
+```
+
+**Per-level Overrides**
+
+The log level of individual log names can be overridden. For example, to mute all messages of loggers "Backup" and "RBAC".
+
+```xml
+<logger>
+    <levels>
+        <logger>
+            <name>Backup</name>
+            <level>none</level>
+        </logger>
+        <logger>
+            <name>RBAC</name>
+            <level>none</level>
+        </logger>
+    </levels>
 </logger>
 ```
 
 ### syslog
 
-Writing to the syslog is also supported. Config example:
+To write log messages additionally to syslog:
 
 ``` xml
 <logger>
@@ -1562,14 +1584,12 @@ Writing to the syslog is also supported. Config example:
 </logger>
 ```
 
-Keys for syslog:
+Keys for `<syslog>`:
 
-- use_syslog — Required setting if you want to write to the syslog.
-- address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
-- hostname — Optional. The name of the host that logs are sent from.
-- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
-    Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
-- format – Message format. Possible values: `bsd` and `syslog.`
+- `address` — The address of syslog in format `host\[:port\]`. If omitted, the local daemon is used.
+- `hostname` — The name of the host from which logs are send. Optional.
+- `facility` — The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a “LOG_” prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
+- `format` – Log message format. Possible values: `bsd` and `syslog.`
 
 ### Log formats
 
@@ -1588,6 +1608,7 @@ You can specify the log format that will be outputted in the console log. Curren
   "source_line": "192"
 }
 ```
+
 To enable JSON logging support, use the following snippet:
 
 ```xml

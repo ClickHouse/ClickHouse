@@ -93,6 +93,7 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
                 {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
                 {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
                 {"CreateIfNotExists",   static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
+                {"RemoveRecursive",     static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
             });
 
     auto error_enum = getCoordinationErrorCodesEnumType();
