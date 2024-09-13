@@ -2133,7 +2133,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
 
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     if (last_block_in.compression == Protocol::Compression::Enable)
-        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
+        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true, /* external_data */ query_kind != ClientInfo::QueryKind::SECONDARY_QUERY);
     else
         maybe_compressed_in = in;
 
@@ -2157,7 +2157,7 @@ void TCPHandler::initBlockInput()
         /// with another codec that the rest of the data. Example: data sent by Distributed tables.
 
         if (state.compression == Protocol::Compression::Enable)
-            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
+            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true, /* external_data */ query_kind != ClientInfo::QueryKind::SECONDARY_QUERY);
         else
             state.maybe_compressed_in = in;
 
