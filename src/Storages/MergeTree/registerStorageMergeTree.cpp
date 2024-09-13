@@ -212,6 +212,9 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     if (has_valid_arguments)
     {
+        bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
+
         if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -238,7 +241,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 2)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
-                                                                     "with default arguments", zookeeper_path, replica_name);
+                                                                     "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
             ast_zk_path->value = server_settings.default_replica_path;
             ast_replica_name->value = server_settings.default_replica_name;
         }
