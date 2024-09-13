@@ -104,6 +104,60 @@ namespace
 
         return data_type;
     }
+
+    bool isColumnSupported(const DataTypePtr clickhouse_type, const parquet::ColumnDescriptor * column_descriptor)
+    {
+        if (column_descriptor->converted_type() == parquet::ConvertedType::NONE && column_descriptor->logical_type() != nullptr)
+        {
+            return true;
+        }
+
+        auto physical_type = column_descriptor->physical_type();
+        const auto & logical_type = column_descriptor->logical_type();
+        auto converted_type = column_descriptor->converted_type();
+
+        // there is no logical type over boolean
+        if (physical_type == parquet::Type::type::BOOLEAN)
+        {
+            return true;
+        }
+
+        if (physical_type == parquet::Type::type::INT32 || physical_type == parquet::Type::type::INT64)
+        {
+            // branching with false and true is weird
+            if (!isInteger(clickhouse_type) && !(isIPv4(clickhouse_type)))
+            {
+                return false;
+            }
+
+            if (logical_type && logical_type->is_int())
+            {
+                return true;
+            }
+
+            if (converted_type == parquet::ConvertedType::INT_8 || converted_type == parquet::ConvertedType::INT_16
+                    || converted_type == parquet::ConvertedType::INT_32 || converted_type == parquet::ConvertedType::INT_64
+                    || converted_type == parquet::ConvertedType::UINT_8 || converted_type == parquet::ConvertedType::UINT_16
+                    || converted_type == parquet::ConvertedType::UINT_32 || converted_type == parquet::ConvertedType::UINT_64)
+            {
+                return true;
+            }
+        }
+        else if (physical_type == parquet::Type::type::BYTE_ARRAY || physical_type == parquet::Type::type::FIXED_LEN_BYTE_ARRAY)
+        {
+            if (logical_type && (logical_type->is_string() || logical_type->is_BSON() || logical_type->is_JSON()))
+            {
+                return true;
+            }
+
+            if (converted_type == parquet::ConvertedType::JSON || converted_type == parquet::ConvertedType::UTF8 || converted_type == parquet::ConvertedType::BSON)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 ParquetBloomFilterCondition::ParquetBloomFilterCondition(const std::vector<ConditionElement> & condition_, const Block & header_)
@@ -270,7 +324,13 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            const DataTypePtr actual_type = getPrimitiveType(data_types[rpn_element.key_column]);
+            const DataTypePtr actual_type = getPrimitiveType(data_types[parquet_column_index]);
+
+            if (!isColumnSupported(actual_type, parquet_rg_metadata->schema()->Column(parquet_column_index)))
+            {
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
+                continue;
+            }
 
             auto column = actual_type->createColumn();
             column->insert(rpn_element.range.left);
@@ -315,6 +375,13 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 }
 
                 auto parquet_column_index = parquet_indexes[0];
+
+                const DataTypePtr actual_type = getPrimitiveType(data_types[parquet_column_index]);
+
+                if (!isColumnSupported(actual_type, parquet_rg_metadata->schema()->Column(parquet_column_index)))
+                {
+                    continue;
+                }
 
                 bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
                 if (!column_has_bloom_filter)
