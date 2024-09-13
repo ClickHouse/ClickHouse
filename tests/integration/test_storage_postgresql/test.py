@@ -888,6 +888,26 @@ def test_filter_pushdown(started_cluster):
     cursor.execute("DROP SCHEMA test_filter_pushdown CASCADE")
 
 
+def test_fixed_string_type(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_fixed_string")
+    cursor.execute(
+        "CREATE TABLE test_fixed_string (contact_id numeric NULL, email varchar NULL)"
+    )
+    cursor.execute("INSERT INTO test_fixed_string values (1, 'abc')")
+
+    node1.query("DROP TABLE IF EXISTS test_fixed_string")
+    node1.query(
+        "CREATE TABLE test_fixed_string(contact_id Int64, email Nullable(FixedString(3))) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string', 'postgres', 'mysecretpassword')"
+    )
+
+    result = node1.query("SELECT * FROM test_fixed_string format TSV")
+
+    assert result.strip() == "1\tabc"
+
+    node1.query("DROP TABLE test_fixed_string")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

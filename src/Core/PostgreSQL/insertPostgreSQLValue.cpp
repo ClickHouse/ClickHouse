@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
@@ -82,6 +83,8 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtEnum8:
         case ExternalResultDescription::ValueType::vtEnum16:
         case ExternalResultDescription::ValueType::vtFixedString:
+            assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
+            break;
         case ExternalResultDescription::ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
