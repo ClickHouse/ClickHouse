@@ -26,11 +26,11 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
 
 void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    const size_t max_args_num = with_structure ? 4 : 3;
-    if (args.empty() || args.size() > max_args_num)
-    {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not more than {} arguments", max_args_num);
-    }
+    if (args.empty() || args.size() > getMaxNumberOfArguments(with_structure))
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage Local requires 1 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
