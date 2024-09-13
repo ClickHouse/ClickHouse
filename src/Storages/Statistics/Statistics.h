@@ -106,11 +106,11 @@ public:
     void merge(const Statistics & other);
     void addColumnStat(const ColumnStatisticsPtr & column_stat_);
 
-    Float64 getTotalRowCount() const { return total_row_count; }
+    UInt64 getTotalRowCount() const { return total_row_count; }
     ColumnStatisticsPtr getColumnStat(const String & column_name) const;
 
 private:
-    Float64 total_row_count;
+    UInt64 total_row_count;
     /// column_name -> column_statistics
     std::unordered_map<String, ColumnStatisticsPtr> column_stats;
 };
