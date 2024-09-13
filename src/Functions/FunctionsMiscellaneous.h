@@ -35,8 +35,14 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        if (!expression_actions)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No actions were passed to FunctionExpression");
+
         DB::Block expr_columns;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
@@ -116,8 +122,8 @@ public:
 
     using CapturePtr = std::shared_ptr<Capture>;
 
-    ExecutableFunctionCapture(ExpressionActionsPtr expression_actions_, CapturePtr capture_)
-        : expression_actions(std::move(expression_actions_)), capture(std::move(capture_)) {}
+    ExecutableFunctionCapture(std::shared_ptr<ActionsDAG> actions_dag_, CapturePtr capture_)
+        : actions_dag(std::move(actions_dag_)), capture(std::move(capture_)) {}
 
     String getName() const override { return "FunctionCapture"; }
 
@@ -151,9 +157,18 @@ public:
         return ColumnFunction::create(input_rows_count, std::move(function), arguments);
     }
 
+    void buildExpressionActions(const ExpressionActionsSettings & settings)
+    {
+        /// In rare situations this function can be called a few times (e.g. ActonsDAG was clonned).
+        if (!expression_actions)
+            expression_actions = std::make_shared<ExpressionActions>(actions_dag->clone(), settings);
+    }
+
 private:
-    ExpressionActionsPtr expression_actions;
+    std::shared_ptr<ActionsDAG> actions_dag;
     CapturePtr capture;
+
+    ExpressionActionsPtr expression_actions;
 };
 
 class FunctionCapture : public IFunctionBase
@@ -162,11 +177,11 @@ public:
     using CapturePtr = ExecutableFunctionCapture::CapturePtr;
 
     FunctionCapture(
-        ExpressionActionsPtr expression_actions_,
+        std::shared_ptr<ActionsDAG> actions_dag_,
         CapturePtr capture_,
         DataTypePtr return_type_,
         String name_)
-        : expression_actions(std::move(expression_actions_))
+        : actions_dag(std::move(actions_dag_))
         , capture(std::move(capture_))
         , return_type(std::move(return_type_))
         , name(std::move(name_))
@@ -182,11 +197,14 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
+        return std::make_unique<ExecutableFunctionCapture>(actions_dag, capture);
     }
 
+    const ExecutableFunctionCapture::Capture & getCapture() const { return *capture; }
+    const ActionsDAG & getAcionsDAG() const { return *actions_dag; }
+
 private:
-    ExpressionActionsPtr expression_actions;
+    std::shared_ptr<ActionsDAG> actions_dag;
     CapturePtr capture;
     DataTypePtr return_type;
     String name;
@@ -199,23 +217,21 @@ public:
     using CapturePtr = ExecutableFunctionCapture::CapturePtr;
 
     FunctionCaptureOverloadResolver(
-            ExpressionActionsPtr expression_actions_,
+            std::shared_ptr<ActionsDAG> actions_dag_,
             const Names & captured_names,
             const NamesAndTypesList & lambda_arguments,
             const DataTypePtr & function_return_type,
             const String & expression_return_name)
-        : expression_actions(std::move(expression_actions_))
+        : actions_dag(std::move(actions_dag_))
     {
         /// Check that expression does not contain unusual actions that will break columns structure.
-        for (const auto & action : expression_actions->getActions())
-            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
+        if (actions_dag->hasArrayJoin())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
 
         std::unordered_map<std::string, DataTypePtr> arguments_map;
 
-        const auto & all_arguments = expression_actions->getRequiredColumnsWithTypes();
-        for (const auto & arg : all_arguments)
-            arguments_map[arg.name] = arg.type;
+        for (const auto * input : actions_dag->getInputs())
+            arguments_map[input->result_name] = input->result_type;
 
         DataTypes captured_types;
         captured_types.reserve(captured_names.size());
@@ -259,11 +275,11 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type, name);
+        return std::make_unique<FunctionCapture>(actions_dag, capture, return_type, name);
     }
 
 private:
-    ExpressionActionsPtr expression_actions;
+    std::shared_ptr<ActionsDAG> actions_dag;
     CapturePtr capture;
     DataTypePtr return_type;
     String name;

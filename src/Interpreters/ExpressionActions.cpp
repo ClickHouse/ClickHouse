@@ -18,6 +18,7 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Core/SettingsEnums.h>
 
 
@@ -54,6 +55,11 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     , project_inputs(project_inputs_)
     , settings(settings_)
 {
+    for (const auto & node : actions_dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+            if (auto * function_capture = typeid_cast<ExecutableFunctionCapture *>(node.function.get()))
+                function_capture->buildExpressionActions(settings);
+
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
 

@@ -4,11 +4,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
@@ -3229,6 +3231,56 @@ static const ColumnSet * tryGetColumnSet(const ColumnPtr & colunm)
     return typeid_cast<const ColumnSet *>(maybe_set);
 }
 
+static void serializeCapture(const ExecutableFunctionCapture::Capture & capture, WriteBuffer & out)
+{
+    writeStringBinary(capture.return_name, out);
+    encodeDataType(capture.return_type, out);
+
+    writeVarUInt(capture.captured_names.size(), out);
+    for (const auto & name : capture.captured_names)
+        writeStringBinary(name, out);
+
+    writeVarUInt(capture.captured_types.size(), out);
+    for (const auto & type : capture.captured_types)
+        encodeDataType(type, out);
+
+    writeVarUInt(capture.lambda_arguments.size(), out);
+    for (const auto & item : capture.lambda_arguments)
+    {
+        writeStringBinary(item.name, out);
+        encodeDataType(item.type, out);
+    }
+}
+
+static void deserializeCapture(ExecutableFunctionCapture::Capture & capture, ReadBuffer & in)
+{
+    readStringBinary(capture.return_name, in);
+    capture.return_type = decodeDataType(in);
+
+    UInt64 num_names;
+    readVarUInt(num_names, in);
+    capture.captured_names.resize(num_names);
+    for (auto & name : capture.captured_names)
+        readStringBinary(name, in);
+
+    UInt64 num_types;
+    readVarUInt(num_types, in);
+    capture.captured_types.resize(num_types);
+    for (auto & type : capture.captured_types)
+        type = decodeDataType(in);
+
+    UInt64 num_args;
+    readVarUInt(num_args, in);
+    capture.lambda_arguments.clear();
+    for (size_t i = 0; i < num_args; ++i)
+    {
+        NameAndTypePair name_and_type;
+        readStringBinary(name_and_type.name, in);
+        name_and_type.type = decodeDataType(in);
+        capture.lambda_arguments.push_back(std::move(name_and_type));
+    }
+}
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
     size_t nodes_size = nodes.size();
@@ -3245,7 +3297,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
     {
         writeIntBinary(static_cast<UInt8>(node.type), out);
         writeStringBinary(node.result_name, out);
-        writeStringBinary(node.result_type->getName(), out);
+        encodeDataType(node.result_type, out);
 
         writeVarUInt(node.children.size(), out);
         for (const auto * child : node.children)
@@ -3265,6 +3317,10 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
             if (column_set)
                 column_flags |= 4;
         }
+
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        if (function_capture)
+            column_flags |= 8;
 
         writeIntBinary(column_flags, out);
         if (column_set)
@@ -3299,6 +3355,11 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         else if (node.type == ActionType::FUNCTION)
         {
             writeStringBinary(node.function_base->getName(), out);
+            if (function_capture)
+            {
+                serializeCapture(function_capture->getCapture(), out);
+                function_capture->getAcionsDAG().serialize(out, registry);
+            }
         }
         else if (node.type == ActionType::ARRAY_JOIN)
         {
@@ -3340,10 +3401,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         node.type = static_cast<ActionType>(action_type);
 
         readStringBinary(node.result_name, in);
-
-        String result_type_name;
-        readStringBinary(result_type_name, in);
-        node.result_type = DataTypeFactory::instance().get(result_type_name);
+        node.result_type = decodeDataType(in);
 
         size_t children_size;
         readVarUInt(children_size, in);
@@ -3404,8 +3462,6 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             String function_name;
             readStringBinary(function_name, in);
 
-            auto function = FunctionFactory::instance().get(function_name, Context::getGlobalContextInstance());
-
             ColumnsWithTypeAndName arguments;
             arguments.reserve(node.children.size());
             for (const auto * child : node.children)
@@ -3418,16 +3474,36 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 arguments.emplace_back(std::move(argument));
             }
 
-            node.function_base = function->build(arguments);
-            node.function = node.function_base->prepare(arguments);
-            node.is_function_compiled = false;
+            if (column_flags & 8)
+            {
+                ExecutableFunctionCapture::Capture capture;
+                deserializeCapture(capture, in);
+                auto capture_dag = ActionsDAG::deserialize(in, registry);
 
-            if (!node.function_base->getResultType()->equals(*node.result_type))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Deserialized function {} has type. Expected {}, deserialzied {}.",
-                    function_name,
-                    node.function_base->getResultType()->getName(),
-                    node.result_type->getName());
+                node.function_base = std::make_shared<FunctionCapture>(
+                    std::make_shared<ActionsDAG>(std::move(capture_dag)),
+                    std::make_shared<ExecutableFunctionCapture::Capture>(std::move(capture)),
+                    node.result_type,
+                    function_name);
+
+                node.function = node.function_base->prepare(arguments);
+                node.is_function_compiled = false;
+            }
+            else
+            {
+                auto function = FunctionFactory::instance().get(function_name, Context::getGlobalContextInstance());
+
+                node.function_base = function->build(arguments);
+                node.function = node.function_base->prepare(arguments);
+                node.is_function_compiled = false;
+
+                if (!node.function_base->getResultType()->equals(*node.result_type))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Deserialized function {} has type. Expected {}, deserialzied {}.",
+                        function_name,
+                        node.function_base->getResultType()->getName(),
+                        node.result_type->getName());
+            }
         }
         else if (node.type == ActionType::ARRAY_JOIN)
         {

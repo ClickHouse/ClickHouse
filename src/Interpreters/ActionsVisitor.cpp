@@ -1286,14 +1286,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     String result_name = lambda->arguments->children.at(1)->getColumnName();
                     lambda_dag.removeUnusedActions(Names(1, result_name));
 
-                    auto lambda_actions = std::make_shared<ExpressionActions>(
-                        std::move(lambda_dag),
-                        ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
-
-                    DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
+                    DataTypePtr result_type = lambda_dag.findInOutputs(result_name).result_type;
 
                     Names captured;
-                    Names required = lambda_actions->getRequiredColumns();
+                    Names required = lambda_dag.getRequiredColumnsNames();
                     for (const auto & required_arg : required)
                         if (findColumn(required_arg, lambda_arguments) == lambda_arguments.end())
                             captured.push_back(required_arg);
@@ -1303,7 +1299,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     String lambda_name = data.getUniqueName("__lambda");
 
                     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-                            lambda_actions, captured, lambda_arguments, result_type, result_name);
+                            std::make_shared<ActionsDAG>(std::move(lambda_dag)), captured, lambda_arguments, result_type, result_name);
                     data.addFunction(function_capture, captured, lambda_name);
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
