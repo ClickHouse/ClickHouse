@@ -23,6 +23,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+class UnifiedSchedulerNode;
+using UnifiedSchedulerNodePtr = std::shared_ptr<UnifiedSchedulerNode>;
+
 /*
  * Unified scheduler node combines multiple nodes internally to provide all available scheduling policies and constraints.
  * Whole scheduling hierarchy could "logically" consist of unified nodes only. Physically intermediate "internal" nodes
@@ -82,7 +85,7 @@ private:
     /// A branch of the tree for a specific priority value
     struct FairnessBranch {
         SchedulerNodePtr root; /// FairPolicy node is used if multiple children with the same priority are attached
-        std::unordered_map<String, SchedulerNodePtr> children; // basename -> child
+        std::unordered_map<String, UnifiedSchedulerNodePtr> children; // basename -> child
 
         SchedulerNodePtr getRoot()
         {
@@ -94,7 +97,7 @@ private:
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const SchedulerNodePtr & child)
+        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
         {
             if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
                 throw Exception(
@@ -129,7 +132,7 @@ private:
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const SchedulerNodePtr & child)
+        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
         {
             bool existing_branch = branches.contains(child->info.priority);
             auto & child_branch = branches[child->info.priority];
@@ -183,10 +186,10 @@ private:
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const SchedulerNodePtr & child)
+        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
         {
             if (queue)
-                removeQueue(event_queue_);
+                removeQueue();
             return branch.attachUnifiedChild(event_queue_, child);
         }
 
@@ -197,7 +200,7 @@ private:
             queue->basename = "fifo";
         }
 
-        void removeQueue(EventQueue *)
+        void removeQueue()
         {
             // This unified node will not be able to process resource requests any longer
             // All remaining resource requests are be aborted on queue destruction
@@ -240,7 +243,7 @@ private:
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const SchedulerNodePtr & child)
+        [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
         {
             if (auto branch_root = branch.attachUnifiedChild(event_queue_, child))
             {
@@ -265,7 +268,7 @@ public:
 
     /// Attaches a child as a leaf of internal subtree and insert or update all the intermediate nodes
     /// NOTE: Do not confuse with `attachChild()` which is used only for immediate children
-    void attachUnifiedChild(const SchedulerNodePtr & child)
+    void attachUnifiedChild(const UnifiedSchedulerNodePtr & child)
     {
         if (auto new_child = impl.attachUnifiedChild(event_queue, child))
             reparent(new_child, this);
@@ -273,7 +276,7 @@ public:
 
     /// Updates intermediate nodes subtree according with new priority (priority is set by the caller beforehand)
     /// NOTE: Changing a priority of a unified child may lead to change of its parent.
-    void updateUnifiedChildPriority(const SchedulerNodePtr & child, Priority old_priority, Priority new_priority)
+    void updateUnifiedChildPriority(const UnifiedSchedulerNodePtr & child, Priority old_priority, Priority new_priority)
     {
         UNUSED(child, old_priority, new_priority); // TODO: implement updateUnifiedChildPriority
     }
@@ -289,6 +292,32 @@ public:
     std::shared_ptr<ISchedulerQueue> getQueue()
     {
         return static_pointer_cast<ISchedulerQueue>(impl.branch.queue);
+    }
+
+    /// Returns nodes that could be accessed with raw pointers by resource requests (queue and constraints)
+    /// NOTE: This is a building block for classifier. Note that due to possible movement of a queue, set of constraints
+    /// for that queue might change in future versions, and `request->constraints` might reference nodes not in
+    /// the initial set of nodes returned by `getClassifierNodes()`. To avoid destruction of such additinal nodes
+    /// classifier must (indirectly) hold nodes return by `getClassifierNodes()` for all future versions of all unified nodes.
+    /// Such a version control is done by `IOResourceManager`.
+    std::vector<SchedulerNodePtr> getClassifierNodes()
+    {
+        std::vector<SchedulerNodePtr> result;
+        if (impl.branch.queue)
+            result.push_back(impl.branch.queue);
+        if (impl.semaphore)
+            result.push_back(impl.semaphore);
+        if (impl.throttler)
+            result.push_back(impl.throttler);
+        for (auto & [_, branch] : impl.branch.branch.branches)
+        {
+            for (auto & [_, child] : branch.children)
+            {
+                auto nodes = child->getClassifierNodes();
+                result.insert(result.end(), nodes.begin(), nodes.end());
+            }
+        }
+        return result;
     }
 
 protected: // Hide all the ISchedulerNode interface methods as an implementation details
@@ -365,7 +394,5 @@ private:
     SchedulerNodePtr immediate_child; // An immediate child (actually the root of the whole subtree)
     bool child_active = false;
 };
-
-using UnifiedSchedulerNodePtr = std::shared_ptr<UnifiedSchedulerNode>;
 
 }
