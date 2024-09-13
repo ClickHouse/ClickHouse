@@ -35,6 +35,7 @@
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/Utility.h>
+#    include <Poco/StringTokenizer.h>
 #endif
 
 #include <chrono>
@@ -107,15 +108,28 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     params.loadDefaultCAs = config.getBool("openSSL.server.loadDefaultCAFile", false);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString("openSSL.server.verificationMode", "none"));
 
-    asio_opts.ssl_context_provider_server_ = [ctx_params = params, certificate_data]
+    std::string disabled_protocols_list = config.getString("openSSL.server.disableProtocols", "");
+    Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
+    int disabled_protocols = 0;
+    for (const auto & token : dp_tok)
+    {
+        if (token == "sslv2")
+            disabled_protocols |= Poco::Net::Context::PROTO_SSLV2;
+        else if (token == "sslv3")
+            disabled_protocols |= Poco::Net::Context::PROTO_SSLV3;
+        else if (token == "tlsv1")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1;
+        else if (token == "tlsv1_1")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
+        else if (token == "tlsv1_2")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
+    }
+
+    asio_opts.ssl_context_provider_server_ = [ctx_params = params, certificate_data, disabled_protocols]
     {
         Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_SERVER_USE, ctx_params);
+        context.disableProtocols(disabled_protocols);
         SSL_CTX * ssl_ctx = context.takeSslContext();
-        uint64_t options = 0;
-        options |= SSL_OP_ALL;
-        options |= SSL_OP_NO_SSLv2;
-        options |= SSL_OP_SINGLE_DH_USE;
-        SSL_CTX_set_options(ssl_ctx, options);
         SSL_CTX_set_cert_cb(ssl_ctx, callSetCertificate, reinterpret_cast<void *>(certificate_data.get()));
         return ssl_ctx;
     };
