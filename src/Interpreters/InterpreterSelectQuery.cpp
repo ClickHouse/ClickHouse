@@ -409,12 +409,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
-    if (storage->hasExternalDynamicMetadata())
-    {
-        storage->updateExternalDynamicMetadata(context);
-        metadata_snapshot = storage->getInMemoryMetadataPtr();
-    }
-
     if (!prepared_sets)
         prepared_sets = std::make_shared<PreparedSets>();
 
@@ -469,6 +463,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
+        if (storage->hasExternalDynamicMetadata())
+        {
+            storage->updateExternalDynamicMetadata(context);
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
+        }
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
 

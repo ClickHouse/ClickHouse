@@ -1783,7 +1783,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
       *
       * Examples: Distributed, LiveView, Merge storages.
-      * Examples: Distributed, LiveView, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(left_table_expression,
