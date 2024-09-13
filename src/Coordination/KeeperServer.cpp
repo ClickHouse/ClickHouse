@@ -28,6 +28,15 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
+#if USE_SSL
+#    include <Server/CertificateReloader.h>
+#    include <openssl/ssl.h>
+#    include <Poco/Crypto/EVPPKey.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/SSLManager.h>
+#    include <Poco/Net/Utility.h>
+#endif
+
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -48,6 +57,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 using namespace std::chrono_literals;
@@ -56,6 +66,16 @@ namespace
 {
 
 #if USE_SSL
+
+int callSetCertificate(SSL * ssl, void * arg)
+{
+    if (!arg)
+        return -1;
+
+    const CertificateReloader::Data * data = reinterpret_cast<CertificateReloader::Data *>(arg);
+    return setCertificateCallback(ssl, data, getLogger("SSLContext"));
+}
+
 void setSSLParams(nuraft::asio_service::options & asio_opts)
 {
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
@@ -69,18 +89,42 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     if (!config.has(private_key_file_property))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
-    asio_opts.enable_ssl_ = true;
-    asio_opts.server_cert_file_ = config.getString(certificate_file_property);
-    asio_opts.server_key_file_ = config.getString(private_key_file_property);
+    Poco::Net::Context::Params params;
+    params.certificateFile = config.getString(certificate_file_property);
+    if (params.certificateFile.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server certificate file in config '{}' is empty", certificate_file_property);
+
+    params.privateKeyFile = config.getString(private_key_file_property);
+    if (params.privateKeyFile.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server key file in config '{}' is empty", private_key_file_property);
+
+    auto pass_phrase = config.getString("openSSL.server.privateKeyPassphraseHandler.options.password", "");
+    auto certificate_data = std::make_shared<CertificateReloader::Data>(params.certificateFile, params.privateKeyFile, pass_phrase);
 
     if (config.has(root_ca_file_property))
-        asio_opts.root_cert_file_ = config.getString(root_ca_file_property);
+        params.caLocation = config.getString(root_ca_file_property);
 
-    if (config.getBool("openSSL.server.loadDefaultCAFile", false))
-        asio_opts.load_default_ca_file_ = true;
+    params.loadDefaultCAs = config.getBool("openSSL.server.loadDefaultCAFile", false);
+    params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString("openSSL.server.verificationMode", "none"));
 
-    if (config.getString("openSSL.server.verificationMode", "none") == "none")
-        asio_opts.skip_verification_ = true;
+    asio_opts.ssl_context_provider_server_ = [ctx_params = params, certificate_data]
+    {
+        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_SERVER_USE, ctx_params);
+        SSL_CTX * ssl_ctx = context.takeSslContext();
+        uint64_t options = 0;
+        options |= SSL_OP_ALL;
+        options |= SSL_OP_NO_SSLv2;
+        options |= SSL_OP_SINGLE_DH_USE;
+        SSL_CTX_set_options(ssl_ctx, options);
+        SSL_CTX_set_cert_cb(ssl_ctx, callSetCertificate, reinterpret_cast<void *>(certificate_data.get()));
+        return ssl_ctx;
+    };
+
+    asio_opts.ssl_context_provider_client_ = [ctx_params = std::move(params)]
+    {
+        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_CLIENT_USE, ctx_params);
+        return context.takeSslContext();
+    };
 }
 #endif
 

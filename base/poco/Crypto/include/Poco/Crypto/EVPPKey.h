@@ -188,8 +188,9 @@ namespace Crypto
                     pFile = fopen(keyFile.c_str(), "r");
                     if (pFile)
                     {
-                        pem_password_cb * pCB = pass.empty() ? (pem_password_cb *)0 : &passCB;
-                        void * pPassword = pass.empty() ? (void *)0 : (void *)pass.c_str();
+                        pem_password_cb * pCB = &passCB;
+                        static constexpr char * no_password = "";
+                        void * pPassword = pass.empty() ? (void *)no_password : (void *)pass.c_str();
                         if (readFunc(pFile, &pKey, pCB, pPassword))
                         {
                             fclose(pFile);
