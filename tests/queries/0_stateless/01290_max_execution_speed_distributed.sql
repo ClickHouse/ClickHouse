@@ -23,4 +23,5 @@ WHERE
     event_date >= yesterday() AND
     query LIKE '%special query for 01290_max_execution_speed_distributed%' AND
     query NOT LIKE '%system.query_log%' AND
-    type = 2;
+    type = 'QueryFinish'
+SETTINGS max_threads = 0; -- to avoid TOO_SLOW error while executing the query
