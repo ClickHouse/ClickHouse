@@ -277,7 +277,10 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
     LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
-    bool enable_parallel_reading)
+    bool enable_parallel_reading_,
+    std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
+    std::optional<MergeTreeReadTaskCallback> read_task_callback_,
+    std::optional<size_t> number_of_current_replica_)
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
         query_info_.prewhere_info)}, all_column_names_, query_info_, storage_snapshot_, context_)
@@ -295,13 +298,21 @@ ReadFromMergeTree::ReadFromMergeTree(
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
-    , is_parallel_reading_from_replicas(enable_parallel_reading)
+    , is_parallel_reading_from_replicas(enable_parallel_reading_)
     , enable_remove_parts_from_snapshot_optimization(query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
+    , number_of_current_replica(number_of_current_replica_)
 {
     if (is_parallel_reading_from_replicas)
     {
-        all_ranges_callback = context->getMergeTreeAllRangesCallback();
-        read_task_callback = context->getMergeTreeReadTaskCallback();
+        if (all_ranges_callback_.has_value())
+            all_ranges_callback = all_ranges_callback_.value();
+        else
+            all_ranges_callback = context->getMergeTreeAllRangesCallback();
+
+        if (read_task_callback_.has_value())
+            read_task_callback = read_task_callback_.value();
+        else
+            read_task_callback = context->getMergeTreeReadTaskCallback();
     }
 
     const auto & settings = context->getSettingsRef();
@@ -335,11 +346,33 @@ ReadFromMergeTree::ReadFromMergeTree(
         enable_vertical_final);
 }
 
+std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
+    AnalysisResultPtr analyzed_result_ptr_,
+    MergeTreeAllRangesCallback all_ranges_callback_,
+    MergeTreeReadTaskCallback read_task_callback_,
+    size_t replica_number)
+{
+    const bool enable_parallel_reading = true;
+    return std::make_unique<ReadFromMergeTree>(
+        prepared_parts,
+        mutations_snapshot,
+        all_column_names,
+        data,
+        getQueryInfo(),
+        getStorageSnapshot(),
+        getContext(),
+        block_size.max_block_size_rows,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        log,
+        std::move(analyzed_result_ptr_),
+        enable_parallel_reading,
+        all_ranges_callback_,
+        read_task_callback_,
+        replica_number);
+}
 
-Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
-    RangesInDataParts parts_with_range,
-    Names required_columns,
-    PoolSettings pool_settings)
+Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings)
 {
     const auto & client_info = context->getClientInfo();
 
@@ -347,7 +380,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     {
         .all_callback = all_ranges_callback.value(),
         .callback = read_task_callback.value(),
-        .number_of_current_replica = client_info.number_of_current_replica,
+        .number_of_current_replica = number_of_current_replica.value_or(client_info.number_of_current_replica),
     };
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
@@ -529,7 +562,7 @@ Pipe ReadFromMergeTree::readInOrder(
         {
             .all_callback = all_ranges_callback.value(),
             .callback = read_task_callback.value(),
-            .number_of_current_replica = client_info.number_of_current_replica,
+            .number_of_current_replica = number_of_current_replica.value_or(client_info.number_of_current_replica),
         };
 
         auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
@@ -584,11 +617,12 @@ Pipe ReadFromMergeTree::readInOrder(
             context);
     }
 
-    /// Actually it means that parallel reading from replicas enabled
-    /// and we have to collaborate with initiator.
-    /// In this case we won't set approximate rows, because it will be accounted multiple times.
-    const auto in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
-    const bool set_total_rows_approx = !is_parallel_reading_from_replicas;
+    /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
+    /// Otherwise rows will counted multiple times
+    const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
+    const bool parallel_replicas_local_plan_for_initiator = is_parallel_reading_from_replicas
+        && context->getSettingsRef().parallel_replicas_local_plan && context->canUseParallelReplicasOnInitiator();
+    const bool set_total_rows_approx = !is_parallel_reading_from_replicas || parallel_replicas_local_plan_for_initiator;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -1422,11 +1456,8 @@ static void buildIndexes(
 
     const auto & settings = context->getSettingsRef();
 
-    indexes.emplace(ReadFromMergeTree::Indexes{{
-        filter_actions_dag,
-        context,
-        primary_key_column_names,
-        primary_key.expression}, {}, {}, {}, {}, false, {}});
+    indexes.emplace(
+        ReadFromMergeTree::Indexes{KeyCondition{filter_actions_dag, context, primary_key_column_names, primary_key.expression}});
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1977,6 +2008,33 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::op
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = getAnalysisResult();
+
+    if (is_parallel_reading_from_replicas && context->canUseParallelReplicasOnInitiator()
+        && context->getSettingsRef().parallel_replicas_local_plan)
+    {
+        CoordinationMode mode = CoordinationMode::Default;
+        switch (result.read_type)
+        {
+            case ReadFromMergeTree::ReadType::Default:
+                mode = CoordinationMode::Default;
+                break;
+            case ReadFromMergeTree::ReadType::InOrder:
+                mode = CoordinationMode::WithOrder;
+                break;
+            case ReadFromMergeTree::ReadType::InReverseOrder:
+                mode = CoordinationMode::ReverseOrder;
+                break;
+            case ReadFromMergeTree::ReadType::ParallelReplicas:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Read type can't be ParallelReplicas on initiator");
+        }
+
+        chassert(number_of_current_replica.has_value());
+        chassert(all_ranges_callback.has_value());
+
+        /// initialize working set from local replica
+        all_ranges_callback.value()(
+            InitialAllRangesAnnouncement(mode, result.parts_with_ranges.getDescriptions(), number_of_current_replica.value()));
+    }
 
     if (enable_remove_parts_from_snapshot_optimization)
     {
