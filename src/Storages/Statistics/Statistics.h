@@ -47,7 +47,7 @@ public:
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
 
-    String getTypeName() const { return stat.getTypeName(); }
+    String getTypeName() const;
 
 protected:
     SingleStatisticsDescription stat;
@@ -87,20 +87,19 @@ class ColumnsDescription;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
-/**
- * Statistics represent the statistics for a part, table or node in query plan.
- * It is a computable data structure which means:
- *   1. it can accumulate statistics for a dedicated column of multiple parts.
- *   2. it can support more calculations which is needed in estimating complex predicates like `a > 1 and a < 100 or a in (1, 3, 500).
- *      For example column 'a' has a minmax statistics with range [1, 100], after estimate 'a>50' the range is [51, 100].
- */
+/// Statistics represent the statistics for a part, table or node in query plan.
+/// It is a computable data structure which means:
+///   1. it can accumulate statistics for a dedicated column of multiple parts.
+///   2. it can support more calculations which is needed in estimating complex predicates like `a > 1 and a < 100 or a in (1, 3, 500).
+///      For example column 'a' has a minmax statistics with range [1, 100], after estimate 'a>50' the range is [51, 100].
 class Statistics
 {
 public:
     explicit Statistics() : total_row_count(0) { }
     explicit Statistics(Float64 total_row_count_) : total_row_count(total_row_count_) { }
     explicit Statistics(Float64 total_row_count_, const std::unordered_map<String, ColumnStatisticsPtr> & column_stats_)
-        : total_row_count(total_row_count_), column_stats(column_stats_)
+        : total_row_count(total_row_count_)
+        , column_stats(column_stats_)
     {
     }
 
@@ -112,6 +111,7 @@ public:
 
 private:
     Float64 total_row_count;
+    /// column_name -> column_statistics
     std::unordered_map<String, ColumnStatisticsPtr> column_stats;
 };
 

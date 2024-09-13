@@ -59,6 +59,11 @@ ISingleStatistics::ISingleStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
+String ISingleStatistics::getTypeName() const
+{
+    return stat.getTypeName();
+}
+
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
     : stats_desc(stats_desc_), column_name(column_name_)
 {
