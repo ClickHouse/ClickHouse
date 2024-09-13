@@ -391,7 +391,7 @@ def test_x509_san_wildcard_support():
         instance.query(
             "SELECT name, auth_type, auth_params FROM system.users WHERE name='stewie'"
         )
-        == 'stewie\t[\'ssl_certificate\']\t[\'{"subject_alt_names":["URI:spiffe:\\\\/\\\\/bar.com\\\\/foo\\\\/*\\\\/far"]}\']\n'
+        == "stewie\t['ssl_certificate']\t['{\"subject_alt_names\":[\"URI:spiffe:\\\\/\\\\/bar.com\\\\/foo\\\\/*\\\\/far\"]}']\n"
     )
 
     assert (
