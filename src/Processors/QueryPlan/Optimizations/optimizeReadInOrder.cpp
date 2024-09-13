@@ -820,6 +820,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             bool can_read = reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
             if (!can_read)
                 return nullptr;
+
+            reading->enableVirtualRow();
         }
 
         return order_info;

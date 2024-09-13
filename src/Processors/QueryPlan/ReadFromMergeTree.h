@@ -210,6 +210,8 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    void enableVirtualRow() { enable_virtual_row = true; }
+
 private:
     int getSortDirection() const
     {

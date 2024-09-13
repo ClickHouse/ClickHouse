@@ -1099,9 +1099,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         for (auto && item : splitted_parts_and_ranges)
         {
-            /// enable_virtual_row = true means a MergingSortedTransform should occur.
-            /// If so, adding a virtual row might speedup in the case of multiple parts.
-            enable_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
+            /// If not enabled before, try to enable it when conditions meet as in the following section of preliminary merge,
+            /// only ExpressionTransform is added between MergingSortedTransform and readFromMergeTree.
+            if (!enable_virtual_row)
+                enable_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
+
             pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit));
         }
     }
