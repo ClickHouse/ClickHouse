@@ -562,7 +562,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         const auto disk = data_part_volume->getDisk();
         const UInt64 total_disk_bytes = *disk->getTotalSpace();
-        const UInt64 free_disk_bytes = *disk->getUnreservedSpace();
+        const UInt64 free_disk_bytes = *disk->getAvailableSpace();
 
         const UInt64 min_bytes_from_ratio = static_cast<UInt64>(min_ratio * total_disk_bytes);
         const UInt64 needed_free_bytes = std::max(min_bytes, min_bytes_from_ratio);
@@ -571,9 +571,10 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert: less than {} free bytes in disk space. "
+                "Could not perform insert: less than {} free bytes in disk space ({}). "
                 "Configure this limit with user settings {} or {}",
                 needed_free_bytes,
+                free_disk_bytes,
                 "min_free_disk_bytes_to_throw_insert",
                 "min_free_disk_ratio_to_throw_insert");
         }
