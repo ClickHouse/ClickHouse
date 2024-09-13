@@ -96,8 +96,8 @@ class Statistics
 {
 public:
     explicit Statistics() : total_row_count(0) { }
-    explicit Statistics(Float64 total_row_count_) : total_row_count(total_row_count_) { }
-    explicit Statistics(Float64 total_row_count_, const std::unordered_map<String, ColumnStatisticsPtr> & column_stats_)
+    explicit Statistics(UInt64 total_row_count_) : total_row_count(total_row_count_) { }
+    explicit Statistics(UInt64 total_row_count_, const std::unordered_map<String, ColumnStatisticsPtr> & column_stats_)
         : total_row_count(total_row_count_)
         , column_stats(column_stats_)
     {
