@@ -23,6 +23,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -528,6 +529,8 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     }
 
     auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     PartFilterCounters part_filter_counters;
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
         selectPartsToReadWithUUIDFilter(
@@ -549,7 +552,8 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             minmax_columns_types,
             partition_pruner,
             max_block_numbers_to_read,
-            part_filter_counters);
+            part_filter_counters,
+            query_status);
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
@@ -649,8 +653,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
 
+        auto query_status = context->getProcessListElement();
+
         auto process_part = [&](size_t part_index)
         {
+            if (query_status)
+                query_status->checkTimeLimit();
+
             auto & part = parts[part_index];
 
             RangesInDataPart ranges(part, part_index);
@@ -1545,13 +1554,17 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    PartFilterCounters & counters)
+    PartFilterCounters & counters,
+    QueryStatusPtr query_status)
 {
     MergeTreeData::DataPartsVector prev_parts;
     std::swap(prev_parts, parts);
 
     for (const auto & part_or_projection : prev_parts)
     {
+        if (query_status)
+            query_status->checkTimeLimit();
+
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && part_values->find(part->name) == part_values->end())
             continue;
