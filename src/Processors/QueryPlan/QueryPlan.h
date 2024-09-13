@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -147,24 +148,31 @@ using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 /// Use resolveStorages to get an ordinary plan.
 struct QueryPlanAndSets
 {
-    struct SetFromStorage
+    struct Set
     {
         CityHash_v1_0_2::uint128 hash;
-        std::string storage_name;
         std::list<ColumnSet *> columns;
     };
-
-    using SetsFromStorage = std::list<SetFromStorage>;
-
-    struct SubqueryAndSets
+    struct SetFromStorage : public Set
     {
-        FutureSetFromSubqueryPtr subquery;
-        std::vector<SubqueryAndSets> sets;
+        std::string storage_name;
+    };
+
+    struct SetFromTuple : public Set
+    {
+        ColumnsWithTypeAndName set_columns;
+    };
+
+    struct SetFromSubquery : public Set
+    {
+        std::unique_ptr<QueryPlan> plan;
+        std::list<SetFromSubquery> sets;
     };
 
     QueryPlan plan;
-    SetsFromStorage sets_from_storage;
-    std::vector<SubqueryAndSets> subqueries;
+    std::list<SetFromStorage> sets_from_storage;
+    std::list<SetFromTuple> sets_from_tuple;
+    std::list<SetFromSubquery> sets_from_subquery;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

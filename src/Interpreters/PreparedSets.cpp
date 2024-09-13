@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static SizeLimits getSizeLimitsForSet(const Settings & settings)
+SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
 {
     return SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
 }

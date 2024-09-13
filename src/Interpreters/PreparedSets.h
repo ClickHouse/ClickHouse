@@ -205,6 +205,8 @@ public:
 
     static String toString(const Hash & key, const DataTypes & types);
 
+    static SizeLimits getSizeLimitsForSet(const Settings & settings);
+
 private:
     SetsFromTuple sets_from_tuple;
     SetsFromStorage sets_from_storage;
