@@ -51,10 +51,9 @@ def _create_tables(table_name):
         )
 
 
-def test_number_of_marks_read(start_cluster):
-    if nodes[0].is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers (too slow)")
-
+# check that we use the state of data parts from the initiator node (for some sort of determinism of what is been read).
+# currently it is implemented only when we build local plan for the initiator node (we aim to make this behavior default)
+def test_initiator_snapshot_is_used_for_reading(start_cluster):
     table_name = "t"
     _create_tables(table_name)
 
