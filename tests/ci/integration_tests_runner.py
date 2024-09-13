@@ -18,7 +18,7 @@ from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict
 
-from env_helper import IS_CI
+from env_helper import CI
 from integration_test_images import IMAGES
 
 MAX_RETRY = 1
@@ -67,9 +67,9 @@ def get_changed_tests_to_run(pr_info, repo_path):
         return []
 
     for fpath in changed_files:
-        if "tests/integration/test_" in fpath:
+        if re.search(r"tests/integration/test_.*/test.*\.py", fpath) is not None:
             logging.info("File %s changed and seems like integration test", fpath)
-            result.add(fpath.split("/")[2])
+            result.add("/".join(fpath.split("/")[2:]))
     return filter_existing_tests(result, repo_path)
 
 
@@ -265,9 +265,7 @@ class ClickhouseIntegrationTestsRunner:
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
 
-        self.use_old_analyzer = (
-            os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
-        )
+        self.use_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
 
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
@@ -344,8 +342,6 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse-common-static_",
             "clickhouse-server_",
             "clickhouse-client",
-            "clickhouse-odbc-bridge_",
-            "clickhouse-library-bridge_",
             "clickhouse-common-static-dbg_",
         ):  # order matters
             logging.info("Installing package %s", package)
@@ -416,8 +412,8 @@ class ClickhouseIntegrationTestsRunner:
             result.append("--tmpfs")
         if self.disable_net_host:
             result.append("--disable-net-host")
-        if self.use_old_analyzer:
-            result.append("--old-analyzer")
+        if self.use_analyzer:
+            result.append("--analyzer")
 
         return " ".join(result)
 
@@ -1011,7 +1007,7 @@ def run():
 
     logging.info("Running tests")
 
-    if IS_CI:
+    if CI:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
@@ -1019,7 +1015,7 @@ def run():
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
 
-    if IS_CI:
+    if CI:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
         subprocess.check_call("sudo -E dmesg -T", shell=True)

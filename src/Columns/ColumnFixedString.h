@@ -125,7 +125,7 @@ public:
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -141,8 +141,6 @@ public:
 
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
-
-    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 

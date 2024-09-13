@@ -27,8 +27,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include <boost/range/adaptor/map.hpp>
-
 #include "config.h"
 
 #if USE_MYSQL
@@ -63,7 +61,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
-    extern const int INFINITE_LOOP;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -274,12 +271,10 @@ void DatabaseCatalog::shutdownImpl()
         database->shutdown();
     }
 
-    TablesMarkedAsDropped tables_marked_dropped_to_destroy;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        tables_marked_dropped.swap(tables_marked_dropped_to_destroy);
+        tables_marked_dropped.clear();
     }
-    tables_marked_dropped_to_destroy.clear();
 
     std::lock_guard lock(databases_mutex);
     for (const auto & db : databases)
@@ -991,7 +986,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
+    String path = getContext()->getPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -1046,11 +1041,10 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
-        fmt::format("{}.{}.{}.sql",
-            escapeForFileName(table_id.getDatabaseName()),
-            escapeForFileName(table_id.getTableName()),
-            toString(table_id.uuid));
+    return getContext()->getPath() + "metadata_dropped/" +
+           escapeForFileName(table_id.getDatabaseName()) + "." +
+           escapeForFileName(table_id.getTableName()) + "." +
+           toString(table_id.uuid) + ".sql";
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1441,7 +1435,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
@@ -1474,114 +1468,6 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     if (!from_other_databases.empty())
         throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
                         removing_table, fmt::join(from_other_databases, ", "));
-}
-
-void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
-    const QualifiedTableName & table_name,
-    const TableNamesSet & new_referential_dependencies,
-    const TableNamesSet & new_loading_dependencies)
-{
-    std::lock_guard lock{databases_mutex};
-
-    StorageID table_id = StorageID{table_name};
-
-    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet & new_dependencies)
-    {
-        auto old_dependencies = dependencies.removeDependencies(table_id);
-        dependencies.addDependencies(table_name, new_dependencies);
-        auto restore_dependencies = [&]()
-        {
-            dependencies.removeDependencies(table_id);
-            if (!old_dependencies.empty())
-                dependencies.addDependencies(table_id, old_dependencies);
-        };
-
-        if (dependencies.hasCyclicDependencies())
-        {
-            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            restore_dependencies();
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot add dependencies for '{}', because it will lead to cyclic dependencies: {}",
-                table_name.getFullName(),
-                cyclic_dependencies_description);
-        }
-
-        restore_dependencies();
-    };
-
-    check(referential_dependencies, new_referential_dependencies);
-    check(loading_dependencies, new_loading_dependencies);
-}
-
-void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
-{
-    std::lock_guard lock{databases_mutex};
-
-    auto check = [&](TablesDependencyGraph & dependencies)
-    {
-        auto old_dependencies = dependencies.removeDependencies(from_table_id);
-        dependencies.addDependencies(to_table_id, old_dependencies);
-        auto restore_dependencies = [&]()
-        {
-            dependencies.removeDependencies(to_table_id);
-            dependencies.addDependencies(from_table_id, old_dependencies);
-        };
-
-        if (dependencies.hasCyclicDependencies())
-        {
-            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            restore_dependencies();
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot rename '{}' to '{}', because it will lead to cyclic dependencies: {}",
-                from_table_id.getFullTableName(),
-                to_table_id.getFullTableName(),
-                cyclic_dependencies_description);
-        }
-
-        restore_dependencies();
-    };
-
-    check(referential_dependencies);
-    check(loading_dependencies);
-}
-
-void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2)
-{
-    std::lock_guard lock{databases_mutex};
-
-    auto check = [&](TablesDependencyGraph & dependencies)
-    {
-        auto old_dependencies_1 = dependencies.removeDependencies(table_id_1);
-        auto old_dependencies_2 = dependencies.removeDependencies(table_id_2);
-        dependencies.addDependencies(table_id_1, old_dependencies_2);
-        dependencies.addDependencies(table_id_2, old_dependencies_1);
-        auto restore_dependencies = [&]()
-        {
-            dependencies.removeDependencies(table_id_1);
-            dependencies.removeDependencies(table_id_2);
-            dependencies.addDependencies(table_id_1, old_dependencies_1);
-            dependencies.addDependencies(table_id_2, old_dependencies_2);
-        };
-
-        if (dependencies.hasCyclicDependencies())
-        {
-            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
-            restore_dependencies();
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot exchange '{}' and '{}', because it will lead to cyclic dependencies: {}",
-                table_id_1.getFullTableName(),
-                table_id_2.getFullTableName(),
-                cyclic_dependencies_description);
-        }
-
-        restore_dependencies();
-    };
-
-    check(referential_dependencies);
-    check(loading_dependencies);
 }
 
 void DatabaseCatalog::cleanupStoreDirectoryTask()
@@ -1716,9 +1602,6 @@ void DatabaseCatalog::reloadDisksTask()
 
     for (auto & database : getDatabases())
     {
-        // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
-        // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
-        // TODO: We can split this task by table or by database to make loaded table operate as usual.
         auto it = database.second->getTablesIterator(getContext());
         while (it->isValid())
         {
@@ -1856,9 +1739,10 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
+    Names result;
     if (database)
-        return database->getAllTableNames(context);
-    return {};
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            result.emplace_back(table_it->name());
+    return result;
 }
-
 }

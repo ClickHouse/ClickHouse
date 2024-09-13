@@ -310,9 +310,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     auto table_id = storage.getStorageID();
 
     task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContextForMerge(*storage.getSettings());
+    task_context->makeQueryContext();
     task_context->setCurrentQueryId(getQueryId());
-    task_context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
@@ -427,7 +426,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
     write_part_log({});
-    StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());
+    storage.incrementMergedPartsProfileEvent(part->getType());
 
     return true;
 }

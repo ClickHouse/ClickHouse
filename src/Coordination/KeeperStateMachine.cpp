@@ -1,14 +1,11 @@
-#include <atomic>
 #include <cerrno>
-#include <chrono>
-#include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Disks/DiskLocal.h>
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
@@ -19,6 +16,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include <Disks/DiskLocal.h>
 
 
 namespace ProfileEvents
@@ -32,7 +30,6 @@ namespace ProfileEvents
     extern const Event KeeperSnapshotApplysFailed;
     extern const Event KeeperReadSnapshot;
     extern const Event KeeperSaveSnapshot;
-    extern const Event KeeperStorageLockWaitMicroseconds;
 }
 
 namespace DB
@@ -93,9 +90,8 @@ void KeeperStateMachine::init()
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
-            chassert(latest_snapshot_info);
 
-            if (isLocalDisk(*latest_snapshot_info->disk))
+            if (isLocalDisk(*latest_snapshot_info.disk))
                 latest_snapshot_buf = nullptr;
 
             storage = std::move(snapshot_deserialization_result.storage);
@@ -152,20 +148,6 @@ void assertDigest(
         std::terminate();
     }
 }
-
-struct TSA_SCOPED_LOCKABLE LockGuardWithStats final
-{
-    std::unique_lock<std::mutex> lock;
-    explicit LockGuardWithStats(std::mutex & mutex) TSA_ACQUIRE(mutex)
-    {
-        Stopwatch watch;
-        std::unique_lock l(mutex);
-        ProfileEvents::increment(ProfileEvents::KeeperStorageLockWaitMicroseconds, watch.elapsedMicroseconds());
-        lock = std::move(l);
-    }
-
-    ~LockGuardWithStats() TSA_RELEASE() = default;
-};
 
 }
 
@@ -288,7 +270,7 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
         return true;
 
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
 
     if (storage->isFinalized())
         return false;
@@ -318,7 +300,7 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
 
 void KeeperStateMachine::reconfigure(const KeeperStorage::RequestForSession& request_for_session)
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard _(storage_and_responses_lock);
     KeeperStorage::ResponseForSession response = processReconfiguration(request_for_session);
     if (!responses_queue.push(response))
     {
@@ -407,7 +389,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
-    auto try_push = [&](const KeeperStorage::ResponseForSession& response)
+    auto try_push = [this](const KeeperStorage::ResponseForSession& response)
     {
         if (!responses_queue.push(response))
         {
@@ -415,17 +397,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             LOG_WARNING(log,
                 "Failed to push response with session id {} to the queue, probably because of shutdown",
                 response.session_id);
-        }
-
-        using namespace std::chrono;
-        uint64_t elapsed = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - request_for_session->time;
-        if (elapsed > keeper_context->getCoordinationSettings()->log_slow_total_threshold_ms)
-        {
-            LOG_INFO(
-                log,
-                "Total time to process a request took too long ({}ms).\nRequest info: {}",
-                elapsed,
-                request_for_session->request->toString(/*short_format=*/true));
         }
     };
 
@@ -444,7 +415,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             response_for_session.session_id = -1;
             response_for_session.response = response;
 
-            LockGuardWithStats lock(storage_and_responses_lock);
+            std::lock_guard lock(storage_and_responses_lock);
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
@@ -453,13 +424,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         else
         {
             if (op_num == Coordination::OpNum::Close)
-
             {
                 std::lock_guard lock(request_cache_mutex);
                 parsed_request_cache.erase(request_for_session->session_id);
             }
 
-            LockGuardWithStats lock(storage_and_responses_lock);
+            std::lock_guard lock(storage_and_responses_lock);
             KeeperStorage::ResponsesForSessions responses_for_sessions
                 = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
             for (auto & response_for_session : responses_for_sessions)
@@ -510,7 +480,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     }
 
     { /// deserialize and apply snapshot to storage
-        LockGuardWithStats lock(storage_and_responses_lock);
+        std::lock_guard lock(storage_and_responses_lock);
 
         SnapshotDeserializationResult snapshot_deserialization_result;
         if (latest_snapshot_ptr)
@@ -562,7 +532,7 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
@@ -589,7 +559,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     auto snapshot_meta_copy = nuraft::snapshot::deserialize(*snp_buf);
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
-        LockGuardWithStats lock(storage_and_responses_lock);
+        std::lock_guard lock(storage_and_responses_lock);
         snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(storage.get(), snapshot_meta_copy, getClusterConfig());
     }
 
@@ -597,7 +567,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot, bool execute_only_cleanup)
     {
         nuraft::ptr<std::exception> exception(nullptr);
-        bool ret = false;
+        bool ret = true;
         if (!execute_only_cleanup)
         {
             try
@@ -627,33 +597,27 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                         else
                         {
                             auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                            auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(
-                                *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+                            auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
                             latest_snapshot_info = std::move(snapshot_info);
                             latest_snapshot_buf = std::move(snapshot_buf);
                         }
 
                         ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                        LOG_DEBUG(
-                            log,
-                            "Created persistent snapshot {} with path {}",
-                            latest_snapshot_meta->get_last_log_idx(),
-                            latest_snapshot_info->path);
+                        LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), latest_snapshot_info.path);
                     }
                 }
-
-                ret = true;
             }
             catch (...)
             {
                 ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
                 LOG_TRACE(log, "Exception happened during snapshot");
                 tryLogCurrentException(log);
+                ret = false;
             }
         }
         {
             /// Destroy snapshot with lock
-            LockGuardWithStats lock(storage_and_responses_lock);
+            std::lock_guard lock(storage_and_responses_lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
             /// Turn off "snapshot mode" and clear outdate part of storage state
             storage->clearGarbageAfterSnapshot();
@@ -663,7 +627,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
 
         when_done(ret, exception);
 
-        return ret ? latest_snapshot_info : nullptr;
+        return ret ? latest_snapshot_info : SnapshotFileInfo{};
     };
 
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
@@ -671,9 +635,9 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
         auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 
-        if (snapshot_file_info && snapshot_manager_s3)
+        if (!snapshot_file_info.path.empty() && snapshot_manager_s3)
         {
-            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info->path);
+            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info.path);
             snapshot_manager_s3->uploadSnapshot(snapshot_file_info, /* asnyc_upload */ false);
         }
 
@@ -708,7 +672,7 @@ void KeeperStateMachine::save_logical_snp_obj(
         latest_snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
         latest_snapshot_meta = cloned_meta;
         latest_snapshot_buf = std::move(cloned_buffer);
-        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info->path);
+        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info.path);
         obj_id++;
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
     }
@@ -769,7 +733,7 @@ int KeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
 
-    const auto & [path, disk, size] = *latest_snapshot_info;
+    const auto & [path, disk] = latest_snapshot_info;
     if (isLocalDisk(*disk))
     {
         auto full_path = fs::path(disk->getPath()) / path;
@@ -794,7 +758,7 @@ int KeeperStateMachine::read_logical_snp_obj(
 void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
     /// Pure local request, just process it with storage
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     auto responses = storage->processRequest(
         request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
     for (const auto & response : responses)
@@ -804,121 +768,106 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
 
 void KeeperStateMachine::shutdownStorage()
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     storage->finalize();
 }
 
 std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();
 }
 
 int64_t KeeperStateMachine::getNextZxid() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getNextZXID();
 }
 
 KeeperStorage::Digest KeeperStateMachine::getNodesDigest() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getNodesDigest(false);
 }
 
 uint64_t KeeperStateMachine::getLastProcessedZxid() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getZXID();
 }
 
 uint64_t KeeperStateMachine::getNodesCount() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getNodesCount();
 }
 
 uint64_t KeeperStateMachine::getTotalWatchesCount() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getTotalWatchesCount();
 }
 
 uint64_t KeeperStateMachine::getWatchedPathsCount() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getWatchedPathsCount();
 }
 
 uint64_t KeeperStateMachine::getSessionsWithWatchesCount() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getSessionsWithWatchesCount();
 }
 
 uint64_t KeeperStateMachine::getTotalEphemeralNodesCount() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getTotalEphemeralNodesCount();
 }
 
 uint64_t KeeperStateMachine::getSessionWithEphemeralNodesCount() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getSessionWithEphemeralNodesCount();
 }
 
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     storage->dumpWatches(buf);
 }
 
 void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     storage->dumpWatchesByPath(buf);
 }
 
 void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     storage->dumpSessionsAndEphemerals(buf);
 }
 
 uint64_t KeeperStateMachine::getApproximateDataSize() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getApproximateDataSize();
 }
 
 uint64_t KeeperStateMachine::getKeyArenaSize() const
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     return storage->getArenaDataSize();
 }
 
-uint64_t KeeperStateMachine::getLatestSnapshotSize() const
+uint64_t KeeperStateMachine::getLatestSnapshotBufSize() const
 {
-    auto snapshot_info = [&]
-    {
-        std::lock_guard lock(snapshots_lock);
-        return latest_snapshot_info;
-    }();
-
-    if (snapshot_info == nullptr || snapshot_info->disk == nullptr)
-        return 0;
-
-    /// there is a possibility multiple threads can try to get size
-    /// this can happen in rare cases while it's not a heavy operation
-    size_t size = snapshot_info->size.load(std::memory_order_relaxed);
-    if (size == 0)
-    {
-        size = snapshot_info->disk->getFileSize(snapshot_info->path);
-        snapshot_info->size.store(size, std::memory_order_relaxed);
-    }
-
-    return size;
+    std::lock_guard lock(snapshots_lock);
+    if (latest_snapshot_buf)
+        return latest_snapshot_buf->size();
+    return 0;
 }
 
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
@@ -935,7 +884,7 @@ ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
 
 void KeeperStateMachine::recalculateStorageStats()
 {
-    LockGuardWithStats lock(storage_and_responses_lock);
+    std::lock_guard lock(storage_and_responses_lock);
     LOG_INFO(log, "Recalculating storage stats");
     storage->recalculateStats();
     LOG_INFO(log, "Done recalculating storage stats");

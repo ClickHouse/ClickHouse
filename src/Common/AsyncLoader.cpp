@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
-    extern const int ASYNC_LOAD_WAIT_FAILED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -434,7 +433,7 @@ void AsyncLoader::wait(const LoadJobPtr & job, bool no_throw)
     std::unique_lock job_lock{job->mutex};
     wait(job_lock, job);
     if (!no_throw && job->load_exception)
-        throw Exception(ErrorCodes::ASYNC_LOAD_WAIT_FAILED, "Waited job failed: {}", getExceptionMessage(job->load_exception, /* with_stacktrace = */ false));
+        std::rethrow_exception(job->load_exception);
 }
 
 void AsyncLoader::remove(const LoadJobSet & jobs)
@@ -874,7 +873,6 @@ void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> & lock)
         ALLOW_ALLOCATIONS_IN_SCOPE;
         if (log_events)
             LOG_DEBUG(log, "Spawn loader worker #{} in {}", pool.workers, pool.name);
-        auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
         pool.thread_pool->scheduleOrThrowOnError([this, &pool] { worker(pool); });
     });
 }

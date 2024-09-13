@@ -143,9 +143,9 @@ void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
     nested->updateHashWithValue(n, hash);
 }
 
-void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnMap::getWeakHash32() const
 {
-    nested->updateWeakHash32(hash);
+    return nested->getWeakHash32();
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const
@@ -310,15 +310,6 @@ ColumnPtr ColumnMap::compress() const
     {
         return ColumnMap::create(my_compressed->decompress());
     });
-}
-
-void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
-{
-    Columns nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
 }

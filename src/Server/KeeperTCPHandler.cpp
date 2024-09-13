@@ -13,9 +13,11 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <base/defines.h>
+#include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <queue>
 #include <mutex>
 #include <Coordination/FourLetterCommand.h>
 #include <IO/CompressionMethod.h>
@@ -27,11 +29,6 @@
 #else
     #include <poll.h>
 #endif
-
-namespace ProfileEvents
-{
-    extern const Event KeeperTotalElapsedMicroseconds;
-}
 
 
 namespace DB
@@ -312,6 +309,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 void KeeperTCPHandler::runImpl()
 {
     setThreadName("KeeperHandler");
+    ThreadStatus thread_status;
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);
@@ -414,12 +412,12 @@ void KeeperTCPHandler::runImpl()
     keeper_dispatcher->registerSession(session_id, response_callback);
 
     Stopwatch logging_stopwatch;
-    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_connection_operation_threshold_ms;
     auto log_long_operation = [&](const String & operation)
     {
+        constexpr UInt64 operation_max_ms = 500;
         auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
         if (operation_max_ms < elapsed_ms)
-            LOG_INFO(log, "{} for session {} took {} ms", operation, session_id, elapsed_ms);
+            LOG_TEST(log, "{} for session {} took {} ms", operation, session_id, elapsed_ms);
         logging_stopwatch.restart();
     };
 
@@ -614,13 +612,11 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
     /// update statistics ignoring watch response and heartbeat.
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
     {
-        Int64 elapsed = (Poco::Timestamp() - operations[response->xid]);
-        ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
-        Int64 elapsed_ms = elapsed / 1000;
-        conn_stats.updateLatency(elapsed_ms);
+        Int64 elapsed = (Poco::Timestamp() - operations[response->xid]) / 1000;
+        conn_stats.updateLatency(elapsed);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),

@@ -6,6 +6,7 @@ env:
   PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
+  merge_group:
   pull_request:
     types:
       - synchronize
@@ -13,11 +14,6 @@ on:  # yamllint disable-line rule:truthy
       - opened
     branches:
       - master
-
-# Cancel the previous wf run in PRs.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   RunConfig:
@@ -31,15 +27,10 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
-          fetch-depth: 0 # to get a version
+          fetch-depth: 0 # to get version
           filter: tree:0
-      - name: Cancel previous Sync PR workflow
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
-      - name: Set pending Sync status
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --set-pending-status
       - name: Labels check
+        if: ${{ github.event_name != 'merge_group' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
@@ -67,6 +58,7 @@ jobs:
               echo 'EOF'
             } >> "$GITHUB_OUTPUT"
       - name: Re-create GH statuses for skipped jobs if any
+        if: ${{ github.event_name != 'merge_group' }}
         run: |
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --update-gh-statuses
   BuildDockers:
@@ -81,7 +73,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Style check
-      runner_type: style-checker-aarch64
+      runner_type: style-checker
       run_command: |
           python3 style_check.py
       data: ${{ needs.RunConfig.outputs.data }}
@@ -91,7 +83,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, BuildDockers, StyleCheck]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -101,13 +93,13 @@ jobs:
       run_command: |
           python3 fast_test_check.py
 
-  ################################# Main stages #################################
+  ################################# Main statges #################################
   # for main CI chain
   #
   Builds_1:
-    needs: [RunConfig, StyleCheck, FastTest]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
-    # using callable wf (reusable_stage.yml) allows grouping all nested jobs under a tab
+    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
     with:
       stage: Builds_1
@@ -115,6 +107,7 @@ jobs:
   Tests_1:
     needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
+    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_1
@@ -122,68 +115,60 @@ jobs:
   Builds_2:
     needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_2') }}
+    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
     with:
       stage: Builds_2
       data: ${{ needs.RunConfig.outputs.data }}
-  # stage for running non-required checks without being blocked by required checks (Test_1) if corresponding settings is selected
   Tests_2:
-    needs: [RunConfig, Builds_1]
+    needs: [RunConfig, Builds_2]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
+    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_2
       data: ${{ needs.RunConfig.outputs.data }}
-  Tests_3:
-    needs: [RunConfig, Builds_1, Tests_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_3
-      data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
-  # Reports should run even if Builds_1/2 fail - run them separately (not in Tests_1/2/3)
-  Builds_Report:
+  # Reports should by run even if Builds_1/2 fail, so put them separatly in wf (not in Tests_1/2)
+  Builds_1_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
-    needs: [RunConfig, StyleCheck, Builds_1, Builds_2]
+    if: ${{ !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
+    needs:
+      - RunConfig
+      - Builds_1
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Builds
+      test_name: ClickHouse build check
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-
-  CheckReadyForMerge:
-    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
-    # Test_2 or Test_3 must not have jobs required for Mergeable check
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1]
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          filter: tree:0
-      - name: Check and set merge status
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+  Builds_2_Report:
+    # run report check for failed builds to indicate the CI error
+    if: ${{ !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse special build check') }}
+    needs:
+      - RunConfig
+      - Builds_2
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickHouse special build check
+      runner_type: style-checker-aarch64
+      data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !cancelled() }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
-    runs-on: [self-hosted, style-checker-aarch64]
+    if: ${{ !failure() && !cancelled() }}
+    needs: [Tests_1, Tests_2]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
-        with:
-          filter: tree:0
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 finish_check.py
+          python3 merge_pr.py --check-approved
+
 
 #############################################################################################
 ###################################### JEPSEN TESTS #########################################
@@ -196,9 +181,10 @@ jobs:
     concurrency:
       group: jepsen
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse Keeper Jepsen') }}
-    needs: [RunConfig, Builds_1]
+    # jepsen needs binary_release build which is in Builds_2
+    needs: [RunConfig, Builds_2]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse Keeper Jepsen
-      runner_type: style-checker-aarch64
+      runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}

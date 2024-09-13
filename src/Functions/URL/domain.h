@@ -3,7 +3,7 @@
 #include "protocol.h"
 #include <base/find_symbols.h>
 #include <cstring>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {

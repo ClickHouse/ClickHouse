@@ -224,7 +224,6 @@ bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_typ
         case TypeIndex::Nothing:
         case TypeIndex::JSONPaths:
         case TypeIndex::Variant:
-        case TypeIndex::Dynamic:
             return false;
     }
 

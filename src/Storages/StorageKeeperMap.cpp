@@ -119,10 +119,10 @@ public:
 
     std::string getName() const override { return "StorageKeeperMapSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         auto rows = chunk.getNumRows();
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
         WriteBufferFromOwnString wb_key;
         WriteBufferFromOwnString wb_value;
@@ -846,7 +846,7 @@ void StorageKeeperMap::restoreDataImpl(
     bool allow_non_empty_tables,
     const DiskPtr & temporary_disk)
 {
-    const auto & table_id = toString(getStorageID().uuid);
+    auto table_id = toString(getStorageID().uuid);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
 
@@ -960,7 +960,7 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
 {
     std::lock_guard lock{init_mutex};
     if (table_is_valid.has_value())
-        return table_is_valid;
+        return *table_is_valid;
 
     [&]
     {
@@ -1248,10 +1248,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     Block block;
     while (executor.pull(block))
-    {
-        auto chunk = Chunk(block.getColumns(), block.rows());
-        sink->consume(chunk);
-    }
+        sink->consume(Chunk{block.getColumns(), block.rows()});
 
     sink->finalize<true>(strict);
 }

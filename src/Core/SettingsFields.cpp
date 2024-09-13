@@ -380,6 +380,15 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+/// Unbeautiful workaround for clickhouse-keeper standalone build ("-DBUILD_STANDALONE_KEEPER=1").
+/// In this build, we don't build and link library dbms (to which SettingsField.cpp belongs) but
+/// only build SettingsField.cpp. Further dependencies, e.g. DataTypeString and DataTypeMap below,
+/// require building of further files for clickhouse-keeper. To keep dependencies slim, we don't do
+/// that. The linker does not complain only because clickhouse-keeper does not call any of below
+/// functions. A cleaner alternative would be more modular libraries, e.g. one for data types, which
+/// could then be linked by the server and the linker.
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const
@@ -418,6 +427,42 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     DB::readBinary(map, in);
     *this = map;
 }
+
+#else
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+SettingFieldMap::SettingFieldMap(const Field &) : value(Map()) {}
+String SettingFieldMap::toString() const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+
+SettingFieldMap & SettingFieldMap::operator =(const Field &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::parseFromString(const String &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::writeBinary(WriteBuffer &) const
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+void SettingFieldMap::readBinary(ReadBuffer &)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
+}
+
+#endif
 
 namespace
 {
@@ -528,42 +573,6 @@ void SettingFieldCustom::readBinary(ReadBuffer & in)
     String str;
     readStringBinary(str, in);
     parseFromString(str);
-}
-
-SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x) : SettingFieldUInt64(x)
-{
-    checkValueNonZero();
-}
-
-SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(const DB::Field & f) : SettingFieldUInt64(f)
-{
-    checkValueNonZero();
-}
-
-SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(UInt64 x)
-{
-    SettingFieldUInt64::operator=(x);
-    checkValueNonZero();
-    return *this;
-}
-
-SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(const DB::Field & f)
-{
-    SettingFieldUInt64::operator=(f);
-    checkValueNonZero();
-    return *this;
-}
-
-void SettingFieldNonZeroUInt64::parseFromString(const String & str)
-{
-    SettingFieldUInt64::parseFromString(str);
-    checkValueNonZero();
-}
-
-void SettingFieldNonZeroUInt64::checkValueNonZero() const
-{
-    if (value == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
 }
 
 }

@@ -366,7 +366,10 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         LockMemoryExceptionInThread::removeUniqueLock();
     };
 
-    asio_opts.thread_pool_size_ = getNumberOfPhysicalCPUCores();
+    /// At least 16 threads for network communication in asio.
+    /// asio is async framework, so even with 1 thread it should be ok, but
+    /// still as safeguard it's better to have some redundant capacity here
+    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfPhysicalCPUCores());
 
     if (state_manager->isSecure())
     {
@@ -993,7 +996,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return Accepted;
     }
-    std::unreachable();
+    UNREACHABLE();
 }
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
@@ -1032,9 +1035,9 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
             if (raft_instance->get_srv_config(add->id) != nullptr)
-                return applied(); // NOLINT
+                return applied();
             if (!isLeader())
-                return not_leader(); // NOLINT
+                return not_leader();
             if (!raft_instance->add_srv(static_cast<nuraft::srv_config>(*add))->get_accepted())
                 backoff_on_refusal(i);
         }
@@ -1047,16 +1050,15 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
                 "Trying to remove leader node (ourself), so will yield leadership and some other node "
                 "(new leader) will try to remove us. "
                 "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
-            raft_instance->yield_leadership();
-            return;
+            return raft_instance->yield_leadership();
         }
 
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
             if (raft_instance->get_srv_config(remove->id) == nullptr)
-                return applied(); // NOLINT
+                return applied();
             if (!isLeader())
-                return not_leader(); // NOLINT
+                return not_leader();
             if (!raft_instance->remove_srv(remove->id)->get_accepted())
                 backoff_on_refusal(i);
         }

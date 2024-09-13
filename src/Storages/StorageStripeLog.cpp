@@ -5,7 +5,6 @@
 
 #include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -54,13 +53,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
-    extern const int FAULT_INJECTED;
 }
 
-namespace FailPoints
-{
-    extern const char stripe_log_sink_write_fallpoint[];
-}
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
@@ -207,10 +201,7 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
-                data_out->cancel();
                 data_out.reset();
-
-                data_out_compressed->cancel();
                 data_out_compressed.reset();
 
                 /// Truncate files to the older sizes.
@@ -226,9 +217,9 @@ public:
         }
     }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
-        block_out->write(getHeader().cloneWithColumns(chunk.getColumns()));
+        block_out->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
@@ -236,17 +227,13 @@ public:
         if (done)
             return;
 
-        data_out->finalize();
+        data_out->next();
+        data_out_compressed->next();
         data_out_compressed->finalize();
 
         /// Save the new indices.
         storage.saveIndices(lock);
 
-        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
-        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
-        });
         /// Save the new file sizes.
         storage.saveFileSizes(lock);
 
@@ -384,7 +371,8 @@ Pipe StorageStripeLog::read(
         = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
 
     size_t size = indices_for_selected_columns->blocks.size();
-    num_streams = std::min(num_streams, size);
+    if (num_streams > size)
+        num_streams = size;
 
     ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
@@ -496,7 +484,8 @@ void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writi
     for (size_t i = start; i != num_indices; ++i)
         indices.blocks[i].write(*index_out);
 
-    index_out->finalize();
+    index_out->next();
+    index_out_compressed->next();
     index_out_compressed->finalize();
 
     num_indices_saved = num_indices;

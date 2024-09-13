@@ -5,12 +5,11 @@
 #include <optional>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool_fwd.h>
 
 namespace DB
 {
@@ -40,7 +39,7 @@ public:
         const Block & right_sample_block,
         bool any_take_last_row_ = false);
 
-    ~ConcurrentHashJoin() override;
+    ~ConcurrentHashJoin() override = default;
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -67,7 +66,6 @@ private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
-    std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
     std::mutex totals_mutex;

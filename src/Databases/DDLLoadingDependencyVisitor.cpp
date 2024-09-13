@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
@@ -110,30 +111,19 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
     auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
 
-    if (!info || !info->is_local)
+    if (!info || !info->is_local || info->table_name.table.empty())
         return;
 
-    if (!info->table_name.table.empty())
-    {
-        /// If database is not specified in dictionary source, use database of the dictionary itself, not the current/default database.
-        if (info->table_name.database.empty())
-            info->table_name.database = data.table_name.database;
-        data.dependencies.emplace(std::move(info->table_name));
-    }
-    else
-    {
-        /// We don't have a table name, we have a select query instead that will be executed during dictionary loading.
-        /// We need to find all tables used in this select query and add them to dependencies.
-        auto select_query_dependencies = getDependenciesFromDictionaryNestedSelectQuery(data.global_context, data.table_name, data.create_query, info->query, data.default_database);
-        data.dependencies.merge(select_query_dependencies);
-    }
+    if (info->table_name.database.empty())
+        info->table_name.database = data.default_database;
+    data.dependencies.emplace(std::move(info->table_name));
 }
 
 void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (storage.ttl_table)
     {
-        auto ttl_dependensies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr(), data.default_database);
+        auto ttl_dependensies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr());
         data.dependencies.merge(ttl_dependensies);
     }
 
@@ -210,6 +200,13 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
         qualified_name.database = table_identifier->getDatabaseName();
         qualified_name.table = table_identifier->shortName();
+    }
+    else if (arg->as<ASTSubquery>())
+    {
+        /// Allow IN subquery.
+        /// Do not add tables from the subquery into dependencies,
+        /// because CREATE will succeed anyway.
+        return;
     }
     else
     {

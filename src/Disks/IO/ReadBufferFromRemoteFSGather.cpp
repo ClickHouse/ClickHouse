@@ -78,6 +78,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     std::unique_ptr<ReadBufferFromFileBase> buf;
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     if (with_file_cache)
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
@@ -86,7 +87,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             cache_key,
             settings.remote_fs_cache,
             FileCache::getCommonUser(),
-            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
+            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object_path); },
             settings,
             query_id,
             object.bytes_size,
@@ -95,19 +96,20 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             /* read_until_position */std::nullopt,
             cache_log);
     }
+#endif
 
     /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
     /// former doesn't support seeks.
     if (with_page_cache && !buf)
     {
-        auto inner = read_buffer_creator(/* restricted_seek */false, object);
+        auto inner = read_buffer_creator(/* restricted_seek */false, object_path);
         auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_path };
         buf = std::make_unique<CachedInMemoryReadBufferFromFile>(
             cache_key, settings.page_cache, std::move(inner), settings);
     }
 
     if (!buf)
-        buf = read_buffer_creator(/* restricted_seek */true, object);
+        buf = read_buffer_creator(/* restricted_seek */true, object_path);
 
     if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
         buf->setReadUntilPosition(read_until_position - start_offset);

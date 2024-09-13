@@ -1850,7 +1850,7 @@ class TestCancelBackgroundMoving:
         config = inspect.cleandoc(
             f"""
             <clickhouse>
-                <max_local_write_bandwidth_for_server>{256 * 1024}</max_local_write_bandwidth_for_server>
+                <max_local_write_bandwidth_for_server>{ 256 * 1024 }</max_local_write_bandwidth_for_server>
             </clickhouse>
             """
         )

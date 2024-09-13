@@ -1,102 +1,94 @@
 #pragma once
 
+#include <cstddef>
+#include <memory>
+#include <optional>
+
+#include <boost/core/noncopyable.hpp>
+
+#include <AggregateFunctions/QuantileTDigest.h>
 #include <Core/Block.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
 
-#include <boost/core/noncopyable.hpp>
+
+/// this is for user-defined statistic.
+constexpr auto STAT_FILE_PREFIX = "statistic_";
+constexpr auto STAT_FILE_SUFFIX = ".stat";
 
 namespace DB
 {
 
-constexpr auto STATS_FILE_PREFIX = "statistics_";
-constexpr auto STATS_FILE_SUFFIX = ".stats";
+class IStatistic;
+using StatisticPtr = std::shared_ptr<IStatistic>;
+using Statistics = std::vector<StatisticPtr>;
 
-/// Statistics describe properties of the values in the column,
-/// e.g. how many unique values exist,
-/// what are the N most frequent values,
-/// how frequent is a value V, etc.
-class IStatistics
+/// Statistic contains the distribution of values in a column.
+/// right now we support
+/// - tdigest
+class IStatistic
 {
 public:
-    explicit IStatistics(const SingleStatisticsDescription & stat_);
-    virtual ~IStatistics() = default;
+    explicit IStatistic(const StatisticDescription & stat_)
+        : stat(stat_)
+    {
+    }
+    virtual ~IStatistic() = default;
+
+    String getFileName() const
+    {
+        return STAT_FILE_PREFIX + columnName();
+    }
+
+    const String & columnName() const
+    {
+        return stat.column_name;
+    }
+
+    virtual void serialize(WriteBuffer & buf) = 0;
+
+    virtual void deserialize(ReadBuffer & buf) = 0;
 
     virtual void update(const ColumnPtr & column) = 0;
 
-    virtual void serialize(WriteBuffer & buf) = 0;
-    virtual void deserialize(ReadBuffer & buf) = 0;
-
-    /// Estimate the cardinality of the column.
-    /// Throws if the statistics object is not able to do a meaningful estimation.
-    virtual UInt64 estimateCardinality() const;
-
-    /// Per-value estimations.
-    /// Throws if the statistics object is not able to do a meaningful estimation.
-    virtual Float64 estimateEqual(Float64 val) const; /// cardinality of val in the column
-    virtual Float64 estimateLess(Float64 val) const;  /// summarized cardinality of values < val in the column
+    virtual UInt64 count() = 0;
 
 protected:
-    SingleStatisticsDescription stat;
-};
 
-using StatisticsPtr = std::shared_ptr<IStatistics>;
+    StatisticDescription stat;
 
-class ColumnStatistics
-{
-public:
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
-
-    void serialize(WriteBuffer & buf);
-    void deserialize(ReadBuffer & buf);
-
-    String getFileName() const;
-    const String & columnName() const;
-
-    UInt64 rowCount() const;
-
-    void update(const ColumnPtr & column);
-
-    Float64 estimateLess(Float64 val) const;
-    Float64 estimateGreater(Float64 val) const;
-    Float64 estimateEqual(Float64 val) const;
-
-private:
-    friend class MergeTreeStatisticsFactory;
-    ColumnStatisticsDescription stats_desc;
-    std::map<StatisticsType, StatisticsPtr> stats;
-    UInt64 rows = 0; /// the number of rows in the column
 };
 
 class ColumnsDescription;
-using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 class MergeTreeStatisticsFactory : private boost::noncopyable
 {
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const;
+    void validate(const StatisticDescription & stat, DataTypePtr data_type) const;
 
-    using Validator = std::function<void(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
-    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
+    using Creator = std::function<StatisticPtr(const StatisticDescription & stat)>;
 
-    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
-    ColumnsStatistics getMany(const ColumnsDescription & columns) const;
+    using Validator = std::function<void(const StatisticDescription & stat, DataTypePtr data_type)>;
 
-    void registerValidator(StatisticsType type, Validator validator);
-    void registerCreator(StatisticsType type, Creator creator);
+    StatisticPtr get(const StatisticDescription & stat) const;
+
+    Statistics getMany(const ColumnsDescription & columns) const;
+
+    void registerCreator(StatisticType type, Creator creator);
+    void registerValidator(StatisticType type, Validator validator);
 
 protected:
     MergeTreeStatisticsFactory();
 
 private:
-    using Validators = std::unordered_map<StatisticsType, Validator>;
-    using Creators = std::unordered_map<StatisticsType, Creator>;
-    Validators validators;
+    using Creators = std::unordered_map<StatisticType, Creator>;
+    using Validators = std::unordered_map<StatisticType, Validator>;
     Creators creators;
+    Validators validators;
 };
 
 }

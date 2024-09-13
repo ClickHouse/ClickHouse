@@ -36,3 +36,8 @@ SELECT hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, I
 SELECT toDateTime(hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'), 'US/Samoa');
 SELECT toDateTime(hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'), 'US/Samoa');
 SELECT hopEnd(hop(toDateTime('2019-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'));
+
+SELECT hopStart(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT hopEnd(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tumbleStart(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tumbleEnd(tuple()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

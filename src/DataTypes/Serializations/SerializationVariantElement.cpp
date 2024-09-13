@@ -2,7 +2,6 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -10,6 +9,35 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+}
+
+void SerializationVariantElement::enumerateStreams(
+    DB::ISerialization::EnumerateStreamsSettings & settings,
+    const DB::ISerialization::StreamCallback & callback,
+    const DB::ISerialization::SubstreamData & data) const
+{
+    /// We will need stream for discriminators during deserialization.
+    settings.path.push_back(Substream::VariantDiscriminators);
+    callback(settings.path);
+    settings.path.pop_back();
+
+    addVariantToPath(settings.path);
+    settings.path.back().data = data;
+    nested_serialization->enumerateStreams(settings, callback, data);
+    removeVariantFromPath(settings.path);
+}
+
+void SerializationVariantElement::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationVariantElement");
+}
+
+void SerializationVariantElement::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationVariantElement");
 }
 
 struct DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -28,47 +56,12 @@ struct DeserializeBinaryBulkStateVariantElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
 };
 
-void SerializationVariantElement::enumerateStreams(
-    DB::ISerialization::EnumerateStreamsSettings & settings,
-    const DB::ISerialization::StreamCallback & callback,
-    const DB::ISerialization::SubstreamData & data) const
-{
-    /// We will need stream for discriminators during deserialization.
-    settings.path.push_back(Substream::VariantDiscriminators);
-    callback(settings.path);
-    settings.path.pop_back();
-
-    const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_state) : nullptr;
-    addVariantToPath(settings.path);
-    auto nested_data = SubstreamData(nested_serialization)
-                       .withType(data.type ? removeNullableOrLowCardinalityNullable(data.type) : nullptr)
-                       .withColumn(data.column ? removeNullableOrLowCardinalityNullable(data.column) : nullptr)
-                       .withSerializationInfo(data.serialization_info)
-                       .withDeserializeState(deserialize_state ? deserialize_state->variant_element_state : nullptr);
-    settings.path.back().data = nested_data;
-    nested_serialization->enumerateStreams(settings, callback, nested_data);
-    removeVariantFromPath(settings.path);
-}
-
-void SerializationVariantElement::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationVariantElement");
-}
-
-void SerializationVariantElement::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationVariantElement");
-}
-
-void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
+void SerializationVariantElement::deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const
 {
     auto variant_element_state = std::make_shared<DeserializeBinaryBulkStateVariantElement>();
 
     addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state, cache);
+    nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state);
     removeVariantFromPath(settings.path);
 
     state = std::move(variant_element_state);
@@ -146,7 +139,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// If we started to read a new column, reinitialize variant column in deserialization state.
-    if (!variant_element_state->variant || mutable_column->empty())
+    if (!variant_element_state->variant || result_column->empty())
     {
         variant_element_state->variant = mutable_column->cloneEmpty();
 
@@ -156,26 +149,20 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             assert_cast<ColumnLowCardinality &>(*variant_element_state->variant->assumeMutable()).nestedRemoveNullable();
     }
 
-    /// If nothing to deserialize, just insert defaults.
-    if (variant_limit == 0)
-    {
-        mutable_column->insertManyDefaults(limit);
-        return;
-    }
-
     addVariantToPath(settings.path);
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
-    /// If nothing was deserialized when variant_limit > 0
-    /// it means that we don't have a stream for such sub-column.
-    /// It may happen during ALTER MODIFY column with Variant extension.
-    /// In this case we should just insert default values.
-    if (variant_element_state->variant->empty())
+    /// If there was nothing to deserialize or nothing was actually deserialized when variant_limit > 0, just insert defaults.
+    /// The second case means that we don't have a stream for such sub-column. It may happen during ALTER MODIFY column with Variant extension.
+    if (variant_limit == 0 || variant_element_state->variant->empty())
     {
         mutable_column->insertManyDefaults(limit);
         return;
     }
+
+    if (variant_element_state->variant->size() < variant_limit)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of deserialized variant column less than the limit: {} < {}", variant_element_state->variant->size(), variant_limit);
 
     size_t variant_offset = variant_element_state->variant->size() - variant_limit;
 

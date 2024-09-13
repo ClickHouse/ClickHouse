@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int USER_EXPIRED;
 }
 
 
@@ -366,17 +365,6 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->current_address = address;
 }
 
-void Session::checkIfUserIsStillValid()
-{
-    if (user && user->valid_until)
-    {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-
-        if (now > user->valid_until)
-            throw Exception(ErrorCodes::USER_EXPIRED, "User expired");
-    }
-}
-
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
@@ -532,7 +520,7 @@ ContextMutablePtr Session::makeSessionContext()
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
     session_context->applySettingsChanges(settings_from_auth_server);
 
-    recordLoginSuccess(session_context);
+    recordLoginSucess(session_context);
 
     return session_context;
 }
@@ -596,7 +584,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         { session_name_ },
         max_sessions_for_user);
 
-    recordLoginSuccess(session_context);
+    recordLoginSucess(session_context);
 
     return session_context;
 }
@@ -672,13 +660,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         user = query_context->getUser();
 
     /// Interserver does not create session context
-    recordLoginSuccess(query_context);
+    recordLoginSucess(query_context);
 
     return query_context;
 }
 
 
-void Session::recordLoginSuccess(ContextPtr login_context) const
+void Session::recordLoginSucess(ContextPtr login_context) const
 {
     if (notified_session_log_about_login)
         return;
@@ -694,7 +682,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
         session_log->addLoginSuccess(auth_id,
                                      named_session ? named_session->key.second : "",
                                      settings,
-                                     access->getAccess(),
+                                     access,
                                      getClientInfo(),
                                      user);
     }

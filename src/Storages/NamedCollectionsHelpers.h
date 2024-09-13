@@ -158,7 +158,7 @@ struct fmt::formatter<DB::NamedCollectionValidateKey<T>>
     }
 
     template <typename FormatContext>
-    auto format(const DB::NamedCollectionValidateKey<T> & elem, FormatContext & context) const
+    auto format(const DB::NamedCollectionValidateKey<T> & elem, FormatContext & context)
     {
         return fmt::format_to(context.out(), "{}", elem.value);
     }

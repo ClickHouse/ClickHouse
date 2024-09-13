@@ -65,7 +65,6 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
-    ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
@@ -93,7 +92,6 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
-    ErrorCodes::Value
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -242,22 +240,8 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     esac
 done
 
-# All submodules should be from https://github.com/
-git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.url' | \
-while read -r line; do
-    name=${line#submodule.}; name=${name%.url*}
-    url=${line#* }
-    [[ "$url" != 'https://github.com/'* ]] && echo "All submodules should be from https://github.com/, submodule '$name' has '$url'"
-done
-
-# All submodules should be of this form: [submodule "contrib/libxyz"] (for consistency, the submodule name does matter too much)
-# - restrict the check to top-level .gitmodules file
-git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.path' | \
-while read -r line; do
-    name=${line#submodule.}; name=${name%.path*}
-    path=${line#* }
-    [ "$name" != "$path" ] && echo "Submodule name '$name' is not equal to it's path '$path'"
-done
+# All the submodules should be from https://github.com/
+find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
 
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
@@ -306,6 +290,8 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
+    # DUMP()
+    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -322,14 +308,9 @@ std_cerr_cout_excludes=(
     src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
-    src/Client/ClientBase.h
-    src/Client/LineReader.h
-    src/Client/ReplxxLineReader.h
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
-    src/Common/GWPAsan.cpp
-    src/Common/ProgressIndication.h
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \

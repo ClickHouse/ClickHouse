@@ -53,9 +53,7 @@ ColumnPtr executeWindowBound(const ColumnPtr & column, size_t index, const Strin
     chassert(index == 0 || index == 1);
     if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()); col_tuple)
     {
-        if (index >= col_tuple->tupleSize()
-            || (!checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index))
-                && !checkColumn<ColumnVector<UInt16>>(*col_tuple->getColumnPtr(index))))
+        if (index >= col_tuple->tupleSize() || !checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index)))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
                 "Must be a Tuple(DataTime, DataTime)", function_name);
         return col_tuple->getColumnPtr(index);
@@ -232,6 +230,7 @@ struct TimeWindowImpl<TUMBLE>
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
+        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind unit>
@@ -268,7 +267,12 @@ struct TimeWindowImpl<TUMBLE_START>
         {
             auto type = WhichDataType(arguments[0].type);
             if (type.isTuple())
-                return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
+            {
+                const auto & tuple_elems = std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElements();
+                if (tuple_elems.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Tuple passed to {} should not be empty", function_name);
+                return tuple_elems[0];
+            }
             else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else
@@ -421,6 +425,7 @@ struct TimeWindowImpl<HOP>
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
+        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind kind>
@@ -625,7 +630,12 @@ struct TimeWindowImpl<HOP_START>
         {
             auto type = WhichDataType(arguments[0].type);
             if (type.isTuple())
-                return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
+            {
+                const auto & tuple_elems = std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElements();
+                if (tuple_elems.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Tuple passed to {} should not be empty", function_name);
+                return tuple_elems[0];
+            }
             else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else

@@ -2,8 +2,10 @@
 
 #include "Types.h"
 #include <Poco/Util/LayeredConfiguration.h>
+#include <unordered_set>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -16,6 +18,7 @@
 #include <Common/thread_local_rng.h>
 #include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
+#include <random>
 
 
 namespace ProfileEvents
@@ -32,7 +35,6 @@ namespace DB
 {
 class ZooKeeperLog;
 class ZooKeeperWithFaultInjection;
-class BackgroundSchedulePoolTaskHolder;
 
 namespace ErrorCodes
 {
@@ -49,22 +51,10 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 
 struct ShuffleHost
 {
-    enum AvailabilityZoneInfo
-    {
-        SAME = 0,
-        UNKNOWN = 1,
-        OTHER = 2,
-    };
-
     String host;
-    bool secure = false;
     UInt8 original_index = 0;
-    AvailabilityZoneInfo az_info = UNKNOWN;
     Priority priority;
     UInt64 random = 0;
-
-    /// We should resolve it each time without caching
-    mutable std::optional<Poco::Net::SocketAddress> address;
 
     void randomize()
     {
@@ -73,12 +63,10 @@ struct ShuffleHost
 
     static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
     {
-        return std::forward_as_tuple(lhs.az_info, lhs.priority, lhs.random)
-            < std::forward_as_tuple(rhs.az_info, rhs.priority, rhs.random);
+        return std::forward_as_tuple(lhs.priority, lhs.random)
+               < std::forward_as_tuple(rhs.priority, rhs.random);
     }
 };
-
-using ShuffleHosts = std::vector<ShuffleHost>;
 
 struct RemoveException
 {
@@ -212,9 +200,6 @@ class ZooKeeper
 
     explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
-    /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
-
     /** Config of the form:
         <zookeeper>
             <node>
@@ -246,9 +231,7 @@ public:
         using Ptr = std::shared_ptr<ZooKeeper>;
         using ErrorsList = std::initializer_list<Coordination::Error>;
 
-    ~ZooKeeper();
-
-    ShuffleHosts shuffleHosts() const;
+    std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(const Poco::Util::AbstractConfiguration & config,
                       const std::string & config_name,
@@ -323,7 +306,6 @@ public:
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
-    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
 
     using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
     using MultiTryGetResponse = MultiReadResponses<Coordination::GetResponse, true>;
@@ -354,13 +336,6 @@ public:
         std::string & res,
         Coordination::Stat * stat,
         Coordination::WatchCallback watch_callback,
-        Coordination::Error * code = nullptr);
-
-    bool tryGetWatch(
-        const std::string & path,
-        std::string & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
         Coordination::Error * code = nullptr);
 
     template <typename TIter>
@@ -545,8 +520,6 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
-    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback = {});
-
     using FutureExists = std::future<Coordination::ExistsResponse>;
     FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
@@ -616,6 +589,8 @@ public:
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
+    bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
+
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
     void setServerCompletelyStarted();
@@ -623,8 +598,6 @@ public:
     Int8 getConnectedHostIdx() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
-
-    String getConnectedHostAvailabilityZone() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
@@ -645,16 +618,13 @@ public:
     void addCheckSessionOp(Coordination::Requests & requests) const;
 
 private:
-    void init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl);
-    void updateAvailabilityZones();
+    void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
-    Coordination::Error getImpl(
-        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
         const std::string & path,
@@ -662,11 +632,7 @@ private:
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
-
-    /// returns error code with optional reason
-    std::pair<Coordination::Error, std::string>
-    multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
-
+    Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
@@ -711,11 +677,8 @@ private:
     }
 
     std::unique_ptr<Coordination::IKeeper> impl;
-    mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
     ZooKeeperArgs args;
-
-    Strings availability_zones;
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
@@ -723,8 +686,6 @@ private:
     AtomicStopwatch session_uptime;
 
     int32_t session_node_version;
-
-    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };
 
 

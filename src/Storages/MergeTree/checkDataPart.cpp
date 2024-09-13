@@ -35,11 +35,13 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
+    extern const int ABORTED;
 }
 
 
@@ -84,7 +86,9 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         return isNotEnoughMemoryErrorCode(e.code())
             || e.code() == ErrorCodes::NETWORK_ERROR
-            || e.code() == ErrorCodes::SOCKET_TIMEOUT;
+            || e.code() == ErrorCodes::SOCKET_TIMEOUT
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -219,7 +223,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+            });
         }
     }
     else
@@ -250,7 +254,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
         if (isGinFile(file_name))
             continue;
 
@@ -279,6 +283,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             return {};
 
         auto projection_file = name + ".proj";
+        if (!throw_on_broken_projection && projection->is_broken)
+        {
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+        }
 
         IMergeTreeDataPart::Checksums projection_checksums;
         try
@@ -295,19 +304,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
                 throw;
 
-            is_broken_projection = true;
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-
-            const auto exception_message = getCurrentExceptionMessage(true);
-
             if (!projection->is_broken)
             {
-                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
-                            name, projection_file, exception_message);
-                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
+                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
+                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
             }
 
+            is_broken_projection = true;
             if (throw_on_broken_projection)
             {
                 if (!broken_projections_message.empty())
@@ -315,10 +318,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 broken_projections_message += fmt::format(
                     "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, exception_message);
+                    data_part->name, name, getCurrentExceptionMessage(false));
+                continue;
             }
 
-            continue;
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
         }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
@@ -328,23 +333,28 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
-    if (throw_on_broken_projection && !broken_projections_message.empty())
+    if (throw_on_broken_projection)
     {
-        throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
-    }
+        if (!broken_projections_message.empty())
+        {
+            throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
+        }
 
-    if (require_checksums && !projections_on_disk.empty())
-    {
-        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
-            "Found unexpected projection directories: {}",
-            fmt::join(projections_on_disk, ","));
+        /// This one is actually not broken, just redundant files on disk which
+        /// MergeTree will never use.
+        if (require_checksums && !projections_on_disk.empty())
+        {
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+                "Found unexpected projection directories: {}",
+                fmt::join(projections_on_disk, ","));
+        }
     }
 
     if (is_cancelled())
         return {};
 
     if (require_checksums || !checksums_txt.files.empty())
-        checksums_txt.checkEqual(checksums_data, check_uncompressed, data_part->name);
+        checksums_txt.checkEqual(checksums_data, check_uncompressed);
 
     return checksums_data;
 }

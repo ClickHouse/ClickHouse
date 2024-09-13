@@ -153,7 +153,7 @@ def test_single_log_file(started_cluster):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = "test_single_log_file"
 
-    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
+    inserted_data = "SELECT number, toString(number + 1) FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
         started_cluster, instance, inserted_data, TABLE_NAME
     )
@@ -511,104 +511,3 @@ def test_restart_broken_table_function(started_cluster):
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
-
-
-def test_partition_columns(started_cluster):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_partition_columns"
-    result_file = f"{TABLE_NAME}"
-    partition_columns = ["b", "c", "d", "e"]
-
-    delta_table = (
-        DeltaTable.create(spark)
-        .tableName(TABLE_NAME)
-        .location(f"/{result_file}")
-        .addColumn("a", "INT")
-        .addColumn("b", "STRING")
-        .addColumn("c", "DATE")
-        .addColumn("d", "INT")
-        .addColumn("e", "BOOLEAN")
-        .partitionedBy(partition_columns)
-        .execute()
-    )
-    num_rows = 9
-
-    schema = StructType(
-        [
-            StructField("a", IntegerType()),
-            StructField("b", StringType()),
-            StructField("c", DateType()),
-            StructField("d", IntegerType()),
-            StructField("e", BooleanType()),
-        ]
-    )
-
-    for i in range(1, num_rows + 1):
-        data = [
-            (
-                i,
-                "test" + str(i),
-                datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
-                i,
-                False,
-            )
-        ]
-        df = spark.createDataFrame(data=data, schema=schema)
-        df.printSchema()
-        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
-            f"/{TABLE_NAME}"
-        )
-
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) > 0
-    print(f"Uploaded files: {files}")
-
-    result = instance.query(
-        f"describe table deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"
-    ).strip()
-
-    assert (
-        result
-        == "a\tNullable(Int32)\t\t\t\t\t\nb\tNullable(String)\t\t\t\t\t\nc\tNullable(Date32)\t\t\t\t\t\nd\tNullable(Int32)\t\t\t\t\t\ne\tNullable(Bool)"
-    )
-
-    result = int(
-        instance.query(
-            f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')
-            """
-        )
-    )
-    assert result == num_rows
-    result = int(
-        instance.query(
-            f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')
-            WHERE c == toDateTime('2000/01/05')
-            """
-        )
-    )
-    assert result == 1
-
-    # instance.query(
-    #    f"""
-    #    DROP TABLE IF EXISTS {TABLE_NAME};
-    #    CREATE TABLE {TABLE_NAME} (a Int32, b String, c DateTime)
-    #    ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
-    # )
-    # assert (
-    #    int(
-    #        instance.query(
-    #            f"SELECT count() FROM {TABLE_NAME} WHERE c != toDateTime('2000/01/05')"
-    #        )
-    #    )
-    #    == num_rows - 1
-    # )
-    # instance.query(f"SELECT a, b, c, FROM {TABLE_NAME}")
-    # assert False

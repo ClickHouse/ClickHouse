@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
@@ -34,7 +34,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -79,8 +79,8 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
     size_t minmax_idx_size = minmax_column_types.size();
 
     hyperrectangle.reserve(minmax_idx_size);
@@ -112,8 +112,8 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
 
     return store(minmax_column_names, minmax_column_types, part_storage, out_checksums);
 }
@@ -204,7 +204,7 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
     size_t minmax_idx_size = minmax_column_names.size();
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
@@ -326,7 +326,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
-    index = std::make_shared<Columns>();
     minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo();
@@ -340,46 +339,25 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 }
 
 
-IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
+const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
     if (!index_loaded)
         loadIndex();
     index_loaded = true;
-    return index;
+    return TSA_SUPPRESS_WARNING_FOR_READ(index); /// The variable is guaranteed to be unchanged after return.
 }
 
 
-void IMergeTreeDataPart::setIndex(const Columns & cols_)
+void IMergeTreeDataPart::setIndex(Columns index_)
 {
     std::scoped_lock lock(index_mutex);
-    if (!index->empty())
+    if (!index.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = std::make_shared<const Columns>(cols_);
+    index = std::move(index_);
     index_loaded = true;
 }
 
-void IMergeTreeDataPart::setIndex(Columns && cols_)
-{
-    std::scoped_lock lock(index_mutex);
-    if (!index->empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = std::make_shared<const Columns>(std::move(cols_));
-    index_loaded = true;
-}
-
-void IMergeTreeDataPart::unloadIndex()
-{
-    std::scoped_lock lock(index_mutex);
-    index = std::make_shared<Columns>();
-    index_loaded = false;
-}
-
-bool IMergeTreeDataPart::isIndexLoaded() const
-{
-    std::scoped_lock lock(index_mutex);
-    return index_loaded;
-}
 
 void IMergeTreeDataPart::setName(const String & new_name)
 {
@@ -589,7 +567,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : *index)
+    for (const ColumnPtr & column : index)
         res += column->byteSize();
     return res;
 }
@@ -598,7 +576,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : *index)
+    for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
     return res;
 }
@@ -679,16 +657,16 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
     return *minimum_size_column;
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
+Statistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
 
     auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
 
-    ColumnsStatistics result;
+    Statistics result;
     for (auto & stat : total_statistics)
     {
-        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
+        String file_name = stat->getFileName() + STAT_FILE_SUFFIX;
         String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
 
         if (!metadata_manager->exists(file_name))
@@ -743,10 +721,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     {
         /// Don't scare people with broken part error
         if (!isRetryableException(std::current_exception()))
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
+            LOG_ERROR(storage.log, "Part {} is broken and need manual correction", getDataPartStorage().getFullPath());
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
-        // into metadata before exception, need to clean them all.
+        // into meta data before exception, need to clean them all.
         metadata_manager->deleteAll(/*include_projection*/ true);
         metadata_manager->assertAllDeleted(/*include_projection*/ true);
         throw;
@@ -799,8 +777,7 @@ void IMergeTreeDataPart::addProjectionPart(
     projection_parts[projection_name] = std::move(projection_part);
 }
 
-void IMergeTreeDataPart::loadProjections(
-    bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded, bool only_metadata)
+void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     for (const auto & projection : metadata_snapshot->projections)
@@ -820,10 +797,7 @@ void IMergeTreeDataPart::loadProjections(
 
                 try
                 {
-                    if (only_metadata)
-                        part->loadChecksums(require_columns_checksums);
-                    else
-                        part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+                    part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
                 }
                 catch (...)
                 {
@@ -831,8 +805,8 @@ void IMergeTreeDataPart::loadProjections(
                         throw;
 
                     auto message = getCurrentExceptionMessage(true);
-                    LOG_WARNING(storage.log, "Cannot load projection {}, "
-                                "will consider it broken. Reason: {}", projection.name, message);
+                    LOG_ERROR(&Poco::Logger::get("IMergeTreeDataPart"),
+                              "Cannot load projection {}, will consider it broken. Reason: {}", projection.name, message);
 
                     has_broken_projection = true;
                     part->setBrokenReason(message, getCurrentExceptionCode());
@@ -868,6 +842,10 @@ void IMergeTreeDataPart::loadIndex() const
 {
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    /// It can be empty in case of mutations
+    if (!index_granularity.isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not loaded before index loading");
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
@@ -932,7 +910,7 @@ void IMergeTreeDataPart::loadIndex() const
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
-        index = std::make_shared<Columns>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+        index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 }
 
@@ -1235,7 +1213,7 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
         return;
 
     if (!parent_part)
-        MergeTreePartition::appendFiles(storage, files);
+        partition.appendFiles(storage, files);
 
     if (!parent_part)
         minmax_idx->appendFiles(storage, files);
@@ -1277,33 +1255,6 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
 {
     files.push_back("checksums.txt");
-}
-
-void IMergeTreeDataPart::loadRowsCountFileForUnexpectedPart()
-{
-    auto read_rows_count = [&]()
-    {
-        auto buf = metadata_manager->read("count.txt");
-        readIntText(rows_count, *buf);
-        assertEOF(*buf);
-    };
-    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
-    {
-        if (metadata_manager->exists("count.txt"))
-        {
-            read_rows_count();
-            return;
-        }
-    }
-    else
-    {
-        if (getDataPartStorage().exists("count.txt"))
-        {
-            read_rows_count();
-            return;
-        }
-    }
-    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 }
 
 void IMergeTreeDataPart::loadRowsCount()
@@ -1583,7 +1534,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
-        if (loaded_columns.empty())
+        if (columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         if (!is_readonly_storage)
@@ -1893,7 +1844,7 @@ try
 }
 catch (...)
 {
-    if (startsWith(new_relative_path, fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""))
+    if (startsWith(new_relative_path, "detached/"))
     {
         // Don't throw when the destination is to the detached folder. It might be able to
         // recover in some cases, such as fetching parts into multi-disks while some of the
@@ -1984,6 +1935,7 @@ void IMergeTreeDataPart::remove()
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
+    String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
         *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
@@ -2005,7 +1957,7 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
                                        DetachedPartInfo::DETACH_REASONS.end(),
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
-        return fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path;
+        return "detached/" + *path;
     return {};
 }
 
@@ -2033,6 +1985,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
+        .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
@@ -2109,7 +2062,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!isEmpty() && !parent_part)
             {
-                for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
+                for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                 {
                     if (!checksums.files.contains("minmax_" + escapeForFileName(col_name) + ".idx"))
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
@@ -2149,7 +2102,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!parent_part)
             {
-                for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
+                for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                     check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");
             }
         }
@@ -2328,26 +2281,21 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
-UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
-{
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    return hash.get128();
-}
-
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
+    SipHash hash;
     if (token.empty())
     {
-        const auto hash_value = getPartBlockIDHash();
-        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+        checksums.computeTotalChecksumDataOnly(hash);
+    }
+    else
+    {
+        hash.update(token.data(), token.size());
     }
 
-    SipHash hash;
-    hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
@@ -2443,38 +2391,6 @@ void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
     is_broken = true;
     exception = message;
     exception_code = code;
-}
-
-ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) const
-{
-    const size_t total_mark = getMarksCount();
-    /// If column doesn't have dynamic subcolumns or part has no data, just create column using it's type.
-    if (!column.type->hasDynamicSubcolumns() || !total_mark)
-        return column.type->createColumn();
-
-    /// Otherwise, read sample column with 0 rows from the part, so it will load dynamic structure.
-    NamesAndTypesList cols;
-    cols.emplace_back(column);
-
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
-    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
-
-    MergeTreeReaderPtr reader = getReader(
-        cols,
-        storage_snapshot_ptr,
-        MarkRanges{MarkRange(0, 1)},
-        /*virtual_fields=*/ {},
-        /*uncompressed_cache=*/{},
-        storage.getContext()->getMarkCache().get(),
-        std::make_shared<AlterConversions>(),
-        MergeTreeReaderSettings{},
-        ValueSizeMap{},
-        ReadBufferFromFileBase::ProfileCallback{});
-
-    Columns result;
-    result.resize(1);
-    reader->readRows(0, 1, false, 0, result);
-    return result[0];
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

@@ -136,10 +136,9 @@ bool MutatePlainMergeTreeTask::executeStep()
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
-    context->makeQueryContextForMutate(*storage.getSettings());
+    context->makeQueryContext();
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
-    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
     return context;
 }
 

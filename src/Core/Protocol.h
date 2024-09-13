@@ -56,15 +56,11 @@ namespace DB
 namespace EncodedUserInfo
 {
 
-/// Marker for the inter-server secret (passed as the user name)
+/// Marker of the inter-server secret (passed in the user name)
 /// (anyway user cannot be started with a whitespace)
 const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
-
-/// Marker for SSH-keys-based authentication (passed as the user name)
+/// Marker of the SSH keys based authentication (passed in the user name)
 const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
-
-/// Market for JSON Web Token authentication
-const char JWT_AUTHENTICAION_MARKER[] = " JWT AUTHENTICATION ";
 
 };
 
@@ -164,8 +160,8 @@ namespace Protocol
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 
-            SSHChallengeRequest = 11,       /// Request SSH signature challenge
-            SSHChallengeResponse = 12,      /// Reply to SSH signature challenge
+            SSHChallengeRequest = 11,       /// Request for SSH signature challenge
+            SSHChallengeResponse = 12,       /// Request for SSH signature challenge
             MAX = SSHChallengeResponse,
         };
 
@@ -193,14 +189,14 @@ namespace Protocol
     }
 
     /// Whether the compression must be used.
-    enum class Compression : uint8_t
+    enum class Compression
     {
         Disable = 0,
         Enable = 1,
     };
 
     /// Whether the ssl must be used.
-    enum class Secure : uint8_t
+    enum class Secure
     {
         Disable = 0,
         Enable = 1,

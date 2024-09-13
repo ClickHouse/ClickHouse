@@ -8,6 +8,7 @@
 #include <functional>
 
 #include <Core/CompareHelper.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -150,7 +151,7 @@ public:
 
     operator T() const { return dec; } /// NOLINT
     T getValue() const { return dec; }
-    T getScaleMultiplier() const;
+    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
     UInt32 getScale() const { return scale; }
 
     template <typename U>
@@ -198,12 +199,6 @@ private:
     T dec;
     UInt32 scale;
 };
-
-extern template class DecimalField<Decimal32>;
-extern template class DecimalField<Decimal64>;
-extern template class DecimalField<Decimal128>;
-extern template class DecimalField<Decimal256>;
-extern template class DecimalField<DateTime64>;
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -667,6 +662,8 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
         }
+
+        UNREACHABLE();
     }
 
     String dump() const;
@@ -853,13 +850,13 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
-constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
+inline constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64;
 }
 
-constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
+inline constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64
@@ -1038,7 +1035,7 @@ struct fmt::formatter<DB::Field>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx) const
+    auto format(const DB::Field & x, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }

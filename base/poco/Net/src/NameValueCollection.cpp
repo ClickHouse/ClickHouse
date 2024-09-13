@@ -15,7 +15,6 @@
 #include "Poco/Net/NameValueCollection.h"
 #include "Poco/Exception.h"
 #include <algorithm>
-#include <functional>
 
 
 using Poco::NotFoundException;
@@ -56,7 +55,7 @@ void NameValueCollection::swap(NameValueCollection& nvc)
 	std::swap(_map, nvc._map);
 }
 
-
+	
 const std::string& NameValueCollection::operator [] (const std::string& name) const
 {
 	ConstIterator it = _map.find(name);
@@ -66,8 +65,8 @@ const std::string& NameValueCollection::operator [] (const std::string& name) co
 		throw NotFoundException(name);
 }
 
-
-void NameValueCollection::set(const std::string& name, const std::string& value)
+	
+void NameValueCollection::set(const std::string& name, const std::string& value)	
 {
 	Iterator it = _map.find(name);
 	if (it != _map.end())
@@ -76,13 +75,13 @@ void NameValueCollection::set(const std::string& name, const std::string& value)
 		_map.insert(HeaderMap::ValueType(name, value));
 }
 
-
+	
 void NameValueCollection::add(const std::string& name, const std::string& value)
 {
 	_map.insert(HeaderMap::ValueType(name, value));
 }
 
-
+	
 const std::string& NameValueCollection::get(const std::string& name) const
 {
 	ConstIterator it = _map.find(name);
@@ -102,15 +101,6 @@ const std::string& NameValueCollection::get(const std::string& name, const std::
 		return defaultValue;
 }
 
-const std::vector<std::reference_wrapper<const std::string>> NameValueCollection::getAll(const std::string& name) const
-{
-    std::vector<std::reference_wrapper<const std::string>> values;
-    for (ConstIterator it = _map.find(name); it != _map.end(); it++)
-        if (it->first == name)
-            values.push_back(it->second);
-    return values;
-}
-
 
 bool NameValueCollection::has(const std::string& name) const
 {
@@ -123,19 +113,19 @@ NameValueCollection::ConstIterator NameValueCollection::find(const std::string& 
 	return _map.find(name);
 }
 
-
+	
 NameValueCollection::ConstIterator NameValueCollection::begin() const
 {
 	return _map.begin();
 }
 
-
+	
 NameValueCollection::ConstIterator NameValueCollection::end() const
 {
 	return _map.end();
 }
 
-
+	
 bool NameValueCollection::empty() const
 {
 	return _map.empty();

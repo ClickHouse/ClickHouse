@@ -1,8 +1,5 @@
 #pragma once
 
-#include <optional>
-#include <string>
-#include <unordered_map>
 #include <Core/Names.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
@@ -12,8 +9,6 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
-
-#include "HTTPResponseHeaderWriter.h"
 
 namespace CurrentMetrics
 {
@@ -36,7 +31,7 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
+    HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
@@ -78,17 +73,15 @@ private:
         WriteBuffer * out_maybe_delayed_and_compressed = nullptr;
 
         bool finalized = false;
-        bool canceled = false;
 
         bool exception_is_written = false;
-        std::function<void(WriteBuffer &, const String &)> exception_writer;
 
-        bool hasDelayed() const
+        inline bool hasDelayed() const
         {
             return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
         }
 
-        void finalize()
+        inline void finalize()
         {
             if (finalized)
                 return;
@@ -100,25 +93,7 @@ private:
                 out->finalize();
         }
 
-        void cancel()
-        {
-            if (canceled)
-                return;
-            canceled = true;
-
-            if (out_compressed_holder)
-                out_compressed_holder->cancel();
-            if (out)
-                out->cancel();
-        }
-
-
-        bool isCanceled() const
-        {
-            return canceled;
-        }
-
-        bool isFinalized() const
+        inline bool isFinalized() const
         {
             return finalized;
         }
@@ -137,8 +112,8 @@ private:
     /// See settings http_max_fields, http_max_field_name_size, http_max_field_value_size in HTMLForm.
     const Settings & default_settings;
 
-    /// Overrides for response headers.
-    HTTPResponseHeaderSetup http_response_headers_override;
+    /// Overrides Content-Type provided by the format of the response.
+    std::optional<String> content_type_override;
 
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
@@ -186,12 +161,8 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
-
 public:
-    explicit DynamicQueryHandler(
-        IServer & server_,
-        const std::string & param_name_ = "query",
-        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
+    explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query", const std::optional<String>& content_type_override_ = std::nullopt);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
@@ -205,15 +176,11 @@ private:
     std::string predefined_query;
     CompiledRegexPtr url_regex;
     std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regex;
-
 public:
     PredefinedQueryHandler(
-        IServer & server_,
-        const NameSet & receive_params_,
-        const std::string & predefined_query_,
-        const CompiledRegexPtr & url_regex_,
-        const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
+        IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
+        , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_
+        , const std::optional<std::string> & content_type_override_);
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 

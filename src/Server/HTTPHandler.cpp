@@ -2,10 +2,7 @@
 
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
-#include <Access/AccessControl.h>
 #include <Access/ExternalAuthenticators.h>
-#include <Access/Role.h>
-#include <Access/User.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -26,10 +23,11 @@
 #include <Server/IServer.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Common/re2.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -37,15 +35,12 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
-#include <boost/container/flat_set.hpp>
 
-#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPMessage.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
@@ -55,10 +50,7 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
-#include <optional>
 #include <sstream>
-#include <unordered_map>
-#include <utility>
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -72,8 +64,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
@@ -85,7 +75,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int CANNOT_SCHEDULE_TASK;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_COMPILE_REGEXP;
     extern const int DUPLICATE_COLUMN;
     extern const int ILLEGAL_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
@@ -113,7 +104,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int UNKNOWN_TYPE_OF_QUERY;
-    extern const int UNKNOWN_ROLE;
     extern const int NO_ELEMENTS_IN_CONFIG;
 
     extern const int QUERY_IS_TOO_LARGE;
@@ -125,7 +115,6 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
-    extern const int SET_NON_GRANTED_ROLE;
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
@@ -151,7 +140,7 @@ bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
                     LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
                 else
                     response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                                 config.getString("http_options_response." + config_key + ".value", ""));
+                                    config.getString("http_options_response." + config_key + ".value", ""));
 
             }
         }
@@ -203,8 +192,7 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     }
     else if (exception_code == ErrorCodes::UNKNOWN_USER ||
              exception_code == ErrorCodes::WRONG_PASSWORD ||
-             exception_code == ErrorCodes::AUTHENTICATION_FAILED ||
-             exception_code == ErrorCodes::SET_NON_GRANTED_ROLE)
+             exception_code == ErrorCodes::AUTHENTICATION_FAILED)
     {
         return HTTPResponse::HTTP_FORBIDDEN;
     }
@@ -247,8 +235,7 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_FORMAT ||
              exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY ||
-             exception_code == ErrorCodes::UNKNOWN_ROLE)
+             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
     {
         return HTTPResponse::HTTP_NOT_FOUND;
     }
@@ -272,10 +259,6 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     else if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
     {
         return HTTPResponse::HTTP_REQUEST_TIMEOUT;
-    }
-    else if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
-    {
-        return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
@@ -343,11 +326,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
     : server(server_)
     , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
-    , http_response_headers_override(http_response_headers_override_)
+    , content_type_override(content_type_override_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -374,15 +357,15 @@ bool HTTPHandler::authenticateUser(
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
     bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_auth_headers = !user.empty() || !password.empty() || has_ssl_certificate_auth;
+    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
     bool has_http_credentials = request.hasCredentials();
-    bool has_credentials_in_query_params = params.has("user") || params.has("password");
+    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
 
     std::string spnego_challenge;
-    SSLCertificateSubjects certificate_subjects;
+    std::string certificate_common_name;
 
     if (has_auth_headers)
     {
@@ -405,11 +388,11 @@ bool HTTPHandler::authenticateUser(
                                 "to use SSL certificate authentication and authentication via password simultaneously");
 
             if (request.havePeerCertificate())
-                certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
+                certificate_common_name = request.peerCertificate().commonName();
 
-            if (certificate_subjects.empty())
+            if (certificate_common_name.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
+                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "SSL certificate authentication disabled because ClickHouse was built without SSL library");
@@ -445,18 +428,21 @@ bool HTTPHandler::authenticateUser(
         {
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
+
+        quota_key = params.get("quota_key", "");
     }
     else
     {
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
+        quota_key = params.get("quota_key", "");
     }
 
-    if (!certificate_subjects.empty())
+    if (!certificate_common_name.empty())
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<SSLCertificateCredentials>(user, std::move(certificate_subjects));
+            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
 
         auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
         if (!certificate_credentials)
@@ -500,16 +486,6 @@ bool HTTPHandler::authenticateUser(
 
         basic_credentials->setUserName(user);
         basic_credentials->setPassword(password);
-    }
-
-    if (params.has("quota_key"))
-    {
-        if (!quota_key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid authentication: it is not allowed "
-                            "to use quota key as HTTP header and as parameter simultaneously");
-
-        quota_key = params.get("quota_key");
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
@@ -675,7 +651,8 @@ void HTTPHandler::processQuery(
         {
             auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
 
-            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr {
+            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
+            {
                 return tmp_data->createRawStream();
             };
 
@@ -716,18 +693,18 @@ void HTTPHandler::processQuery(
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
-    bool is_in_post_compressed = false;
+    bool in_post_compressed = false;
     if (params.getParsed<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
-        is_in_post_compressed = true;
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
+        in_post_compressed = true;
     }
     else
         in_post_maybe_compressed = std::move(in_post);
 
     std::unique_ptr<ReadBuffer> in;
 
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
+    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
         "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
 
     Names reserved_param_suffixes;
@@ -749,23 +726,6 @@ void HTTPHandler::processQuery(
 
         return false;
     };
-
-    auto roles = params.getAll("role");
-    if (!roles.empty())
-    {
-        const auto & access_control = context->getAccessControl();
-        const auto & user = context->getUser();
-        std::vector<UUID> roles_ids(roles.size());
-        for (size_t i = 0; i < roles.size(); i++)
-        {
-            auto role_id = access_control.getID<Role>(roles[i]);
-            if (user->granted_roles.isGranted(role_id))
-                roles_ids[i] = role_id;
-            else
-                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", roles[i].get());
-        }
-        context->setCurrentRoles(roles_ids);
-    }
 
     /// Settings can be overridden in the query.
     /// Some parameters (database, default_format, everything used in the code above) do not
@@ -854,7 +814,7 @@ void HTTPHandler::processQuery(
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
     /// checksums of client data compressed with internal algorithm are not checked.
-    if (is_in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
+    if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
@@ -897,14 +857,13 @@ void HTTPHandler::processQuery(
     customizeContext(request, context, *in_post_maybe_compressed);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
-    applyHTTPResponseHeaders(response, http_response_headers_override);
-
     auto set_query_result = [&response, this] (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
 
-        if (!(http_response_headers_override && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE))
-            && details.content_type)
+        if (content_type_override)
+            response.setContentType(*content_type_override);
+        else if (details.content_type)
             response.setContentType(*details.content_type);
 
         if (details.format)
@@ -914,33 +873,18 @@ void HTTPHandler::processQuery(
             response.add("X-ClickHouse-Timezone", *details.timezone);
     };
 
-    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format, const String & format_name, const ContextPtr & context_, const std::optional<FormatSettings> & format_settings)
+    auto handle_exception_in_output_format = [&](IOutputFormat & output_format)
     {
-        if (settings.http_write_exception_in_output_format && current_output_format.supportsWritingException())
+        if (settings.http_write_exception_in_output_format && output_format.supportsWritingException())
         {
-            /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
-            /// ignored, so we cannot write exception message in current output format as it will be also ignored.
-            /// Instead, we create exception_writer function that will write exception in required format
-            /// and will use it later in trySendExceptionToClient when all buffers will be prepared.
-            if (buffer_until_eof)
-            {
-                auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
-                used_output.exception_writer = [format_name, header, context_, format_settings](WriteBuffer & buf, const String & message)
-                {
-                    auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
-                    output_format->setException(message);
-                    output_format->finalize();
-                };
-            }
-            else
-            {
-                bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
-                ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-                formatExceptionForClient(status.code, request, response, used_output);
-                current_output_format.setException(status.message);
-                current_output_format.finalize();
-                used_output.exception_is_written = true;
-            }
+            bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
+
+            ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+            formatExceptionForClient(status.code, request, response, used_output);
+
+            output_format.setException(getCurrentExceptionMessage(false));
+            output_format.finalize();
+            used_output.exception_is_written = true;
         }
     };
 
@@ -1004,16 +948,8 @@ try
                 used_output.out_holder->position() = used_output.out_holder->buffer().begin();
             }
 
-            /// We might have special formatter for exception message.
-            if (used_output.exception_writer)
-            {
-                used_output.exception_writer(*used_output.out_maybe_compressed, s);
-            }
-            else
-            {
-                writeString(s, *used_output.out_maybe_compressed);
-                writeChar('\n', *used_output.out_maybe_compressed);
-            }
+            writeString(s, *used_output.out_maybe_compressed);
+            writeChar('\n', *used_output.out_maybe_compressed);
         }
 
         used_output.out_maybe_compressed->next();
@@ -1029,7 +965,14 @@ catch (...)
 {
     tryLogCurrentException(log, "Cannot send exception to client");
 
-    used_output.cancel();
+    try
+    {
+        used_output.finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
+    }
 }
 
 void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
@@ -1041,21 +984,12 @@ void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
 
-    /// If HTTP method is POST and Keep-Alive is turned on, we should try to read the whole request body
+    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
     /// to avoid reading part of the current request body in the next request.
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
-        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
+        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED && !request.getStream().eof())
     {
-        try
-        {
-            if (!request.getStream().eof())
-                request.getStream().ignoreAll();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Cannot read remaining request body during exception handling");
-            response.setKeepAlive(false);
-        }
+        request.getStream().ignoreAll();
     }
 
     if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
@@ -1067,6 +1001,7 @@ void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     setThreadName("HTTPHandler");
+    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
@@ -1119,7 +1054,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");
@@ -1167,7 +1102,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Check if exception was thrown in used_output.finalize().
         /// In this case used_output can be in invalid state and we
         /// cannot write in it anymore. So, just log this exception.
-        if (used_output.isFinalized() || used_output.isCanceled())
+        if (used_output.isFinalized())
         {
             if (thread_trace_context)
                 thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
@@ -1186,16 +1121,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
-
-        return;
     }
 
     used_output.finalize();
 }
 
-DynamicQueryHandler::DynamicQueryHandler(
-    IServer & server_, const std::string & param_name_, const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : HTTPHandler(server_, "DynamicQueryHandler", http_response_headers_override_), param_name(param_name_)
+DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_, const std::optional<String>& content_type_override_)
+    : HTTPHandler(server_, "DynamicQueryHandler", content_type_override_), param_name(param_name_)
 {
 }
 
@@ -1256,8 +1188,8 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-    const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : HTTPHandler(server_, "PredefinedQueryHandler", http_response_headers_override_)
+    const std::optional<String> & content_type_override_)
+    : HTTPHandler(server_, "PredefinedQueryHandler", content_type_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regex(url_regex_)
@@ -1349,10 +1281,14 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
-    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    std::optional<String> content_type_override;
+    if (config.has(config_prefix + ".handler.content_type"))
+        content_type_override = config.getString(config_prefix + ".handler.content_type");
 
-    auto creator = [&server, query_param_name, http_response_headers_override]() -> std::unique_ptr<DynamicQueryHandler>
-    { return std::make_unique<DynamicQueryHandler>(server, query_param_name, http_response_headers_override); };
+    auto creator = [&server, query_param_name, content_type_override] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        return std::make_unique<DynamicQueryHandler>(server, query_param_name, content_type_override);
+    };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
@@ -1407,7 +1343,9 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
-    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    std::optional<String> content_type_override;
+    if (config.has(config_prefix + ".handler.content_type"))
+        content_type_override = config.getString(config_prefix + ".handler.content_type");
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
@@ -1427,12 +1365,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
                 predefined_query,
                 regex,
                 headers_name_with_regex,
-                http_response_headers_override]
+                content_type_override]
                 -> std::unique_ptr<PredefinedQueryHandler>
             {
                 return std::make_unique<PredefinedQueryHandler>(
                     server, analyze_receive_params, predefined_query, regex,
-                    headers_name_with_regex, http_response_headers_override);
+                    headers_name_with_regex, content_type_override);
             };
             factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
             factory->addFiltersFromConfig(config, config_prefix);
@@ -1445,12 +1383,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         analyze_receive_params,
         predefined_query,
         headers_name_with_regex,
-        http_response_headers_override]
+        content_type_override]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
             server, analyze_receive_params, predefined_query, CompiledRegexPtr{},
-            headers_name_with_regex, http_response_headers_override);
+            headers_name_with_regex, content_type_override);
     };
 
     factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
