@@ -138,7 +138,14 @@ SYSTEM STOP MERGES fixed_prefix;
 INSERT INTO fixed_prefix VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
 INSERT INTO fixed_prefix VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
 
-SELECT a, b FROM fixed_prefix WHERE a = 1 ORDER BY b SETTINGS max_threads = 1;
+SELECT a, b
+FROM fixed_prefix
+WHERE a = 1
+ORDER BY b
+SETTINGS max_threads = 1,
+read_in_order_use_buffering = false,
+optimize_read_in_order = 1,
+read_in_order_two_level_merge_threshold = 0;  --force preliminary merge
 
 DROP TABLE fixed_prefix;
 
@@ -160,8 +167,13 @@ INSERT INTO function_pk values(1,1);
 INSERT INTO function_pk values(1,3);
 INSERT INTO function_pk values(1,2);
 
--- TODO: handle preliminary merge for this case, temporarily disable it
-SET optimize_read_in_order = 0;
-SELECT * FROM function_pk ORDER BY (A,-B) ASC limit 3 SETTINGS max_threads = 1;
+SELECT *
+FROM function_pk
+ORDER BY (A,-B) ASC
+limit 3
+SETTINGS max_threads = 1,
+read_in_order_use_buffering = false,
+optimize_read_in_order = 1,
+read_in_order_two_level_merge_threshold = 0;  --force preliminary merge
 
 DROP TABLE function_pk;

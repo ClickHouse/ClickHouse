@@ -1098,6 +1098,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             splitted_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
+        bool primary_key_type_supports_virtual_row = true;
+        const auto & actions = storage_snapshot->metadata->getPrimaryKey().expression->getActions();
+        for (const auto & action : actions)
+        {
+            if (action.node->type != ActionsDAG::ActionType::INPUT)
+            {
+                primary_key_type_supports_virtual_row = false;
+                break;
+            }
+        }
+
         /// If enabled in the optimization stage, check whether there are more than one branch.
         if (enable_virtual_row)
             enable_virtual_row = splitted_parts_and_ranges.size() > 1
@@ -1111,7 +1122,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             if (!enable_virtual_row)
                 enable_current_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
 
-            pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit, enable_current_virtual_row));
+            pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit,
+                enable_current_virtual_row && primary_key_type_supports_virtual_row));
         }
     }
 
