@@ -23,7 +23,7 @@ public:
             return nullptr;
         }
         bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
-        bool tryGetString(String * res, bool allow_identifier = true) const override
+        bool tryGetString(String * res, bool allow_identifier) const override
         {
             if (const auto * literal = argument->as<ConstantNode>())
             {
