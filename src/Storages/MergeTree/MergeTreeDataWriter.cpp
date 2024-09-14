@@ -555,11 +555,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
     const auto & data_settings = data.getSettings();
+    const UInt64 min_bytes = data_settings->min_free_disk_bytes_to_throw_insert;
+    const Float64 min_ratio = data_settings->min_free_disk_ratio_to_throw_insert;
 
+    if (min_bytes > 0 || min_ratio > 0.0)
     {
-        const UInt64 min_bytes = data_settings->min_free_disk_bytes_to_throw_insert;
-        const Float64 min_ratio = data_settings->min_free_disk_ratio_to_throw_insert;
-
         const auto disk = data_part_volume->getDisk();
         const UInt64 total_disk_bytes = *disk->getTotalSpace();
         const UInt64 free_disk_bytes = *disk->getAvailableSpace();
