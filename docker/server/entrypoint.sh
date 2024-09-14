@@ -109,7 +109,7 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
           <networks>
             <ip>::/0</ip>
           </networks>
-          <password>${CLICKHOUSE_PASSWORD}</password>
+          <password><![CDATA[${CLICKHOUSE_PASSWORD//]]>/]]]]><![CDATA[>}]]></password>
           <quota>default</quota>
           <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
         </${CLICKHOUSE_USER}>
