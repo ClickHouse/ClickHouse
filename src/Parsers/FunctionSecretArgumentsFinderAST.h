@@ -16,7 +16,12 @@ public:
         {
         public:
             explicit ArgumentAST(const IAST * argument_) : argument(argument_) {}
-            std::unique_ptr<AbstractFunction> getFunction() const override { return std::make_unique<FunctionAST>(*argument->as<ASTFunction>()); }
+            std::unique_ptr<AbstractFunction> getFunction() const override
+            {
+                if (const auto * f = argument->as<ASTFunction>())
+                    return std::make_unique<FunctionAST>(*f);
+                return nullptr;
+            }
             bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
             bool tryGetString(String * res, bool allow_identifier = true) const override
             {

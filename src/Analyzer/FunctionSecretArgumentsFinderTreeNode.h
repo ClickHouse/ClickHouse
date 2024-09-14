@@ -16,7 +16,12 @@ public:
     {
     public:
         explicit ArgumentTreeNode(const IQueryTreeNode * argument_) : argument(argument_) {}
-        std::unique_ptr<AbstractFunction> getFunction() const override { return std::make_unique<FunctionTreeNode>(*argument->as<FunctionNode>()); }
+        std::unique_ptr<AbstractFunction> getFunction() const override
+        {
+            if (const auto * f = argument->as<FunctionNode>())
+                return std::make_unique<FunctionTreeNode>(*f);
+            return nullptr;
+        }
         bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
         bool tryGetString(String * res, bool allow_identifier = true) const override
         {
