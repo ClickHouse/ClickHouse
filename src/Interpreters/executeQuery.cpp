@@ -1118,6 +1118,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && settings.use_query_cache
             && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            /// Bug 67476: Avoid that the query cache stores truncated results if the query ran with a non-THROW overflow mode and hit a limit.
+            /// This is more workaround than a fix ... unfortunately it is hard to detect from the perspective of the query cache that the
+            /// query result is truncated.
+            && (settings.read_overflow_mode == OverflowMode::THROW
+                && settings.read_overflow_mode_leaf == OverflowMode::THROW
+                && settings.group_by_overflow_mode == OverflowMode::THROW
+                && settings.sort_overflow_mode == OverflowMode::THROW
+                && settings.result_overflow_mode == OverflowMode::THROW
+                && settings.timeout_overflow_mode == OverflowMode::THROW
+                && settings.set_overflow_mode == OverflowMode::THROW
+                && settings.join_overflow_mode == OverflowMode::THROW
+                && settings.transfer_overflow_mode == OverflowMode::THROW
+                && settings.distinct_overflow_mode == OverflowMode::THROW)
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 

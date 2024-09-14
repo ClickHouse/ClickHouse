@@ -258,7 +258,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 query_context,
                 query_,
                 client_info,
-                priorities.insert(static_cast<int>(settings.priority)),
+                priorities.insert(settings.priority),
                 std::move(thread_group),
                 query_kind,
                 settings,
