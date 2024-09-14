@@ -2303,18 +2303,16 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
-        if (query_analyzer.appendLimitInrangeFrom(chain, only_types || !second_stage)) // !first_stage?
+        if (query_analyzer.appendLimitInrangeFrom(chain, only_types || !second_stage))
         {
-            // where_step_num = chain.steps.size() - 1; ??
+            // limit_inrange_from_step_num = chain.steps.size() - 1; ??
             before_limit_inrange_from = chain.getLastActions();
-            // if (allowEarlyConstantFolding(*before_where, settings)) ??
             chain.addStep();
         }
-        if (query_analyzer.appendLimitInrangeTo(chain, only_types || !second_stage)) // !first_stage?
+        if (query_analyzer.appendLimitInrangeTo(chain, only_types || !second_stage))
         {
-            // where_step_num = chain.steps.size() - 1; ??
+            // limit_inrange_to_step_num = chain.steps.size() - 1; ??
             before_limit_inrange_to = chain.getLastActions();
-            // if (allowEarlyConstantFolding(*before_where, settings)) ??
             chain.addStep();
         }
 

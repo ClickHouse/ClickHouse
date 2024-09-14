@@ -317,18 +317,110 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    // if (s_limit.ignore(pos, expected) && s_inrange.ignore(pos, expected))
-
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occured = false;
 
     bool has_offset_clause = false;
     bool offset_clause_has_sql_standard_row_or_rows = false; /// OFFSET offset_row_count {ROW | ROWS}
 
-    /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
+    auto parseLimitClause = [&](bool limit_after_inrange = false) -> bool
+    {
+        if (limit_after_inrange && !s_limit.ignore(pos, expected))
+            return true;
+
+        /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
+        ParserToken s_comma(TokenType::Comma);
+
+        if (!exp_elem.parse(pos, limit_length, expected))
+            return false;
+
+        if (s_comma.ignore(pos, expected))
+        {
+            limit_offset = limit_length;
+            if (!exp_elem.parse(pos, limit_length, expected))
+                return false;
+
+            if (s_with_ties.ignore(pos, expected))
+            {
+                limit_with_ties_occured = true;
+                select_query->limit_with_ties = true;
+            }
+        }
+        else if (s_offset.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, limit_offset, expected))
+                return false;
+
+            has_offset_clause = true;
+        }
+        else if (s_with_ties.ignore(pos, expected))
+        {
+            limit_with_ties_occured = true;
+            select_query->limit_with_ties = true;
+        }
+
+        if (limit_with_ties_occured && distinct_on_expression_list)
+            throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
+
+        if (s_by.ignore(pos, expected))
+        {
+            /// WITH TIES was used alongside LIMIT BY
+            /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
+            /// So we have to ignore WITH TIES exactly in LIMIT BY state.
+            if (limit_with_ties_occured)
+                throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
+
+            if (distinct_on_expression_list)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
+
+            limit_by_length = limit_length;
+            limit_by_offset = limit_offset;
+            limit_length = nullptr;
+            limit_offset = nullptr;
+
+            if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                return false;
+        }
+
+        if (top_length && limit_length)
+            throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
+
+        return true;
+    };
+
+    auto parseOffsetExpression = [&]() -> bool
+    {
+        if (s_offset.ignore(pos, expected))
+        {
+            /// OFFSET without LIMIT
+
+            has_offset_clause = true;
+
+            if (!exp_elem.parse(pos, limit_offset, expected))
+                return false;
+
+            /// SQL standard OFFSET N ROW[S] ...
+
+            if (s_row.ignore(pos, expected))
+                offset_clause_has_sql_standard_row_or_rows = true;
+
+            if (s_rows.ignore(pos, expected))
+            {
+                if (offset_clause_has_sql_standard_row_or_rows)
+                    throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
+
+                offset_clause_has_sql_standard_row_or_rows = true;
+            }
+        }
+
+        return true;
+    };
+
+    bool limit_after_inrange = false;
+
+    /// LIMIT INRANGE FROM expr | LIMIT INRANGE TO expr | LIMIT INRANGE FROM expr TO expr
     if (s_limit.ignore(pos, expected))
     {
-        /// LIMIT INRANGE FROM expr | LIMIT INRANGE TO expr | LIMIT INRANGE FROM expr TO expr
         if (s_inrange.ignore(pos, expected))
         {
             bool from_occured = false;
@@ -350,87 +442,20 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (!from_occured && !to_occured)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "LIMIT INRANGE requires at least a FROM or TO expression");
-        } else
-        {
-            ParserToken s_comma(TokenType::Comma);
 
-            if (!exp_elem.parse(pos, limit_length, expected))
+            // additional limit
+
+            limit_after_inrange = true;
+            if (!parseLimitClause(limit_after_inrange))
                 return false;
-
-            if (s_comma.ignore(pos, expected))
-            {
-                limit_offset = limit_length;
-                if (!exp_elem.parse(pos, limit_length, expected))
-                    return false;
-
-                if (s_with_ties.ignore(pos, expected))
-                {
-                    limit_with_ties_occured = true;
-                    select_query->limit_with_ties = true;
-                }
-            }
-            else if (s_offset.ignore(pos, expected))
-            {
-                if (!exp_elem.parse(pos, limit_offset, expected))
-                    return false;
-
-                has_offset_clause = true;
-            }
-            else if (s_with_ties.ignore(pos, expected))
-            {
-                limit_with_ties_occured = true;
-                select_query->limit_with_ties = true;
-            }
-
-            if (limit_with_ties_occured && distinct_on_expression_list)
-                throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
-
-            if (s_by.ignore(pos, expected))
-            {
-                /// WITH TIES was used alongside LIMIT BY
-                /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
-                /// So we have to ignore WITH TIES exactly in LIMIT BY state.
-                if (limit_with_ties_occured)
-                    throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
-
-                if (distinct_on_expression_list)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
-
-                limit_by_length = limit_length;
-                limit_by_offset = limit_offset;
-                limit_length = nullptr;
-                limit_offset = nullptr;
-
-                if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                    return false;
-            }
-
-            if (top_length && limit_length)
-                throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
+            if (!parseOffsetExpression())
+                return false;
         }
-    }
-    else if (s_offset.ignore(pos, expected))
-    {
-        /// OFFSET without LIMIT
-
-        has_offset_clause = true;
-
-        if (!exp_elem.parse(pos, limit_offset, expected))
+        else if (!parseLimitClause())
             return false;
-
-        /// SQL standard OFFSET N ROW[S] ...
-
-        if (s_row.ignore(pos, expected))
-            offset_clause_has_sql_standard_row_or_rows = true;
-
-        if (s_rows.ignore(pos, expected))
-        {
-            if (offset_clause_has_sql_standard_row_or_rows)
-                throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
-
-            offset_clause_has_sql_standard_row_or_rows = true;
-        }
     }
+    else if (!parseOffsetExpression())
+        return false;
 
     /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
     if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
