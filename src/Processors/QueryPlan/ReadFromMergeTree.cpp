@@ -2012,33 +2012,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 {
     auto result = getAnalysisResult();
 
-    if (is_parallel_reading_from_replicas && context->canUseParallelReplicasOnInitiator()
-        && context->getSettingsRef().parallel_replicas_local_plan)
-    {
-        CoordinationMode mode = CoordinationMode::Default;
-        switch (result.read_type)
-        {
-            case ReadFromMergeTree::ReadType::Default:
-                mode = CoordinationMode::Default;
-                break;
-            case ReadFromMergeTree::ReadType::InOrder:
-                mode = CoordinationMode::WithOrder;
-                break;
-            case ReadFromMergeTree::ReadType::InReverseOrder:
-                mode = CoordinationMode::ReverseOrder;
-                break;
-            case ReadFromMergeTree::ReadType::ParallelReplicas:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Read type can't be ParallelReplicas on initiator");
-        }
-
-        chassert(number_of_current_replica.has_value());
-        chassert(all_ranges_callback.has_value());
-
-        /// initialize working set from local replica
-        all_ranges_callback.value()(
-            InitialAllRangesAnnouncement(mode, result.parts_with_ranges.getDescriptions(), number_of_current_replica.value()));
-    }
-
     if (enable_remove_parts_from_snapshot_optimization)
     {
         /// Do not keep data parts in snapshot.
