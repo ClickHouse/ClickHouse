@@ -10,7 +10,6 @@
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/UnifiedSchedulerNode.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
-#include <Common/Scheduler/Nodes/registerResourceManagers.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -32,7 +31,7 @@ struct ResourceTestBase
 {
     ResourceTestBase()
     {
-        [[maybe_unused]] static bool typesRegistered = [] { registerSchedulerNodes(); registerResourceManagers(); return true; }();
+        [[maybe_unused]] static bool typesRegistered = [] { registerSchedulerNodes(); return true; }();
     }
 
     template <class TClass>

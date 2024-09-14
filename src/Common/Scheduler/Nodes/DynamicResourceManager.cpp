@@ -1,7 +1,6 @@
 #include <Common/Scheduler/Nodes/DynamicResourceManager.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
-#include <Common/Scheduler/ResourceManagerFactory.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 
 #include <Common/Exception.h>
@@ -251,11 +250,6 @@ void DynamicResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
 
     // Block until execution is done in the scheduler thread
     future.get();
-}
-
-void registerDynamicResourceManager(ResourceManagerFactory & factory)
-{
-    factory.registerMethod<DynamicResourceManager>("dynamic");
 }
 
 }
