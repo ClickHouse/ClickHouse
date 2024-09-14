@@ -822,7 +822,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
                 return nullptr;
 
             bool use_buffering = (order_info->limit == 0) && sorting.getSettings().read_in_order_use_buffering;
-            /// Avoid conflict with buffering. 
+            /// Avoid conflict with buffering.
             if (!use_buffering)
                 reading->enableVirtualRow();
         }

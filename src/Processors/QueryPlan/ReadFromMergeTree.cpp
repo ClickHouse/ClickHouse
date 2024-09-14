@@ -549,7 +549,8 @@ Pipe ReadFromMergeTree::readInOrder(
     Names required_columns,
     PoolSettings pool_settings,
     ReadType read_type,
-    UInt64 read_limit)
+    UInt64 read_limit,
+    bool enable_current_virtual_row)
 {
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
@@ -660,7 +661,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         Pipe pipe(source);
 
-        if (enable_virtual_row)
+        if (enable_current_virtual_row)
         {
             pipe.addSimpleTransform([&](const Block & header)
             {
@@ -1097,14 +1098,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             splitted_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
+        /// If enabled in the optimization stage, check whether there are more than one branch.
+        if (enable_virtual_row)
+            enable_virtual_row = splitted_parts_and_ranges.size() > 1
+                || (splitted_parts_and_ranges.size() == 1 && splitted_parts_and_ranges[0].size() > 1);
+
         for (auto && item : splitted_parts_and_ranges)
         {
-            /// If not enabled before, try to enable it when conditions meet as in the following section of preliminary merge,
+            /// If not enabled before, try to enable it when conditions meet, as in the following section of preliminary merge,
             /// only ExpressionTransform is added between MergingSortedTransform and readFromMergeTree.
+            bool enable_current_virtual_row = enable_virtual_row;
             if (!enable_virtual_row)
-                enable_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
+                enable_current_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
 
-            pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit));
+            pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit, enable_current_virtual_row));
         }
     }
 
