@@ -20,12 +20,16 @@ public:
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
+    /// by_columns - for aggregate function with BY clause. Example: sum(x BY y) - what in BY clause are 'by_columns'.
+    ASTPtr by_columns;
 
     bool is_window_function = false;
 
     bool compute_after_window_functions = false;
 
     bool is_lambda_function = false;
+
+    bool by_or_totals = false;
 
     /// This field is updated in executeTableFunction if its a parameterized_view
     /// and used in ASTTablesInSelectQuery::FormatImpl for EXPLAIN SYNTAX of SELECT parameterized view

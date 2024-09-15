@@ -100,8 +100,10 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
 void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value)
 {
     if (!hasWindow())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Trying to resolve FunctionNode without window definition as a window function {}", window_function_value->getName());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Trying to resolve FunctionNode without window definition as a window function {}",
+            window_function_value->getName());
     resolveAsAggregateFunction(window_function_value);
     kind = FunctionKind::WINDOW;
 }
@@ -143,6 +145,19 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
         arguments.dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (isAggregateFunction() && hasByClause())
+    {
+        if (getByColumnsNode()->as<ListNode &>().getNodes().empty())
+        {
+            buffer << '\n' << std::string(indent + 2, ' ') << "TOTALS\n";
+        }
+        else
+        {
+            buffer << '\n' << std::string(indent + 2, ' ') << "BY\n";
+            getByColumnsNode()->dumpTreeImpl(buffer, format_state, indent + 4);
+        }
     }
 
     if (hasWindow())
@@ -255,6 +270,17 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     function_ast->children.push_back(arguments.toAST(new_options));
     function_ast->arguments = function_ast->children.back();
+
+    if (hasByClause())
+    {
+        const auto & by_nodes = getByColumnsNode()->as<ListNode &>();
+        function_ast->by_or_totals = true;
+        if (!by_nodes.getNodes().empty())
+        {
+            function_ast->children.push_back(by_nodes.toAST(new_options));
+            function_ast->by_columns = function_ast->children.back();
+        }
+    }
 
     auto window_node = getWindowNode();
     if (window_node)

@@ -578,7 +578,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
         if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
-            result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
+            result = std::make_shared<ConstantNode>(
+                ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
         else
             result = std::make_shared<ConstantNode>(ast_literal->value);
     }
@@ -644,7 +645,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             {
                 const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
                 for (const auto & argument : function_arguments_list)
+                    {
                     function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                }
+            }
+
+            if (function->by_or_totals)
+            {
+                const auto & by_columns_list = function->by_columns ? function->by_columns->as<ASTExpressionList>()->children : ASTs{};
+                auto by_columns_node = std::make_shared<ListNode>();
+                for (const auto & by_column : by_columns_list)
+                {
+                    by_columns_node->getNodes().push_back(buildExpression(by_column, context));
+                }
+
+                function_node->getByColumnsNode() = std::move(by_columns_node);
             }
 
             if (function->is_window_function)

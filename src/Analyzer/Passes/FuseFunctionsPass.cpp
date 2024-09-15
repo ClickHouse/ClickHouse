@@ -51,6 +51,10 @@ public:
         if (!function_node || !function_node->isAggregateFunction() || !names_to_collect.contains(function_node->getFunctionName()))
             return;
 
+        if (function_node->hasByClause())
+            /// Do not apply to functions with `BY` or `TOTALS`
+            return;
+
         if (function_node->getResultType()->isNullable())
             /// Do not apply to functions with Nullable result type, because `sumCount` handles it different from `sum` and `avg`.
             return;

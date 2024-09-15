@@ -750,7 +750,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
                     context->addExternalTable(it.first, std::move(*it.second));
         }
-
         if (!options.only_analyze || options.modify_inplace)
         {
             if (syntax_analyzer_result->rewrite_subqueries)
@@ -759,7 +758,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
             }
         }
-
         if (interpreter_subquery)
         {
             /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
@@ -767,9 +765,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 interpreter_subquery->ignoreWithTotals();
             uses_view_source |= interpreter_subquery->usesViewSource();
         }
-
         required_columns = syntax_analyzer_result->requiredSourceColumns();
-
         if (storage)
         {
             query_info.filter_asts.clear();
@@ -807,7 +803,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
         }
-
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
     };
@@ -1496,6 +1491,14 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
     bool use_grouping_set_key = expressions.use_grouping_set_key;
+    bool use_by_or_totals = std::ranges::any_of(query_analyzer->aggregates(), [](const AggregateDescription & desc) { return desc.by_columns.has_value(); });
+
+    if (use_by_or_totals &&
+        (query.group_by_with_grouping_sets || query.group_by_with_constant_keys ||
+         query.group_by_with_cube || query.group_by_with_rollup || query.group_by_with_totals))
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH ROLLUP, CUBE, GROUPING SETS, GROUP BY WITH TOTALS are not supported together with BY and TOTALS combinators");
+    }
 
     if (query.group_by_with_grouping_sets && query.group_by_with_totals)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");

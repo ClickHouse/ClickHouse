@@ -559,6 +559,11 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
         if (node.arguments)
             getRootActionsNoMakeSet(node.arguments, actions);
 
+        if (node.by_columns)
+        {
+            getRootActionsNoMakeSet(node.by_columns, actions);
+        }
+
         aggregate.column_name = node.getColumnName();
 
         const ASTs & arguments = node.arguments ? node.arguments->children : ASTs();
@@ -571,13 +576,38 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
             const auto * dag_node = actions.tryFindInOutputs(name);
             if (!dag_node)
             {
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                throw Exception(
+                    ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in aggregate function '{}'",
-                    name, node.formatForErrorMessage());
+                    name,
+                    node.formatForErrorMessage());
             }
 
             types[i] = dag_node->result_type;
             aggregate.argument_names[i] = name;
+        }
+
+        if (node.by_or_totals)
+        {
+            const ASTs & by_columns = node.by_columns ? node.by_columns->children : ASTs();
+            aggregate.by_columns = Names(by_columns.size());
+
+            for (size_t i = 0; i < by_columns.size(); ++i)
+            {
+                const std::string & name = by_columns[i]->getColumnName();
+                const auto * dag_node = actions.tryFindInOutputs(name);
+                if (!dag_node)
+                {
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Unknown identifier '{}' in aggregate function '{}'",
+                        name,
+                        node.formatForErrorMessage());
+                }
+
+                types[i] = dag_node->result_type;
+                aggregate.by_columns->at(i) = name;
+            }
         }
 
         AggregateFunctionProperties properties;

@@ -233,6 +233,32 @@ public:
                         buffer << ", ";
                 }
 
+                if (function_node.hasByClause())
+                {
+                    if (function_arguments_nodes_size > 0)
+                    {
+                        buffer << ' ';
+                    }
+                    auto & by_columns_nodes = function_node.getByColumnsNode()->as<ListNode &>().getNodes();
+                    if (by_columns_nodes.empty())
+                    {
+                        buffer << "TOTALS";
+                    }
+                    else
+                    {
+                        buffer << "BY ";
+                        size_t by_columns_nodes_size = by_columns_nodes.size();
+                        for (size_t i = 0; i < by_columns_nodes_size; ++i)
+                        {
+                            const auto & by_column_node = by_columns_nodes[i];
+                            buffer << calculateActionNodeName(by_column_node);
+
+                            if (i + 1 != by_columns_nodes_size)
+                                buffer << ", ";
+                        }
+                    }
+                }
+
                 buffer << ')';
 
                 if (function_node.isWindowFunction())

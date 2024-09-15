@@ -1,15 +1,16 @@
+#include <iostream>
 #include <Processors/Transforms/CopyTransform.h>
+#include <simdjson/dom/array.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
-CopyTransform::CopyTransform(const Block & header, size_t num_outputs)
-    : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
+CopyTransform::CopyTransform(const Block & header, size_t num_outputs) : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
 {
     if (num_outputs <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyTransform expects more than 1 outputs, got {}", num_outputs);
@@ -21,8 +22,7 @@ IProcessor::Status CopyTransform::prepare()
 
     while (status == Status::Ready)
     {
-        status = !has_data ? prepareConsume()
-                           : prepareGenerate();
+        status = !has_data ? prepareConsume() : prepareGenerate();
     }
 
     return status;
@@ -98,6 +98,127 @@ IProcessor::Status CopyTransform::prepareGenerate()
 
     if (all_outputs_processed)
     {
+        has_data = false;
+        return Status::Ready;
+    }
+
+    return Status::PortFull;
+}
+
+CopyAccumulatingTransform::CopyAccumulatingTransform(const Block & header, size_t num_outputs)
+    : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header)), outputs_chunk_index(num_outputs)
+{
+    if (num_outputs <= 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyTransform expects more than 1 outputs, got {}", num_outputs);
+}
+
+
+IProcessor::Status CopyAccumulatingTransform::prepare()
+{
+    Status status = Status::Ready;
+
+    while (status == Status::Ready)
+    {
+        status = !has_data ? prepareConsume() : prepareGenerate();
+    }
+
+    return status;
+}
+
+IProcessor::Status CopyAccumulatingTransform::prepareConsume()
+{
+    auto & input = getInputPort();
+
+    /// Check all outputs are finished or at least one ready to get data.
+
+    bool all_finished = true;
+    for (auto & output : outputs)
+    {
+        if (output.isFinished())
+            continue;
+
+        all_finished = false;
+    }
+
+    if (all_finished)
+    {
+        input.close();
+        return Status::Finished;
+    }
+
+    /// Try get chunk from input.
+
+    if (input.isFinished())
+    {
+        if (!chunks.empty())
+        {
+            has_data = true;
+
+            return Status::Ready;
+        }
+
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+
+    input.setNeeded();
+    if (!input.hasData())
+        return Status::NeedData;
+
+    chunks.emplace_back(input.pull());
+    has_data = true;
+
+    return Status::Ready;
+}
+
+IProcessor::Status CopyAccumulatingTransform::prepareGenerate()
+{
+    bool one_output_processed = false;
+    bool all_finished = true;
+
+    int chunk_number = -1;
+    for (auto & output : outputs)
+    {
+        chunk_number++;
+        if (outputs_chunk_index[chunk_number] >= chunks.size())
+        {
+            output.finish();
+            continue;
+        }
+        if (output.isFinished())
+            continue;
+
+        all_finished = false;
+
+        if (!output.canPush())
+            continue;
+
+        one_output_processed = true;
+        output.push(chunks[outputs_chunk_index[chunk_number]].clone());
+        ++outputs_chunk_index[chunk_number];
+    }
+
+    if (all_finished)
+    {
+        getInputPort().close();
+        return Status::Finished;
+    }
+
+    if (one_output_processed)
+    {
+        size_t cur_min = *std::min(outputs_chunk_index.begin(), outputs_chunk_index.end());
+        init_idx += cur_min;
+        for (size_t i = 0; i < cur_min; ++i)
+            chunks.pop_front();
+
+        if (cur_min != 0)
+        {
+            for (auto & e : outputs_chunk_index)
+                e -= cur_min;
+        }
+
         has_data = false;
         return Status::Ready;
     }

@@ -1,0 +1,53 @@
+<test>
+    <name>many_aggregate_functions_comparison</name>
+    <substitutions>
+        <substitution>
+            <name>group_scale</name>
+            <values>
+                <value>1000000</value>
+                <value>100000</value>
+                <value>10000</value>
+                <value>1000</value>
+                <value>100</value>
+                <value>10</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Single complex query using multiple aggregation functions -->
+    <query>
+        SELECT
+            count(),
+            uniqExact(Title),
+            sum(JavaEnable),
+            avg(WindowClientWidth),
+            max(EventTime),
+            sum(JavaEnable BY UserID % {group_scale}),
+            count(TOTALS)
+        FROM
+            test.hits
+        GROUP BY
+            UserID % {group_scale},
+            CounterID % 13
+        FORMAT Null
+    </query>
+
+    <!-- Query using grouping sets -->
+    <query>
+        SELECT
+            count(),
+            uniqExact(Title),
+            sum(JavaEnable),
+            avg(WindowClientWidth),
+            max(EventTime)
+        FROM
+            test.hits
+        GROUP BY
+        GROUPING SETS(
+            (UserID % {group_scale}, CounterID % 13),
+            (UserID % 13),
+            ()
+        )
+        FORMAT Null
+    </query>
+</test>

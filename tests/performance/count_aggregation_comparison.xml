@@ -1,0 +1,25 @@
+<test>
+    <name>count_aggregation_comparison</name>
+    <substitutions>
+        <substitution>
+            <name>group_scale</name>
+            <values>
+                <value>1000000</value>
+                <value>100000</value>
+                <value>10000</value>
+                <value>1000</value>
+                <value>100</value>
+                <value>10</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Using BY and TOTALS -->
+    <query>SELECT count(), count(BY UserID % {group_scale}), count(TOTALS) FROM test.hits GROUP BY CounterID % 13, UserID % {group_scale} FORMAT Null</query>
+
+    <!-- Using window functions -->
+    <query>SELECT DISTINCT count() OVER (PARTITION BY CounterID % 13, UserID % {group_scale}), count() OVER (PARTITION BY UserID), count() OVER () FROM test.hits FORMAT Null</query>
+
+    <!-- Using grouping sets -->
+    <query>SELECT count() FROM test.hits GROUP BY GROUPING SETS((CounterID % 13, UserID % {group_scale}), (CounterID % 13),()) FORMAT Null</query>
+</test>

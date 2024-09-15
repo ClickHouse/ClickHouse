@@ -1031,7 +1031,42 @@ public:
             if (ParserToken(TokenType::Comma).ignore(pos, expected))
             {
                 action = Action::OPERAND;
-                return mergeElement();
+                if (mergeElement())
+                {
+                    if (has_by)
+                    {
+                        by_columns->children.emplace_back(std::move(elements.back()));
+                        elements.pop_back();
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            ParserKeyword by(Keyword::BY);
+            ParserKeyword totals(Keyword::TOTALS);
+
+            if (by.ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+                if (has_by)
+                    return false;
+                has_by = true;
+                if (!by_columns)
+                    by_columns = std::make_shared<ASTExpressionList>();
+
+                if (!isCurrentElementEmpty() || !elements.empty())
+                {
+                    if (!mergeElement())
+                        return false;
+                }
+
+                return true;
+            }
+
+            if (totals.ignore(pos, expected))
+            {
+                has_totals = true;
             }
 
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
@@ -1039,8 +1074,15 @@ public:
                 action = Action::OPERATOR;
 
                 if (!isCurrentElementEmpty() || !elements.empty())
+                {
                     if (!mergeElement())
                         return false;
+                    if (has_by)
+                    {
+                        by_columns->children.emplace_back(std::move(elements.back()));
+                        elements.pop_back();
+                    }
+                }
 
                 contents_end = pos->begin;
 
@@ -1049,22 +1091,20 @@ public:
                  * If you do not report that the first option is an error, then the argument will be interpreted as 2014 - 01 - 01 - some number,
                  *  and the query silently returns an unexpected elements.
                  */
-                if (function_name == "toDate"
-                    && contents_end - contents_begin == strlen("2014-01-01")
-                    && contents_begin[0] >= '2' && contents_begin[0] <= '3'
-                    && contents_begin[1] >= '0' && contents_begin[1] <= '9'
-                    && contents_begin[2] >= '0' && contents_begin[2] <= '9'
-                    && contents_begin[3] >= '0' && contents_begin[3] <= '9'
-                    && contents_begin[4] == '-'
-                    && contents_begin[5] >= '0' && contents_begin[5] <= '9'
-                    && contents_begin[6] >= '0' && contents_begin[6] <= '9'
-                    && contents_begin[7] == '-'
-                    && contents_begin[8] >= '0' && contents_begin[8] <= '9'
-                    && contents_begin[9] >= '0' && contents_begin[9] <= '9')
+                if (function_name == "toDate" && contents_end - contents_begin == strlen("2014-01-01") && contents_begin[0] >= '2'
+                    && contents_begin[0] <= '3' && contents_begin[1] >= '0' && contents_begin[1] <= '9' && contents_begin[2] >= '0'
+                    && contents_begin[2] <= '9' && contents_begin[3] >= '0' && contents_begin[3] <= '9' && contents_begin[4] == '-'
+                    && contents_begin[5] >= '0' && contents_begin[5] <= '9' && contents_begin[6] >= '0' && contents_begin[6] <= '9'
+                    && contents_begin[7] == '-' && contents_begin[8] >= '0' && contents_begin[8] <= '9' && contents_begin[9] >= '0'
+                    && contents_begin[9] <= '9')
                 {
                     std::string contents_str(contents_begin, contents_end - contents_begin);
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Argument of function toDate is unquoted: "
-                        "toDate({}), must be: toDate('{}')" , contents_str, contents_str);
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "Argument of function toDate is unquoted: "
+                        "toDate({}), must be: toDate('{}')",
+                        contents_str,
+                        contents_str);
                 }
 
                 if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
@@ -1073,8 +1113,8 @@ public:
                     std::swap(parameters->children, elements);
                     action = Action::OPERAND;
 
-                    /// Parametric aggregate functions cannot have DISTINCT in parameters list.
-                    if (has_distinct)
+                    /// Parametric aggregate functions cannot have DISTINCT, TOTALS, BY in parameters list.
+                    if (has_distinct || has_totals || has_by)
                         return false;
 
                     auto pos_after_bracket = pos;
@@ -1127,6 +1167,23 @@ public:
                 function_node->children.push_back(function_node->parameters);
             }
 
+            if ((has_by && has_totals) || (has_by && !by_columns))
+            {
+                return false;
+            }
+
+            if (has_totals)
+            {
+                function_node->by_or_totals = true;
+            }
+            else if (has_by && by_columns)
+            {
+                function_node->by_or_totals = true;
+
+                function_node->by_columns = std::move(by_columns);
+                function_node->children.push_back(function_node->by_columns);
+            }
+
             ParserKeyword filter(Keyword::FILTER);
             ParserKeyword over(Keyword::OVER);
             ParserKeyword respect_nulls(Keyword::RESPECT_NULLS);
@@ -1174,12 +1231,15 @@ public:
 private:
     bool has_all = false;
     bool has_distinct = false;
+    bool has_totals = false;
+    bool has_by = false;
 
     const char * contents_begin;
     const char * contents_end;
 
     String function_name;
     ASTPtr parameters;
+    ASTPtr by_columns;
 
     bool allow_function_parameters;
     bool is_compound_name;

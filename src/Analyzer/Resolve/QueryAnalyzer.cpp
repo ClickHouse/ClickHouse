@@ -226,7 +226,7 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
 }
 
 ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNodePtr & function_node, const ProjectionNames & parameters_projection_names,
-    const ProjectionNames & arguments_projection_names)
+    const ProjectionNames & arguments_projection_names, const ProjectionNames & by_clause_projection_names)
 {
     const auto & function_node_typed = function_node->as<FunctionNode &>();
     const auto & function_node_name = function_node_typed.getFunctionName();
@@ -273,6 +273,32 @@ ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNod
 
         if (i + 1 != function_arguments_projection_names_size)
             buffer << ", ";
+    }
+
+    if (function_node_typed.hasByClause())
+    {
+        if (function_arguments_projection_names_size > 0)
+        {
+            buffer << " ";
+        }
+
+        size_t by_clause_projection_names_size = by_clause_projection_names.size();
+        if (by_clause_projection_names_size > 0)
+        {
+            buffer << "BY ";
+        }
+        else
+        {
+            buffer << "TOTALS";
+        }
+
+        for (size_t i = 0; i < by_clause_projection_names_size; ++i)
+        {
+            buffer << by_clause_projection_names[i];
+
+            if (i + 1 != by_clause_projection_names_size)
+                buffer << ", ";
+        }
     }
 
     buffer << close_bracket;
@@ -2809,6 +2835,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
 
+
+    ProjectionNames by_clause_projection_names;
+    if (function_node_ptr->hasByClause())
+        by_clause_projection_names = resolveExpressionNodeList(function_node_ptr->getByColumnsNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/);
+
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
     {
@@ -3009,7 +3043,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Calculate function projection name
-    ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
+    ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names, by_clause_projection_names) };
 
     /** Try to resolve function as
       * 1. Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);

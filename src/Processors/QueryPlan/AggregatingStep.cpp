@@ -1,7 +1,6 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -23,6 +22,15 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+
+#include "Interpreters/JoinSwitcher.h"
+#include "Interpreters/PasteJoin.h"
+#include "Processors/DelayedPortsProcessor.h"
+#include "Processors/ForkProcessor.h"
+#include "Processors/Transforms/JoinRowTransform.h"
+#include "Processors/Transforms/JoiningTransform.h"
+#include "Processors/Transforms/MergeJoinTransform.h"
+#include "Processors/Transforms/PasteJoinTransform.h"
 
 namespace DB
 {
@@ -236,7 +244,195 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
     const auto src_header = pipeline.getHeader();
+
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
+    std::vector<AggregateDescription> default_aggregates;
+    std::map<std::vector<String>, std::vector<AggregateDescription>> by_column_sets_aggregates;
+    for (const auto & description : params.aggregates)
+    {
+        if (description.by_columns.has_value())
+        {
+            by_column_sets_aggregates[description.by_columns.value()].emplace_back(description);
+        }
+        else
+        {
+            default_aggregates.emplace_back(description);
+        }
+    }
+
+    if (!by_column_sets_aggregates.empty())
+    {
+        if (!grouping_sets_params.empty())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouping sets are not supported with by_columns");
+        }
+
+        const size_t by_column_sets_size = by_column_sets_aggregates.size() + 1;
+
+        const size_t streams = pipeline.getNumStreams();
+
+        auto input_header = pipeline.getHeader();
+
+        pipeline.transform(
+            [&](OutputPortRawPtrs ports)
+            {
+                Processors copiers;
+                copiers.reserve(ports.size());
+
+                for (auto * port : ports)
+                {
+                    auto copier = std::make_shared<CopyAccumulatingTransform>(input_header, by_column_sets_aggregates.size() + 1);
+                    connect(*port, copier->getInputPort());
+                    copiers.push_back(copier);
+                }
+
+                return copiers;
+            });
+        pipeline.transform(
+            [&](OutputPortRawPtrs ports)
+            {
+                assert(streams * by_column_sets_size == ports.size());
+                Processors processors;
+
+                auto it = by_column_sets_aggregates.begin();
+                for (size_t i = 0; i < by_column_sets_size; ++i)
+                {
+                    const auto & columns = i == 0 ? params.keys : it->first;
+                    const auto & descriptions = i == 0 ? default_aggregates : it->second;
+                    if (i != 0)
+                        ++it;
+                    Aggregator::Params params_for_set
+                    {
+                        columns,
+                        descriptions,
+                        transform_params->params.overflow_row,
+                        transform_params->params.max_rows_to_group_by,
+                        transform_params->params.group_by_overflow_mode,
+                        transform_params->params.group_by_two_level_threshold,
+                        transform_params->params.group_by_two_level_threshold_bytes,
+                        transform_params->params.max_bytes_before_external_group_by,
+                        transform_params->params.empty_result_for_aggregation_by_empty_set,
+                        transform_params->params.tmp_data_scope,
+                        transform_params->params.max_threads,
+                        transform_params->params.min_free_disk_space,
+                        transform_params->params.compile_aggregate_expressions,
+                        transform_params->params.min_count_to_compile_aggregate_expression,
+                        transform_params->params.max_block_size,
+                        transform_params->params.enable_prefetch,
+                        /* only_merge */ false,
+                        transform_params->params.optimize_group_by_constant_keys,
+                        transform_params->params.min_hit_rate_to_use_consecutive_keys_optimization,
+                        transform_params->params.stats_collecting_params,
+                    };
+
+                    auto transform_params_for_set
+                        = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
+
+                    if (streams > 1)
+                    {
+                        auto many_data = std::make_shared<ManyAggregatedData>(streams);
+                        for (size_t j = 0; j < streams; ++j)
+                        {
+                            auto aggregation_for_set = std::make_shared<AggregatingTransform>(
+                                input_header,
+                                transform_params_for_set,
+                                many_data,
+                                j,
+                                merge_threads,
+                                temporary_data_merge_threads,
+                                should_produce_results_in_order_of_bucket_number,
+                                skip_merging);
+                            // For each input stream we have `by_columnt_sets_size` copies, so port index
+                            // for transform #j should skip ports of first (j-1) streams.
+                            connect(*ports[i + by_column_sets_size * j], aggregation_for_set->getInputs().front());
+                            ports[i + by_column_sets_size * j] = &aggregation_for_set->getOutputs().front();
+                            processors.push_back(aggregation_for_set);
+                        }
+                    }
+                    else
+                    {
+                        auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
+                        connect(*ports[i], aggregation_for_set->getInputs().front());
+                        ports[i] = &aggregation_for_set->getOutputs().front();
+                        processors.push_back(aggregation_for_set);
+                    }
+                }
+
+                if (streams > 1)
+                {
+                    OutputPortRawPtrs new_ports;
+                    new_ports.reserve(by_column_sets_size);
+
+                    for (size_t i = 0; i < by_column_sets_size; ++i)
+                    {
+                        size_t output_it = i;
+                        auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getHeader(), streams, 1);
+                        auto & inputs = resize->getInputs();
+
+                        for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += by_column_sets_size, ++input_it)
+                            connect(*ports[output_it], *input_it);
+                        new_ports.push_back(&resize->getOutputs().front());
+                        processors.push_back(resize);
+                    }
+
+                    ports.swap(new_ports);
+                }
+
+                assert(ports.size() == by_column_sets_size);
+                auto output_header = transform_params->getHeader();
+                if (group_by_use_nulls)
+                    convertToNullable(output_header, params.keys);
+
+                // Join all by_column blocks into default_aggregation block
+
+                it = by_column_sets_aggregates.begin();
+                auto * new_port = ports[0];
+                auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(1);
+                for (size_t set_counter = 1; set_counter < by_column_sets_size; ++set_counter, ++it)
+                {
+                    const auto & [columns, descriptions] = *it;
+                    const auto & header = ports[set_counter]->getHeader();
+
+                    auto tableJoin = std::make_shared<TableJoin>(SizeLimits{}, true, JoinKind::Left, JoinStrictness::Any, columns);
+                    tableJoin->getOnlyClause().key_names_left = columns;
+
+                    auto join = std::make_shared<JoinSwitcher>(tableJoin, header);
+                    auto output_h = JoiningTransform::transformHeader(new_port->getHeader(), join);
+
+                    if (columns.empty())
+                    {
+                        Blocks headers = {new_port->getHeader(), header};
+                        auto addColumnTransform = std::make_shared<JoinRowTransform>(std::move(headers), output_h);
+                        connect(*new_port, addColumnTransform->getInputs().front());
+                        connect(*ports[set_counter], addColumnTransform->getInputs().back());
+                        new_port = &addColumnTransform->getOutputs().front();
+                        processors.emplace_back(std::move(addColumnTransform));
+                        continue;
+                    }
+
+                    auto rightJoining = std::make_shared<FillingRightJoinSideTransform>(header, join);
+                    auto & rightJoiningInputs = rightJoining->getInputs();
+
+                    connect(*ports[set_counter], rightJoiningInputs.front());
+
+                    auto joining = std::make_shared<JoiningTransform>(
+                        new_port->getHeader(), output_h, join, max_block_size, false, false, finish_counter);
+                    connect(*new_port, joining->getInputs().front());
+                    connect(rightJoining->getOutputs().front(), joining->getInputs().back());
+                    new_port = &joining->getOutputs().front();
+
+                    processors.emplace_back(std::move(rightJoining));
+                    processors.emplace_back(std::move(joining));
+                }
+
+                return processors;
+            });
+
+        aggregating = collector.detachProcessors(0);
+
+        return;
+    }
 
     if (!grouping_sets_params.empty())
     {
