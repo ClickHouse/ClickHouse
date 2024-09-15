@@ -6,8 +6,6 @@
 #include <Client/TransformerModel.h>
 #include <Parsers/Lexer.h>
 
-/// TODO: make static where possible
-
 std::string toUpperCaseString(const char *begin, const char *end) {
         std::string result;
         
@@ -20,7 +18,7 @@ std::string toUpperCaseString(const char *begin, const char *end) {
         return result;
 }
 
-bool AutocompleteModel::isTokenIdentifier(const DB::Token& token) {
+bool AutocompleteModel::isTokenIdentifier(const DB::Token& token) const {
     if (token.type == DB::TokenType::QuotedIdentifier) {
         return true;
     }
@@ -34,62 +32,31 @@ bool AutocompleteModel::isTokenIdentifier(const DB::Token& token) {
     return true;
 }
 
-bool AutocompleteModel::isTokenKeyword(const DB::Token& token) {
+bool AutocompleteModel::isTokenKeyword(const DB::Token& token) const {
     return (token.type == DB::TokenType::BareWord && !isTokenIdentifier(token));
 
 }
 
-bool AutocompleteModel::isTokenLiteral(const DB::Token& token) {
+bool AutocompleteModel::isTokenLiteral(const DB::Token& token) const {
     return (token.type == DB::TokenType::StringLiteral || token.type == DB::TokenType::Number || toUpperCaseString(token.begin, token.end) == "NULL");
 }
 
-bool AutocompleteModel::isTokenOperator(const DB::Token& prev_token, const DB::Token& token) {
+bool AutocompleteModel::isTokenOperator(const DB::Token& prev_token, const DB::Token& token) const {
     if (token.type == DB::TokenType::Asterisk) {
         return isTokenIdentifier(prev_token) || isTokenLiteral(prev_token);
     }
     return operator_types.contains(token.type) || bare_words_operators.contains(toUpperCaseString(token.begin, token.end));
 }
 
-bool AutocompleteModel::isShortRec(const std::string& recomendation) {
-    return (
-        recomendation == DB::getTokenName(DB::TokenType::Equals) ||
-        recomendation == DB::getTokenName(DB::TokenType::LessOrEquals) ||
-        recomendation == DB::getTokenName(DB::TokenType::GreaterOrEquals) ||
-        recomendation == DB::getTokenName(DB::TokenType::Less) ||
-        recomendation == DB::getTokenName(DB::TokenType::Greater) ||
-        recomendation == DB::getTokenName(DB::TokenType::NotEquals) ||
-        recomendation == DB::getTokenName(DB::TokenType::OpeningRoundBracket) ||
-        recomendation == DB::getTokenName(DB::TokenType::ClosingRoundBracket) ||
-        recomendation == DB::getTokenName(DB::TokenType::OpeningSquareBracket) ||
-        recomendation == DB::getTokenName(DB::TokenType::ClosingSquareBracket) ||
-        recomendation == DB::getTokenName(DB::TokenType::OpeningCurlyBrace) ||
-        recomendation == DB::getTokenName(DB::TokenType::ClosingCurlyBrace) ||
-        recomendation == DB::getTokenName(DB::TokenType::Comma) ||
-        recomendation == DB::getTokenName(DB::TokenType::Semicolon) ||
-        recomendation == DB::getTokenName(DB::TokenType::VerticalDelimiter) ||
-        recomendation == DB::getTokenName(DB::TokenType::Dot) ||
-        recomendation == DB::getTokenName(DB::TokenType::Asterisk) ||
-        recomendation == DB::getTokenName(DB::TokenType::Slash) ||
-        recomendation == DB::getTokenName(DB::TokenType::Plus) ||
-        recomendation == DB::getTokenName(DB::TokenType::Minus) ||
-        recomendation == DB::getTokenName(DB::TokenType::Percent) ||
-        recomendation == DB::getTokenName(DB::TokenType::Arrow) ||
-        recomendation == DB::getTokenName(DB::TokenType::QuestionMark) ||
-        recomendation == DB::getTokenName(DB::TokenType::Colon) ||
-        recomendation == DB::getTokenName(DB::TokenType::DoubleColon) ||
-        recomendation == DB::getTokenName(DB::TokenType::Spaceship) ||
-        recomendation == DB::getTokenName(DB::TokenType::PipeMark) ||
-        recomendation == DB::getTokenName(DB::TokenType::Concatenation) ||
-        recomendation == DB::getTokenName(DB::TokenType::At) ||
-        recomendation == DB::getTokenName(DB::TokenType::DoubleAt)
-    );
+bool AutocompleteModel::isShortRec(const std::string& recomendation) const {
+    return short_tokens.contains(recomendation);
 }
 
-bool AutocompleteModel::isBadRec(const std::string& rec) {
+bool AutocompleteModel::isBadRec(const std::string& rec) const {
     return isShortRec(rec) || rec == GPTJModel::unk || rec == GPTJModel::eos || rec == GPTJModel::bos || rec == GPTJModel::pad;
 }
 
-std::vector<std::string> AutocompleteModel::postprocessRecs(const std::vector<std::string>& raw_recs) {
+std::vector<std::string> AutocompleteModel::postprocessRecs(const std::vector<std::string>& raw_recs) const {
     std::vector<std::string> result;
     result.reserve(raw_recs.size());
 
@@ -116,8 +83,7 @@ std::vector<std::string> AutocompleteModel::postprocessRecs(const std::vector<st
     return result;
 }
 
-/// TODO: If Identifier/Literal on the first place maybe we want to show 2 suggestions from markov model? 
-void AutocompleteModel::replaceWithMarkovPredictions(std::vector<std::string>& transformer_recs, std::span<const std::string> preprocessed_tokens_for_markov) {
+void AutocompleteModel::replaceWithMarkovPredictions(std::vector<std::string>& transformer_recs, std::span<const std::string> preprocessed_tokens_for_markov) const {
     if (transformer_recs.empty()) {
         return;
     }
@@ -127,7 +93,6 @@ void AutocompleteModel::replaceWithMarkovPredictions(std::vector<std::string>& t
     for (size_t i = 0; i < transformer_recs.size(); ++i) {
         std::vector<std::string> markov_predictions;
 
-        // Determine the number of predictions based on the position in the vector
         size_t predictions_num = std::max(1, static_cast<int>(max_predictions - i));
 
         if (transformer_recs[i] == GPTJModel::literal && !markov_literals.empty()) {
@@ -140,17 +105,15 @@ void AutocompleteModel::replaceWithMarkovPredictions(std::vector<std::string>& t
 
         // If we have Markov predictions, replace the transformer_rec with them
         if (!markov_predictions.empty()) {
-            // Replace current token with multiple predictions
             transformer_recs.erase(transformer_recs.begin() + i);
             transformer_recs.insert(transformer_recs.begin() + i, markov_predictions.begin(), markov_predictions.end());
 
-            // Adjust the index to account for the newly inserted predictions
             i += markov_predictions.size() - 1;
         }
     }
 }
 
-void AutocompleteModel::deleteDuplicatesKeepOrder(std::vector<std::string>& recs) {
+void AutocompleteModel::deleteDuplicatesKeepOrder(std::vector<std::string>& recs) const {
     std::unordered_set<std::string> seen;
     auto it = recs.begin();
 
@@ -184,27 +147,8 @@ std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer& lexer) {
         }
     }
 
-    // std::cout << "TRANSFORMER RAW RECS:\n";
-    // for (const auto& rec: recs) {
-    //     std::cout << rec << "\n";
-    // }
-
-
     recs = postprocessRecs(recs);
-
-    // std::cout << "TRANSFORMER FILTERED RECS:\n";
-    // for (const auto& rec: recs) {
-    //     std::cout << rec << "\n";
-    // }
-
-
     replaceWithMarkovPredictions(recs, preprocessed_for_markov);
-
-    // std::cout << "TRANSFORMER RECS AFTER MARKOV:\n";
-    // for (const auto& rec: recs) {
-    //     std::cout << rec << "\n";
-    // }
-
     deleteDuplicatesKeepOrder(recs);
 
     return recs;
@@ -239,7 +183,7 @@ void AutocompleteModel::addQuery(DB::Lexer& lexer) {
         }
     }
 
-    /// TODO: maybe increase only if the models have changed??
+    /// TODO: maybe increase only if the models have changed?
     markov_literals.incTimestamp();
     markov_identifiers.incTimestamp();
     markov_operators.incTimestamp();
@@ -249,12 +193,12 @@ void AutocompleteModel::addQuery(DB::Lexer& lexer) {
 
 }
 
-bool AutocompleteModel::isBareWordEqualToString(const DB::Token& token, const std::string& str) {
+bool AutocompleteModel::isBareWordEqualToString(const DB::Token& token, const std::string& str) const {
     return token.type == DB::TokenType::BareWord && toUpperCaseString(token.begin, token.end) == str;
 }
 
 
-void AutocompleteModel::squashTokens(std::vector<DB::Token>& tokens, size_t start_index, size_t end_index, const std::string& operator_literal) {
+void AutocompleteModel::squashTokens(std::vector<DB::Token>& tokens, size_t start_index, size_t end_index, const std::string& operator_literal) const {
     auto it = bare_words_operators.find(operator_literal);
     if (it != bare_words_operators.end()) {
         const char* begin_replacement = it->c_str();
@@ -269,7 +213,7 @@ void AutocompleteModel::squashTokens(std::vector<DB::Token>& tokens, size_t star
 
 
 
-void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) {
+void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) const {
     if (tokens.size() < 3) {
         return;
     }
@@ -327,18 +271,15 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) {
                 
                 // If the current token is a Number, squash the Minus and Number tokens
                 if (tokens[i].type == DB::TokenType::Number) {
-                    // Combine the Minus and Number tokens into one token
                     const char* begin_replacement = tokens[i - 1].begin;
                     const char* end_replacement = tokens[i].end;
                     DB::Token new_token(DB::TokenType::Number, begin_replacement, end_replacement);
 
-                    // Erase the Minus and Number tokens
                     tokens.erase(tokens.begin() + i - 1, tokens.begin() + i + 1);
 
-                    // Insert the new combined token
                     tokens.insert(tokens.begin() + i - 1, new_token);
 
-                    i--;  // Adjust index after the replacement
+                    i--;
                     replaced_2_cnt++;
                 }
             }
@@ -347,7 +288,7 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) {
     assert(tokens.size() == initial_size - replaced_2_cnt - 2 * replaced_3_cnt);
 }
 
-std::vector<std::string> AutocompleteModel::preprocessForTransformer(const std::vector<DB::Token>& tokens) {
+std::vector<std::string> AutocompleteModel::preprocessForTransformer(const std::vector<DB::Token>& tokens) const {
     std::vector<std::string> result;
     result.reserve(tokens.size());
     for (size_t i = 0; i != tokens.size(); ++i) {
@@ -373,7 +314,7 @@ std::vector<std::string> AutocompleteModel::preprocessForTransformer(const std::
     return result;
 }
 
-std::vector<std::string> AutocompleteModel::preprocessForMarkov(const std::vector<DB::Token>& tokens) {
+std::vector<std::string> AutocompleteModel::preprocessForMarkov(const std::vector<DB::Token>& tokens) const {
     std::vector<std::string> result;
     result.reserve(tokens.size());
     for (const auto & token : tokens) {
@@ -388,7 +329,7 @@ std::vector<std::string> AutocompleteModel::preprocessForMarkov(const std::vecto
 }
 
 
-std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel::preprocessTokens(DB::Lexer& lexer) {
+std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel::preprocessTokens(DB::Lexer& lexer) const {
     std::vector<DB::Token> tokens_from_lexer{};
 
     while (true)
@@ -418,55 +359,76 @@ std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel:
 }
 
 
+const std::unordered_set<std::string> AutocompleteModel::bare_words_operators {
+    "AND",
+    "OR",
+    "NOT",
+    "AND NOT",
+    "OR NOT",
+    "IN",
+    "NOT IN",
+    "LIKE",
+    "NOT LIKE",
+    "BETWEEN",
+    "NOT BETWEEN",
+    "GLOBAL IN",
+    "GLOBAL NOT IN",
+    "EXISTS",
+    "NOT EXISTS",
+};
 
-// std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel::preprocessTokens(DB::Lexer& lexer) {
-//     std::vector<std::string> tokens_for_tf{};
-//     std::vector<std::string> tokens_for_markov{};
-//     std::vector<DB::Token> tokens_from_lexer{};
+const std::unordered_set<DB::TokenType> AutocompleteModel::operator_types {
+    // arithm
+    DB::TokenType::Plus,
+    DB::TokenType::Minus,
+    DB::TokenType::Asterisk,
+    DB::TokenType::Percent,
 
-//      while (true)
-//         {
-//             DB::Token token = lexer.nextToken();
-
-//             if (token.isEnd())
-//                 break;
-
-//             if (token.isError())
-//                 return {};
-
-//             if (!token.isSignificant())
-//                 continue;
-            
-//             std::string token_for_tf;
-//             std::string token_for_markov;
-
-//             if (token.type == DB::TokenType::BareWord) {
-//                 std::string token_content_uppercase = toUpperCaseString(token.begin, token.end);
-//                 if (keywords.contains(token_content_uppercase)) {
-//                     token_for_tf = token_content_uppercase;
-//                     token_for_markov = token_content_uppercase;
-//                 } else {
-//                     token_for_tf = "Identifier";
-//                     token_for_markov = std::string(token.begin, token.end);
-//                 }
-//             } else {
-//                 token_for_tf = getTokenName(token.type);
-//                 if (token.type == DB::TokenType::StringLiteral || token.type == DB::TokenType::Number || token.type == DB::TokenType::QuotedIdentifier) {
-//                     token_for_markov = std::string(token.begin, token.end);
-//                 } else {
-//                     token_for_markov = getTokenName(token.type);
-//                 }
-//             }
-//             tokens_for_tf.push_back(token_for_tf);
-//             tokens_for_markov.push_back(token_for_markov);
-//         }
-
-//     assert(tokens_for_tf.size() == tokens_for_markov.size());
-//     return {tokens_for_tf, tokens_for_markov};
-// }
+    // comparison
+    DB::TokenType::Equals,
+    DB::TokenType::NotEquals,
+    DB::TokenType::GreaterOrEquals,
+    DB::TokenType::LessOrEquals,
+    DB::TokenType::Less,
+    DB::TokenType::Greater,
+    DB::TokenType::Spaceship,
+};
 
 
+const std::unordered_set<std::string> AutocompleteModel::short_tokens {
+    DB::getTokenName(DB::TokenType::Equals),
+    DB::getTokenName(DB::TokenType::LessOrEquals),
+    DB::getTokenName(DB::TokenType::GreaterOrEquals),
+    DB::getTokenName(DB::TokenType::Less),
+    DB::getTokenName(DB::TokenType::Greater),
+    DB::getTokenName(DB::TokenType::NotEquals),
+    DB::getTokenName(DB::TokenType::OpeningRoundBracket),
+    DB::getTokenName(DB::TokenType::ClosingRoundBracket),
+    DB::getTokenName(DB::TokenType::OpeningSquareBracket),
+    DB::getTokenName(DB::TokenType::ClosingSquareBracket),
+    DB::getTokenName(DB::TokenType::OpeningCurlyBrace),
+    DB::getTokenName(DB::TokenType::ClosingCurlyBrace),
+    DB::getTokenName(DB::TokenType::Comma),
+    DB::getTokenName(DB::TokenType::Semicolon),
+    DB::getTokenName(DB::TokenType::VerticalDelimiter),
+    DB::getTokenName(DB::TokenType::Dot),
+    DB::getTokenName(DB::TokenType::Asterisk),
+    DB::getTokenName(DB::TokenType::Slash),
+    DB::getTokenName(DB::TokenType::Plus),
+    DB::getTokenName(DB::TokenType::Minus),
+    DB::getTokenName(DB::TokenType::Percent),
+    DB::getTokenName(DB::TokenType::Arrow),
+    DB::getTokenName(DB::TokenType::QuestionMark),
+    DB::getTokenName(DB::TokenType::Colon),
+    DB::getTokenName(DB::TokenType::DoubleColon),
+    DB::getTokenName(DB::TokenType::Spaceship),
+    DB::getTokenName(DB::TokenType::PipeMark),
+    DB::getTokenName(DB::TokenType::Concatenation),
+    DB::getTokenName(DB::TokenType::At),
+    DB::getTokenName(DB::TokenType::DoubleAt),
+};
 
+/// TODO: remove function names
 const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "ACCESS",
     "ACTION",
