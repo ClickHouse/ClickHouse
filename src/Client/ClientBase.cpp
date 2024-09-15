@@ -928,8 +928,9 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         throw;
     }
 
-    if (have_error)
+    if (have_error) {
         processError(full_query);
+    }
 
     if (!have_error) {
         if (autocomplete) {
@@ -2414,6 +2415,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Report error.
                 if (have_error)
                     processError(full_query);
+
+                if (!have_error) {
+                    if (autocomplete) {
+                        autocomplete->addQuery(full_query);
+                    }
+                }
 
                 // Stop processing queries if needed.
                 if (have_error && !ignore_error)
