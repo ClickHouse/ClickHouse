@@ -372,3 +372,6 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
+[submodule "contrib/ggml"]
+	path = contrib/ggml
+	url = https://github.com/ggerganov/ggml

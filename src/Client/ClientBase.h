@@ -1,18 +1,20 @@
 #pragma once
 
 
+#include <Client/Autocomplete.h>
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
-#include <IO/CompressionMethod.h>
-#include <IO/WriteBuffer.h>
 #include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>
 #include <Common/ProgressIndication.h>
+#include <Common/QueryFuzzer.h>
 #include <Common/QueryFuzzer.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Poco/ConsoleChannel.h>
@@ -32,7 +34,6 @@
 #include <string_view>
 #include <string>
 
-namespace po = boost::program_options;
 
 
 namespace DB
@@ -301,6 +302,10 @@ protected:
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
     bool wait_for_suggestions_to_load = false;
+
+    std::optional<Autocomplete> autocomplete;
+    bool load_autocomplete = true;
+
 
     std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
