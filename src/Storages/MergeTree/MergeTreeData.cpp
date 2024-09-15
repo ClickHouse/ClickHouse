@@ -8662,15 +8662,7 @@ void MergeTreeData::loadPrimaryKeys()
     /// Define the states of parts that need to be processed
     DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
 
-    /// Thread pool to process loading in parallel
-    auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
-
-    /// Limit the number of tasks to avoid overloading the thread pool
-    size_t max_parallel_tasks = std::min(thread_pool.maxConcurrency(), getDataParts(affordable_states).size());
-
-    /// Keep track of scheduled tasks
-    size_t scheduled_tasks = 0;
-
+    /// Sequentially load primary keys without using a thread pool
     for (const auto & data_part : getDataParts(affordable_states))
     {
         /// Skip projection parts, as they do not need primary key loading
@@ -8680,27 +8672,10 @@ void MergeTreeData::loadPrimaryKeys()
         /// Check if the index is already loaded to avoid redundant loading
         if (!data_part->isIndexLoaded())
         {
-            /// Use thread pool to parallelize the work, limiting to max_parallel_tasks
-            if (scheduled_tasks < max_parallel_tasks)
-            {
-                thread_pool.scheduleOrThrowOnError([data_part] {
-                    const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
-                });
-                scheduled_tasks++;
-            }
-            else
-            {
-                /// If task limit is reached, wait for the current batch to finish
-                thread_pool.wait();
-
-                /// Reset the task counter for the next batch
-                scheduled_tasks = 0; 
-            }
+            /// Load the index for this part
+            const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
         }
     }
-
-    /// Ensure all remaining tasks finish
-    thread_pool.wait();
 }
 
 

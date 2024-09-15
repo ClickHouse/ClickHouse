@@ -65,7 +65,6 @@ enum class DataPartRemovalState : uint8_t
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
-    void loadIndexWithLock() const { std::scoped_lock lock(index_mutex); loadIndex(); }
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
 
     using Checksums = MergeTreeDataPartChecksums;
@@ -92,6 +91,7 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
+
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
@@ -374,6 +374,7 @@ public:
     void setIndex(Columns && cols_);
     void loadIndex() const TSA_REQUIRES(index_mutex);
     void unloadIndex();
+    void loadIndexWithLock() const { std::scoped_lock lock(index_mutex); loadIndex(); }
     bool isIndexLoaded() const;
 
     /// For data in RAM ('index')

@@ -1196,47 +1196,25 @@ void InterpreterSystemQuery::loadPrimaryKeys()
     {
         getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
 
-        // Define a thread pool for parallel processing
-        auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
-
-        // Cap the number of concurrent tasks based on thread pool availability
-        size_t max_tasks = std::min(thread_pool.maxConcurrency(), DatabaseCatalog::instance().getDatabases().size());
-
-        // Process databases and tables in parallel
-        size_t tasks_scheduled = 0;
+        /// Process each database and table sequentially
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    // Schedule task for thread pool
-                    if (tasks_scheduled < max_tasks)
+                    try
                     {
-                        thread_pool.scheduleOrThrowOnError([merge_tree, log=log] {
-                            try
-                            {
-                                merge_tree->loadPrimaryKeys(); // Calls the improved loadPrimaryKeys in MergeTreeData
-                            }
-                            catch (const Exception & ex)
-                            {
-                                LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
-                            }
-                        });
-                        tasks_scheduled++;
+                        /// Directly call loadPrimaryKeys without concurrency
+                        merge_tree->loadPrimaryKeys();
                     }
-                    else
+                    catch (const Exception & ex)
                     {
-                        // Wait for current tasks to finish before scheduling more
-                        thread_pool.wait();
-                        tasks_scheduled = 0; // Reset task counter
+                        LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
                     }
                 }
             }
         }
-
-        // Wait for all tasks to complete
-        thread_pool.wait();
     }
 }
 
@@ -1590,20 +1568,20 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
             break;
         }
-        case Type::UNLOAD_PRIMARY_KEY:
-        {
-            if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-            else
-                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
-            break;
-        }
         case Type::LOAD_PRIMARY_KEY:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
             else
                 required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::UNLOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_THREAD_FUZZER:
