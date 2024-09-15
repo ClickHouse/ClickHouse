@@ -1,4 +1,4 @@
-#include "MarkovModelFast.h"
+#include "MarkovModel.h"
 
 #include <algorithm>
 #include <cassert>
