@@ -324,7 +324,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            const DataTypePtr actual_type = getPrimitiveType(data_types[parquet_column_index]);
+            const DataTypePtr actual_type = getPrimitiveType(data_types[rpn_element.key_column]);
 
             if (!isColumnSupported(actual_type, parquet_rg_metadata->schema()->Column(parquet_column_index)))
             {
@@ -376,7 +376,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
                 auto parquet_column_index = parquet_indexes[0];
 
-                const DataTypePtr actual_type = getPrimitiveType(data_types[parquet_column_index]);
+                const DataTypePtr actual_type = getPrimitiveType(data_types[clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].clickhouse_index]);
 
                 if (!isColumnSupported(actual_type, parquet_rg_metadata->schema()->Column(parquet_column_index)))
                 {
