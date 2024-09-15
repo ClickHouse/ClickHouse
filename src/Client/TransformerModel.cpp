@@ -2,6 +2,7 @@
 #include "ggml.h"
 
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <iostream>
@@ -602,6 +603,7 @@ void GPTJModel::reset() {
 
         eval_success = gptjEval(current_query_ids, _);
         n_past += current_query_ids.size();
+        last_recs.clear();
     }
 
 std::vector<GptVocab::id> GPTJModel::getTopNIdsFromLogits(const std::vector<float>& logits, size_t top_n) {
@@ -625,14 +627,37 @@ std::vector<std::string> GPTJModel::ids2Tokens(const std::vector<GptVocab::id> &
     return result;
 }
 
+bool hasCommonPrefix(const std::vector<GptVocab::id>& cached_query, const std::vector<GptVocab::id>& new_ids) {
+    return new_ids.size() >= cached_query.size() - 1 &&
+           std::equal(cached_query.begin() + 1, cached_query.end(), new_ids.begin());
+}
+
+std::vector<GptVocab::id> getNewElements(const std::vector<GptVocab::id>& cached_query, const std::vector<GptVocab::id>& new_ids) {
+    if (hasCommonPrefix(cached_query, new_ids)) {
+        return std::vector<GptVocab::id>(new_ids.begin() + (cached_query.size() - 1), new_ids.end());
+    }
+    return {};
+}
+
 /// TODO: replace const vector reference on span here??
 std::vector<std::string> GPTJModel::getRecsTopN(const std::vector<std::string>& tokens, size_t top_n) {
     if (!model_loaded || !eval_success) {
         return {};
     }
-    /// TODO: add optimization if the current input equals the cached query in LLM
-    this->reset();
-    const auto ids = tokens2Ids(tokens);
+    auto ids = tokens2Ids(tokens);
+
+    if (!hasCommonPrefix(current_query_ids, ids)) {
+        this->reset();
+    } else {
+        ids = getNewElements(current_query_ids, ids);
+        if (ids.empty()) {
+            return last_recs; /// TODO: return last recs
+        }
+    }
+
+    if (static_cast<int>(ids.size()) > model.hparams.n_ctx) {
+        ids = std::vector<GptVocab::id>(ids.end() - model.hparams.n_ctx, ids.end());
+    }
 
 
     std::vector<GptVocab::id> batch_ids{};
@@ -654,7 +679,8 @@ std::vector<std::string> GPTJModel::getRecsTopN(const std::vector<std::string>& 
 
     auto top_n_ids = getTopNIdsFromLogits(logits, top_n);
 
-    return ids2Tokens(top_n_ids);
+    last_recs = ids2Tokens(top_n_ids);
+    return last_recs;
 }
 
 
