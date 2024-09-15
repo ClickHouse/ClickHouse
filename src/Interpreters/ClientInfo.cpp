@@ -27,6 +27,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::write is called for unsupported server revision");
 
     writeBinary(static_cast<UInt8>(query_kind), out);
+    writeBinary(is_generated, out);
     if (empty())
         return;
 
@@ -109,6 +110,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
     UInt8 read_query_kind = 0;
     readBinary(read_query_kind, in);
     query_kind = QueryKind(read_query_kind);
+    readBinary(is_generated, in);
     if (empty())
         return;
 

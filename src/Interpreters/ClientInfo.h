@@ -57,6 +57,7 @@ public:
     };
 
     QueryKind query_kind = QueryKind::NO_QUERY;
+    bool is_generated = false;
 
     /// Current values are not serialized, because it is passed separately.
     String current_user;

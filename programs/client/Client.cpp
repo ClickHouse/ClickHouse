@@ -204,13 +204,15 @@ std::vector<String> Client::loadWarningMessages()
         return {};
 
     std::vector<String> messages;
+    auto client_info_copy = global_context->getClientInfo();
+    client_info_copy.is_generated = true;
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
                           {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &client_context->getSettingsRef(),
-                          &client_context->getClientInfo(), false, {});
+                          &client_info_copy, false, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -500,6 +502,9 @@ void Client::connect()
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
     load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
+
+    /// TODO: add here MIN_REVISION for autocomplete + wait_for_autocomplete_to_load_history
+    load_autocomplete = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_autocomplete", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");

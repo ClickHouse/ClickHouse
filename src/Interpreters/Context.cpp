@@ -4968,6 +4968,11 @@ void Context::setClientName(const String & client_name)
     client_info.client_name = client_name;
 }
 
+void Context::setIsGenerated(bool is_generated)
+{
+    client_info.is_generated = is_generated;
+}
+
 void Context::setClientInterface(ClientInfo::Interface interface)
 {
     client_info.interface = interface;

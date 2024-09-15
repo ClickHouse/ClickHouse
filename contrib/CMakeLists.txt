@@ -166,6 +166,7 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
+add_contrib (ggml-cmake ggml)
 
 if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
     option (ENABLE_QPL "Enable Intel® Query Processing Library (QPL)" ${ENABLE_LIBRARIES})

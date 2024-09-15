@@ -697,6 +697,7 @@ public:
     void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
+    void setIsGenerated(bool is_generated);
     void setQueryKindInitial();
     void setQueryKindReplicatedDatabaseInternal();
     void setCurrentUserName(const String & current_user_name);

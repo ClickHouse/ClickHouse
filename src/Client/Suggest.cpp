@@ -163,8 +163,10 @@ void Suggest::load(IServerConnection & connection,
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
 {
+    auto client_info_copy = client_info;
+    client_info_copy.is_generated = true;
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info_copy, false, {});
 
     while (true)
     {
