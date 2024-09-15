@@ -1196,7 +1196,7 @@ void InterpreterSystemQuery::loadPrimaryKeys()
     {
         getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
 
-        /// Process each database and table sequentially
+        /// Process databases and tables sequentially, without thread pool concurrency at the table level
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
@@ -1205,7 +1205,7 @@ void InterpreterSystemQuery::loadPrimaryKeys()
                 {
                     try
                     {
-                        /// Directly call loadPrimaryKeys without concurrency
+                        /// Calls the improved loadPrimaryKeys in MergeTreeData
                         merge_tree->loadPrimaryKeys();
                     }
                     catch (const Exception & ex)
