@@ -124,6 +124,7 @@ public:
     std::vector<std::string> getRecsTopN(const std::vector<std::string>& tokens, size_t top_n);
 
     void reset();
+    std::vector<std::string> last_recs;
 
     ~GPTJModel() {
         ggml_free(model.ctx);
