@@ -8659,28 +8659,28 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
 
 void MergeTreeData::loadPrimaryKeys()
 {
-    // Define the states of parts that need to be processed
+    /// Define the states of parts that need to be processed
     DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
 
-    // Thread pool to process loading in parallel
+    /// Thread pool to process loading in parallel
     auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
 
-    // Limit the number of tasks to avoid overloading the thread pool
+    /// Limit the number of tasks to avoid overloading the thread pool
     size_t max_parallel_tasks = std::min(thread_pool.maxConcurrency(), getDataParts(affordable_states).size());
 
-    // Keep track of scheduled tasks
+    /// Keep track of scheduled tasks
     size_t scheduled_tasks = 0;
 
     for (const auto & data_part : getDataParts(affordable_states))
     {
-        // Skip projection parts, as they do not need primary key loading
+        /// Skip projection parts, as they do not need primary key loading
         if (data_part->isProjectionPart())
             continue;
 
-        // Check if the index is already loaded to avoid redundant loading
+        /// Check if the index is already loaded to avoid redundant loading
         if (!data_part->isIndexLoaded())
         {
-            // Use thread pool to parallelize the work, limiting to max_parallel_tasks
+            /// Use thread pool to parallelize the work, limiting to max_parallel_tasks
             if (scheduled_tasks < max_parallel_tasks)
             {
                 thread_pool.scheduleOrThrowOnError([data_part] {
@@ -8690,14 +8690,16 @@ void MergeTreeData::loadPrimaryKeys()
             }
             else
             {
-                // If task limit is reached, wait for the current batch to finish
+                /// If task limit is reached, wait for the current batch to finish
                 thread_pool.wait();
-                scheduled_tasks = 0; // Reset the task counter for the next batch
+
+                /// Reset the task counter for the next batch
+                scheduled_tasks = 0; 
             }
         }
     }
 
-    // Ensure all remaining tasks finish
+    /// Ensure all remaining tasks finish
     thread_pool.wait();
 }
 

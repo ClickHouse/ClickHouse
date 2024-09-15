@@ -1091,11 +1091,9 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
-    /// Unloads primary keys of all parts.
-    void unloadPrimaryKeys();
-
-    // Load primary keys of all parts
+    /// Load/unload primary keys of all data parts
     void loadPrimaryKeys();
+    void unloadPrimaryKeys();
 
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
