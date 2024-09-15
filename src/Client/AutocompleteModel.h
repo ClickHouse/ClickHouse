@@ -15,10 +15,10 @@ private:
     size_t markov_order = 4;
     size_t processed_queries_cnt = 0;
 
-    KneserNey markov_all = KneserNey();
-    KneserNey markov_literals = KneserNey();
-    KneserNey markov_identifiers = KneserNey();
-    KneserNey markov_operators = KneserNey();
+    KneserNey markov_all = KneserNey(markov_order);
+    KneserNey markov_literals = KneserNey(markov_order);
+    KneserNey markov_identifiers = KneserNey(markov_order);
+    KneserNey markov_operators = KneserNey(markov_order);
 
     GPTJModel transformer_model = GPTJModel("ggml-model-f32.bin");
 
