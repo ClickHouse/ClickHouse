@@ -88,11 +88,14 @@ public:
     {
     public:
         // Constructor to initialize but not start the thread
-        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool_, bool defer_thread_starting = false);
+        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool_);
+
+        // Starts the internal thread.
+        void startThread(typename std::list<ThreadFromThreadPool>::iterator& it);
 
         // Starts the internal thread, and stores the new job - it will be pushed to the queue
         // by the thread itself once it starts and takes the lock for the first time.
-        void startThread(JobWithPriority new_job);
+        void startThread(typename std::list<ThreadFromThreadPool>::iterator& it, JobWithPriority new_job);
 
         // Destructor to join the thread if needed
         ~ThreadFromThreadPool();
@@ -102,6 +105,9 @@ public:
         ThreadPoolImpl& parent_pool;
         std::optional<Thread> thread;
         std::optional<JobWithPriority> new_job;
+
+        // stores the position of the thread in the parent thread pool list
+        typename std::list<ThreadFromThreadPool>::iterator& thread_it{nullopt};
 
         // remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
