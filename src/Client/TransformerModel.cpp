@@ -646,7 +646,8 @@ std::vector<std::string> GPTJModel::getRecsTopN(const std::vector<std::string>& 
     }
     auto ids = tokens2Ids(tokens);
 
-    if (!hasCommonPrefix(current_query_ids, ids)) {
+    // In case when user has changed something in the middle of the query -- we need to reinference the model. Also if the last eval was not successful
+    if (!hasCommonPrefix(current_query_ids, ids) || !eval_success) {
         this->reset();
     } else {
         ids = getNewElements(current_query_ids, ids);
@@ -655,25 +656,17 @@ std::vector<std::string> GPTJModel::getRecsTopN(const std::vector<std::string>& 
         }
     }
 
-    if (static_cast<int>(ids.size()) > model.hparams.n_ctx) {
-        ids = std::vector<GptVocab::id>(ids.end() - model.hparams.n_ctx, ids.end());
+    if (static_cast<int>(ids.size()) + 1 > model.hparams.n_ctx) {
+        ids = std::vector<GptVocab::id>(ids.end() - model.hparams.n_ctx + 1, ids.end());
     }
-
-
-    std::vector<GptVocab::id> batch_ids{};
-    batch_ids.reserve(n_batch);
 
     std::vector<float> logits;
-    for (int batch_num = 0; batch_num != std::ceil(float(ids.size()) / float(n_batch)); ++batch_num) {
-        for (int i = batch_num * n_batch; (i != (batch_num + 1) * n_batch) && (i < int(ids.size())); ++i) {
-            batch_ids.push_back(ids[i]);
-        }
-        eval_success = gptjEval(batch_ids, logits);
-        if (!eval_success) {
-            return {};
-        }
-        n_past += batch_ids.size();
+    if (n_past + ids.size() >= static_cast<size_t>(model.hparams.n_ctx)) {
+        n_past = static_cast<int>(model.hparams.n_ctx - 1 - ids.size()); /// TODO: replace hparams with size_t 
     }
+
+    eval_success = gptjEval(ids, logits);
+    n_past += ids.size();
 
     current_query_ids.insert(current_query_ids.end(), ids.begin(), ids.end());
 
