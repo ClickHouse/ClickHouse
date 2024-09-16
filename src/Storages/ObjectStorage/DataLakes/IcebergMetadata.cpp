@@ -282,7 +282,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
         auto name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
         auto type = getFieldType(field, "type", required);
-        if (old_schema_entries.count(id))
+        if (old_schema_entries.contains(id))
         {
             auto [old_json, old_node] = old_schema_entries.find(id)->second;
             if (field->isObject("type"))
@@ -368,7 +368,7 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         current_new_id = -1;
     });
     Poco::JSON::Object::Ptr old_schema, new_schema;
-    if (transform_dags_by_ids.count({old_id, new_id}))
+    if (transform_dags_by_ids.contains({old_id, new_id}))
     {
         return transform_dags_by_ids.at({old_id, new_id});
     }
@@ -395,18 +395,18 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
     return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema, new_schema);
 }
 
-void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema)
+void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
 {
-    Int32 schema_id = schema->getValue<Int32>("schema-id");
-    if (iceberg_table_schemas_by_ids.count(schema_id))
+    Int32 schema_id = schema_ptr->getValue<Int32>("schema-id");
+    if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
-        chassert(clickhouse_table_schemas_by_ids.count(schema_id) > 0);
-        chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema);
+        chassert(clickhouse_table_schemas_by_ids.contains(schema_id) > 0);
+        chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema_ptr);
     }
     else
     {
-        iceberg_table_schemas_by_ids[schema_id] = schema;
-        auto fields = schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+        auto fields = schema_ptr->get("fields").extract<Poco::JSON::Array::Ptr>();
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
         for (size_t i = 0; i != fields->size(); ++i)
         {
@@ -723,7 +723,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos() const
             if (ManifestEntryStatus(status) == ManifestEntryStatus::DELETED)
             {
                 LOG_TEST(log, "Processing delete file for path: {}", file_path);
-                chassert(files.count(file_path) == 0);
+                chassert(files.contains(file_path) == 0);
             }
             else
             {

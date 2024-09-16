@@ -72,7 +72,7 @@ class IcebergSchemaProcessor
     using Node = ActionsDAG::Node;
 
 public:
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr ptr);
+    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
 
