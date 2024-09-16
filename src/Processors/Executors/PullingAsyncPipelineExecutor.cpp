@@ -53,6 +53,11 @@ PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
 {
     try
     {
+        /// NOTE: It can be error-prone to cancel the query in destructor
+        ///
+        /// For instance RemoteQueryExecutor should be cancelled before the
+        /// worker thread destroyed, otherwise active fibers could lead to
+        /// use-after-free
         cancel();
     }
     catch (...)
@@ -89,6 +94,9 @@ static void threadFunction(
 
         /// Finish lazy format in case of exception. Otherwise thread.join() may hung.
         data.lazy_format->finalize();
+
+        /// Do not set is_finished
+        return;
     }
 
     data.is_finished = true;
