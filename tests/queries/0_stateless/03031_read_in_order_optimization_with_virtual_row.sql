@@ -147,6 +147,15 @@ read_in_order_use_buffering = false,
 optimize_read_in_order = 1,
 read_in_order_two_level_merge_threshold = 0;  --force preliminary merge
 
+SELECT a, b
+FROM fixed_prefix
+WHERE a = 1
+ORDER BY b
+SETTINGS max_threads = 1,
+read_in_order_use_buffering = false,
+optimize_read_in_order = 1,
+read_in_order_two_level_merge_threshold = 5;  --avoid preliminary merge
+
 DROP TABLE fixed_prefix;
 
 SELECT '========';

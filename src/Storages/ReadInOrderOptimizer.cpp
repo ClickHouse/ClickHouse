@@ -249,7 +249,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     if (sort_description_for_merging.empty())
         return {};
 
-    return std::make_shared<InputOrderInfo>(std::move(sort_description_for_merging), key_pos, read_direction, limit);
+    return std::make_shared<InputOrderInfo>(std::move(sort_description_for_merging), key_pos, read_direction, limit, false);
 }
 
 InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(

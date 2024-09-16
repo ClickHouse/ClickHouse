@@ -370,6 +370,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     int read_direction = 0;
     size_t next_description_column = 0;
     size_t next_sort_key = 0;
+    bool first_prefix_fixed = false;
 
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
@@ -447,6 +448,9 @@ InputOrderInfoPtr buildInputOrderInfo(
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
+                if (next_sort_key == 0)
+                    first_prefix_fixed = true;
+
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
             }
@@ -481,7 +485,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     if (read_direction == 0 || order_key_prefix_descr.empty())
         return nullptr;
 
-    return std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
+    return std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit, first_prefix_fixed);
 }
 
 /// We really need three different sort descriptions here.
@@ -685,7 +689,7 @@ AggregationInputOrder buildInputOrderInfo(
     for (const auto & key : not_matched_group_by_keys)
         group_by_sort_description.emplace_back(SortColumnDescription(std::string(key)));
 
-    auto input_order = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, /*read_direction*/ 1, /* limit */ 0);
+    auto input_order = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, /*read_direction*/ 1, /* limit */ 0, false);
     return { std::move(input_order), std::move(sort_description_for_merging), std::move(group_by_sort_description) };
 }
 
@@ -823,7 +827,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
 
             bool use_buffering = (order_info->limit == 0) && sorting.getSettings().read_in_order_use_buffering;
             /// Avoid conflict with buffering.
-            if (!use_buffering)
+            if (!use_buffering && !order_info->first_prefix_fixed)
                 reading->enableVirtualRow();
         }
 
