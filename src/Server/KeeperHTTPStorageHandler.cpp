@@ -150,9 +150,9 @@ Coordination::ZooKeeperResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse
 
     if (request->isReadRequest())
     {
-        keeper_dispatcher->putLocalReadRequest(std::move(request), session_id);
+        keeper_dispatcher->putLocalReadRequest(request, session_id);
     }
-    else if (!keeper_dispatcher->putRequest(std::move(request), session_id))
+    else if (!keeper_dispatcher->putRequest(request, session_id))
     {
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     }
@@ -372,7 +372,8 @@ try
     {
         try
         {
-            return performZooKeeperRequest(opnum, storage_path, request, response);
+            performZooKeeperRequest(opnum, storage_path, request, response);
+            return;
         }
         catch (...)
         {
