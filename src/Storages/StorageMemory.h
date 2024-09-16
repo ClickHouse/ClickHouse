@@ -42,6 +42,7 @@ public:
     struct SnapshotData : public StorageSnapshot::Data
     {
         std::shared_ptr<const Blocks> blocks;
+        size_t rows_approx = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;

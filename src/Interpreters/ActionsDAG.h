@@ -162,7 +162,7 @@ public:
     const Node * tryFindInOutputs(const std::string & name) const;
 
     /// Same, but for the list of names.
-    NodeRawConstPtrs findInOutpus(const Names & names) const;
+    NodeRawConstPtrs findInOutputs(const Names & names) const;
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
@@ -442,7 +442,7 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
-    /// Get a list of nodes. For every node, check if it can be compused using allowed subset of inputs.
+    /// Get a list of nodes. For every node, check if it can be computed using allowed subset of inputs.
     /// Returns only those nodes from the list which can be computed.
     static NodeRawConstPtrs filterNodesByAllowedInputs(
         NodeRawConstPtrs nodes,

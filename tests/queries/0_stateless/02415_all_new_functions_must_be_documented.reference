@@ -143,7 +143,6 @@ arrayStringConcat
 arraySum
 arrayUniq
 arrayWithConstant
-arrayZip
 asinh
 assumeNotNull
 atan
@@ -561,7 +560,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-printf
 proportionsZTest
 protocol
 queryID

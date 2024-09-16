@@ -64,6 +64,7 @@ function configure()
         randomize_config_boolean_value multi_read keeper_port
         randomize_config_boolean_value check_not_exists keeper_port
         randomize_config_boolean_value create_if_not_exists keeper_port
+        randomize_config_boolean_value remove_recursive keeper_port
     fi
 
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
@@ -272,8 +273,10 @@ function check_logs_for_critical_errors()
     # Remove file no_such_key_errors.txt if it's empty
     [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
 
-    # Crash
-    rg -Fa "###################""#####################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
+    # Crash. This must have fewer '#'s than the command below, otherwise the command below will match
+    # the echo of this command (if set -x is enabled, and this script's stdout is sent
+    # to /test_output/run.log).
+    rg -Fa "#######################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
         && echo -e "Killed by signal (in clickhouse-server.log)$FAIL" >> /test_output/test_results.tsv \
         || echo -e "Not crashed$OK" >> /test_output/test_results.tsv
 
@@ -285,7 +288,7 @@ function check_logs_for_critical_errors()
     # Remove file fatal_messages.txt if it's empty
     [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-    rg -Faz "####################""####################" /test_output/* > /dev/null \
+    rg -Faz "########################################" /test_output/* > /dev/null \
       && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
 
     function get_gdb_log_context()

@@ -12,12 +12,15 @@ namespace DB
 struct Settings;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+struct ITemporaryFileLookup;
+using TemporaryFileLookupPtr = std::shared_ptr<ITemporaryFileLookup>;
 
 struct BuildQueryPipelineSettings
 {
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
+    TemporaryFileLookupPtr temporary_file_lookup;
 
     size_t max_threads;
     size_t aggregation_memory_efficient_merge_threads;

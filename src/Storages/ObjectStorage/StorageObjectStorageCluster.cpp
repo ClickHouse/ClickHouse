@@ -103,7 +103,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     ASTPtr cluster_name_arg = args.front();
     args.erase(args.begin());
-    configuration->addStructureAndFormatToArgs(args, structure, configuration->format, context);
+    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
     args.insert(args.begin(), cluster_name_arg);
 }
 
