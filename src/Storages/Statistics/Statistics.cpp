@@ -248,7 +248,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & co
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'count_min', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
         auto stat_ptr = (it->second)(desc, column_desc.type);
         column_stat->stats[type] = stat_ptr;
     }

@@ -18,23 +18,21 @@ class ReadBuffer;
  */
 struct ObjectStorageQueueTableMetadata
 {
-    String format_name;
-    String columns;
-    String after_processing;
-    String mode;
-    UInt64 tracked_files_limit;
-    UInt64 tracked_file_ttl_sec;
-    UInt64 buckets;
-    UInt64 processing_threads_num;
-    String last_processed_path;
-
+    const String format_name;
+    const String columns;
+    const String after_processing;
+    const String mode;
+    const UInt64 tracked_files_limit;
+    const UInt64 tracked_file_ttl_sec;
+    const UInt64 buckets;
+    const UInt64 processing_threads_num;
+    const String last_processed_path;
     bool processing_threads_num_from_cpu_cores;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
         const ColumnsDescription & columns_,
-        const std::string & format_,
-        bool processing_threads_num_from_cpu_cores_);
+        const std::string & format_);
 
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
 

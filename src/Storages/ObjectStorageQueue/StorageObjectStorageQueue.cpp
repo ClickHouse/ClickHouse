@@ -103,7 +103,10 @@ namespace
         }
     }
 
-    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(const ObjectStoragePtr & storage, const ContextPtr & context, const ObjectStorageQueueSettings & table_settings)
+    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(
+        const ObjectStoragePtr & storage,
+        const ContextPtr & context,
+        const ObjectStorageQueueSettings & table_settings)
     {
         const auto & settings = context->getSettingsRef();
         switch (storage->getType())
@@ -123,7 +126,6 @@ namespace
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
-
     }
 }
 
@@ -136,7 +138,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args,
+    ASTStorage * /* engine_args */,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -160,8 +162,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    bool processing_threads_num_from_cpu_cores = false;
-    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::SECONDARY_CREATE, log, processing_threads_num_from_cpu_cores);
+    // bool processing_threads_num_from_cpu_cores = false;
+    // checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::SECONDARY_CREATE, log, processing_threads_num_from_cpu_cores);
+    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -180,23 +183,21 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
+
+    ObjectStorageQueueTableMetadata table_metadata(*queue_settings, storage_metadata.getColumns(), configuration_->format);
+    ObjectStorageQueueMetadata::syncWithKeeper(zk_path, table_metadata, *queue_settings, log);
+
+    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), *queue_settings);
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
+
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 
-    ObjectStorageQueueTableMetadata table_metadata(
-        *queue_settings, storage_metadata.getColumns(),
-        configuration_->format, processing_threads_num_from_cpu_cores);
-
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
-        zk_path,
-        std::make_shared<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), *queue_settings),
-        *queue_settings);
-
-    if (processing_threads_num_from_cpu_cores)
-    {
-        engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
-            "processing_threads_num",
-            queue_settings->processing_threads_num.value);
-    }
+    // if (processing_threads_num_from_cpu_cores)
+    // {
+    //     engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
+    //         "processing_threads_num",
+    //         queue_settings->processing_threads_num.value);
+    // }
 }
 
 void StorageObjectStorageQueue::startup()

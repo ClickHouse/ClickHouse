@@ -168,7 +168,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     { return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, /*async_callback=*/ {}); };
 
     return getManyImpl(settings, pool_mode, try_get_entry,
-        /*skip_unavailable_endpoints=*/ std::nullopt,
+        /*skip_unavailable_endpoints=*/ false, /// skip_unavailable_endpoints is used to get the min number of entries, and we need at least one
         /*priority_func=*/ {},
         settings.distributed_insert_skip_read_only_replicas);
 }

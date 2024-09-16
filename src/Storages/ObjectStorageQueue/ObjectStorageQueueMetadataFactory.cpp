@@ -16,14 +16,12 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
     const std::string & zookeeper_path,
-    ObjectStorageQueueMetadataPtr metadata,
-    ObjectStorageQueueSettings & settings)
+    ObjectStorageQueueMetadataPtr metadata)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
     if (it == metadata_by_path.end())
     {
-        metadata->syncWithKeeper();
         it = metadata_by_path.emplace(zookeeper_path, std::move(metadata)).first;
     }
     else

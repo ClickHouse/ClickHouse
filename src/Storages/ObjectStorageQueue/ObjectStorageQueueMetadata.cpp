@@ -217,9 +217,14 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-void ObjectStorageQueueMetadata::syncWithKeeper()
+void ObjectStorageQueueMetadata::syncWithKeeper(
+    const fs::path & zookeeper_path,
+    const ObjectStorageQueueTableMetadata & table_metadata,
+    const ObjectStorageQueueSettings & settings,
+    LoggerPtr log)
 {
     const auto table_metadata_path = zookeeper_path / "metadata";
+    const auto buckets_num = getBucketsNum(settings);
     const auto metadata_paths = settings.mode == ObjectStorageQueueMode::ORDERED
         ? ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num)
         : ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
@@ -231,7 +236,11 @@ void ObjectStorageQueueMetadata::syncWithKeeper()
     {
         if (zookeeper->exists(table_metadata_path))
         {
-            const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
+            const auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata");
+            const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
+
+            LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
+
             table_metadata.adjustFromKeeper(metadata_from_zk, settings);
             table_metadata.checkEquals(metadata_from_zk);
             return;
@@ -239,7 +248,8 @@ void ObjectStorageQueueMetadata::syncWithKeeper()
 
         Coordination::Requests requests;
         requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-        requests.emplace_back(zkutil::makeCreateRequest(table_metadata_path, table_metadata.toString(), zkutil::CreateMode::Persistent));
+        requests.emplace_back(zkutil::makeCreateRequest(
+                                  table_metadata_path, table_metadata.toString(), zkutil::CreateMode::Persistent));
 
         for (const auto & path : metadata_paths)
         {
@@ -248,16 +258,27 @@ void ObjectStorageQueueMetadata::syncWithKeeper()
         }
 
         if (!settings.last_processed_path.value.empty())
-            getFileMetadata(settings.last_processed_path)->setProcessedAtStartRequests(requests, zookeeper);
+        {
+            ObjectStorageQueueOrderedFileMetadata(
+                zookeeper_path,
+                settings.last_processed_path,
+                std::make_shared<FileStatus>(),
+                /* bucket_info */nullptr,
+                buckets_num,
+                settings.loading_retries,
+                log).setProcessedAtStartRequests(requests, zookeeper);
+        }
 
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(requests, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
         {
             auto exception = zkutil::KeeperMultiException(code, requests, responses);
+
             LOG_INFO(log, "Got code `{}` for path: {}. "
                      "It looks like the table {} was created by another server at the same moment, "
-                     "will retry", code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
+                     "will retry",
+                     code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
             continue;
         }
         else if (code != Coordination::Error::ZOK)

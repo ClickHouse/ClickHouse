@@ -60,7 +60,11 @@ public:
 
     ~ObjectStorageQueueMetadata();
 
-    void syncWithKeeper();
+    static void syncWithKeeper(
+        const fs::path & zookeeper_path,
+        const ObjectStorageQueueTableMetadata & table_metadata,
+        const ObjectStorageQueueSettings & settings,
+        LoggerPtr log);
 
     void shutdown();
 
@@ -100,6 +104,6 @@ private:
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
 };
 
-using ObjectStorageQueueMetadataPtr = std::shared_ptr<ObjectStorageQueueMetadata>;
+using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;
 
 }

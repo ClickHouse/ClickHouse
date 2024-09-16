@@ -15,8 +15,7 @@ public:
 
     FilesMetadataPtr getOrCreate(
         const std::string & zookeeper_path,
-        ObjectStorageQueueMetadataPtr metadata,
-        ObjectStorageQueueSettings & settings);
+        ObjectStorageQueueMetadataPtr metadata);
 
     void remove(const std::string & zookeeper_path);
 
