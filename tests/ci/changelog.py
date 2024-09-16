@@ -288,7 +288,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     # Normalize bug fixes
     if (
         re.match(
-            r".*(?i)bug\Wfix",
+            r"(?i).*bug\Wfix",
             category,
         )
         # Map "Critical Bug Fix" to "Bug fix" category for changelog

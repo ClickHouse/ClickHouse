@@ -120,6 +120,13 @@
     M(PartsWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly") \
     M(MutationsAppliedOnFlyInAllParts, "The sum of number of applied mutations on-fly for part among all read parts") \
     \
+    M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.") \
+    M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.") \
+    M(SchedulerIOReadWaitMicroseconds, "Total time a query was waiting on resource requests for IO reads.") \
+    M(SchedulerIOWriteRequests, "Resource requests passed through scheduler for IO writes.") \
+    M(SchedulerIOWriteBytes, "Bytes passed through scheduler for IO writes.") \
+    M(SchedulerIOWriteWaitMicroseconds, "Total time a query was waiting on resource requests for IO writes.") \
+    \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
     M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
@@ -820,6 +827,9 @@ The server successfully detected this situation and will download merged part fr
     M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
     M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
     M(GWPAsanFree, "Number of free operations done by GWPAsan") \
+    \
+    M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background") \
+    M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
