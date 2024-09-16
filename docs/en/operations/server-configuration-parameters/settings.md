@@ -491,6 +491,14 @@ Type: Double
 
 Default: 0.9
 
+## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
+
+The maximum number of threads to use for building vector indexes. 0 means all cores.
+
+Type: UInt64
+
+Default: 16
+
 ## cgroups_memory_usage_observer_wait_time
 
 Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
