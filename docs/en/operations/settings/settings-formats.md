@@ -171,8 +171,8 @@ If the `schema_inference_hints` is not formated properly, or if there is a typo 
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
-Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+Controls making inferred types `Nullable` in schema inference.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 
 Default value: `true`.
 
@@ -744,6 +744,17 @@ When enabled, escape special characters in Markdown.
 ```
 ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
 ```
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
+
+Default value: 0.
+
+### input_format_json_empty_as_default {#input_format_json_empty_as_default}
+
+When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
 Possible values:
 

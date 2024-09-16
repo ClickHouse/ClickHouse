@@ -662,10 +662,7 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             },
         )
     except QueryRuntimeException as e:
-        assert (
-            "Table columns structure in ZooKeeper is different from local table structure"
-            in str(e)
-        )
+        assert "Existing table metadata in ZooKeeper differs in columns" in str(e)
         failed = True
 
     assert failed is True

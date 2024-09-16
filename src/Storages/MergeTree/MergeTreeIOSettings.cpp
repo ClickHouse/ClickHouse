@@ -30,6 +30,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , low_cardinality_max_dictionary_size(global_settings.low_cardinality_max_dictionary_size)
     , low_cardinality_use_single_dictionary_for_part(global_settings.low_cardinality_use_single_dictionary_for_part != 0)
     , use_compact_variant_discriminators_serialization(storage_settings->use_compact_variant_discriminators_serialization)
+    , use_adaptive_write_buffer_for_dynamic_subcolumns(storage_settings->use_adaptive_write_buffer_for_dynamic_subcolumns)
+    , adaptive_write_buffer_initial_size(storage_settings->adaptive_write_buffer_initial_size)
 {
 }
 
