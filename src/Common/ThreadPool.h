@@ -58,7 +58,7 @@ public:
         ~ThreadFromThreadPool();
 
     private:
-        ThreadPoolImpl* parent_pool;
+        ThreadPoolImpl& parent_pool;
         Thread thread;
 
         enum class ThreadState
@@ -72,7 +72,7 @@ public:
         std::atomic<ThreadState> thread_state;
 
         // stores the position of the thread in the parent thread pool list
-        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator& thread_it;
+        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
 
         // remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
@@ -154,9 +154,6 @@ public:
 private:
     friend class GlobalThreadPool;
 
-    std::atomic<size_t> more_threads_required;
-    std::atomic<size_t> currently_starting_threads;
-
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
@@ -174,13 +171,22 @@ private:
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
+    std::atomic<size_t> more_threads_required;
+    std::atomic<size_t> currently_starting_threads;
+
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
     std::list<std::unique_ptr<ThreadFromThreadPool>> threads;
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
+
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+
+
+  //      std::unique_ptr<ThreadFromThreadPool> prepareNewThreadIfNeeded();
+
+    void checkIfMoreThreadsRequiredNoLock();
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
     void startNewThreadsNoLock();

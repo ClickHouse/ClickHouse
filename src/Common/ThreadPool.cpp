@@ -187,43 +187,6 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 }
 
 
-template <typename Thread>
-std::unique_ptr<ThreadFromThreadPool> ThreadPoolImpl<Thread>::prepareNewThreadIfNeeded()
-{
-    std::unique_ptr<ThreadFromThreadPool> new_thread;
-
-    while (true)
-    {
-        size_t more_required = more_threads_required.load();
-        if (more_required)
-        {
-            if (more_threads_required.compare_exchange_strong(more_required, more_required - 1))
-            {
-                try
-                {
-                    new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                    // Successfully created the thread, break the loop
-                    break;
-                }
-                catch (...)
-                {
-                    std::unique_guard lock(mutex);
-                    more_threads_required.fetch_add(1);
-                    return on_error("shutdown");
-                }
-            }
-        }
-        else
-        {
-            // No more threads required, exit the loop
-            break;
-        }
-    }
-
-    return new_thread;
-}
-
-
 // should be called under the lock
 template <typename Thread>
 void ThreadPoolImpl<Thread>::checkIfMoreThreadsRequiredNoLock()
@@ -276,8 +239,36 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             return false;
     };
 
-    std::unique_ptr<ThreadFromThreadPool> new_thread = prepareNewThreadIfNeeded();
+    std::unique_ptr<ThreadFromThreadPool> new_thread;
 
+    while (true)
+    {
+        size_t more_required = more_threads_required.load();
+        if (more_required)
+        {
+            if (more_threads_required.compare_exchange_strong(more_required, more_required - 1))
+            {
+                try
+                {
+                    new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                    // Successfully created the thread, break the loop
+                    break;
+                }
+                catch (...)
+                {
+                    std::lock_guard lock(mutex);
+                    more_threads_required.fetch_add(1);
+                    return on_error("shutdown");
+                }
+            }
+        }
+        else
+        {
+            // No more threads required, exit the loop
+            break;
+        }
+    }
+    
     {
         Stopwatch watch;
         std::unique_lock lock(mutex);
@@ -334,7 +325,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                      DB::Exception::enable_job_stack_trace);
 
         if (thread_id != threads.end())
-            (*thread_id)->start(*this,thread_id);
+            (*thread_id)->start(thread_id);
 
     }
     /// Wake up a free thread to run the new job.
@@ -483,7 +474,7 @@ bool ThreadPoolImpl<Thread>::finished() const
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImpl& parent_pool_)
     : parent_pool(parent_pool_)
-    : thread_state(ThreadState::Preparing)  // Initial state is Preparing
+    , thread_state(ThreadState::Preparing)  // Initial state is Preparing
 {
     Stopwatch watch2;
 
@@ -519,8 +510,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename std::list<std:
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::removeSelfFromPoolNoPoolLock()
 {
-    if (thread && thread->joinable())
-        thread->detach();
+    if (thread.joinable())
+        thread.detach();
 
     parent_pool.threads.erase(thread_it);
 }
@@ -531,8 +522,8 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
     thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
 
     // Ensure the thread is joined before destruction if still joinable
-    if (thread && thread->joinable())
-        thread->join();
+    if (thread.joinable())
+        thread.join();
 
     ProfileEvents::increment(
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
