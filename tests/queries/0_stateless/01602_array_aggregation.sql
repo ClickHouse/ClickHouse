@@ -10,7 +10,7 @@ SELECT 'Array max :';
 SELECT arrayMax([[3], [1], [2]]);
 
 SELECT 'Array min with function:';
-SELECT arrayMin(x1 -> x1 * -1, [1,2,3])
+SELECT arrayMin(x1 -> x1 * -1, [1,2,3]);
 
 DROP TABLE IF EXISTS test_aggregation;
 CREATE TABLE test_aggregation (x Array(Int)) ENGINE=TinyLog;
