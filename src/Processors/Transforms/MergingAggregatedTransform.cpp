@@ -263,7 +263,7 @@ Chunk MergingAggregatedTransform::generate()
             AggregatedDataVariants data_variants;
 
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
+            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads);
             auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
 
             if (grouping_set.creating_missing_keys_actions)
