@@ -16,7 +16,7 @@ class ASTStorage;
     M(UInt64, nats_num_consumers, 1, "The number of consumer channels per table.", 0) \
     M(String, nats_queue_group, "", "Name for queue group of NATS subscribers.", 0) \
     M(Bool, nats_secure, false, "Use SSL connection", 0) \
-    M(UInt64, nats_max_reconnect, 5, "Maximum amount of reconnection attempts.", 0) \
+    M(Int64, nats_max_reconnect, 5, "Maximum amount of reconnection attempts.", 0) \
     M(UInt64, nats_reconnect_wait, 2000, "Amount of time in milliseconds to sleep between each reconnect attempt.", 0) \
     M(String, nats_server_list, "", "Server list for connection", 0) \
     M(UInt64, nats_skip_broken_messages, 0, "Skip at least this number of broken messages from NATS per block", 0) \
