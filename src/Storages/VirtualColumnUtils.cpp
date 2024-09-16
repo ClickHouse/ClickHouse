@@ -207,7 +207,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     return desc;
 }
 
-static void addFilterDataToVirtualColumns(Block & block, const String & path, size_t idx, ColumnWithTypeAndName partitioning_column, const ContextPtr & context)
+static void addFilterDataToDefaultColumns(Block & block, const String & path, size_t idx)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -224,14 +224,20 @@ static void addFilterDataToVirtualColumns(Block & block, const String & path, si
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
-    if (block.has(partitioning_column.name))
-    {
-        auto & column = block.getByName(partitioning_column.name).column;
-        ReadBufferFromString buf(partitioning_column.column->getDataAt(0).toView());
-        partitioning_column.type->getDefaultSerialization()->deserializeWholeText(column->assumeMutableRef(), buf, getFormatSettings(context));
-    }
-
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
+}
+
+static void addFilterDataToPartitioningColumns(Block & block, ColumnsWithTypeAndName partitioning_keys, const ContextPtr & context)
+{
+    for (const auto & item : partitioning_keys)
+    {
+        if (block.has(item.name))
+        {
+            auto & column = block.getByName(item.name).column;
+            ReadBufferFromString buf(item.column->getDataAt(0).toView());
+            item.type->getDefaultSerialization()->deserializeWholeText(column->assumeMutableRef(), buf, getFormatSettings(context));
+        }
+    }
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
@@ -286,9 +292,11 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-    partitioning_columns.resize(paths.size());
     for (size_t i = 0; i != paths.size(); ++i)
-        addFilterDataToVirtualColumns(block, paths[i], i, partitioning_columns[i], context);
+        addFilterDataToDefaultColumns(block, paths[i], i);
+
+    if (context->getSettingsRef().use_hive_partitioning)
+        addFilterDataToPartitioningColumns(block, partitioning_columns, context);
 
     filterBlockWithExpression(actions, block);
 
