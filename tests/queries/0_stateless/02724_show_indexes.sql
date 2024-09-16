@@ -58,7 +58,6 @@ CREATE TABLE `tab.with.dots`
 )
 ENGINE = MergeTree
 PRIMARY KEY (c, a);
-SELECT '--- SHOW INDEX FROM table with dots';
 SHOW INDEX FROM `tab.with.dots`;
 DROP TABLE `tab.with.dots`;
 
