@@ -3,7 +3,9 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+
+# `randomize_settings` is set tot `False` to maake result of `SHOW CREATE SETTINGS PROFILE` consistent
+instance = cluster.add_instance("instance", randomize_settings=False)
 
 
 def system_settings_profile(profile_name):
