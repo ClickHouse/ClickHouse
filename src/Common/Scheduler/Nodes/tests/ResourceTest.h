@@ -120,6 +120,11 @@ class ResourceTestClass : public ResourceTestBase
     };
 
 public:
+    ~ResourceTestClass()
+    {
+        dequeue(); // Just to avoid any leaks of `Request` object
+    }
+
     template <class TClass>
     void add(const String & path, const String & xml = {})
     {
