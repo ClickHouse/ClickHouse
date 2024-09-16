@@ -716,7 +716,7 @@ Pipe ReadFromMergeTree::read(
     if (read_type == ReadType::Default && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
         return readFromPool(std::move(parts_with_range), std::move(required_columns), std::move(pool_settings));
 
-    auto pipe = readInOrder(parts_with_range, required_columns, pool_settings, read_type, /*limit=*/ 0);
+    auto pipe = readInOrder(parts_with_range, required_columns, pool_settings, read_type, /*limit=*/ 0, false);
 
     /// Use ConcatProcessor to concat sources together.
     /// It is needed to read in parts order (and so in PK order) if single thread is used.
@@ -1025,7 +1025,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// For parallel replicas the split will be performed on the initiator side.
     if (is_parallel_reading_from_replicas)
     {
-        pipes.emplace_back(readInOrder(std::move(parts_with_ranges), column_names, pool_settings, read_type, input_order_info->limit));
+        pipes.emplace_back(readInOrder(std::move(parts_with_ranges), column_names, pool_settings, read_type, input_order_info->limit, false));
     }
     else
     {
