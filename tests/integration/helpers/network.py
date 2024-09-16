@@ -303,6 +303,7 @@ class _NetworkManager:
         destination_port=None,
         action=None,
         probability=None,
+        protocol=None,
         custom_args=None,
     ):
         ret = []
@@ -317,7 +318,7 @@ class _NetworkManager:
                     str(probability),
                 ]
             )
-        ret.extend(["-p", "tcp"])
+        ret.extend(["-p", "tcp" if protocol is None else protocol])
         if source is not None:
             ret.extend(["-s", source])
         if destination is not None:
