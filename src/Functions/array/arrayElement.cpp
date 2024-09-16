@@ -1991,7 +1991,8 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[1]->getName());
     }
 
-    return is_null_mode ? makeNullable(array_type->getNestedType()) : array_type->getNestedType();
+    auto nested_type = array_type->getNestedType();
+    return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2032,7 +2033,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
         ArrayImpl::NullMapBuilder<mode> builder;
         auto res = perform(arguments, removeNullable(result_type), builder, input_rows_count);
 
-        if (builder)
+        if (builder && res->canBeInsideNullable())
             return ColumnNullable::create(res, std::move(builder).getNullMapColumnPtr());
         else
             return res;
