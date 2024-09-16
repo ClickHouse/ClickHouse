@@ -749,10 +749,9 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
-    const QueryTextOrPlan & query,
+    const QueryToSend & query,
     const NameToNameMap & query_parameters,
     const String & query_id_,
-    UInt64 stage,
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
@@ -760,8 +759,7 @@ void Connection::sendQuery(
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
-    if (const auto * query_text = std::get_if<String>(&query))
-        span.addAttribute("clickhouse.query", *query_text);
+    span.addAttribute("clickhouse.query", query.text);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
 
     ClientInfo new_client_info;
@@ -847,8 +845,7 @@ void Connection::sendQuery(
             if (nonce.has_value())
                 data += std::to_string(nonce.value());
             data += cluster_secret;
-            if (const auto * query_text = std::get_if<String>(&query))
-                data += *query_text;
+            data += query.text;
             data += query_id;
             data += client_info->initial_user;
             /// TODO: add source/target host/ip-address
@@ -864,16 +861,13 @@ void Connection::sendQuery(
             writeStringBinary("", *out);
     }
 
-    writeVarUInt(stage, *out);
+    writeVarUInt(query.stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
 
-    if (const auto * query_text = std::get_if<String>(&query))
-        writeStringBinary(*query_text, *out);
-    else
-    {
-        const auto & plan = std::get<std::shared_ptr<QueryPlan>>(query);
-        plan->serialize(*out);
-    }
+    writeStringBinary(query.text, *out);
+
+    if (query.plan)
+        query.plan->serialize(*out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {

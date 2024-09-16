@@ -1389,11 +1389,23 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 static std::pair<ASTPtr, BlockIO> executeQueryImpl(
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryPlanAndSets & plan_and_sets)
+    const String & query,
+    const std::shared_ptr<QueryPlanAndSets> & query_plan)
 {
+    /// Used for logging query start time in system.query_log
+    auto query_start_time = std::chrono::system_clock::now();
+
+    /// Used for:
+    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
+    /// * Logging query duration (system.query_log)
+    Stopwatch start_watch{CLOCK_MONOTONIC};
+
+    const Settings & settings = context->getSettingsRef();
+
+    String query_for_logging;
+    ASTPtr ast;
     const bool internal = flags.internal;
-    ASTPtr ast = std::make_shared<ASTIdentifier>("QueryPlan");
-    String query_for_logging = "QueryPlan";
+    size_t log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
 
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
@@ -1405,13 +1417,35 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
-    /// Used for logging query start time in system.query_log
-    auto query_start_time = std::chrono::system_clock::now();
+    try
+    {
+        ParserQuery parser(query.data() + query.size(), settings.allow_settings_after_format_in_insert);
+        /// TODO: parser should fail early when max_query_size limit is reached.
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 
-    /// Used for:
-    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
-    /// * Logging query duration (system.query_log)
-    Stopwatch start_watch{CLOCK_MONOTONIC};
+        /// Wipe any sensitive information (e.g. passwords) from the query.
+        /// MUST go before any modification (except for prepared statements,
+        /// since it substitute parameters and without them query does not contain
+        /// parameters), to keep query as-is in query_log and server log.
+        if (ast->hasSecretParts())
+        {
+            /// IAST::formatForLogging() wipes secret parts in AST and then calls wipeSensitiveDataAndCutToLength().
+            query_for_logging = ast->formatForLogging(log_queries_cut_to_length);
+        }
+        else
+        {
+            query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
+        }
+    }
+    catch (...)
+    {
+        query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
+        logQuery(query_for_logging, context, internal, QueryProcessingStage::QueryPlan);
+
+        if (!internal)
+            logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
+        throw;
+    }
 
     const auto & client_info = context->getClientInfo();
 
@@ -1428,8 +1462,6 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-
-    const Settings & settings = context->getSettingsRef();
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
@@ -1552,13 +1584,13 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>("QueryPlan::execute()");
                     }
 
-                    auto query_plan = QueryPlan::resolveStorages(std::move(plan_and_sets), context);
+                    auto plan = QueryPlan::resolveStorages(std::move(*query_plan), context, ast);
 
                     WriteBufferFromOwnString buf;
-                    query_plan.explainPlan(buf, {.header=true, .actions=true});
+                    plan.explainPlan(buf, {.header=true, .actions=true});
                     std::cerr << buf.str() << std::endl;
 
-                    auto pipeline = query_plan.buildQueryPipeline(
+                    auto pipeline = plan.buildQueryPipeline(
                             QueryPlanOptimizationSettings::fromContext(context),
                             BuildQueryPipelineSettings::fromContext(context));
 
@@ -1666,7 +1698,8 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 }
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const std::variant<String, std::shared_ptr<QueryPlanAndSets>> & query,
+    const String & query,
+    const std::shared_ptr<QueryPlanAndSets> & query_plan,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
@@ -1674,10 +1707,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
-    if (const auto * query_text = std::get_if<String>(&query))
-        std::tie(ast, res) = executeQueryImpl(query_text->data(), query_text->data() + query_text->size(), context, flags, stage, nullptr);
+    if (query_plan)
+        std::tie(ast, res) = executeQueryImpl(context, flags, query, query_plan);
     else
-        std::tie(ast, res) = executeQueryImpl(context, flags, *std::get<std::shared_ptr<QueryPlanAndSets>>(query));
+        std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {

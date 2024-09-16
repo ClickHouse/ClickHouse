@@ -81,7 +81,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     };
 
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-    RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
+    RemoteQueryExecutor executor(shard_info.pool, {.text = std::move(query), .stage = QueryProcessingStage::Complete}, sample_block, new_context);
     executor.setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
         executor.setMainTable(table_id);
@@ -193,7 +193,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     auto execute_query_on_shard = [&](const auto & shard_info)
     {
         /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-        RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
+        RemoteQueryExecutor executor(shard_info.pool, {.text = std::move(query), .stage = QueryProcessingStage::Complete}, sample_block, new_context);
 
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);

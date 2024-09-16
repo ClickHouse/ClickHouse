@@ -114,9 +114,8 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
 
 void MultiplexedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
-    const QueryTextOrPlan & query,
+    const QueryToSend & query,
     const String & query_id,
-    UInt64 stage,
     ClientInfo & client_info,
     bool with_pending_data)
 {
@@ -171,14 +170,14 @@ void MultiplexedConnections::sendQuery(
                 modified_settings.parallel_replica_offset = i;
 
             replica_states[i].connection->sendQuery(
-                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+                timeouts, query, /* query_parameters */ {}, query_id, &modified_settings, &client_info, with_pending_data, {});
         }
     }
     else
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(
-            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+            timeouts, query, /* query_parameters */ {}, query_id, &modified_settings, &client_info, with_pending_data, {});
     }
 
     sent_query = true;

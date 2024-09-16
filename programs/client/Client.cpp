@@ -205,10 +205,9 @@ std::vector<String> Client::loadWarningMessages()
 
     std::vector<String> messages;
     connection->sendQuery(connection_parameters.timeouts,
-                          "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
+                          {.text = "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))", .stage = QueryProcessingStage::Complete},
                           {} /* query_parameters */,
                           "" /* query_id */,
-                          QueryProcessingStage::Complete,
                           &client_context->getSettingsRef(),
                           &client_context->getClientInfo(), false, {});
     while (true)

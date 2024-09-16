@@ -86,9 +86,8 @@ public:
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const QueryTextOrPlan & query,
+        const QueryToSend & query,
         const String & query_id,
-        UInt64 stage,
         ClientInfo & client_info,
         bool with_pending_data) override;
 

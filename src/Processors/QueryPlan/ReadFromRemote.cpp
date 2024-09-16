@@ -208,20 +208,15 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             for (auto & try_result : try_results)
                 connections.emplace_back(std::move(try_result.entry));
 
-            QueryTextOrPlan text_or_plan;
-            auto used_stage = my_stage;
-            if (my_shard.query_plan)
-            {
-                text_or_plan = my_shard.query_plan;
-                used_stage = QueryProcessingStage::QueryPlan;
-            }
-            else
-                text_or_plan = formattedAST(query);
+            QueryToSend query_to_send;
+            query_to_send.text = formattedAST(query);
+            query_to_send.plan = my_shard.query_plan;
+            query_to_send.stage = query_to_send.plan ? QueryProcessingStage::QueryPlan : my_stage;
 
             my_scalars["_shard_num"]
                 = Block{{DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::move(connections), text_or_plan, header, my_context, my_throttler, my_scalars, my_external_tables, used_stage);
+                std::move(connections), query_to_send, header, my_context, my_throttler, my_scalars, my_external_tables);
 
             auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
             QueryPipelineBuilder builder;
@@ -291,25 +286,19 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             GetPriorityForLoadBalancing::Func priority_func
                 = priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize());
 
-            QueryTextOrPlan text_or_plan;
-            auto used_stage = stage;
-            if (shard.query_plan)
-            {
-                text_or_plan = shard.query_plan;
-                used_stage = QueryProcessingStage::QueryPlan;
-            }
-            else
-                text_or_plan = formattedAST(query);
+            QueryToSend query_to_send;
+            query_to_send.text = formattedAST(query);
+            query_to_send.plan = shard.query_plan;
+            query_to_send.stage = query_to_send.plan ? QueryProcessingStage::QueryPlan : stage;
 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 shard.shard_info.pool,
-                text_or_plan,
+                query_to_send,
                 shard.header,
                 context,
                 throttler,
                 scalars,
                 external_tables,
-                used_stage,
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
@@ -325,18 +314,14 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     }
     else
     {
-        QueryTextOrPlan text_or_plan;
-        auto used_stage = stage;
-        if (shard.query_plan)
-        {
-            text_or_plan = shard.query_plan;
-            used_stage = QueryProcessingStage::QueryPlan;
-        }
-        else
-            text_or_plan = formattedAST(shard.query);
+
+        QueryToSend query_to_send;
+        query_to_send.text = formattedAST(shard.query);
+        query_to_send.plan = shard.query_plan;
+        query_to_send.stage = query_to_send.plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, text_or_plan, shard.header, context, throttler, scalars, external_tables, used_stage);
+            shard.shard_info.pool, query_to_send, shard.header, context, throttler, scalars, external_tables);
         remote_query_executor->setLogger(log);
 
         if (context->canUseTaskBasedParallelReplicas())
@@ -505,13 +490,12 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
-        query_string,
+        QueryToSend{.text = query_string, .stage = stage},
         output_stream->header,
         context,
         throttler,
         scalars,
         external_tables,
-        stage,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
 
     remote_query_executor->setLogger(log);

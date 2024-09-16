@@ -77,7 +77,8 @@ struct QueryState
     Block block_for_insert;
 
     /// Query text.
-    std::variant<String, std::shared_ptr<QueryPlanAndSets>> query;
+    String query;
+    std::shared_ptr<QueryPlanAndSets> plan_and_sets;
     /// Parsed query
     ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.

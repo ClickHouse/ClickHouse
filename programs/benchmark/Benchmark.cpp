@@ -471,7 +471,7 @@ private:
             entry->disconnect();
 
         RemoteQueryExecutor executor(
-            *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+            *entry, {.text = query, .stage = query_processing_stage}, {}, global_context, nullptr, Scalars(), Tables());
 
         if (!query_id.empty())
             executor.setQueryId(query_id);

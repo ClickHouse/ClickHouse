@@ -164,7 +164,7 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(), nullptr, getContext(), QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)

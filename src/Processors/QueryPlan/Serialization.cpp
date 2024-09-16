@@ -400,7 +400,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     subqueries.reserve(sets_from_subqueries.size());
     for (auto & set : sets_from_subqueries)
     {
-        QueryPlan::resolveReadFromTable(*set.plan, context);
+        QueryPlan::resolveReadFromTable(*set.plan, context, nullptr);
         makeSetsFromSubqueries(*set.plan, std::move(set.sets), context);
 
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
@@ -426,7 +426,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
 }
 
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context, const ASTPtr & query)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -485,6 +485,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     auto storage_limits = std::make_shared<StorageLimitsList>();
     storage_limits->emplace_back(buildStorageLimits(*context, options));
     select_query_info.storage_limits = std::move(storage_limits);
+    /// Query is needed for StorageDistributed now.
+    /// Distributed over Distributed is not supported properly now, but at least we can FetchColumns.
+    select_query_info.query = query;
 
     QueryPlan reading_plan;
     storage->read(
@@ -522,7 +525,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     return std::move(nodes_and_resource.second);
 }
 
-void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & context)
+void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & context, const ASTPtr & query)
 {
     std::stack<QueryPlan::Node *> stack;
     stack.push(plan.getRootNode());
@@ -535,15 +538,15 @@ void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & contex
             stack.push(child);
 
         if (node->children.empty())
-            plan.addResources(replaceReadingFromTable(*node, plan.nodes, context));
+            plan.addResources(replaceReadingFromTable(*node, plan.nodes, context, query));
     }
 }
 
-QueryPlan QueryPlan::resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context)
+QueryPlan QueryPlan::resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context, const ASTPtr & query)
 {
     auto & plan = plan_and_sets.plan;
 
-    resolveReadFromTable(plan, context);
+    resolveReadFromTable(plan, context, query);
 
     makeSetsFromStorage(std::move(plan_and_sets.sets_from_storage), context);
     makeSetsFromTuple(std::move(plan_and_sets.sets_from_tuple), context);

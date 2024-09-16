@@ -46,12 +46,11 @@ namespace ErrorCodes
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    const QueryTextOrPlan & query_,
+    const QueryToSend & query_,
     const Block & header_,
     ContextPtr context_,
     const Scalars & scalars_,
     const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_,
     GetPriorityForLoadBalancing::Func priority_func_)
     : header(header_)
@@ -59,7 +58,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , context(context_)
     , scalars(scalars_)
     , external_tables(external_tables_)
-    , stage(stage_)
     , extension(extension_)
     , priority_func(priority_func_)
 {
@@ -67,15 +65,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolPtr pool,
-    const QueryTextOrPlan & query_,
+    const QueryToSend & query_,
     const Block & header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
     const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, extension_)
 {
     create_connections = [this, pool, throttler, extension_](AsyncCallback)
     {
@@ -124,15 +121,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const QueryTextOrPlan & query_,
+    const QueryToSend & query_,
     const Block & header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
     const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, extension_)
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
     {
@@ -145,15 +141,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<Connection> connection_ptr,
-    const QueryTextOrPlan & query_,
+    const QueryToSend & query_,
     const Block & header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
     const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, extension_)
 {
     create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
     {
@@ -166,15 +161,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
-    const QueryTextOrPlan & query_,
+    const QueryToSend & query_,
     const Block & header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,
     const Scalars & scalars_,
     const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, extension_)
 {
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
     {
@@ -187,16 +181,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const QueryTextOrPlan & query_,
+    const QueryToSend & query_,
     const Block & header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,
     const Scalars & scalars_,
     const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_,
     GetPriorityForLoadBalancing::Func priority_func_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_, priority_func_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, extension_, priority_func_)
 {
     create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
@@ -390,7 +383,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
-    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
+    connections->sendQuery(timeouts, query, query_id, modified_client_info, true);
 
     established = false;
     sent_query = true;

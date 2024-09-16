@@ -1015,7 +1015,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
-                = std::make_shared<RemoteQueryExecutor>(std::move(connections), new_query_str, Block{}, query_context);
+                = std::make_shared<RemoteQueryExecutor>(std::move(connections), QueryToSend{.text = std::move(new_query_str), .stage = QueryProcessingStage::Complete}, Block{}, query_context);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote, settings.async_query_sending_for_remote));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
@@ -1125,13 +1125,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
-                new_query_str,
+                QueryToSend{.text = std::move(new_query_str), .stage = QueryProcessingStage::Complete},
                 Block{},
                 query_context,
                 /*throttler=*/nullptr,
                 Scalars{},
                 Tables{},
-                QueryProcessingStage::Complete,
                 extension);
 
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote, settings.async_query_sending_for_remote));

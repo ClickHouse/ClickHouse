@@ -306,7 +306,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     LOG_INFO(log, "Will convert database {} from Ordinary to Atomic", name_quoted);
 
     String create_database_query = fmt::format("CREATE DATABASE IF NOT EXISTS {}", tmp_name_quoted);
-    auto res = executeQuery(create_database_query, context, QueryFlags{ .internal = true }).second;
+    auto res = executeQuery(create_database_query, nullptr, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
     res = {};
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
@@ -346,7 +346,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
         String tmp_qualified_quoted_name = id.getFullTableName();
 
         String move_table_query = fmt::format("RENAME TABLE {} TO {}", qualified_quoted_name, tmp_qualified_quoted_name);
-        res = executeQuery(move_table_query, context, QueryFlags{ .internal = true }).second;
+        res = executeQuery(move_table_query, nullptr, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
         res = {};
     }
@@ -358,12 +358,12 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
 
     String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
     context->setSetting("force_remove_data_recursively_on_drop", false);
-    res = executeQuery(drop_query, context, QueryFlags{ .internal = true }).second;
+    res = executeQuery(drop_query, nullptr, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
     res = {};
 
     String rename_query = fmt::format("RENAME DATABASE {} TO {}", tmp_name_quoted, name_quoted);
-    res = executeQuery(rename_query, context, QueryFlags{ .internal = true }).second;
+    res = executeQuery(rename_query, nullptr, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
 
     LOG_INFO(log, "Finished database engine conversion of {}", name_quoted);
@@ -433,7 +433,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         /// Reload database just in case (and update logger name)
         String detach_query = fmt::format("DETACH DATABASE {}", backQuoteIfNeed(database_name));
-        auto res = executeQuery(detach_query, context, QueryFlags{ .internal = true }).second;
+        auto res = executeQuery(detach_query, nullptr, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
         res = {};
 

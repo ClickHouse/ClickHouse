@@ -52,7 +52,7 @@ RemoteInserter::RemoteInserter(
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
     connection.sendQuery(
-        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
+        timeouts, {.text = query, .stage = QueryProcessingStage::Complete}, /* query_parameters */ {}, "", &settings, &modified_client_info, false, {});
 
     while (true)
     {

@@ -88,10 +88,9 @@ void LocalConnection::sendProfileEvents()
 
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
-    const QueryTextOrPlan & query,
+    const QueryToSend & query,
     const NameToNameMap & query_parameters,
     const String & query_id,
-    UInt64 stage,
     const Settings *,
     const ClientInfo * client_info,
     bool,
@@ -127,9 +126,9 @@ void LocalConnection::sendQuery(
     state.emplace();
 
     state->query_id = query_id;
-    state->query = std::get<String>(query);
+    state->query = query.text;
     state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
-    state->stage = QueryProcessingStage::Enum(stage);
+    state->stage = QueryProcessingStage::Enum(query.stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
 
@@ -208,7 +207,7 @@ void LocalConnection::sendQuery(
 
     try
     {
-        state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
+        state->io = executeQuery(state->query, nullptr, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
         {

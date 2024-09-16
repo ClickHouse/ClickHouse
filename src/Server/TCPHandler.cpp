@@ -562,7 +562,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, state.plan_and_sets, query_context, QueryFlags{}, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -1888,16 +1888,10 @@ void TCPHandler::receiveQuery()
     state.compression = static_cast<Protocol::Compression>(compression);
     last_block_in.compression = state.compression;
 
+    readStringBinary(state.query, *in);
+
     if (state.stage == QueryProcessingStage::QueryPlan)
-    {
-        state.query = std::make_shared<QueryPlanAndSets>(QueryPlan::deserialize(*in));
-    }
-    else
-    {
-        String query;
-        readStringBinary(query, *in);
-        state.query = std::move(query);
-    }
+        state.plan_and_sets = std::make_shared<QueryPlanAndSets>(QueryPlan::deserialize(*in));
 
     Settings passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
@@ -1939,8 +1933,7 @@ void TCPHandler::receiveQuery()
         if (nonce.has_value())
             data += std::to_string(nonce.value());
         data += cluster_secret;
-        if (const auto * query_text = std::get_if<String>(&state.query))
-            data += *query_text;
+        data += state.query;
         data += state.query_id;
         data += client_info.initial_user;
 

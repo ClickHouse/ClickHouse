@@ -101,10 +101,9 @@ public:
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const QueryTextOrPlan & query,
+        const QueryToSend & query,
         const NameToNameMap& query_parameters,
         const String & query_id_/* = "" */,
-        UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,

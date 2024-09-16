@@ -5712,13 +5712,12 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
-                query_str,
+                QueryToSend{.text = std::move(query_str), .stage = QueryProcessingStage::Complete},
                 Block{},
                 query_context,
                 /*throttler=*/nullptr,
                 Scalars{},
                 Tables{},
-                QueryProcessingStage::Complete,
                 extension);
 
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote, settings.async_query_sending_for_remote));

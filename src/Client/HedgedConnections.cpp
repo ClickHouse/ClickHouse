@@ -142,9 +142,8 @@ void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 
 void HedgedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
-    const QueryTextOrPlan & query,
+    const QueryToSend & query,
     const String & query_id,
-    UInt64 stage,
     ClientInfo & client_info,
     bool with_pending_data)
 {
@@ -173,7 +172,7 @@ void HedgedConnections::sendQuery(
         hedged_connections_factory.skipReplicasWithTwoLevelAggregationIncompatibility();
     }
 
-    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaState & replica)
+    auto send_query = [this, timeouts, query, query_id, client_info, with_pending_data](ReplicaState & replica)
     {
         Settings modified_settings = settings;
 
@@ -203,7 +202,7 @@ void HedgedConnections::sendQuery(
         modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings.allow_experimental_analyzer));
 
         replica.connection->sendQuery(
-            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+            timeouts, query, /* query_parameters */ {}, query_id, &modified_settings, &client_info, with_pending_data, {});
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
         replica.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };

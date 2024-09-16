@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <list>
 #include <memory>
@@ -62,8 +63,8 @@ public:
     void serialize(WriteBuffer & out) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in);
 
-    static void resolveReadFromTable(QueryPlan & plan, const ContextPtr & context);
-    static QueryPlan resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+    static void resolveReadFromTable(QueryPlan & plan, const ContextPtr & context, const ASTPtr & query);
+    static QueryPlan resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context, const ASTPtr & query);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 

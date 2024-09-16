@@ -170,13 +170,13 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
+        pipeline = executeQuery(query, nullptr, context_copy, QueryFlags{ .internal = true }).second.pipeline;
         pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
     }
     else
     {
         pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, QueryToSend{.text = query, .stage = QueryProcessingStage::Complete}, empty_sample_block, context_copy), false, false, false));
     }
 
     return pipeline;
@@ -192,14 +192,14 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        return readInvalidateQuery(executeQuery(request, context_copy, QueryFlags{ .internal = true }).second.pipeline);
+        return readInvalidateQuery(executeQuery(request, nullptr, context_copy, QueryFlags{ .internal = true }).second.pipeline);
     }
     else
     {
         /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
         Block invalidate_sample_block;
         QueryPipeline pipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, QueryToSend{.text = request, .stage = QueryProcessingStage::Complete}, invalidate_sample_block, context_copy), false, false, false));
         return readInvalidateQuery(std::move(pipeline));
     }
 }

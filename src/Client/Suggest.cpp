@@ -164,7 +164,7 @@ void Suggest::load(IServerConnection & connection,
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
 {
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {});
+        timeouts, QueryToSend{.text = query, .stage = QueryProcessingStage::Complete}, {} /* query_parameters */, "" /* query_id */, nullptr, &client_info, false, {});
 
     while (true)
     {
