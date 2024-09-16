@@ -194,27 +194,30 @@ void ThreadPoolImpl<Thread>::checkIfMoreThreadsRequiredNoLock()
     // The current thread count is fixed during the function execution (due to the lock)
     size_t current_threads_count = threads.size();
 
-    while (true)
-    {
-        // Load the current value of currently_starting_threads (which can change during iterations)
-        size_t starting_threads_count = currently_starting_threads.load();
+    // while (true)
+    // {
 
         // Calculate the target number of threads required (fixed scheduled_jobs + 1)
         size_t target_threads = std::min(max_threads, scheduled_jobs + 1);
 
+        // Load the current value of currently_starting_threads (which can change during iterations)
+       // size_t starting_threads_count = currently_starting_threads.load();
+
         // Calculate how many more threads are required based on current threads and starting threads
-        size_t more_required = (target_threads > current_threads_count + starting_threads_count)
-                               ? target_threads - current_threads_count - starting_threads_count
+        size_t more_required = (target_threads +2 > current_threads_count)
+                               ? target_threads + 2 - current_threads_count
                                : 0;
+        
+        more_threads_required.store(more_required);
 
         // Atomically update more_threads_required and break if successful
-        if (more_threads_required.compare_exchange_weak(more_required, more_required))
-        {
-            break;
-        }
+        // if (more_threads_required.compare_exchange_weak(starting_threads_count, starting_threads_count))
+        // {
+        //     break;
+        // }
 
         // Retry with updated values if compare_exchange_weak fails
-    }
+    // }
 }
 
 template <typename Thread>
@@ -252,7 +255,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 {
                     new_thread = std::make_unique<ThreadFromThreadPool>(*this);
                     // Successfully created the thread, break the loop
-                    break;
+                   break;
                 }
                 catch (...)
                 {
@@ -312,7 +315,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         }
 
-        ++scheduled_jobs;
         checkIfMoreThreadsRequiredNoLock();
 
         /// Place the job in the queue if there are enough threads
@@ -323,6 +325,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                      propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
                      /// capture_frame_pointers
                      DB::Exception::enable_job_stack_trace);
+
+        ++scheduled_jobs;
 
         if (thread_id != threads.end())
             (*thread_id)->start(thread_id);
