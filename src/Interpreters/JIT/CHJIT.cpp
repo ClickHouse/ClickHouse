@@ -6,7 +6,10 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <llvm/Analysis/CGSCCPassManager.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -483,29 +486,45 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
 
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
-    llvm::PassManagerBuilder pass_manager_builder;
-    llvm::legacy::PassManager mpm;
-    llvm::legacy::FunctionPassManager fpm(&module);
-    pass_manager_builder.OptLevel = 3;
-    pass_manager_builder.SLPVectorize = true;
-    pass_manager_builder.LoopVectorize = true;
-    pass_manager_builder.RerollLoops = true;
-    pass_manager_builder.VerifyInput = true;
-    pass_manager_builder.VerifyOutput = true;
-    machine->adjustPassManager(pass_manager_builder);
+    /// llvm::PassManagerBuilder pass_manager_builder;
+    /// llvm::legacy::PassManager mpm;
+    /// llvm::legacy::FunctionPassManager fpm(&module);
+    /// pass_manager_builder.OptLevel = 3;
+    /// pass_manager_builder.SLPVectorize = true;
+    /// pass_manager_builder.LoopVectorize = true;
+    /// pass_manager_builder.RerollLoops = true;
+    /// pass_manager_builder.VerifyInput = true;
+    /// pass_manager_builder.VerifyOutput = true;
+    /// machine->adjustPassManager(pass_manager_builder);
 
-    fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-    mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+    /// fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+    /// mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+    ///
+    /// pass_manager_builder.populateFunctionPassManager(fpm);
+    /// pass_manager_builder.populateModulePassManager(mpm);
+    ///
+    /// fpm.doInitialization();
+    /// for (auto & function : module)
+    ///     fpm.run(function);
+    /// fpm.doFinalization();
+    ///
+    /// mpm.run(module);
 
-    pass_manager_builder.populateFunctionPassManager(fpm);
-    pass_manager_builder.populateModulePassManager(mpm);
+    llvm::LoopAnalysisManager lam;
+    llvm::FunctionAnalysisManager fam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
 
-    fpm.doInitialization();
-    for (auto & function : module)
-        fpm.run(function);
-    fpm.doFinalization();
+    llvm::PassBuilder pb;
 
-    mpm.run(module);
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O2);
+    mpm.run(module, mam);
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
@@ -538,8 +557,8 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         cpu,
         features.getString(),
         options,
-        llvm::None,
-        llvm::None,
+        std::nullopt,
+        std::nullopt,
         llvm::CodeGenOpt::Aggressive,
         jit);
 
