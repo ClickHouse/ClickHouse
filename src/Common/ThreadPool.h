@@ -24,46 +24,7 @@
 #include <Common/StackTrace.h>
 #include <base/scope_guard.h>
 
-class JobWithPriority
-{
-public:
-    using Job = std::function<void()>;
-
-    Job job;
-    Priority priority;
-    CurrentMetrics::Increment metric_increment;
-    DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
-
-    /// Call stacks of all jobs' schedulings leading to this one
-    std::vector<StackTrace::FramePointers> frame_pointers;
-    bool enable_job_stack_trace = false;
-    Stopwatch job_create_time;
-
-    JobWithPriority(
-        Job job_, Priority priority_, CurrentMetrics::Metric metric,
-        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-        bool capture_frame_pointers)
-        : job(job_), priority(priority_), metric_increment(metric),
-        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
-    {
-        if (!capture_frame_pointers)
-            return;
-        /// Save all previous jobs call stacks and append with current
-        frame_pointers = DB::Exception::getThreadFramePointers();
-        frame_pointers.push_back(StackTrace().getFramePointers());
-    }
-
-    bool operator<(const JobWithPriority & rhs) const
-    {
-        return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
-    }
-
-    UInt64 elapsedMicroseconds() const
-    {
-        return job_create_time.elapsedMicroseconds();
-    }
-
-};
+class JobWithPriority;
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -87,34 +48,38 @@ public:
     class ThreadFromThreadPool
     {
     public:
-        // Constructor to initialize but not start the thread
-        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool_);
+        /// Constructor to initialize and start the thread (but not associate it with the pool)
+        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
 
-        // Starts the internal thread.
-        void startThread(typename std::list<ThreadFromThreadPool>::iterator& it);
+        // shift the thread state from preparing to running to allow worker to start to work
+        void start(typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator& it);
 
-        // Starts the internal thread, and stores the new job - it will be pushed to the queue
-        // by the thread itself once it starts and takes the lock for the first time.
-        void startThread(typename std::list<ThreadFromThreadPool>::iterator& it, JobWithPriority new_job);
-
-        // Destructor to join the thread if needed
+        // Destructor to join the thread if needed (shift the state to failed if was not running)
         ~ThreadFromThreadPool();
 
     private:
-        std::mutex mutex;
-        ThreadPoolImpl& parent_pool;
-        std::optional<Thread> thread;
-        std::optional<JobWithPriority> new_job;
+        ThreadPoolImpl* parent_pool;
+        Thread thread;
+
+        enum class ThreadState
+        {
+            Preparing,
+            Running,
+            Destructing
+        };
+
+        // Atomic state to track the thread's state
+        std::atomic<ThreadState> thread_state;
 
         // stores the position of the thread in the parent thread pool list
-        typename std::list<ThreadFromThreadPool>::iterator& thread_it{nullopt};
+        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator& thread_it;
 
         // remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
 
-        // Starts the internal thread
-        void startThreadNoLock();
-
+        // worker does a busy loop (with yeld) while state is prapareing
+        // after that immediately return if the state changed to failed, or start the
+        // main working loop if the status is running
         void worker();
     };
 
@@ -189,6 +154,9 @@ public:
 private:
     friend class GlobalThreadPool;
 
+    std::atomic<size_t> more_threads_required;
+    std::atomic<size_t> currently_starting_threads;
+
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
@@ -207,7 +175,7 @@ private:
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
-    std::list<ThreadFromThreadPool> threads;
+    std::list<std::unique_ptr<ThreadFromThreadPool>> threads;
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
