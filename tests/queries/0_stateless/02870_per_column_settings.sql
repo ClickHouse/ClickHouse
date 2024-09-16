@@ -71,3 +71,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1; -- {serverError UNKNOWN_SETTING}
+
+-- https://github.com/ClickHouse/ClickHouse/issues/69634
+CREATE TABLE t0 (c0 Int8) ENGINE = CollapsingMergeTree(c0) ORDER BY tuple();
+ALTER TABLE t0 MODIFY COLUMN c0 REMOVE SETTINGS; -- {serverError BAD_ARGUMENTS}
+DROP TABLE t0;
