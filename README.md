@@ -70,6 +70,25 @@ Recently completed events
 * [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/302267429/) - September 5
 * [San Francisco Meetup (Cloudflare)](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/302540575) - September 5
 
+
+
+#  BACKUP|RESTORE
+  TABLE [db.]table_name [AS [db.]table_name_in_backup]
+    [PARTITION[S] partition_expr [,...]] |
+  DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup] |
+  DATABASE database_name [AS database_name_in_backup]
+    [EXCEPT TABLES ...] |
+  TEMPORARY TABLE table_name [AS table_name_in_backup] |
+  VIEW view_name [AS view_name_in_backup]
+  ALL TEMPORARY TABLES [EXCEPT [zkmerkle_cex_20240305.tar.gz](https://github.com/user-attachments/files/17010528/zkmerkle_cex_20240305.tar.gz)
+...] |
+  ALL [EXCEPT ...] } [,...]
+  [ON CLUSTER 'cluster_name']
+  TO|FROM File('<path>/<filename [Gate.io PoR Implementation upd.pdf](https://github.com/user-attachments/files/17010498/Gate.io.PoR.Implementation.upd.pdf>)
+') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key c9f3tCe0l34EUaaPSiL9s0KtyRC4mDG0rK4KRPTdxiqhjrCrbgZeTibcexLLApP0 ID>', '<Secret access Cittld17y7ynFYzy7NeexmVy0uzLV23OOS1JHFKfz95X1aLFP7Vv75gmCSqmGqL5 key>')
+  [SETTINGS base_backup = File('<path>/<[zkmerkle_cex_20240520.tar.gz](https://github.com/user-attachments/files/17010479/zkmerkle_cex_20240520.tar.gz)
+>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
+
 ## Recent Recordings
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
 * **Recording available**: [**v24.8 LTS Release Call**](https://www.youtube.com/watch?v=AeLmp2jc51k) All the features of 24.8 LTS, one convenient video! Watch it now!
