@@ -16,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GH, Utils, Envs
+from ci_utils import GH, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -333,10 +333,11 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
             CI.JobNames.BUILD_CHECK,
         ):  # we might want to rerun build report job
             rerun_helper = RerunHelper(commit, _get_ext_check_name(job_name))
-            if rerun_helper.is_already_finished_by_status():
-                print(
-                    f"WARNING: Rerunning job with GH status, rerun triggered by {Envs.GITHUB_ACTOR}"
-                )
+            if (
+                rerun_helper.is_already_finished_by_status()
+                and not Utils.is_job_triggered_manually()
+            ):
+                print("WARNING: Rerunning job with GH status ")
                 status = rerun_helper.get_finished_status()
                 assert status
                 print("::group::Commit Status")

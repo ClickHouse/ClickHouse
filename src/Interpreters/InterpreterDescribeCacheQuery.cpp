@@ -20,7 +20,6 @@ static Block getSampleBlock()
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "max_size"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "max_elements"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "max_file_segment_size"},
-        ColumnWithTypeAndName{std::make_shared<DataTypeUInt8>(), "is_initialized"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "boundary_alignment"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt8>>(), "cache_on_write_operations"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt8>>(), "cache_hits_threshold"},
@@ -51,7 +50,6 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res_columns[i++]->insert(settings.max_size);
     res_columns[i++]->insert(settings.max_elements);
     res_columns[i++]->insert(settings.max_file_segment_size);
-    res_columns[i++]->insert(cache->isInitialized());
     res_columns[i++]->insert(settings.boundary_alignment);
     res_columns[i++]->insert(settings.cache_on_write_operations);
     res_columns[i++]->insert(settings.cache_hits_threshold);

@@ -808,6 +808,7 @@ const char * auto_contributors[] {
     "Mingliang Pan",
     "Misko Lee",
     "Misz606",
+    "Miсhael Stetsyuk",
     "MochiXu",
     "Mohamad Fadhil",
     "Mohammad Arab Anvari",

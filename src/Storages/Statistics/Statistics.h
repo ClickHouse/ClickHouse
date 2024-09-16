@@ -54,7 +54,7 @@ using StatisticsPtr = std::shared_ptr<IStatistics>;
 class ColumnStatistics
 {
 public:
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_);
+    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
     void serialize(WriteBuffer & buf);
     void deserialize(ReadBuffer & buf);
@@ -73,12 +73,10 @@ public:
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
-    String column_name;
     std::map<StatisticsType, StatisticsPtr> stats;
     UInt64 rows = 0; /// the number of rows in the column
 };
 
-struct ColumnDescription;
 class ColumnsDescription;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
@@ -93,7 +91,7 @@ public:
     using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
-    ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
+    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 
     void registerValidator(StatisticsType type, Validator validator);

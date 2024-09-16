@@ -143,8 +143,6 @@ class DebianArtifactory:
             print(f"  {cmd}")
             Shell.check(cmd, strict=True)
             Shell.check("sync")
-        time.sleep(10)
-        Shell.check(f"lsof +D R2MountPoint.MOUNT_POINT", verbose=True)
 
     def test_packages(self):
         Shell.check("docker pull ubuntu:latest", strict=True)

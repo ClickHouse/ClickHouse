@@ -542,7 +542,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
+    Field value = convertFieldToType(expression_value, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
@@ -661,16 +661,6 @@ void ValuesBlockInputFormat::resetReadBuffer()
 {
     buf.reset();
     IInputFormat::resetReadBuffer();
-}
-
-void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)
-{
-    if (parameters == context->getQueryParameters())
-        return;
-
-    auto context_copy = Context::createCopy(context);
-    context_copy->setQueryParameters(parameters);
-    context = std::move(context_copy);
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

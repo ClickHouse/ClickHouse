@@ -44,7 +44,7 @@ namespace ErrorCodes
 namespace zkutil
 {
 
-/// Preferred size of multi command (in the number of operations)
+/// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
 struct ShuffleHost
@@ -479,16 +479,15 @@ public:
 
     Int64 getClientID();
 
-    /// Remove the node with the subtree.
-    /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
-    /// Otherwise if someone concurrently adds or removes a node in the subtree, the result is undefined.
-    void removeRecursive(const std::string & path, uint32_t remove_nodes_limit = 100);
+    /// Remove the node with the subtree. If someone concurrently adds or removes a node
+    /// in the subtree, the result is undefined.
+    void removeRecursive(const std::string & path);
 
-    /// Same as removeRecursive but in case if Keeper does not supports RemoveRecursive and
-    /// if someone concurrently removes a node in the subtree, this will not cause errors.
+    /// Remove the node with the subtree. If someone concurrently removes a node in the subtree,
+    /// this will not cause errors.
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
-    Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 100);
+    void tryRemoveRecursive(const std::string & path);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
     /// Node defined as RemoveException will not be deleted.

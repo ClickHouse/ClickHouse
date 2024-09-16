@@ -258,20 +258,6 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     char tmp = '0';
     readChar(tmp, buf);
     x = tmp != '0';
-
-    if (!buf.eof() && isAlphaASCII(tmp))
-    {
-        if (tmp == 't' || tmp == 'T')
-        {
-            assertStringCaseInsensitive("rue", buf);
-            x = true;
-        }
-        else if (tmp == 'f' || tmp == 'F')
-        {
-            assertStringCaseInsensitive("alse", buf);
-            x = false;
-        }
-    }
 }
 
 template <typename ReturnType = void>
@@ -1754,7 +1740,6 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
-    assertEOF(buf);
     return res;
 }
 
@@ -1762,9 +1747,7 @@ template <typename T>
 inline bool tryParse(T & res, const char * data, size_t size)
 {
     ReadBufferFromMemory buf(data, size);
-    if (!tryReadText(res, buf))
-        return false;
-    return buf.eof();
+    return tryReadText(res, buf);
 }
 
 template <typename T>

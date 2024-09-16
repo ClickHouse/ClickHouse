@@ -239,36 +239,15 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
             case AuthenticationType::SSL_CERTIFICATE:
-            {
                 for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
                 {
                     for (const auto & subject : auth_data.getSSLCertificateSubjects().at(type))
                     {
                         if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
                             return true;
-
-                        // Wildcard support (1 only)
-                        if (subject.contains('*'))
-                        {
-                            auto prefix = std::string_view(subject).substr(0, subject.find('*'));
-                            auto suffix = std::string_view(subject).substr(subject.find('*') + 1);
-                            auto slashes = std::count(subject.begin(), subject.end(), '/');
-
-                            for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
-                            {
-                                bool matches_wildcard = certificate_subject.starts_with(prefix) && certificate_subject.ends_with(suffix);
-
-                                // '*' must not represent a '/' in URI, so check if the number of '/' are equal
-                                bool matches_slashes = slashes == count(certificate_subject.begin(), certificate_subject.end(), '/');
-
-                                if (matches_wildcard && matches_slashes)
-                                    return true;
-                            }
-                        }
                     }
                 }
                 return false;
-            }
 
             case AuthenticationType::SSH_KEY:
 #if USE_SSH
