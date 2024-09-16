@@ -42,7 +42,6 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , tracked_file_ttl_sec(engine_settings.tracked_file_ttl_sec)
     , buckets(engine_settings.buckets)
     , processing_threads_num(engine_settings.processing_threads_num)
-    // , processing_threads_num_from_cpu_cores(processing_threads_num_from_cpu_cores_)
 {
 }
 
@@ -91,7 +90,6 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , buckets(getOrDefault(json, "buckets", "", 0))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
-    , processing_threads_num_from_cpu_cores(false)
 {
 }
 
@@ -102,13 +100,14 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
     return ObjectStorageQueueTableMetadata(json);
 }
 
-void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, ObjectStorageQueueSettings & settings)
+bool ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
 {
-    if (processing_threads_num_from_cpu_cores
-        && processing_threads_num != from_zk.processing_threads_num)
+    if (processing_threads_num != from_zk.processing_threads_num)
     {
-        processing_threads_num = settings.processing_threads_num = static_cast<UInt32>(from_zk.processing_threads_num);
+        processing_threads_num = from_zk.processing_threads_num;
+        return true;
     }
+    return false;
 }
 
 void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const

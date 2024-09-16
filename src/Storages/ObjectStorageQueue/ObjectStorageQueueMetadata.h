@@ -62,8 +62,8 @@ public:
 
     static void syncWithKeeper(
         const fs::path & zookeeper_path,
-        const ObjectStorageQueueTableMetadata & table_metadata,
-        const ObjectStorageQueueSettings & settings,
+        ObjectStorageQueueTableMetadata & table_metadata,
+        ObjectStorageQueueSettings & settings,
         LoggerPtr log);
 
     void shutdown();
@@ -78,7 +78,6 @@ public:
     Bucket getBucketForPath(const std::string & path) const;
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
-    static size_t getBucketsNum(const ObjectStorageQueueSettings & settings);
     static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & settings);
 
     void checkTableMetadataEquals(const ObjectStorageQueueMetadata & other);

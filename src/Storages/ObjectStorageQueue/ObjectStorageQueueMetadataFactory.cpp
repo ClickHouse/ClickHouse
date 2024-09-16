@@ -29,7 +29,6 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         auto & metadata_from_table = metadata->getTableMetadata();
         auto & metadata_from_keeper = it->second.metadata->getTableMetadata();
 
-        metadata_from_table.adjustFromKeeper(metadata_from_keeper, settings);
         metadata_from_table.checkEquals(metadata_from_keeper);
 
         it->second.ref_count += 1;

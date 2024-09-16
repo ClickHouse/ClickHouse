@@ -55,7 +55,7 @@ private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
 
-    const std::shared_ptr<ObjectStorageQueueSettings> queue_settings;
+    const std::unique_ptr<ObjectStorageQueueSettings> queue_settings;
     const fs::path zk_path;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;

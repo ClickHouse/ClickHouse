@@ -25,9 +25,8 @@ struct ObjectStorageQueueTableMetadata
     const UInt64 tracked_files_limit;
     const UInt64 tracked_file_ttl_sec;
     const UInt64 buckets;
-    const UInt64 processing_threads_num;
+    UInt64 processing_threads_num; /// Can be changed from keeper.
     const String last_processed_path;
-    bool processing_threads_num_from_cpu_cores;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
@@ -40,7 +39,7 @@ struct ObjectStorageQueueTableMetadata
 
     String toString() const;
 
-    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, ObjectStorageQueueSettings & settings);
+    bool adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 

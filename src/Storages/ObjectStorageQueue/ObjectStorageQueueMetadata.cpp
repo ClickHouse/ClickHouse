@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
@@ -114,7 +115,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     : settings(settings_)
     , table_metadata(table_metadata_)
     , zookeeper_path(zookeeper_path_)
-    , buckets_num(getBucketsNum(settings_))
+    , buckets_num(getBucketsNum(table_metadata_))
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
@@ -183,15 +184,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
     }
 }
 
-size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueSettings & settings)
-{
-    if (settings.buckets)
-        return settings.buckets;
-    if (settings.processing_threads_num)
-        return settings.processing_threads_num;
-    return 0;
-}
-
 size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueTableMetadata & settings)
 {
     if (settings.buckets)
@@ -219,12 +211,15 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
 
 void ObjectStorageQueueMetadata::syncWithKeeper(
     const fs::path & zookeeper_path,
-    const ObjectStorageQueueTableMetadata & table_metadata,
-    const ObjectStorageQueueSettings & settings,
+    ObjectStorageQueueTableMetadata & table_metadata,
+    ObjectStorageQueueSettings & settings,
     LoggerPtr log)
 {
     const auto table_metadata_path = zookeeper_path / "metadata";
-    const auto buckets_num = getBucketsNum(settings);
+    const auto buckets_num = settings.buckets.changed ? settings.buckets
+        : settings.processing_threads_num.changed ? settings.processing_threads_num
+        : std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+
     const auto metadata_paths = settings.mode == ObjectStorageQueueMode::ORDERED
         ? ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num)
         : ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
@@ -241,7 +236,12 @@ void ObjectStorageQueueMetadata::syncWithKeeper(
 
             LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
 
-            table_metadata.adjustFromKeeper(metadata_from_zk, settings);
+            if (table_metadata.adjustFromKeeper(metadata_from_zk))
+            {
+                settings.processing_threads_num = static_cast<UInt32>(table_metadata.processing_threads_num);
+                LOG_TRACE(log, "Using `processing_threads_num` from keeper: {}", settings.processing_threads_num);
+            }
+
             table_metadata.checkEquals(metadata_from_zk);
             return;
         }

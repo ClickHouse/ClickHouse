@@ -22,7 +22,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -64,9 +63,7 @@ namespace
 
     void checkAndAdjustSettings(
         ObjectStorageQueueSettings & queue_settings,
-        bool is_attach,
-        const LoggerPtr & log,
-        bool & processing_threads_num_from_cpu_cores)
+        bool is_attach)
     {
         if (!is_attach && !queue_settings.mode.changed)
         {
@@ -84,22 +81,6 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
-        }
-
-        if (!is_attach)
-        {
-            if (queue_settings.processing_threads_num.changed)
-            {
-                if (queue_settings.processing_threads_num == 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting processing_threads_num cannot be zero");
-            }
-            else
-            {
-                processing_threads_num_from_cpu_cores = true;
-                queue_settings.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
-
-                LOG_TRACE(log, "Set `processing_threads_num` to {}", queue_settings.processing_threads_num);
-            }
         }
     }
 
@@ -162,8 +143,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    // bool processing_threads_num_from_cpu_cores = false;
-    // checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::SECONDARY_CREATE, log, processing_threads_num_from_cpu_cores);
     checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
@@ -191,13 +170,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
-
-    // if (processing_threads_num_from_cpu_cores)
-    // {
-    //     engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
-    //         "processing_threads_num",
-    //         queue_settings->processing_threads_num.value);
-    // }
 }
 
 void StorageObjectStorageQueue::startup()
