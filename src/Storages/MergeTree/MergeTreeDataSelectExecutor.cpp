@@ -41,6 +41,8 @@
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -73,6 +75,11 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
+}
+
+namespace FailPoints
+{
+    extern const char slowdown_index_analysis[];
 }
 
 
@@ -1564,6 +1571,11 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     {
         if (query_status)
             query_status->checkTimeLimit();
+
+        fiu_do_on(FailPoints::slowdown_index_analysis,
+        {
+            sleepForMilliseconds(1000);
+        });
 
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && part_values->find(part->name) == part_values->end())
