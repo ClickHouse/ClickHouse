@@ -735,11 +735,14 @@ def test_mutation_with_broken_projection(cluster):
         f"ALTER TABLE {table_name} DELETE WHERE _part == 'all_0_0_0_4' SETTINGS mutations_sync = 1"
     )
 
+    parts = get_parts(node, table_name)
     # All parts changes because this is how alter delete works,
     # but all parts apart from the first have only hardlinks to files in previous part.
-    assert ["all_0_0_0_5", "all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == get_parts(
-        node, table_name
-    ) or ["all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == get_parts(node, table_name)
+    assert ["all_0_0_0_5", "all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == parts or [
+        "all_1_1_0_5",
+        "all_2_2_0_5",
+        "all_3_3_0_5",
+    ] == parts
 
     # Still broken because it was hardlinked.
     broken = get_broken_projections_info(node, table_name)
@@ -752,11 +755,13 @@ def test_mutation_with_broken_projection(cluster):
         f"ALTER TABLE {table_name} DELETE WHERE c == 13 SETTINGS mutations_sync = 1"
     )
 
-    assert ["all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == get_parts(
-        node, table_name
-    ) or ["all_0_0_0_6", "all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == get_parts(
-        node, table_name
-    )
+    parts = get_parts(node, table_name)
+    assert ["all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == parts or [
+        "all_0_0_0_6",
+        "all_1_1_0_6",
+        "all_2_2_0_6",
+        "all_3_3_0_6",
+    ] == parts
 
     # Not broken anymore.
     assert not get_broken_projections_info(node, table_name)
