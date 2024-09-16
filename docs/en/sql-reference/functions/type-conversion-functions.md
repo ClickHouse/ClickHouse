@@ -3906,7 +3906,7 @@ Result:
 
 ## toDateTime64
 
-Converts the argument to the [DateTime64](../data-types/datetime64.md) data type.
+Converts an input value to a value of type [DateTime64](../data-types/datetime64.md).
 
 **Syntax**
 
@@ -3918,7 +3918,7 @@ toDateTime64(expr, scale, [timezone])
 
 - `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
 - `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-- `timezone` - Time zone of the specified datetime64 object.
+- `timezone` (optional) - Time zone of the specified datetime64 object.
 
 **Returned value**
 
@@ -3977,9 +3977,136 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 
 ## toDateTime64OrZero
 
+Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns the min value of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
+
+**Syntax**
+
+``` sql
+toDateTime64OrZero(expr, scale, [timezone])
+```
+
+**Arguments**
+
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+- `timezone` (optional) - Time zone of the specified DateTime64 object.
+
+**Returned value**
+
+- A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64`: `1970-01-01 01:00:00.000`. [DateTime64](../data-types/datetime64.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT toDateTime64OrZero('2008-10-12 00:00:00 00:30:30', 3) AS invalid_arg
+```
+
+Result:
+
+```response
+┌─────────────invalid_arg─┐
+│ 1970-01-01 01:00:00.000 │
+└─────────────────────────┘
+```
+
+**See also**
+
+- [toDateTime64](#todatetime64).
+- [toDateTime64OrNull](#todatetime64ornull).
+- [toDateTime64OrDefault](#todatetime64ordefault).
+
 ## toDateTime64OrNull
 
+Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns `NULL` if an invalid argument is received.
+
+**Syntax**
+
+``` sql
+toDateTime64OrNull(expr, scale, [timezone])
+```
+
+**Arguments**
+
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+- `timezone` (optional) - Time zone of the specified DateTime64 object.
+
+**Returned value**
+
+- A calendar date and time of day, with sub-second precision, otherwise `NULL`. [DateTime64](../data-types/datetime64.md)/[NULL](../data-types/nullable.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toDateTime64OrNull('1976-10-18 00:00:00.30', 3) AS valid_arg,
+    toDateTime64OrNull('1976-10-18 00:00:00 30', 3) AS invalid_arg
+```
+
+Result:
+
+```response
+┌───────────────valid_arg─┬─invalid_arg─┐
+│ 1976-10-18 00:00:00.300 │        ᴺᵁᴸᴸ │
+└─────────────────────────┴─────────────┘
+```
+
+**See also**
+
+- [toDateTime64](#todatetime64).
+- [toDateTime64OrZero](#todatetime64orzero).
+- [toDateTime64OrDefault](#todatetime64ordefault).
+
 ## toDateTime64OrDefault
+
+Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md), 
+but returns either the default value of [DateTime64](../data-types/datetime64.md)
+or the provided default if an invalid argument is received.
+
+**Syntax**
+
+``` sql
+toDateTime64OrNull(expr, scale, [timezone, default])
+```
+
+**Arguments**
+
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+- `timezone` (optional) - Time zone of the specified DateTime64 object.
+- `default` (optional) - Default value to return if an invalid argument is received. [DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64` or the `default` value if provided. [DateTime64](../data-types/datetime64.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toDateTime64OrDefault('1976-10-18 00:00:00 30', 3) AS invalid_arg,
+    toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3)) AS invalid_arg_with_default
+```
+
+Result:
+
+```response
+┌─────────────invalid_arg─┬─invalid_arg_with_default─┐
+│ 1970-01-01 01:00:00.000 │  2000-12-31 23:00:00.000 │
+└─────────────────────────┴──────────────────────────┘
+```
+
+**See also**
+
+- [toDateTime64](#todatetime64).
+- [toDateTime64OrZero](#todatetime64orzero).
+- [toDateTime64OrNull](#todatetime64ornull).
 
 ## toDecimal32
 

@@ -629,5 +629,6 @@ def test_roles_cache():
     check()
 
     instance.query("DROP USER " + ", ".join(users))
-    instance.query("DROP ROLE " + ", ".join(roles))
+    if roles:
+        instance.query("DROP ROLE " + ", ".join(roles))
     instance.query("DROP TABLE tbl")

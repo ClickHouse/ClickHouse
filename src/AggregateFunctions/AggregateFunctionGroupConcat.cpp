@@ -116,15 +116,17 @@ class GroupConcatImpl final
     SerializationPtr serialization;
     UInt64 limit;
     const String delimiter;
+    const DataTypePtr type;
 
 public:
     GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
         : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
             {data_type_}, parameters_, std::make_shared<DataTypeString>())
-        , serialization(this->argument_types[0]->getDefaultSerialization())
         , limit(limit_)
         , delimiter(delimiter_)
+        , type(data_type_)
     {
+        serialization = isFixedString(type) ? std::make_shared<DataTypeString>()->getDefaultSerialization() : this->argument_types[0]->getDefaultSerialization();
     }
 
     String getName() const override { return name; }
@@ -140,7 +142,14 @@ public:
         if (cur_data.data_size != 0)
             cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-        cur_data.insert(columns[0], serialization, row_num, arena);
+        if (isFixedString(type))
+        {
+            ColumnWithTypeAndName col = {columns[0]->getPtr(), type, "column"};
+            const auto & col_str = castColumn(col, std::make_shared<DataTypeString>());
+            cur_data.insert(col_str.get(), serialization, row_num, arena);
+        }
+        else
+            cur_data.insert(columns[0], serialization, row_num, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
