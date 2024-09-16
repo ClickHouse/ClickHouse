@@ -30,14 +30,12 @@ public:
     /// Return true if update was made
     bool waitUpdate();
 
-    bool isReplicated() const;
+    bool supportsPeriodicUpdate() const;
 
 private:
     class INamedCollectionsStorage;
     class LocalStorage;
-    class LocalStorageEncrypted;
     class ZooKeeperStorage;
-    class ZooKeeperStorageEncrypted;
 
     std::shared_ptr<INamedCollectionsStorage> storage;
 

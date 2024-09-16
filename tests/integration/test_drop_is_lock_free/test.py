@@ -176,7 +176,7 @@ def test_query_is_permanent(transaction, permanent, exclusive_table):
 
     select_handler = node.get_query_request(
         f"""
-            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0, max_threads=1;
+            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0;
         """,
         query_id=query_id,
     )

@@ -31,7 +31,7 @@ TEST(ActionsVisitor, VisitLiteral)
         size_limits_for_set,
         size_t(0),
         name_and_types,
-        ActionsDAG(name_and_types),
+        std::make_shared<ActionsDAG>(name_and_types),
         std::make_shared<PreparedSets>(),
         false /* no_subqueries */,
         false /* no_makeset */,
@@ -39,7 +39,7 @@ TEST(ActionsVisitor, VisitLiteral)
         info);
     ActionsVisitor(visitor_data).visit(ast);
     auto actions = visitor_data.getActions();
-    ASSERT_EQ(actions.getResultColumns().back().type->getTypeId(), expect_type->getTypeId());
+    ASSERT_EQ(actions->getResultColumns().back().type->getTypeId(), expect_type->getTypeId());
 }
 
 TEST(ActionsVisitor, VisitLiteralWithType)
@@ -61,7 +61,7 @@ TEST(ActionsVisitor, VisitLiteralWithType)
         size_limits_for_set,
         size_t(0),
         name_and_types,
-        ActionsDAG(name_and_types),
+        std::make_shared<ActionsDAG>(name_and_types),
         std::make_shared<PreparedSets>(),
         false /* no_subqueries */,
         false /* no_makeset */,
@@ -69,5 +69,5 @@ TEST(ActionsVisitor, VisitLiteralWithType)
         info);
     ActionsVisitor(visitor_data).visit(ast);
     auto actions = visitor_data.getActions();
-    ASSERT_EQ(actions.getResultColumns().back().type->getTypeId(), date_type->getTypeId());
+    ASSERT_EQ(actions->getResultColumns().back().type->getTypeId(), date_type->getTypeId());
 }

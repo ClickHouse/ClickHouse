@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/boundingRatio
-sidebar_position: 114
+sidebar_position: 2
 title: boundingRatio
 ---
 

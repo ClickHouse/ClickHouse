@@ -9,7 +9,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Disks/DiskLocal.h>
-#include <Core/Settings.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadBuffer.h>
@@ -786,7 +785,7 @@ struct SetupNodeCollector
         if (snapshot_result.storage == nullptr)
         {
             std::cerr << "No initial snapshot found" << std::endl;
-            initial_storage = std::make_unique<Coordination::KeeperMemoryStorage>(
+            initial_storage = std::make_unique<Coordination::KeeperStorage>(
                 /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
             initial_storage->initializeSystemNodes();
         }
@@ -932,7 +931,7 @@ struct SetupNodeCollector
 
         std::cerr << "Generating snapshot with starting data" << std::endl;
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(initial_storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta);
+        DB::KeeperStorageSnapshot snapshot(initial_storage.get(), snapshot_meta);
         snapshot_manager->serializeSnapshotToDisk(snapshot);
 
         new_nodes = false;
@@ -940,9 +939,9 @@ struct SetupNodeCollector
 
     std::mutex nodes_mutex;
     DB::KeeperContextPtr keeper_context;
-    std::shared_ptr<Coordination::KeeperMemoryStorage> initial_storage;
+    Coordination::KeeperStoragePtr initial_storage;
     std::unordered_set<std::string> nodes_created_during_replay;
-    std::optional<Coordination::KeeperSnapshotManager<Coordination::KeeperMemoryStorage>> snapshot_manager;
+    std::optional<Coordination::KeeperSnapshotManager> snapshot_manager;
     bool new_nodes = false;
 };
 
@@ -1239,13 +1238,9 @@ void Runner::createConnections()
 
 std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
 {
-    zkutil::ShuffleHost host;
-    host.host = connection_info.host;
-    host.secure = connection_info.secure;
-    host.original_index = static_cast<UInt8>(connection_info_idx);
-    host.address = Poco::Net::SocketAddress{connection_info.host};
-
-    zkutil::ShuffleHosts nodes{host};
+    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, static_cast<UInt8>(connection_info_idx), connection_info.secure};
+    std::vector<Coordination::ZooKeeper::Node> nodes;
+    nodes.push_back(node);
     zkutil::ZooKeeperArgs args;
     args.session_timeout_ms = connection_info.session_timeout_ms;
     args.connection_timeout_ms = connection_info.connection_timeout_ms;
@@ -1312,9 +1307,9 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
     while (!children_span.empty())
     {
         Coordination::Requests ops;
-        for (size_t i = 0; i < 1000 && !children_span.empty(); ++i)
+        for (size_t i = 0; i < 1000 && !children.empty(); ++i)
         {
-            removeRecursive(zookeeper, fs::path(path) / children_span.back());
+            removeRecursive(zookeeper, fs::path(path) / children.back());
             ops.emplace_back(zkutil::makeRemoveRequest(fs::path(path) / children_span.back(), -1));
             children_span = children_span.subspan(0, children_span.size() - 1);
         }

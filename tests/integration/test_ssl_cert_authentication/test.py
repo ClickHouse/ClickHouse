@@ -43,10 +43,15 @@ def started_cluster():
 config = """<clickhouse>
     <openSSL>
         <client>
-            <verificationMode>strict</verificationMode>
+            <verificationMode>none</verificationMode>
+
             <certificateFile>{certificateFile}</certificateFile>
             <privateKeyFile>{privateKeyFile}</privateKeyFile>
             <caConfig>{caConfig}</caConfig>
+
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
         </client>
     </openSSL>
 </clickhouse>"""
@@ -333,80 +338,3 @@ def test_create_user():
         == 'emma\tssl_certificate\t{"common_names":["client2"]}\n'
         'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
     )
-
-    instance.query("DROP USER emma")
-
-
-def test_x509_san_support():
-    assert (
-        execute_query_native(
-            instance, "SELECT currentUser()", user="jerome", cert_name="client4"
-        )
-        == "jerome\n"
-    )
-    assert (
-        execute_query_https("SELECT currentUser()", user="jerome", cert_name="client4")
-        == "jerome\n"
-    )
-    assert (
-        instance.query(
-            "SELECT name, auth_type, auth_params FROM system.users WHERE name='jerome'"
-        )
-        == 'jerome\tssl_certificate\t{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar","URI:spiffe:\\\\/\\\\/foo.com\\\\/baz"]}\n'
-    )
-    # user `jerome` is configured via xml config, but `show create` should work regardless.
-    assert (
-        instance.query("SHOW CREATE USER jerome")
-        == "CREATE USER jerome IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
-    )
-
-    instance.query(
-        "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://foo.com/bar', 'URI:spiffe://foo.com/baz'"
-    )
-    assert (
-        execute_query_https("SELECT currentUser()", user="jemma", cert_name="client4")
-        == "jemma\n"
-    )
-    assert (
-        instance.query("SHOW CREATE USER jemma")
-        == "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
-    )
-
-    instance.query("DROP USER jemma")
-
-
-def test_x509_san_wildcard_support():
-    assert (
-        execute_query_native(
-            instance, "SELECT currentUser()", user="stewie", cert_name="client5"
-        )
-        == "stewie\n"
-    )
-
-    assert (
-        instance.query(
-            "SELECT name, auth_type, auth_params FROM system.users WHERE name='stewie'"
-        )
-        == 'stewie\tssl_certificate\t{"subject_alt_names":["URI:spiffe:\\\\/\\\\/bar.com\\\\/foo\\\\/*\\\\/far"]}\n'
-    )
-
-    assert (
-        instance.query("SHOW CREATE USER stewie")
-        == "CREATE USER stewie IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://bar.com/foo/*/far\\'\n"
-    )
-
-    instance.query(
-        "CREATE USER brian IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://bar.com/foo/*/far'"
-    )
-
-    assert (
-        execute_query_https("SELECT currentUser()", user="brian", cert_name="client6")
-        == "brian\n"
-    )
-
-    assert (
-        instance.query("SHOW CREATE USER brian")
-        == "CREATE USER brian IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://bar.com/foo/*/far\\'\n"
-    )
-
-    instance.query("DROP USER brian")

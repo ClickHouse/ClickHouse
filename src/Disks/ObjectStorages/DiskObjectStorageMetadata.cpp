@@ -205,7 +205,7 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
     }
 
     total_size += size;
-    keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}, {}});
+    keys_with_meta.emplace_back(std::move(key), ObjectMetadata{size, {}, {}});
 }
 
 ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
@@ -222,7 +222,11 @@ ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
 
 bool DiskObjectStorageMetadata::getWriteFullObjectKeySetting()
 {
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     return Context::getGlobalContextInstance()->getServerSettings().storage_metadata_write_full_object_key;
+#else
+    return false;
+#endif
 }
 
 }
