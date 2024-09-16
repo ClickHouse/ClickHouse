@@ -1,6 +1,6 @@
 #include <Access/UsersConfigAccessStorage.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Quota.h>
+#include <Common/SSH/Wrappers.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -10,8 +10,7 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
-#include <Common/SSHWrapper.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
 #include <Core/Settings.h>
@@ -195,23 +194,18 @@ namespace
             /// Fill list of allowed certificates.
             Poco::Util::AbstractConfiguration::Keys keys;
             config.keys(certificates_config, keys);
+            boost::container::flat_set<String> common_names;
             for (const String & key : keys)
             {
                 if (key.starts_with("common_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
-                    user->auth_data.addSSLCertificateSubject(SSLCertificateSubjects::Type::CN, std::move(value));
-                }
-                else if (key.starts_with("subject_alt_name"))
-                {
-                    String value = config.getString(certificates_config + "." + key);
-                    if (value.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ssl_certificates.subject_alt_name to not be empty");
-                    user->auth_data.addSSLCertificateSubject(SSLCertificateSubjects::Type::SAN, std::move(value));
+                    common_names.insert(std::move(value));
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
             }
+            user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
         }
         else if (has_ssh_keys)
         {
@@ -220,7 +214,7 @@ namespace
 
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
-            std::vector<SSHKey> keys;
+            std::vector<ssh::SSHKey> keys;
             for (const String& entry : entries)
             {
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
@@ -243,7 +237,7 @@ namespace
 
                     try
                     {
-                        keys.emplace_back(SSHKeyFactory::makePublicKeyFromBase64(base64_key, type));
+                        keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(base64_key, type));
                     }
                     catch (const std::invalid_argument &)
                     {
@@ -255,7 +249,7 @@ namespace
             }
             user->auth_data.setSSHKeys(std::move(keys));
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
         }
         else if (has_http_auth)
@@ -377,7 +371,6 @@ namespace
             if (databases)
             {
                 user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
-                user->access.grantWithGrantOption(AccessType::TABLE_ENGINE);
                 user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
                 for (const String & database : *databases)
                     user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
@@ -886,7 +879,8 @@ void UsersConfigAccessStorage::load(
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
             parseFromConfig(*new_config);
             access_control.getChangesNotifier().sendNotifications();
-        });
+        },
+        /* already_loaded = */ false);
 }
 
 void UsersConfigAccessStorage::startPeriodicReloading()

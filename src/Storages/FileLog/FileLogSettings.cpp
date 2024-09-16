@@ -3,7 +3,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Common/Exception.h>
-#include <Core/BaseSettings.h>
 
 
 namespace DB

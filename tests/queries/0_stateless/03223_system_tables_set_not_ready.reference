@@ -1,5 +1,0 @@
-system.distribution_queue	1
-system.rocksdb	1
-system.databases	1
-system.mutations	1
-system.replication_queue	1

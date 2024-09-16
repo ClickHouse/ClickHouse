@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT -nm --query """
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '100Ki', path = '$disk_name', disk = 's3_disk', load_metadata_asynchronously = 0);
+SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '100Ki', path = '$disk_name', disk = 's3_disk');
 """
 
 $CLICKHOUSE_CLIENT -nm --query """

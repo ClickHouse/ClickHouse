@@ -25,7 +25,7 @@ struct IdentifierSemanticImpl
 /// Static class to manipulate IdentifierSemanticImpl via ASTIdentifier
 struct IdentifierSemantic
 {
-    enum class ColumnMatch : uint8_t
+    enum class ColumnMatch
     {
         NoMatch,
         ColumnName,       /// column qualified with column names list
