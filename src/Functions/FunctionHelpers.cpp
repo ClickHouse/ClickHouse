@@ -1,10 +1,10 @@
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
 
 
@@ -13,11 +13,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+extern const int LOGICAL_ERROR;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
@@ -27,8 +27,7 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
     const ColumnConst * res = assert_cast<const ColumnConst *>(column);
 
-    if (checkColumn<ColumnString>(&res->getDataColumn())
-        || checkColumn<ColumnFixedString>(&res->getDataColumn()))
+    if (checkColumn<ColumnString>(&res->getDataColumn()) || checkColumn<ColumnFixedString>(&res->getDataColumn()))
         return res;
 
     return {};
@@ -78,7 +77,7 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             {
                 nullable_res = makeNullable(col.column);
             }
-            return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
+            return ColumnWithTypeAndName{nullable_res, nested_type, col.name};
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
@@ -102,18 +101,22 @@ String withOrdinalEnding(size_t i)
 {
     switch (i)
     {
-        case 0: return "1st";
-        case 1: return "2nd";
-        case 2: return "3rd";
-        default: return std::to_string(i) + "th";
+        case 0:
+            return "1st";
+        case 1:
+            return "2nd";
+        case 2:
+            return "3rd";
+        default:
+            return std::to_string(i) + "th";
     }
-
 }
 
-void validateArgumentsImpl(const IFunction & func,
-                           const ColumnsWithTypeAndName & arguments,
-                           size_t argument_offset,
-                           const FunctionArgumentDescriptors & descriptors)
+void validateArgumentsImpl(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    size_t argument_offset,
+    const FunctionArgumentDescriptors & descriptors)
 {
     for (size_t i = 0; i < descriptors.size(); ++i)
     {
@@ -124,13 +127,14 @@ void validateArgumentsImpl(const IFunction & func,
         const auto & arg = arguments[i + argument_offset];
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
-            throw Exception(error_code,
-                            "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                            withOrdinalEnding(argument_offset + i),
-                            descriptor.name,
-                            func.getName(),
-                            descriptor.type_name,
-                            arg.type ? arg.type->getName() : "<?>");
+            throw Exception(
+                error_code,
+                "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
+                withOrdinalEnding(argument_offset + i),
+                descriptor.name,
+                func.getName(),
+                descriptor.type_name,
+                arg.type ? arg.type->getName() : "<?>");
     }
 }
 
@@ -150,26 +154,35 @@ int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const Col
     return 0;
 }
 
-void validateFunctionArguments(const IFunction & func,
-                               const ColumnsWithTypeAndName & arguments,
-                               const FunctionArgumentDescriptors & mandatory_args,
-                               const FunctionArgumentDescriptors & optional_args)
+void validateFunctionArguments(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    const FunctionArgumentDescriptors & mandatory_args,
+    const FunctionArgumentDescriptors & optional_args)
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto argument_singular_or_plural = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
+        auto argument_singular_or_plural
+            = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
 
         String expected_args_string;
         if (!mandatory_args.empty() && !optional_args.empty())
-            expected_args_string = fmt::format("{} mandatory {} and {} optional {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args), optional_args.size(), argument_singular_or_plural(optional_args));
+            expected_args_string = fmt::format(
+                "{} mandatory {} and {} optional {}",
+                mandatory_args.size(),
+                argument_singular_or_plural(mandatory_args),
+                optional_args.size(),
+                argument_singular_or_plural(optional_args));
         else if (!mandatory_args.empty() && optional_args.empty())
-            expected_args_string = fmt::format("{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
+            expected_args_string = fmt::format(
+                "{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
         else if (mandatory_args.empty() && !optional_args.empty())
             expected_args_string = fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args));
         else
             expected_args_string = "0 arguments";
 
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
             func.getName(),
             expected_args_string,
@@ -205,7 +218,8 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
     return {nested_columns, offsets->data()};
 }
 
-ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
+ColumnPtr
+wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
 {
     ColumnPtr result_null_map_column;
 
@@ -269,10 +283,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnPtr & null_map)
         return src;
 
     ColumnPtr result_null_map_column;
-
-    /// If result is already nullable.
     ColumnPtr src_not_nullable = src;
-
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src.get()))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
@@ -287,9 +298,16 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnPtr & null_map)
         result_null_map_column = std::move(mutable_result_null_map_column);
         return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
     }
+    else if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
+    {
+        const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+        ColumnPtr result_null_map = ColumnUInt8::create(1, null_map_data[0] || const_src->isNullAt(0));
+        const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
+        auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
+        return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map), const_src->size());
+    }
     else
         return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
-
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
