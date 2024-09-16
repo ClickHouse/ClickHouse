@@ -1236,7 +1236,10 @@ def test_system_users_required_privileges():
     instance.query("GRANT SELECT ON test.* TO u2 WITH GRANT OPTION")
     instance.query(f"RESTORE ALL FROM {backup_name}", user="u2")
 
-    assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 DEFAULT ROLE r1\n"
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH no_password DEFAULT ROLE r1\n"
+    )
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
         ["GRANT SELECT ON test.* TO u1", "GRANT r1 TO u1"]
     )
