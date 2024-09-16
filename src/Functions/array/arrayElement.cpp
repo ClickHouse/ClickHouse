@@ -21,8 +21,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-#pragma clang diagnostic ignored "-Wcomma"
-
 namespace DB
 {
 
