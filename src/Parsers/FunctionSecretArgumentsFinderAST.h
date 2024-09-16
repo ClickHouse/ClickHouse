@@ -13,42 +13,43 @@ class FunctionAST : public AbstractFunction
 {
 public:
     class ArgumentAST : public Argument
+    {
+    public:
+        explicit ArgumentAST(const IAST * argument_) : argument(argument_) {}
+        std::unique_ptr<AbstractFunction> getFunction() const override
         {
-        public:
-            explicit ArgumentAST(const IAST * argument_) : argument(argument_) {}
-            std::unique_ptr<AbstractFunction> getFunction() const override
+            if (const auto * f = argument->as<ASTFunction>())
+                return std::make_unique<FunctionAST>(*f);
+            return nullptr;
+        }
+        bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
+        bool tryGetString(String * res, bool allow_identifier) const override
+        {
+            if (const auto * literal = argument->as<ASTLiteral>())
             {
-                if (const auto * f = argument->as<ASTFunction>())
-                    return std::make_unique<FunctionAST>(*f);
-                return nullptr;
+                if (literal->value.getType() != Field::Types::String)
+                    return false;
+                if (res)
+                    *res = literal->value.safeGet<String>();
+                return true;
             }
-            bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
-            bool tryGetString(String * res, bool allow_identifier) const override
+
+            if (allow_identifier)
             {
-                if (const auto * literal = argument->as<ASTLiteral>())
+                if (const auto * id = argument->as<ASTIdentifier>())
                 {
-                    if (literal->value.getType() != Field::Types::String)
-                        return false;
                     if (res)
-                        *res = literal->value.safeGet<String>();
+                        *res = id->name();
                     return true;
                 }
-
-                if (allow_identifier)
-                {
-                    if (const auto * id = argument->as<ASTIdentifier>())
-                    {
-                        if (res)
-                            *res = id->name();
-                        return true;
-                    }
-                }
-
-                return false;
             }
-        private:
-            const IAST * argument = nullptr;
-        };
+
+            return false;
+        }
+    private:
+        const IAST * argument = nullptr;
+    };
+
     class ArgumentsAST : public Arguments
     {
     public:
