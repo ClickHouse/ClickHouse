@@ -264,8 +264,8 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    const auto read_from_format_info = prepareReadingFromFormat(
-        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+    const auto read_from_format_info
+        = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -331,10 +331,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, paths.front(), paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().data_path, paths.size()))
     {
-        paths.push_back(*new_key);
+        paths.emplace_back(*new_key);
     }
     configuration->setPaths(paths);
 
@@ -369,7 +368,7 @@ void StorageObjectStorage::truncate(
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
-        objects.emplace_back(key);
+        objects.emplace_back(key.data_path);
 
     object_storage->removeObjectsIfExist(objects);
 }

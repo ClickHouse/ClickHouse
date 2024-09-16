@@ -1,17 +1,18 @@
 #pragma once
-#include <boost/noncopyable.hpp>
-#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
+#include <boost/noncopyable.hpp>
 #include "PartitionColumns.h"
+
+#include "Storages/ObjectStorage/DataFileInfo.h"
 
 namespace DB
 {
-
 class IDataLakeMetadata : boost::noncopyable
 {
 public:
     virtual ~IDataLakeMetadata() = default;
-    virtual Strings getDataFiles() const = 0;
+    virtual DataFileInfos getDataFileInfos() const = 0;
     virtual NamesAndTypesList getTableSchema() const = 0;
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
     virtual const DataLakePartitionColumns & getPartitionColumns() const = 0;

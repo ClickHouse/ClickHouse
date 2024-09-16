@@ -43,8 +43,8 @@ public:
     Path getPath() const override { return path; }
     void setPath(const Path & path_) override { path = path_; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override { paths = paths_; }
+    const DataFileInfos & getPaths() const override { return paths; }
+    void setPaths(const DataFileInfos & paths_) override { paths = paths_; }
     std::string getPathWithoutGlobs() const override;
 
     String getNamespace() const override { return ""; }
@@ -69,7 +69,7 @@ private:
 
     String url;
     String path;
-    std::vector<String> paths;
+    DataFileInfos paths;
 };
 
 }

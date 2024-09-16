@@ -246,7 +246,7 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const std::vector<String> keys;
+    const DataFileInfos keys;
     std::atomic<size_t> index = 0;
     bool ignore_non_existent_files;
 };

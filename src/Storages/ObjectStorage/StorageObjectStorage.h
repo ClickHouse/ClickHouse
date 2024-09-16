@@ -1,12 +1,18 @@
 #pragma once
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <optional>
 #include <Core/SchemaInferenceMode.h>
-#include <Storages/IStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include "Storages/ObjectStorage/DataFileInfo.h"
+
+#include <memory>
+
 
 namespace DB
 {
@@ -14,6 +20,7 @@ namespace DB
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
+
 
 /**
  * A general class containing implementation for external table engines
@@ -25,7 +32,26 @@ class StorageObjectStorage : public IStorage
 public:
     class Configuration;
     using ConfigurationPtr = std::shared_ptr<Configuration>;
-    using ObjectInfo = RelativePathWithMetadata;
+
+    struct ObjectInfo : public RelativePathWithMetadata
+    {
+        explicit ObjectInfo(
+            String relative_path_,
+            std::optional<ObjectMetadata> metadata_ = std::nullopt,
+            std::shared_ptr<NamesAndTypesList> initial_schema_ = nullptr,
+            std::shared_ptr<const ActionsDAG> schema_transformer_ = nullptr)
+            : RelativePathWithMetadata(std::move(relative_path_), std::move(metadata_))
+            , initial_schema(std::move(initial_schema_))
+            , schema_transformer(std::move(schema_transformer_))
+        {
+        }
+
+        ObjectInfo() = default;
+
+    public:
+        std::shared_ptr<NamesAndTypesList> initial_schema;
+        std::shared_ptr<const ActionsDAG> schema_transformer;
+    };
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
 
@@ -173,8 +199,8 @@ public:
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
+    virtual const DataFileInfos & getPaths() const = 0;
+    virtual void setPaths(const DataFileInfos & paths) = 0;
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;

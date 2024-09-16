@@ -643,6 +643,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     if (table_node || table_function_node)
     {
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
         auto table_expression_query_info = select_query_info;

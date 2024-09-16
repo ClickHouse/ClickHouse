@@ -8,8 +8,97 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
+#    include <Poco/JSON/Array.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
+
 namespace DB
 {
+
+
+/**
+ * Iceberg supports the next data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
+ * - Primitive types:
+ *   - boolean
+ *   - int
+ *   - long
+ *   - float
+ *   - double
+ *   - decimal(P, S)
+ *   - date
+ *   - time (time of day in microseconds since midnight)
+ *   - timestamp (in microseconds since 1970-01-01)
+ *   - timestamptz (timestamp with timezone, stores values in UTC timezone)
+ *   - string
+ *   - uuid
+ *   - fixed(L) (fixed-length byte array of length L)
+ *   - binary
+ * - Complex types:
+ *   - struct(field1: Type1, field2: Type2, ...) (tuple of typed values)
+ *   - list(nested_type)
+ *   - map(Key, Value)
+ *
+ * Example of table schema in metadata:
+ * {
+ *     "type" : "struct",
+ *     "schema-id" : 0,
+ *     "fields" : [
+ *     {
+ *         "id" : 1,
+ *         "name" : "id",
+ *         "required" : false,
+ *         "type" : "long"
+ *     },
+ *     {
+ *         "id" : 2,
+ *         "name" : "array",
+ *         "required" : false,
+ *         "type" : {
+ *             "type" : "list",
+ *             "element-id" : 5,
+ *             "element" : "int",
+ *             "element-required" : false
+ *     },
+ *     {
+ *         "id" : 3,
+ *         "name" : "data",
+ *         "required" : false,
+ *         "type" : "binary"
+ *     }
+ * }
+ */
+class IcebergSchemaProcessor
+{
+    using Node = ActionsDAG::Node;
+
+public:
+    void addIcebergTableSchema(Poco::JSON::Object::Ptr ptr);
+    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
+    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
+
+private:
+    std::map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
+    std::map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
+    std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+
+    NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
+    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
+    DataTypePtr getSimpleType(const String & type_name);
+    std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
+        [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema);
+
+    bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+
+    const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
+
+    Int32 current_old_id = -1;
+    Int32 current_new_id = -1;
+
+    // std::pair<const Node *, const Node *>
+    // getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
+};
+
 
 /**
  * Useful links:
@@ -73,11 +162,11 @@ public:
         Int32 format_version_,
         String manifest_list_file_,
         Int32 current_schema_id_,
-        NamesAndTypesList schema_);
+        IcebergSchemaProcessor schema_processor);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
-    Strings getDataFiles() const override;
+    DataFileInfos getDataFileInfos() const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return schema; }
@@ -97,19 +186,20 @@ public:
         ConfigurationPtr configuration,
         ContextPtr local_context);
 
-private:
     size_t getVersion() const { return metadata_version; }
 
+private:
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;
-    Int32 current_schema_id;
-    NamesAndTypesList schema;
-    mutable Strings data_files;
+    const Int32 current_schema_id;
+    mutable DataFileInfos data_file_infos;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
+    mutable IcebergSchemaProcessor schema_processor;
+    NamesAndTypesList schema;
     LoggerPtr log;
 };
 

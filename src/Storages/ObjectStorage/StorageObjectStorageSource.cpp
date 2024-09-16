@@ -1,22 +1,25 @@
 #include "StorageObjectStorageSource.h"
-#include <Storages/VirtualColumnUtils.h>
+#include <optional>
+#include <Core/Settings.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/Sources/ConstChunkGenerator.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/Archives/createArchiveReader.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <IO/Archives/createArchiveReader.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include <Core/Settings.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+
 
 namespace fs = std::filesystem;
-
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
@@ -27,8 +30,7 @@ namespace CurrentMetrics
     extern const Metric StorageObjectStorageThreads;
     extern const Metric StorageObjectStorageThreadsActive;
     extern const Metric StorageObjectStorageThreadsScheduled;
-}
-
+    }
 namespace DB
 {
 
@@ -138,7 +140,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(fs::path(configuration->getNamespace()) / key);
+                paths.push_back(fs::path(configuration->getNamespace()) / key.data_path);
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -362,16 +364,29 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
         }
 
+        Block initial_header = read_from_format_info.format_header;
+
+        if (object_info->initial_schema)
+        {
+            Block sample_header;
+            for (const auto & [name, type] : *object_info->initial_schema)
+            {
+                sample_header.insert({type->createColumn(), type, name});
+            }
+            initial_header = sample_header;
+        }
+
+
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
-            read_from_format_info.format_header,
+            initial_header,
             context_,
             max_block_size,
             format_settings,
             need_only_count ? 1 : max_parsing_threads,
             std::nullopt,
-            true/* is_remote_fs */,
+            true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
@@ -382,6 +397,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        if (object_info->schema_transformer)
+        {
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(object_info->schema_transformer->clone());
+            builder.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
+            });
+        }
+
 
         if (read_from_format_info.columns_description.hasDefaults())
         {
@@ -569,7 +594,10 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 return {};
             }
 
-            new_batch = std::move(result.value());
+            for (const auto & relative_metadata : *result)
+            {
+                new_batch.emplace_back(std::make_shared<ObjectInfo>(relative_metadata->relative_path, relative_metadata->metadata));
+            }
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
                 if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
@@ -639,7 +667,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
         for (auto && key : keys)
         {
-            auto object_info = std::make_shared<ObjectInfo>(key);
+            auto object_info = std::make_shared<ObjectInfo>(key.data_path, std::nullopt, key.initial_schema, key.schema_transform);
             read_keys_->emplace_back(object_info);
         }
     }
@@ -658,17 +686,17 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         ObjectMetadata object_metadata{};
         if (ignore_non_existent_files)
         {
-            auto metadata = object_storage->tryGetObjectMetadata(key);
+            auto metadata = object_storage->tryGetObjectMetadata(key.data_path);
             if (!metadata)
                 continue;
         }
         else
-            object_metadata = object_storage->getObjectMetadata(key);
+            object_metadata = object_storage->getObjectMetadata(key.data_path);
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
 
-        return std::make_shared<ObjectInfo>(key, object_metadata);
+        return std::make_shared<ObjectInfo>(key.data_path, object_metadata, key.initial_schema, key.schema_transform);
     }
 }
 

@@ -6,6 +6,10 @@ sidebar_label: Iceberg
 
 # Iceberg Table Engine
 
+:::warning 
+We strongly advise against using the Iceberg Table Engine right now because ClickHouse wasn’t originally designed to support tables that have externally changing schemas. As a result, some features that work with regular tables may be unavailable or may not function correctly (especially for the old analyzer). We recommend using the [Iceberg Table Function](/docs/en/sql-reference/table-functions/iceberg.md) instead (right now it is sufficient, because CH supports only partial read-only interface for Iceberg tables)."
+:::
+
 This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure and locally stored tables.
 
 ## Create Table
@@ -59,6 +63,15 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 
 Table engine `Iceberg` is an alias to `IcebergS3` now.
+
+**Schema Evolution**
+At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
+* int -> long
+* float -> double
+* decimal(P, S) -> decimal(P', S) where P' > P. 
+
+Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
+
 
 ## See also
 
