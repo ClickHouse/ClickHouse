@@ -161,21 +161,22 @@ def check_valid_configuration(filename, password):
     run_test()
 
 
+def check_invalid_configuration(filename, password):
+    stop_all_clickhouse()
+    for node in nodes:
+        setupSsl(node, filename, password)
+
+    nodes[0].start_clickhouse(expected_to_fail=True)
+    nodes[0].wait_for_log_line(
+        "OpenSSLException: EVPKey::loadKey.*error:0480006C:PEM routines::no start line",
+    )
+
+
 def test_secure_raft_works(started_cluster):
     check_valid_configuration("WithoutPassPhrase", None)
 
 
 def test_secure_raft_works_with_password(started_cluster):
-    def check_invalid_configuration(filename, password):
-        stop_all_clickhouse()
-        for node in nodes:
-            setupSsl(node, filename, password)
-
-        nodes[0].start_clickhouse(expected_to_fail=True)
-        nodes[0].contains_in_log(
-            "OpenSSLException: EVPKey::loadKey(string): error:0480006C:PEM routines::no start line"
-        )
-
     check_valid_configuration("WithoutPassPhrase", "unusedpassword")
     check_invalid_configuration("WithPassPhrase", "wrongpassword")
     check_invalid_configuration("WithPassPhrase", "")

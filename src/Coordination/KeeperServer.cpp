@@ -125,9 +125,9 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
     }
 
-    asio_opts.ssl_context_provider_server_ = [ctx_params = params, certificate_data, disabled_protocols]
+    asio_opts.ssl_context_provider_server_ = [params, certificate_data, disabled_protocols]
     {
-        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_SERVER_USE, ctx_params);
+        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_SERVER_USE, params);
         context.disableProtocols(disabled_protocols);
         SSL_CTX * ssl_ctx = context.takeSslContext();
         SSL_CTX_set_cert_cb(ssl_ctx, callSetCertificate, reinterpret_cast<void *>(certificate_data.get()));
