@@ -94,7 +94,7 @@ private:
     GptjModel model;
     GptVocab vocab;
     int n_threads = std::min(4u, std::thread::hardware_concurrency());
-    int n_batch = 32;
+    //int n_batch = 32;
     int n_past;
     bool model_loaded = false;
     bool eval_success = true;

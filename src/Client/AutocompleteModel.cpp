@@ -139,6 +139,9 @@ std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer& lexer) {
     }
 
     auto recs = transformer_model.getRecsTopN(preprocessed_for_tf, recs_number);
+
+    recs = postprocessRecs(recs);
+
     if (!markov_all.empty()) {
         auto [markov_all_rec, prob] = markov_all.predictNextWithProb(preprocessed_for_markov);
 
@@ -147,7 +150,6 @@ std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer& lexer) {
         }
     }
 
-    recs = postprocessRecs(recs);
     replaceWithMarkovPredictions(recs, preprocessed_for_markov);
     deleteDuplicatesKeepOrder(recs);
 
@@ -521,7 +523,6 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "DOUBLE_SHA1_HASH",
     "DROP",
     "ELSE",
-    "EMPTY",
     "ENABLED",
     "END",
     "ENFORCED",
@@ -537,7 +538,6 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "EXPLAIN",
     "EXPRESSION",
     "EXTERNAL",
-    "EXTRACT",
     "FALSE",
     "FETCH",
     "FILE",
@@ -599,7 +599,6 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "LAST",
     "LAYOUT",
     "LEADING",
-    "LEFT",
     "LESS",
     "LESSOREQUALS",
     "LEVEL",
@@ -613,14 +612,12 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "LOCAL",
     "LTRIM",
     "MATCH",
-    "MATERIALIZE",
     "MATERIALIZED",
     "MCS",
     "MEMORY",
     "MI",
     "MICROSECOND",
     "MILLISECOND",
-    "MINUS",
     "MINUTE",
     "MM",
     "MOD",
@@ -659,10 +656,8 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "PERMISSIVE",
     "PIPELINE",
     "PLAN",
-    "PLUS",
     "POLICY",
     "POPULATE",
-    "POSITION",
     "PRECEDING",
     "PRECISION",
     "PREWHERE",
@@ -676,7 +671,6 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "QUERY",
     "QUOTA",
     "RANDOMIZED",
-    "RANGE",
     "READONLY",
     "REALM",
     "RECOMPRESS",
@@ -695,7 +689,6 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "RESTRICTIVE",
     "RESUME",
     "REVOKE",
-    "RIGHT",
     "ROLE",
     "ROLES",
     "ROLLBACK",
@@ -766,14 +759,12 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "TRUE",
     "TRUNCATE",
     "TTL",
-    "TUPLE",
     "TYPE",
     "UNBOUNDED",
     "UNFREEZE",
     "UNION",
     "UNIQUE",
     "UNSIGNED",
-    "UNTUPLE",
     "UPDATE",
     "URL",
     "USE",
@@ -798,13 +789,7 @@ const std::unordered_set<std::string> AutocompleteModel::keywords = {
     "YEAR",
     "YYYY",
     "ZKPATH",
-    "AND",
-    "OR",
-    "NOT",
-    "BETWEEN",
     "GLOBAL",
-    "IN",
-    "LIKE",
-    "EXISTS",
-    "NULL",
 };
+
+/// TODO: add DATE(WEEK, DAY ...) operators as a separate group (like operators, literals, etc)

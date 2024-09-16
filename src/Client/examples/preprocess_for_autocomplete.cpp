@@ -51,10 +51,12 @@ int main() {
             while (std::getline(input_file, line)) {
                 std::vector<std::string> result = preprocessStringQuery(line, model);
 
+                // Those are bad examples, not gonna take them
                 if (result.size() >= 2) {
                     if (result[0] == "SELECT" && result[1] == "Operator") {
-                        std::cout << entry.path() << "\n";
-                        std::cout << line << "\n";
+                        continue;
+                        // std::cout << entry.path() << "\n";
+                        // std::cout << line << "\n";
                     }
                 }
 
