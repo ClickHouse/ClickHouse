@@ -79,7 +79,7 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
     )
     assert (
         node1.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1'"
+            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1' order by query_start_time_microseconds desc limit 1"
         )
         == "102\n"
     )
@@ -151,7 +151,7 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
     )
     assert (
         node2.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2'"
+            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2' order by query_start_time_microseconds desc limit 1"
         )
         == "52\n"
     )
@@ -222,7 +222,7 @@ def test_concurrent_threads_soft_limit_defined_1(started_cluster):
     )
     assert (
         node3.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_3'"
+            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_3' order by query_start_time_microseconds desc limit 1"
         )
         == "3\n"
     )
@@ -288,7 +288,7 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
         lambda x: x == 1,
     )
     s_count = node4.query(
-        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_4'"
+        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_4' order by query_start_time_microseconds desc limit 1"
     ).strip()
     if s_count:
         count = int(s_count)
