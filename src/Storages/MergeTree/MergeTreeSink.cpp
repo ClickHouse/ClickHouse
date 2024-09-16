@@ -34,18 +34,7 @@ struct MergeTreeSink::DelayedChunk
 };
 
 
-MergeTreeSink::~MergeTreeSink()
-{
-    if (!delayed_chunk)
-        return;
-
-    for (auto & partition : delayed_chunk->partitions)
-    {
-        partition.temp_part.cancel();
-    }
-
-    delayed_chunk.reset();
-}
+MergeTreeSink::~MergeTreeSink() = default;
 
 MergeTreeSink::MergeTreeSink(
     StorageMergeTree & storage_,
@@ -70,8 +59,11 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::onFinish()
 {
-    chassert(!isCancelled());
     finishDelayedChunk();
+}
+
+void MergeTreeSink::onCancel()
+{
 }
 
 void MergeTreeSink::consume(Chunk & chunk)

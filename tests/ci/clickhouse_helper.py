@@ -3,7 +3,6 @@ import fileinput
 import json
 import logging
 import time
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -299,11 +298,6 @@ class CiLogsCredentials:
     def get_docker_arguments(
         self, pr_info: PRInfo, check_start_time: str, check_name: str
     ) -> str:
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-        if run_by_hash_total > 1:
-            run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-            check_name = f"{check_name} [{run_by_hash_num + 1}/{run_by_hash_total}]"
-
         self.create_ci_logs_credentials()
         if not self.config_path.exists():
             logging.info("Do not use external logs pushing")

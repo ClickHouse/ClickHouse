@@ -122,7 +122,7 @@ public:
         started_prefix = true;
     }
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         finishAndWait();
     }
@@ -268,7 +268,7 @@ private:
     bool collected_suffix = false;
     bool collected_finalize = false;
 
-    void finishAndWait() noexcept;
+    void finishAndWait();
 
     void onBackgroundException()
     {
@@ -312,12 +312,6 @@ private:
         std::lock_guard lock(statistics_mutex);
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
-    }
-    void setRowsBeforeAggregation(size_t rows_before_aggregation) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.rows_before_aggregation = rows_before_aggregation;
-        statistics.applied_aggregation = true;
     }
 };
 

@@ -11,7 +11,7 @@ TIMELIMIT=31
 while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 100 ];
 do
     it=$((it+1))
-    $CLICKHOUSE_CLIENT --query "
+    $CLICKHOUSE_CLIENT --multiquery --query "
         DROP TABLE IF EXISTS mt;
         CREATE TABLE mt (x UInt8, k UInt8 DEFAULT 0) ENGINE = SummingMergeTree ORDER BY k;
 

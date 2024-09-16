@@ -536,7 +536,7 @@ void ZooKeeper::connect(
                     compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
                 }
 
-                original_index.store(node.original_index);
+                original_index = static_cast<Int8>(node.original_index);
                 break;
             }
             catch (...)
@@ -1014,6 +1014,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
 
+    /// Reset the original index.
+    original_index = -1;
+
     auto expire_session_if_not_expired = [&]
     {
         /// No new requests will appear in queue after finish()
@@ -1347,25 +1350,6 @@ void ZooKeeper::remove(
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
 
-void ZooKeeper::removeRecursive(
-    const String &path,
-    uint32_t remove_nodes_limit,
-    RemoveRecursiveCallback callback)
-{
-    if (!isFeatureEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE))
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, "RemoveRecursive request type cannot be used because it's not supported by the server");
-
-    ZooKeeperRemoveRecursiveRequest request;
-    request.path = path;
-    request.remove_nodes_limit = remove_nodes_limit;
-
-    RequestInfo request_info;
-    request_info.request = std::make_shared<ZooKeeperRemoveRecursiveRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
-
-    pushRequest(std::move(request_info));
-    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
-}
 
 void ZooKeeper::exists(
     const String & path,
@@ -1547,30 +1531,6 @@ void ZooKeeper::close()
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
-}
-
-
-std::optional<int8_t> ZooKeeper::getConnectedNodeIdx() const
-{
-    int8_t res = original_index.load();
-    if (res == -1)
-        return std::nullopt;
-    else
-        return res;
-}
-
-String ZooKeeper::getConnectedHostPort() const
-{
-    auto idx = getConnectedNodeIdx();
-    if (idx)
-        return args.hosts[*idx];
-    else
-        return "";
-}
-
-int32_t ZooKeeper::getConnectionXid() const
-{
-    return next_xid.load();
 }
 
 

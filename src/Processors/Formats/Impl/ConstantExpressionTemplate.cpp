@@ -208,20 +208,20 @@ private:
             /// Do not replace empty array and array of NULLs
             if (literal->value.getType() == Field::Types::Array)
             {
-                const Array & array = literal->value.safeGet<Array>();
+                const Array & array = literal->value.get<Array>();
                 auto not_null = std::find_if_not(array.begin(), array.end(), [](const auto & elem) { return elem.isNull(); });
                 if (not_null == array.end())
                     return true;
             }
             else if (literal->value.getType() == Field::Types::Map)
             {
-                const Map & map = literal->value.safeGet<Map>();
+                const Map & map = literal->value.get<Map>();
                 if (map.size() % 2)
                     return false;
             }
             else if (literal->value.getType() == Field::Types::Tuple)
             {
-                const Tuple & tuple = literal->value.safeGet<Tuple>();
+                const Tuple & tuple = literal->value.get<Tuple>();
 
                 for (const auto & value : tuple)
                     if (value.isNull())

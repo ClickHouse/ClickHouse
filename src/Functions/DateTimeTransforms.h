@@ -381,13 +381,11 @@ struct ToStartOfWeekImpl
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-        return std::max(res, 0);
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-        return std::max(res, 0);
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -492,7 +490,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Nanosecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 nanoseconds, const DateLUTImpl &, Int64 scale_multiplier, Int64 /*origin*/ = 0)
+    static Int64 execute(Int64 t, Int64 nanoseconds, const DateLUTImpl &, Int64 scale_multiplier)
     {
         if (scale_multiplier < 1000000000)
         {
@@ -527,7 +525,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 microseconds, const DateLUTImpl &, Int64 scale_multiplier, Int64 /*origin*/ = 0)
+    static Int64 execute(Int64 t, Int64 microseconds, const DateLUTImpl &, Int64 scale_multiplier)
     {
         if (scale_multiplier < 1000000)
         {
@@ -570,7 +568,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, Int64 /*origin*/ = 0)
+    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier)
     {
         if (scale_multiplier < 1000)
         {
@@ -613,7 +611,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Second>
     {
         return time_zone.toStartOfSecondInterval(t, seconds);
     }
-    static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
+    static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
     }
@@ -634,7 +632,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Minute>
     {
         return time_zone.toStartOfMinuteInterval(t, minutes);
     }
-    static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
+    static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
     }
@@ -655,7 +653,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
     {
         return time_zone.toStartOfHourInterval(t, hours);
     }
-    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
+    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
     }
@@ -676,7 +674,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
     {
         return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days));
     }
-    static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
+    static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfDayInterval(time_zone.toDayNum(t / scale_multiplier), days);
     }
@@ -697,13 +695,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
     }
-    static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
+    static UInt16 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
-        if (origin == 0)
-            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
-        else
-            return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
-
+        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
     }
 };
 
@@ -722,23 +716,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
     {
         return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
     }
-    static Int64 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
+    static UInt16 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
-        const Int64 scaled_time = t / scale_multiplier;
-        if (origin == 0)
-            return time_zone.toStartOfMonthInterval(time_zone.toDayNum(scaled_time), months);
-        else
-        {
-            const Int64 scaled_origin = origin / scale_multiplier;
-            const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
-            Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
-            const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
-            months_to_add = days < 0 ? months_to_add - 1 : months_to_add;
-            months_to_add += years * 12;
-            Int64 month_multiplier = (months_to_add / months) * months;
-
-            return (time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin));
-        }
+        return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t / scale_multiplier), months);
     }
 };
 
@@ -757,12 +737,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
     }
-    static Int64 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
+    static UInt16 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
-        if (origin == 0)
-            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
-        else
-            return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+        return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
     }
 };
 
@@ -781,12 +758,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
     }
-    static Int64 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
+    static UInt16 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
-        if (origin == 0)
-            return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
-        else
-            return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
+        return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
     }
 };
 
@@ -1222,7 +1196,7 @@ struct ToYearImpl
     {
         if (point.getType() != Field::Types::UInt64) return std::nullopt;
 
-        auto year = point.safeGet<UInt64>();
+        auto year = point.get<UInt64>();
         if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return std::nullopt;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
@@ -2027,7 +2001,7 @@ struct ToYYYYMMImpl
     {
         if (point.getType() != Field::Types::UInt64) return std::nullopt;
 
-        auto year_month = point.safeGet<UInt64>();
+        auto year_month = point.get<UInt64>();
         auto year = year_month / 100;
         auto month = year_month % 100;
 
@@ -2160,22 +2134,20 @@ struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
     static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
-        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to, size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to)
     {
         using ValueType = typename ToTypeVector::value_type;
-        vec_to.resize(input_rows_count);
+        size_t size = vec_from.size();
+        vec_to.resize(size);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
             {
                 if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
                     bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-#pragma clang diagnostic pop
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
@@ -2206,7 +2178,7 @@ struct DateTimeTransformImpl
 {
     template <typename Additions = void *>
     static ColumnPtr execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const Transform & transform = {})
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
         using Op = Transformer<FromDataType, ToDataType, Transform, is_extended_result, Additions>;
 
@@ -2228,7 +2200,7 @@ struct DateTimeTransformImpl
             if (result_data_type.isDateTime() || result_data_type.isDateTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
             }
             else
             {
@@ -2237,13 +2209,15 @@ struct DateTimeTransformImpl
                     time_zone_argument_position = 2;
 
                 const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
             }
 
             if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
             {
                 if (vec_null_map_to)
+                {
                     return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
+                }
             }
 
             return mutable_result_col;

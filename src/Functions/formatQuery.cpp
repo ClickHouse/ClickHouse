@@ -39,11 +39,10 @@ public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
-        const Settings & settings = context->getSettingsRef();
+        const Settings & settings = context->getSettings();
         max_query_size = settings.max_query_size;
         max_parser_depth = settings.max_parser_depth;
         max_parser_backtracks = settings.max_parser_backtracks;
-        print_pretty_type_names = settings.print_pretty_type_names;
     }
 
     String getName() const override { return name; }
@@ -139,11 +138,7 @@ private:
                 }
             }
 
-            IAST::FormatSettings settings(buf, output_formatting == OutputFormatting::SingleLine, /*hilite*/ false);
-            settings.show_secrets = true;
-            settings.print_pretty_type_names = print_pretty_type_names;
-            ast->format(settings);
-
+            formatAST(*ast, buf, /*hilite*/ false, /*single_line*/ output_formatting == OutputFormatting::SingleLine);
             auto formatted = buf.stringView();
 
             const size_t res_data_new_size = res_data_size + formatted.size() + 1;
@@ -170,7 +165,6 @@ private:
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;
-    bool print_pretty_type_names;
 };
 
 }
