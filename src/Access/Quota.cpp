@@ -24,7 +24,7 @@ std::vector<UUID> Quota::findDependencies() const
     return to_roles.findDependencies();
 }
 
-void Quota::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+void Quota::doReplaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     to_roles.replaceDependencies(old_to_new_ids);
 }
