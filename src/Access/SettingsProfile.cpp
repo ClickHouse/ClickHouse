@@ -21,7 +21,7 @@ std::vector<UUID> SettingsProfile::findDependencies() const
     return res;
 }
 
-void SettingsProfile::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+void SettingsProfile::doReplaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     elements.replaceDependencies(old_to_new_ids);
     to_roles.replaceDependencies(old_to_new_ids);
