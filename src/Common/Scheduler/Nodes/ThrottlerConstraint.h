@@ -3,8 +3,6 @@
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <chrono>
-#include <mutex>
-#include <limits>
 #include <utility>
 
 
@@ -40,6 +38,12 @@ public:
     {
         // We should cancel event on destruction to avoid dangling references from event queue
         event_queue->cancelPostponed(postponed);
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("bandwidth_limit");
+        return type_name;
     }
 
     bool equals(ISchedulerNode * other) override

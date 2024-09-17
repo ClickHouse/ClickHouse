@@ -141,6 +141,8 @@ public:
 
     virtual ~ISchedulerNode() = default;
 
+    virtual const String & getTypeName() const = 0;
+
     /// Checks if two nodes configuration is equal
     virtual bool equals(ISchedulerNode * other)
     {

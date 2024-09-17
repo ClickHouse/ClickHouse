@@ -266,7 +266,7 @@ public:
         reparent(immediate_child, this);
     }
 
-    /// Attaches a child as a leaf of internal subtree and insert or update all the intermediate nodes
+    /// Attaches a unified child as a leaf of internal subtree and insert or update all the intermediate nodes
     /// NOTE: Do not confuse with `attachChild()` which is used only for immediate children
     void attachUnifiedChild(const UnifiedSchedulerNodePtr & child)
     {
@@ -274,18 +274,28 @@ public:
             reparent(new_child, this);
     }
 
+    /// Detaches unified child and update all the intermediate nodes.
+    /// Detached child could be safely attached to another parent.
+    /// NOTE: Do not confuse with `removeChild()` which is used only for immediate children
+    void detachUnifiedChild(const UnifiedSchedulerNodePtr & child)
+    {
+        UNUSED(child); // TODO(serxa): implement detachUnifiedChild()
+    }
+
     /// Updates intermediate nodes subtree according with new priority (priority is set by the caller beforehand)
     /// NOTE: Changing a priority of a unified child may lead to change of its parent.
     void updateUnifiedChildPriority(const UnifiedSchedulerNodePtr & child, Priority old_priority, Priority new_priority)
     {
-        UNUSED(child, old_priority, new_priority); // TODO: implement updateUnifiedChildPriority
+        UNUSED(child, old_priority, new_priority); // TODO(serxa): implement updateUnifiedChildPriority()
     }
 
     /// Updates scheduling settings. Set of constraints might change.
     /// NOTE: Caller is responsible for calling `updateUnifiedChildPriority` in parent unified node (if any)
     void updateSchedulingSettings(const SchedulingSettings & new_settings)
     {
-        UNUSED(new_settings); // TODO: implement updateSchedulingSettings
+        UNUSED(new_settings); // TODO(serxa): implement updateSchedulingSettings()
+        info.setPriority(new_settings.priority);
+        info.setWeight(new_settings.weight);
     }
 
     /// Returns the queue to be used for resource requests or `nullptr` if it has unified children
@@ -294,33 +304,58 @@ public:
         return static_pointer_cast<ISchedulerQueue>(impl.branch.queue);
     }
 
-    /// Returns nodes that could be accessed with raw pointers by resource requests (queue and constraints)
+    /// Collects nodes that could be accessed with raw pointers by resource requests (queue and constraints)
     /// NOTE: This is a building block for classifier. Note that due to possible movement of a queue, set of constraints
-    /// for that queue might change in future versions, and `request->constraints` might reference nodes not in
-    /// the initial set of nodes returned by `getClassifierNodes()`. To avoid destruction of such additinal nodes
-    /// classifier must (indirectly) hold nodes return by `getClassifierNodes()` for all future versions of all unified nodes.
-    /// Such a version control is done by `IOResourceManager`.
-    std::vector<SchedulerNodePtr> getClassifierNodes()
+    /// for that queue might change in future, and `request->constraints` might reference nodes not in
+    /// the initial set of nodes returned by `addRawPointerNodes()`. To avoid destruction of such additional nodes
+    /// classifier must (indirectly) hold nodes return by `addRawPointerNodes()` for all future versions of
+    /// all unified nodes. Such a version control is done by `IOResourceManager`.
+    void addRawPointerNodes(std::vector<SchedulerNodePtr> & nodes)
     {
-        std::vector<SchedulerNodePtr> result;
-        if (impl.branch.queue)
-            result.push_back(impl.branch.queue);
-        if (impl.semaphore)
-            result.push_back(impl.semaphore);
         if (impl.throttler)
-            result.push_back(impl.throttler);
+            nodes.push_back(impl.throttler);
+        if (impl.semaphore)
+            nodes.push_back(impl.semaphore);
+        if (impl.branch.queue)
+            nodes.push_back(impl.branch.queue);
         for (auto & [_, branch] : impl.branch.branch.branches)
         {
             for (auto & [_, child] : branch.children)
-            {
-                auto nodes = child->getClassifierNodes();
-                result.insert(result.end(), nodes.begin(), nodes.end());
-            }
+                child->addRawPointerNodes(nodes);
         }
-        return result;
+    }
+
+    bool hasUnifiedChildren() const
+    {
+        return impl.branch.queue == nullptr;
+    }
+
+    /// Introspection. Calls a visitor for self and every internal node. Do not recurse into unified children.
+    void forEachSchedulerNode(std::function<void(ISchedulerNode *)> visitor)
+    {
+        visitor(this);
+        if (impl.throttler)
+            visitor(impl.throttler.get());
+        if (impl.semaphore)
+            visitor(impl.semaphore.get());
+        if (impl.branch.queue)
+            visitor(impl.branch.queue.get());
+        if (impl.branch.branch.root) // priority
+            visitor(impl.branch.branch.root.get());
+        for (auto & [_, branch] : impl.branch.branch.branches)
+        {
+            if (branch.root) // fairness
+                visitor(branch.root.get());
+        }
     }
 
 protected: // Hide all the ISchedulerNode interface methods as an implementation details
+    const String & getTypeName() const override
+    {
+        static String type_name("unified");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode *) override
     {
         assert(false);

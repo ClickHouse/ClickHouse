@@ -95,6 +95,12 @@ public:
         }
     }
 
+    const String & getTypeName() const override
+    {
+        static String type_name("scheduler");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))

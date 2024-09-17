@@ -51,7 +51,7 @@ public:
     virtual ClassifierPtr acquire(const String & classifier_name) = 0;
 
     /// For introspection, see `system.scheduler` table
-    using VisitorFunc = std::function<void(const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)>;
+    using VisitorFunc = std::function<void(const String & resource, const String & path, ISchedulerNode * node)>;
     virtual void forEachNode(VisitorFunc visitor) = 0;
 };
 

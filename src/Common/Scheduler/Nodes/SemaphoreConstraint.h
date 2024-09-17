@@ -31,6 +31,12 @@ public:
         , max_cost(max_cost_)
     {}
 
+    const String & getTypeName() const override
+    {
+        static String type_name("inflight_limit");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))

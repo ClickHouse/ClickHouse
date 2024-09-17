@@ -244,7 +244,7 @@ void DynamicResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
     {
         for (auto & [name, resource] : state_ref->resources)
             for (auto & [path, node] : resource->nodes)
-                visitor(name, path, node.type, node.ptr);
+                visitor(name, path, node.ptr.get());
         promise.set_value();
     });
 

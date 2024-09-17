@@ -43,6 +43,12 @@ public:
         : ISchedulerNode(event_queue_, node_info)
     {}
 
+    const String & getTypeName() const override
+    {
+        static String type_name("priority");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
