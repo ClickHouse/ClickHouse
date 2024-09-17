@@ -34,7 +34,7 @@ do_check()
         SHOW GRANTS FOR ${role_b};
     " | sed "${replacements}")
     local expected
-    expected=$'CREATE USER user_a DEFAULT ROLE role_b SETTINGS custom_x = 2\nGRANT role_b TO user_a\nCREATE ROLE role_b SETTINGS custom_x = 1'
+    expected=$'CREATE USER user_a IDENTIFIED WITH no_password DEFAULT ROLE role_b SETTINGS custom_x = 2\nGRANT role_b TO user_a\nCREATE ROLE role_b SETTINGS custom_x = 1'
     if [[ "${check_info}" != "${expected}" ]]; then
        echo "Assertion failed:"
        echo "\"${check_info}\""
