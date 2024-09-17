@@ -3,6 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
+mkdir -p "${CLICKHOUSE_SCHEMA_FILES}"
 SOURCE_SCHEMA_FILE="${CURDIR}/format_schemas/03234_proto_simple_nested_repeated_noexception.proto"
 TARGET_SCHEMA_FILE="${CLICKHOUSE_SCHEMA_FILES}/03234_proto_simple_nested_repeated_noexception.proto"
 cp "${SOURCE_SCHEMA_FILE}" "${TARGET_SCHEMA_FILE}"
