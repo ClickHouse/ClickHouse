@@ -11,7 +11,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
-#include <Common/logger_useful.h>
+// #include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -62,14 +62,14 @@ public:
             : atomic_var(var)
         {
             atomic_var.fetch_sub(1);
-            LOG_DEBUG(&Poco::Logger::get("ScopedDecrement"),"available_threads: {}", atomic_var);
+            // LOG_DEBUG(&Poco::Logger::get("ScopedDecrement"),"available_threads: {}", atomic_var);
         }
 
         // Destructor decrements the atomic variable
         ~ScopedDecrement()
         {
             atomic_var.fetch_add(1);
-            LOG_DEBUG(&Poco::Logger::get("ScopedDecrement"),"available_threads2: {}", atomic_var);
+            // LOG_DEBUG(&Poco::Logger::get("ScopedDecrement"),"available_threads2: {}", atomic_var);
         }
     };
 
@@ -149,13 +149,13 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
 {
     // can go to zero, meaning that max_threads threads were already started
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("ThreadPoolImpl"),"remaining_pool_capacity: {}", remaining_pool_capacity);
 
     // if positive - it means that threre are more threads than jobs (and some are doing nothing)
     // if zero - means that every thread have some job
     // if negative - it means that we have more jobs than threads
     available_threads.store(0, std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("ThreadPoolImpl"),"available_threads: {}", available_threads);
+    // LOG_DEBUG(&Poco::Logger::get("ThreadPoolImpl"),"remaining_pool_capacity: {}, available_threads: {}", remaining_pool_capacity, available_threads);
+
 }
 
 template <typename Thread>
@@ -163,7 +163,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("setMaxThreads"),"remaining_pool_capacity: {}", remaining_pool_capacity);
+    // LOG_DEBUG(&Poco::Logger::get("setMaxThreads"),"remaining_pool_capacity: {}", remaining_pool_capacity);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -230,8 +230,7 @@ ThreadPoolImpl<Thread>::maybeStartNewThread()
         size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
         int currently_available_threads = available_threads.load(std::memory_order_relaxed);
 
-        LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"remaining_pool_capacity: {}", remaining_pool_capacity);
-        LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"available_threads: {}", currently_available_threads);
+        // LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"remaining_pool_capacity: {}, available_threads: {}", remaining_pool_capacity, available_threads);
 
 
         // Check if there's any capacity left to create a new thread
@@ -244,7 +243,7 @@ ThreadPoolImpl<Thread>::maybeStartNewThread()
         // Try to decrement remaining_pool_capacity atomically
         if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1))
         {
-            LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"remaining_pool_capacity2: {}", remaining_pool_capacity);
+            // LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"expanding, new remaining_pool_capacity2: {}", remaining_pool_capacity);
 
             try
             {
@@ -256,7 +255,7 @@ ThreadPoolImpl<Thread>::maybeStartNewThread()
             {
                 // Failed to create the thread, restore capacity
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"remaining_pool_capacity3: {}", remaining_pool_capacity);
+                // LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"revert expanding, remaining_pool_capacity3: {}", remaining_pool_capacity);
                 throw;  // Rethrow exception to be handled outside
             }
         }
@@ -299,7 +298,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     available_threads
                     );
 
-    std::unique_ptr<ThreadFromThreadPool> new_thread;
+    std::unique_ptr<ThreadFromThreadPool> new_thread; // = std::make_unique<ThreadFromThreadPool>(*this);
 
     try
     {
@@ -344,7 +343,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             //
             // Even if the demand can be lower already but if the pool can still take
             // new thread - let's add it since we already have it.
-            if (threads.size() < std::min(max_threads, scheduled_jobs + max_free_threads))
+
+            // LOG_DEBUG(&Poco::Logger::get("new_thread"),"remaining_pool_capacity: {}, available_threads: {}, threads: {}, scheduled_jobs: {}", remaining_pool_capacity, available_threads, threads.size(), scheduled_jobs);
+
+
+            if (threads.size() < max_threads)
             {
                 try
                 {
@@ -411,13 +414,13 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         try
         {
             remaining_pool_capacity.fetch_sub(1, std::memory_order_relaxed);
-            LOG_DEBUG(&Poco::Logger::get("startNewThreadsNoLock"),"remaining_pool_capacity: {}", remaining_pool_capacity);
+            // LOG_DEBUG(&Poco::Logger::get("startNewThreadsNoLock"),"remaining_pool_capacity: {}", remaining_pool_capacity);
             new_thread = std::make_unique<ThreadFromThreadPool>(*this);
         }
         catch (...)
         {
             remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-            LOG_DEBUG(&Poco::Logger::get("startNewThreadsNoLock"),"exception remaining_pool_capacity: {}", remaining_pool_capacity);
+            // LOG_DEBUG(&Poco::Logger::get("startNewThreadsNoLock"),"exception remaining_pool_capacity: {}", remaining_pool_capacity);
             break; /// failed to start more threads
         }
 
@@ -564,7 +567,7 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
 
     parent_pool.available_threads.fetch_add(1, std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("ThreadFromThreadPool"),"available_threads: {}", parent_pool.available_threads);
+    // LOG_DEBUG(&Poco::Logger::get("ThreadFromThreadPool"),"available_threads: {}", parent_pool.available_threads);
 }
 
 
@@ -598,9 +601,9 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 {
     // the thread destructed, so the capacity grows
     parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("~ThreadFromThreadPool"),"available_threads: {}", parent_pool.available_threads);
+    // LOG_DEBUG(&Poco::Logger::get("~ThreadFromThreadPool"),"available_threads: {}", parent_pool.available_threads);
     parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("~ThreadFromThreadPool"),"remaining_pool_capacity: {}", parent_pool.remaining_pool_capacity);
+    // LOG_DEBUG(&Poco::Logger::get("~ThreadFromThreadPool"),"remaining_pool_capacity: {}", parent_pool.remaining_pool_capacity);
 
 
     thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
