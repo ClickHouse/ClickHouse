@@ -6,7 +6,7 @@ Array min :
 [1]
 Array max :
 [3]
-Array min with function:
+Issue #69600
 -3
 Table array int min
 1
