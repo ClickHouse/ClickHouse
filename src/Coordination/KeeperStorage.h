@@ -564,6 +564,7 @@ public:
         void rollback(int64_t rollback_zxid);
 
         std::shared_ptr<Node> getNode(StringRef path) const;
+        const Node * getActualNodeView(StringRef path, const Node & storage_node) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
         void applyDelta(const Delta & delta);
@@ -607,7 +608,28 @@ public:
             using is_transparent = void; // required to make find() work with different type than key_type
         };
 
-        mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
+        struct PathCmp
+        {
+            using is_transparent = std::true_type;
+
+            auto operator()(const std::string_view a,
+                            const std::string_view b) const
+            {
+                return a.size() < b.size() || (a.size() == b.size() && a < b);
+            }
+        };
+
+        struct Less
+        {
+            using is_transparent = std::true_type;
+            auto operator()(const std::string_view a,
+                            const std::string_view b) const
+            {
+                return a < b;
+            }
+        };
+        /// for rocksdb key, it has encoded the level at the beginning.
+        mutable std::map<std::string, UncommittedNode, std::conditional_t<use_rocksdb, Less, PathCmp>> nodes;
         std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
         std::list<Delta> deltas;

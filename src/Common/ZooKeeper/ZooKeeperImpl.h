@@ -146,6 +146,11 @@ public:
         int32_t version,
         RemoveCallback callback) override;
 
+    void removeRecursive(
+        const String &path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) override;
+
     void exists(
         const String & path,
         ExistsCallback callback,

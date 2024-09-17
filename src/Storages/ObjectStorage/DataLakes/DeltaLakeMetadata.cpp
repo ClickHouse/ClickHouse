@@ -207,18 +207,28 @@ struct DeltaLakeMetadataImpl
             Poco::Dynamic::Var json = parser.parse(json_str);
             Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
+            if (!object)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
+
+#ifdef ABORT_ON_LOGICAL_ERROR
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             object->stringify(oss);
             LOG_TEST(log, "Metadata: {}", oss.str());
+#endif
 
             if (object->has("metaData"))
             {
                 const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
+                if (!metadata_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `metaData` field");
+
                 const auto schema_object = metadata_object->getValue<String>("schemaString");
 
                 Poco::JSON::Parser p;
                 Poco::Dynamic::Var fields_json = parser.parse(schema_object);
                 const Poco::JSON::Object::Ptr & fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
+                if (!fields_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `fields` field");
 
                 auto current_schema = parseMetadata(fields_object);
                 if (file_schema.empty())
@@ -237,6 +247,9 @@ struct DeltaLakeMetadataImpl
             if (object->has("add"))
             {
                 auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
+                if (!add_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
+
                 auto path = add_object->getValue<String>("path");
                 result.insert(fs::path(configuration->getPath()) / path);
 
@@ -247,6 +260,9 @@ struct DeltaLakeMetadataImpl
                     if (add_object->has("partitionValues"))
                     {
                         auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
+                        if (!partition_values)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `partitionValues` field");
+
                         if (partition_values->size())
                         {
                             auto & current_partition_columns = file_partition_columns[filename];
@@ -274,7 +290,11 @@ struct DeltaLakeMetadataImpl
             }
             else if (object->has("remove"))
             {
-                auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
+                auto remove_object = object->get("remove").extract<Poco::JSON::Object::Ptr>();
+                if (!remove_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
+
+                auto path = remove_object->getValue<String>("path");
                 result.erase(fs::path(configuration->getPath()) / path);
             }
         }

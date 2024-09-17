@@ -827,6 +827,9 @@ The server successfully detected this situation and will download merged part fr
     M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
     M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
     M(GWPAsanFree, "Number of free operations done by GWPAsan") \
+    \
+    M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background") \
+    M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

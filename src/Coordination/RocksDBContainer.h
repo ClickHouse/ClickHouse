@@ -66,7 +66,7 @@ template<bool use_rocksdb = true, bool child_prefix = false, typename S>
 inline std::string getEncodedKey(const S & key)
 {
     if constexpr (!use_rocksdb)
-        return key;
+        return std::string(key);
     WriteBufferFromOwnString key_buffer;
     UInt16 depth = getKeyDepth(key) + (child_prefix ? 1 : 0);
     writeIntBinary(depth, key_buffer);
@@ -266,6 +266,7 @@ public:
         }
     }
 
+    template<bool return_full_key = false>
     std::vector<std::pair<std::string, Node>> getChildren(const std::string & key)
     {
         rocksdb::ReadOptions read_options;
@@ -282,8 +283,13 @@ public:
             typename Node::Meta & meta = node;
             /// We do not read data here
             readPODBinary(meta, buffer);
-            std::string real_key(iter->key().data() + len, iter->key().size() - len);
-            result.emplace_back(std::move(real_key), std::move(node));
+            if constexpr (return_full_key)
+                result.emplace_back(std::move(iter->key().ToString()), std::move(node));
+            else
+            {
+                std::string real_key(iter->key().data() + len, iter->key().size() - len);
+                result.emplace_back(std::move(real_key), std::move(node));
+            }
         }
 
         return result;

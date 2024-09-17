@@ -20,6 +20,7 @@
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
+#include "Coordination/RocksDBContainer.h"
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
@@ -836,6 +837,15 @@ std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedS
 }
 
 template<typename Container>
+const typename Container::Node * KeeperStorage<Container>::UncommittedState::getActualNodeView(StringRef path, const Node & storage_node) const
+{
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
+        return node_it->second.node.get();
+
+    return &storage_node;
+}
+
+template<typename Container>
 Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(StringRef path) const
 {
     if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
@@ -1132,7 +1142,7 @@ struct KeeperStorageRequestProcessor
     }
 
     virtual KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/) const
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/) const
     {
         return {};
     }
@@ -1256,7 +1266,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
 
     KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
     {
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
     }
@@ -1501,15 +1511,50 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 };
 
+namespace
+{
+
+template <typename Storage>
+void addUpdateParentPzxidDelta(Storage & storage, std::vector<typename Storage::Delta> & deltas, int64_t zxid, StringRef path)
+{
+    String encoded_parent_path;
+    StringRef parent_path;
+    if constexpr (Storage::use_rocksdb)
+    {
+        encoded_parent_path = getEncodedKey<Storage::use_rocksdb>(parentNodePath(path).toView());
+        parent_path = encoded_parent_path;
+    }
+    else
+    {
+        parent_path = parentNodePath(path);
+    }
+    if (!storage.uncommitted_state.getNode(parent_path))
+        return;
+
+    deltas.emplace_back(
+        std::string{parent_path},
+        zxid,
+        typename Storage::UpdateNodeDelta
+        {
+            [zxid](Storage::Node & parent)
+            {
+                parent.pzxid = std::max(parent.pzxid, zxid);
+            }
+        }
+    );
+}
+
+}
+
 template<typename Storage>
 struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
 {
+    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
+
     bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
     {
         return storage.checkACL(parentNodePath(this->zk_request->getPath()), Coordination::ACL::Delete, session_id, is_local);
     }
-
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
 
     std::vector<typename Storage::Delta>
     preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & digest, const KeeperContext & keeper_context) const override
@@ -1527,15 +1572,6 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
-        String encoded_parent_path;
-
-        StringRef parent_path = parentNodePath(request.path);
-        if constexpr (Storage::use_rocksdb)
-        {
-            encoded_parent_path = getEncodedKey(parent_path.toView());
-            parent_path = StringRef(encoded_parent_path);
-        }
-
         String encoded_path;
         StringRef request_path = request.path;
         if constexpr (Storage::use_rocksdb)
@@ -1544,30 +1580,12 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             request_path = encoded_path;
         }
 
-        const auto update_parent_pzxid = [&]()
-        {
-            if (!storage.uncommitted_state.getNode(parent_path))
-                return;
-
-            new_deltas.emplace_back(
-                std::string{parent_path},
-                zxid,
-                typename Storage::UpdateNodeDelta
-                {
-                    [zxid](Storage::Node & parent)
-                    {
-                        parent.pzxid = std::max(parent.pzxid, zxid);
-                    }
-                }
-            );
-        };
-
         auto node = storage.uncommitted_state.getNode(request_path);
 
         if (!node)
         {
             if (request.restored_from_zookeeper_log)
-                update_parent_pzxid();
+                addUpdateParentPzxidDelta(storage, new_deltas, zxid, request.path);
             return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
         }
         else if (request.version != -1 && request.version != node->version)
@@ -1576,10 +1594,12 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             return {typename Storage::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
 
         if (request.restored_from_zookeeper_log)
-            update_parent_pzxid();
+            addUpdateParentPzxidDelta(storage, new_deltas, zxid, request.path);
+
+        StringRef parent_path = parentNodePath(request.path);
 
         new_deltas.emplace_back(
-            parent_path.toString(),
+            getEncodedKey<Storage::use_rocksdb>(parent_path.toView()),
             zxid,
             typename Storage::UpdateNodeDelta{[](typename Storage::Node & parent)
                                            {
@@ -1607,10 +1627,330 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
     }
 
     KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
     {
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
     }
+};
+
+template<typename Storage>
+struct KeeperStorageRemoveRecursiveRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
+{
+    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
+
+    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
+    {
+        return storage.checkACL(parentNodePath(this->zk_request->getPath()), Coordination::ACL::Delete, session_id, is_local);
+    }
+
+    std::vector<typename Storage::Delta>
+    preprocess(Storage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & digest, const KeeperContext & keeper_context) const override
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperRemoveRequest);
+        Coordination::ZooKeeperRemoveRecursiveRequest & request = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*this->zk_request);
+
+        std::vector<typename Storage::Delta> new_deltas;
+
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+        {
+            auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", request.path);
+
+            handleSystemNodeModification(keeper_context, error_msg);
+            return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
+        String encoded_request_path;
+        StringRef request_path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_request_path = getEncodedKey(request.path);
+            request_path = encoded_request_path;
+        }
+        auto node = storage.uncommitted_state.getNode(request_path);
+
+        if (!node)
+        {
+            if (request.restored_from_zookeeper_log)
+                addUpdateParentPzxidDelta(storage, new_deltas, zxid, request.path);
+
+            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        }
+
+        ToDeleteTreeCollector collector(storage, zxid, session_id, request.remove_nodes_limit);
+        auto collect_status = collector.collect(request_path, *node);
+
+        if (collect_status == ToDeleteTreeCollector::CollectStatus::NoAuth)
+            return {typename Storage::Delta{zxid, Coordination::Error::ZNOAUTH}};
+
+        if (collect_status == ToDeleteTreeCollector::CollectStatus::LimitExceeded)
+            return {typename Storage::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
+
+        if (request.restored_from_zookeeper_log)
+            addUpdateParentPzxidDelta(storage, new_deltas, zxid, request.path);
+
+        auto delete_deltas = collector.extractDeltas();
+
+        for (const auto & delta : delete_deltas)
+        {
+            const auto * remove_delta = std::get_if<typename Storage::RemoveNodeDelta>(&delta.operation);
+            if (remove_delta && remove_delta->ephemeral_owner)
+                storage.unregisterEphemeralPath(remove_delta->ephemeral_owner, delta.path);
+        }
+
+        new_deltas.insert(new_deltas.end(), std::make_move_iterator(delete_deltas.begin()), std::make_move_iterator(delete_deltas.end()));
+
+        digest = storage.calculateNodesDigest(digest, new_deltas);
+
+        return new_deltas;
+    }
+
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, int64_t zxid) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
+        Coordination::ZooKeeperRemoveRecursiveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveResponse &>(*response_ptr);
+
+        response.error = storage.commit(zxid);
+        return response_ptr;
+    }
+
+    KeeperStorageBase::ResponsesForSessions
+    processWatches(const Storage & storage, int64_t zxid, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
+    {
+        /// need to iterate over zxid deltas and update watches for deleted tree.
+        const auto & deltas = storage.uncommitted_state.deltas;
+
+        KeeperStorageBase::ResponsesForSessions responses;
+        for (auto it = deltas.rbegin(); it != deltas.rend() && it->zxid == zxid; ++it)
+        {
+            const auto * remove_delta = std::get_if<typename Storage::RemoveNodeDelta>(&it->operation);
+            if (remove_delta)
+            {
+                auto new_responses = processWatchesImpl(it->path, watches, list_watches, Coordination::Event::DELETED);
+                responses.insert(responses.end(), std::make_move_iterator(new_responses.begin()), std::make_move_iterator(new_responses.end()));
+            }
+        }
+
+        return responses;
+    }
+
+private:
+    using SNode = typename Storage::Node;
+
+    class ToDeleteTreeCollector
+    {
+        Storage & storage;
+        int64_t zxid;
+        int64_t session_id;
+        uint32_t limit;
+
+        uint32_t max_level = 0;
+        uint32_t nodes_observed = 1;  /// root node
+        std::unordered_map<uint32_t, std::vector<typename Storage::Delta>> by_level_deltas;
+
+        struct Step
+        {
+            String path;
+            std::variant<SNode, const SNode *> node;
+            uint32_t level;
+        };
+
+        enum class CollectStatus
+        {
+            Ok,
+            NoAuth,
+            LimitExceeded,
+        };
+
+        friend struct KeeperStorageRemoveRecursiveRequestProcessor;
+
+    public:
+        ToDeleteTreeCollector(Storage & storage_, int64_t zxid_, int64_t session_id_, uint32_t limit_)
+            : storage(storage_)
+            , zxid(zxid_)
+            , session_id(session_id_)
+            , limit(limit_)
+        {
+        }
+
+        CollectStatus collect(StringRef root_path, const SNode & root_node)
+        {
+            std::deque<Step> steps;
+
+            if (checkLimits(&root_node))
+                return CollectStatus::LimitExceeded;
+
+            steps.push_back(Step{root_path.toString(), &root_node, 0});
+
+            while (!steps.empty())
+            {
+                Step step = std::move(steps.front());
+                steps.pop_front();
+
+                StringRef path = step.path;
+                uint32_t level = step.level;
+                const SNode * node_ptr = nullptr;
+
+                if (auto * rdb = std::get_if<SNode>(&step.node))
+                    node_ptr = rdb;
+                else
+                    node_ptr = std::get<const SNode *>(step.node);
+
+                chassert(!path.empty());
+                chassert(node_ptr != nullptr);
+
+                const auto & node = *node_ptr;
+                auto actual_node_ptr = storage.uncommitted_state.getActualNodeView(path, node);
+                chassert(actual_node_ptr != nullptr); /// explicitly check that node is not deleted
+
+                if (actual_node_ptr->numChildren() > 0 && !storage.checkACL(path, Coordination::ACL::Delete, session_id, /*is_local=*/false))
+                    return CollectStatus::NoAuth;
+
+                if (auto status = visitRocksDBNode(steps, getDecodedKey<Storage::use_rocksdb>(path), level); status != CollectStatus::Ok)
+                    return status;
+
+                if (auto status = visitMemNode(steps, path, level); status != CollectStatus::Ok)
+                    return status;
+
+                if (auto status = visitRootAndUncommitted(steps, getDecodedKey<Storage::use_rocksdb>(path), node, level); status != CollectStatus::Ok)
+                    return status;
+            }
+
+            return CollectStatus::Ok;
+        }
+
+        std::vector<typename Storage::Delta> extractDeltas()
+        {
+            std::vector<typename Storage::Delta> deltas;
+
+            for (ssize_t level = max_level; level >= 0; --level)
+            {
+                auto & level_deltas = by_level_deltas[static_cast<uint32_t>(level)];
+                deltas.insert(deltas.end(), std::make_move_iterator(level_deltas.begin()), std::make_move_iterator(level_deltas.end()));
+            }
+
+            return std::move(deltas);
+        }
+
+    private:
+        CollectStatus visitRocksDBNode(std::deque<Step> & steps, StringRef root_path, uint32_t level)
+        {
+            if constexpr (Storage::use_rocksdb)
+            {
+                String encoded_root_path = getEncodedKey<true, true>(root_path.toView());
+                auto children = storage.container.template getChildren<true>(encoded_root_path);
+
+                for (auto && [child_path, child_node] : children)
+                {
+                    const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
+
+                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                        continue;
+
+                    if (checkLimits(actual_child_node_ptr))
+                        return CollectStatus::LimitExceeded;
+
+                    steps.push_back(Step{std::move(child_path), std::move(child_node), level + 1});
+                }
+            }
+
+            return CollectStatus::Ok;
+        }
+
+        CollectStatus visitMemNode(std::deque<Step> & steps, StringRef root_path, uint32_t level)
+        {
+            if constexpr (!Storage::use_rocksdb)
+            {
+                auto node_it = storage.container.find(root_path);
+                if (node_it == storage.container.end())
+                    return CollectStatus::Ok;
+
+                std::filesystem::path root_fs_path(root_path.toString());
+                const auto & children = node_it->value.getChildren();
+
+                for (const auto & child_name : children)
+                {
+                    auto child_path = (root_fs_path / child_name.toView()).generic_string();
+
+                    auto child_it = storage.container.find(child_path);
+                    chassert(child_it != storage.container.end());
+                    const auto & child_node = child_it->value;
+
+                    const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
+
+                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                        continue;
+
+                    if (checkLimits(actual_child_node_ptr))
+                        return CollectStatus::LimitExceeded;
+
+                    steps.push_back(Step{std::move(child_path), &child_node, level + 1});
+                }
+            }
+
+            return CollectStatus::Ok;
+        }
+
+        CollectStatus visitRootAndUncommitted(std::deque<Step> & steps, StringRef root_path, const SNode & root_node, uint32_t level)
+        {
+            const auto & nodes = storage.uncommitted_state.nodes;
+
+            String encoded_root_path;
+            if constexpr (Storage::use_rocksdb)
+                encoded_root_path = getEncodedKey<true, true>(root_path.toView());
+            else
+                encoded_root_path = root_path.toString() + "/";
+            /// nodes are sorted by paths with level locality
+            auto it = nodes.upper_bound(encoded_root_path);
+
+            auto start_with = [](StringRef str, StringRef prefix)
+            {
+                return str.size >= prefix.size && memcmp(str.data, prefix.data, prefix.size) == 0;
+            };
+            for (; it != nodes.end() && start_with(it->first, encoded_root_path); ++it)
+            {
+                const auto actual_child_node_ptr = it->second.node.get();
+
+                if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                    continue;
+
+                if (checkLimits(actual_child_node_ptr))
+                    return CollectStatus::LimitExceeded;
+
+                const String & child_path = it->first;
+                const SNode & child_node = *it->second.node;
+
+                steps.push_back(Step{child_path, &child_node, level + 1});
+            }
+
+            addDelta(root_path, root_node, level);
+
+            return CollectStatus::Ok;
+        }
+
+        void addDelta(StringRef root_path, const SNode & root_node, uint32_t level)
+        {
+            max_level = std::max(max_level, level);
+
+            by_level_deltas[level].emplace_back(
+                getEncodedKey<Storage::use_rocksdb>(parentNodePath(root_path).toView()),
+                zxid,
+                typename Storage::UpdateNodeDelta{
+                    [](SNode & parent)
+                    {
+                        ++parent.cversion;
+                        parent.decreaseNumChildren();
+                    }
+                });
+
+            by_level_deltas[level].emplace_back(getEncodedKey<Storage::use_rocksdb>(root_path.toView()), zxid, typename Storage::RemoveNodeDelta{root_node.version, root_node.ephemeralOwner()});
+        }
+
+        bool checkLimits(const SNode * node)
+        {
+            chassert(node != nullptr);
+            nodes_observed += node->numChildren();
+            return nodes_observed > limit;
+        }
+    };
 };
 
 template<typename Storage>
@@ -1804,7 +2144,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     KeeperStorageBase::ResponsesForSessions
-    processWatches(typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
+    processWatches(const Storage & /*storage*/, int64_t /*zxid*/, typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
     {
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
@@ -2276,6 +2616,10 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor<Storage>>(sub_zk_request));
                     break;
+                case Coordination::OpNum::RemoveRecursive:
+                    check_operation_type(OperationType::Write);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRecursiveRequestProcessor<Storage>>(sub_zk_request));
+                    break;
                 case Coordination::OpNum::Set:
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor<Storage>>(sub_zk_request));
@@ -2395,12 +2739,12 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
     }
 
     KeeperStorageBase::ResponsesForSessions
-    processWatches(typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
+    processWatches(const Storage & storage, int64_t zxid, typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
     {
         typename Storage::ResponsesForSessions result;
         for (const auto & generic_request : concrete_requests)
         {
-            auto responses = generic_request->processWatches(watches, list_watches);
+            auto responses = generic_request->processWatches(storage, zxid, watches, list_watches);
             result.insert(result.end(), responses.begin(), responses.end());
         }
         return result;
@@ -2545,6 +2889,7 @@ KeeperStorageRequestProcessorsFactory<Storage>::KeeperStorageRequestProcessorsFa
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor<Storage>>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor<Storage>>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::CheckNotExists, KeeperStorageCheckRequestProcessor<Storage>>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::RemoveRecursive, KeeperStorageRemoveRecursiveRequestProcessor<Storage>>(*this);
 }
 
 
@@ -2863,7 +3208,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
         /// If this requests processed successfully we need to check watches
         if (response->error == Coordination::Error::ZOK)
         {
-            auto watch_responses = request_processor->processWatches(watches, list_watches);
+            auto watch_responses = request_processor->processWatches(*this, zxid, watches, list_watches);
             results.insert(results.end(), watch_responses.begin(), watch_responses.end());
         }
 
