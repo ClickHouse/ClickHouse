@@ -196,6 +196,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -5527,7 +5528,75 @@ ThreadPool & Context::getThreadPoolWriter() const
 
 ReadSettings Context::getReadSettings() const
 {
-    return ReadSettings(*this);
+    ReadSettings res;
+
+    std::string_view read_method_str = settings->local_filesystem_read_method.value;
+
+    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
+        res.local_fs_method = *opt_method;
+    else
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
+
+    read_method_str = settings->remote_filesystem_read_method.value;
+
+    if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
+        res.remote_fs_method = *opt_method;
+    else
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
+
+    res.local_fs_prefetch = settings->local_filesystem_read_prefetch;
+    res.remote_fs_prefetch = settings->remote_filesystem_read_prefetch;
+
+    res.load_marks_asynchronously = settings->load_marks_asynchronously;
+
+    res.enable_filesystem_read_prefetches_log = settings->enable_filesystem_read_prefetches_log;
+
+    res.remote_fs_read_max_backoff_ms = settings->remote_fs_read_max_backoff_ms;
+    res.remote_fs_read_backoff_max_tries = settings->remote_fs_read_backoff_max_tries;
+    res.enable_filesystem_cache = settings->enable_filesystem_cache;
+    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings->read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
+    res.filesystem_cache_segments_batch_size = settings->filesystem_cache_segments_batch_size;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+
+    res.filesystem_cache_max_download_size = settings->filesystem_cache_max_download_size;
+    res.skip_download_if_exceeds_query_cache = settings->skip_download_if_exceeds_query_cache;
+
+    res.page_cache = getPageCache();
+    res.use_page_cache_for_disks_without_file_cache = settings->use_page_cache_for_disks_without_file_cache;
+    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings->read_from_page_cache_if_exists_otherwise_bypass_cache;
+    res.page_cache_inject_eviction = settings->page_cache_inject_eviction;
+
+    res.remote_read_min_bytes_for_seek = settings->remote_read_min_bytes_for_seek;
+
+    /// Zero read buffer will not make progress.
+    if (!settings->max_read_buffer_size)
+    {
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value '{}' for max_read_buffer_size", settings->max_read_buffer_size);
+    }
+
+    res.local_fs_buffer_size
+        = settings->max_read_buffer_size_local_fs ? settings->max_read_buffer_size_local_fs : settings->max_read_buffer_size;
+    res.remote_fs_buffer_size
+        = settings->max_read_buffer_size_remote_fs ? settings->max_read_buffer_size_remote_fs : settings->max_read_buffer_size;
+    res.prefetch_buffer_size = settings->prefetch_buffer_size;
+    res.direct_io_threshold = settings->min_bytes_to_use_direct_io;
+    res.mmap_threshold = settings->min_bytes_to_use_mmap_io;
+    res.priority = Priority{settings->read_priority};
+
+    res.remote_throttler = getRemoteReadThrottler();
+    res.local_throttler = getLocalReadThrottler();
+
+    res.http_max_tries = settings->http_max_tries;
+    res.http_retry_initial_backoff_ms = settings->http_retry_initial_backoff_ms;
+    res.http_retry_max_backoff_ms = settings->http_retry_max_backoff_ms;
+    res.http_skip_not_found_url_for_globs = settings->http_skip_not_found_url_for_globs;
+    res.http_make_head_request = settings->http_make_head_request;
+
+    res.mmap_cache = getMMappedFileCache().get();
+
+    return res;
 }
 
 WriteSettings Context::getWriteSettings() const
