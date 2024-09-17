@@ -222,7 +222,6 @@ public:
         {
             ranges_in_data_parts.emplace_back(
                 initial_ranges_in_data_parts[part_index].data_part,
-                initial_ranges_in_data_parts[part_index].alter_conversions,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
                 MarkRanges{mark_range});
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
