@@ -143,6 +143,7 @@ arrayStringConcat
 arraySum
 arrayUniq
 arrayWithConstant
+arrayZip
 asinh
 assumeNotNull
 atan
@@ -415,6 +416,7 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
+lowerUTF8
 makeDate
 makeDate32
 makeDateTime
@@ -874,6 +876,7 @@ tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart
+tuple
 tupleConcat
 tupleDivide
 tupleDivideByNumber
@@ -894,6 +897,7 @@ tupleToNameValuePairs
 unbin
 unhex
 upper
+upperUTF8
 uptime
 validateNestedArraySizes
 version

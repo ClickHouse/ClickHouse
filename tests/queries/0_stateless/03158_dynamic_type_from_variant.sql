@@ -1,4 +1,5 @@
 SET allow_experimental_dynamic_type=1;
+SET allow_experimental_object_type=1;
 SET allow_experimental_variant_type=1;
 
 CREATE TABLE test_variable (v Variant(String, UInt32, IPv6, Bool, DateTime64)) ENGINE = Memory;

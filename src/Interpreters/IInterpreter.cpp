@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/Context.h>

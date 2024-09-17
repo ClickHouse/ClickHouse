@@ -2,20 +2,21 @@
 #include "config.h"
 
 #include <filesystem>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Types.h>
+#include <Core/SettingsEnums.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
 
 namespace DB
 {
+struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
@@ -53,19 +54,11 @@ public:
     using Bucket = size_t;
     using Processor = std::string;
 
-    ObjectStorageQueueMetadata(
-        const fs::path & zookeeper_path_,
-        const ObjectStorageQueueTableMetadata & table_metadata_,
-        const ObjectStorageQueueSettings & settings_);
-
+    ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, const ObjectStorageQueueSettings & settings_);
     ~ObjectStorageQueueMetadata();
 
-    static void syncWithKeeper(
-        const fs::path & zookeeper_path,
-        const ObjectStorageQueueTableMetadata & table_metadata,
-        const ObjectStorageQueueSettings & settings,
-        LoggerPtr log);
-
+    void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata);
+    void checkSettings(const ObjectStorageQueueSettings & settings) const;
     void shutdown();
 
     FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
@@ -81,17 +74,11 @@ public:
     static size_t getBucketsNum(const ObjectStorageQueueSettings & settings);
     static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & settings);
 
-    void checkTableMetadataEquals(const ObjectStorageQueueMetadata & other);
-
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
-    ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
-
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
-    ObjectStorageQueueSettings settings;
-    ObjectStorageQueueTableMetadata table_metadata;
+    const ObjectStorageQueueSettings settings;
     const fs::path zookeeper_path;
     const size_t buckets_num;
 
@@ -103,7 +90,5 @@ private:
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
 };
-
-using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;
 
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock, no-debug, no-parallel
+# Tags: deadlock, no-parallel, no-debug
 
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 
@@ -27,7 +27,7 @@ function thread_drop_create()
     while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 100 ];
     do
         it=$((it+1))
-        $CLICKHOUSE_CLIENT -m -q "
+        $CLICKHOUSE_CLIENT -nm -q "
             drop table if exists view_00840;
             create view view_00840 as select count(*),database,table from system.columns group by database,table;
         "
@@ -49,7 +49,7 @@ function thread_select()
 export -f thread_drop_create
 export -f thread_select
 
-TIMEOUT=30
+TIMEOUT=60
 thread_drop_create $TIMEOUT &
 thread_select $TIMEOUT &
 

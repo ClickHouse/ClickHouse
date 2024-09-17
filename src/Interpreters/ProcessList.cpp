@@ -258,7 +258,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 query_context,
                 query_,
                 client_info,
-                priorities.insert(settings.priority),
+                priorities.insert(static_cast<int>(settings.priority)),
                 std::move(thread_group),
                 query_kind,
                 settings,
@@ -657,7 +657,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     {
         if (auto ctx = context.lock())
         {
-            res.query_settings = std::make_shared<Settings>(ctx->getSettingsCopy());
+            res.query_settings = std::make_shared<Settings>(ctx->getSettings());
             res.current_database = ctx->getCurrentDatabase();
         }
     }

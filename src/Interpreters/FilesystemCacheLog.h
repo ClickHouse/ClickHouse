@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTuple.h>

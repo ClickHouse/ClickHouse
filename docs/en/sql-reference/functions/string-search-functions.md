@@ -150,15 +150,15 @@ A case insensitive invariant of [position](#position).
 Query:
 
 ``` sql
-SELECT positionCaseInsensitive('Hello, world!', 'hello');
+SELECT position('Hello, world!', 'hello');
 ```
 
 Result:
 
 ``` text
-┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
-│                                                 1 │
-└───────────────────────────────────────────────────┘
+┌─position('Hello, world!', 'hello')─┐
+│                                  0 │
+└────────────────────────────────────┘
 ```
 
 ## positionUTF8

@@ -35,7 +35,7 @@ public:
         const String & blob_path_,
         size_t buf_size_,
         const WriteSettings & write_settings_,
-        std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
+        std::shared_ptr<const AzureObjectStorageSettings> settings_,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;

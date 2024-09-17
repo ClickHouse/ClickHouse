@@ -20,7 +20,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <base/errnoToString.h>
 #include <Core/ServerSettings.h>
 
@@ -234,8 +233,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
-    if (!internal_thread)
-        thread_group->linkThread(thread_id);
+    thread_group->linkThread(thread_id);
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
@@ -271,8 +269,7 @@ void ThreadStatus::detachFromGroup()
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
 
-    if (!internal_thread)
-        thread_group->unlinkThread();
+    thread_group->unlinkThread();
 
     thread_group.reset();
 
@@ -473,11 +470,11 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
     {
         if (global_profiler_real_time_period > 0)
             query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period= */ global_profiler_real_time_period);
+                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
 
         if (global_profiler_cpu_time_period > 0)
             query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period= */ global_profiler_cpu_time_period);
+                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
     }
     catch (...)
     {
@@ -506,18 +503,18 @@ void ThreadStatus::initQueryProfiler()
         {
             if (!query_profiler_real)
                 query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                   /* period= */ settings.query_profiler_real_time_period_ns);
+                   /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
             else
-                query_profiler_real->setPeriod(settings.query_profiler_real_time_period_ns);
+                query_profiler_real->setPeriod(static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
         }
 
         if (settings.query_profiler_cpu_time_period_ns > 0)
         {
             if (!query_profiler_cpu)
                 query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                  /* period= */ settings.query_profiler_cpu_time_period_ns);
+                  /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
             else
-                query_profiler_cpu->setPeriod(settings.query_profiler_cpu_time_period_ns);
+                query_profiler_cpu->setPeriod(static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
         }
     }
     catch (...)

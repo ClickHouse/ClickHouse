@@ -15,7 +15,7 @@ namespace DB
   */
 struct User : public IAccessEntity
 {
-    std::vector<AuthenticationData> authentication_methods;
+    AuthenticationData auth_data;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
     AccessRights access;
     GrantedRoles granted_roles;

@@ -9,14 +9,14 @@ function check_refcnt_for_table()
 {
     local table=$1 && shift
 
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -nm -q "
         system stop merges $table;
         -- cleanup thread may hold the parts lock
         system stop cleanup $table;
         -- queue may hold the parts lock for awhile as well
         system stop pulling replication log $table;
     "
-    $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into $table select number, number%4 from numbers(2000)"
+    $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into $table select number, number%4 from numbers(200)"
 
     local query_id
     query_id="$table-$(random_str 10)"
@@ -35,7 +35,7 @@ function check_refcnt_for_table()
     )
 
     # Notes:
-    # - query may sleep 0.1*(2000/4)=50 seconds maximum, it is enough to check system.parts
+    # - query may sleep 0.1*(200/4)=5 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
     $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(0.1) from $table where part = 1" &
@@ -66,14 +66,14 @@ function check_refcnt_for_table()
 
 # NOTE: index_granularity=1 to cancel ASAP
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
     drop table if exists data_02340;
     create table data_02340 (key Int, part Int) engine=MergeTree() partition by part order by key settings index_granularity=1;
 " || exit 1
 check_refcnt_for_table data_02340
 $CLICKHOUSE_CLIENT -q "drop table data_02340 sync"
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
     drop table if exists data_02340_rep sync;
     create table data_02340_rep (key Int, part Int) engine=ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') partition by part order by key settings index_granularity=1;
 " || exit 1

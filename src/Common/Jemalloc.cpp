@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <jemalloc/jemalloc.h>
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
@@ -25,6 +26,7 @@ namespace ErrorCodes
 
 void purgeJemallocArenas()
 {
+    LOG_TRACE(getLogger("SystemJemalloc"), "Purging unused memory");
     Stopwatch watch;
     mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
@@ -56,7 +58,7 @@ void setJemallocProfileActive(bool value)
         return;
     }
 
-    setJemallocValue("prof.active", value);
+    mallctl("prof.active", nullptr, nullptr, &value, sizeof(bool));
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
@@ -80,16 +82,6 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile to {}", profile_dump_path_str);
     mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return profile_dump_path;
-}
-
-void setJemallocBackgroundThreads(bool enabled)
-{
-    setJemallocValue("background_thread", enabled);
-}
-
-void setJemallocMaxBackgroundThreads(size_t max_threads)
-{
-    setJemallocValue("max_background_threads", max_threads);
 }
 
 }

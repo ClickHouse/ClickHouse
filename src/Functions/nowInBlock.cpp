@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnVector.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
@@ -32,7 +31,7 @@ public:
         return std::make_shared<FunctionNowInBlock>(context);
     }
     explicit FunctionNowInBlock(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override

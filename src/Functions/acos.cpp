@@ -14,7 +14,7 @@ using FunctionAcos = FunctionMathUnary<UnaryFunctionVectorized<AcosName, acos>>;
 
 REGISTER_FUNCTION(Acos)
 {
-    factory.registerFunction<FunctionAcos>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionAcos>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

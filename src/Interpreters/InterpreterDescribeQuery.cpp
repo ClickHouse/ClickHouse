@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>

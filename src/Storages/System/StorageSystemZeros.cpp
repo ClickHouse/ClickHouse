@@ -109,8 +109,8 @@ Pipe StorageSystemZeros::read(
     storage_snapshot->check(column_names);
 
     UInt64 query_limit = limit ? *limit : 0;
-    if (query_info.trivial_limit)
-        query_limit = query_limit ? std::min(query_limit, query_info.trivial_limit) : query_info.trivial_limit;
+    if (query_info.limit)
+        query_limit = query_limit ? std::min(query_limit, query_info.limit) : query_info.limit;
 
     if (query_limit && query_limit < max_block_size)
         max_block_size = query_limit;
