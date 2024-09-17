@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/BufferChunksTransform.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 namespace DB
 {
@@ -49,13 +50,26 @@ IProcessor::Status BufferChunksTransform::prepare()
         else if (input.hasData())
         {
             auto chunk = pullChunk();
+            bool virtual_row = getVirtualRowFromChunk(chunk);
             output.push(std::move(chunk));
+            if (virtual_row)
+            {
+                input.setNotNeeded();
+                return Status::PortFull;
+            }
         }
     }
 
     if (input.hasData() && (num_buffered_rows < max_rows_to_buffer || num_buffered_bytes < max_bytes_to_buffer))
     {
         auto chunk = pullChunk();
+        bool virtual_row = getVirtualRowFromChunk(chunk);
+        if (virtual_row)
+        {
+            output.push(std::move(chunk));
+            input.setNotNeeded();
+            return Status::PortFull;
+        }
         num_buffered_rows += chunk.getNumRows();
         num_buffered_bytes += chunk.bytes();
         chunks.push(std::move(chunk));

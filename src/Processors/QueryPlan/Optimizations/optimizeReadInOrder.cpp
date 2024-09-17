@@ -825,9 +825,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             if (!can_read)
                 return nullptr;
 
-            bool use_buffering = (order_info->limit == 0) && sorting.getSettings().read_in_order_use_buffering;
-            /// Avoid conflict with buffering.
-            if (!use_buffering && !order_info->first_prefix_fixed)
+            if (!order_info->first_prefix_fixed)
                 reading->enableVirtualRow();
         }
 
