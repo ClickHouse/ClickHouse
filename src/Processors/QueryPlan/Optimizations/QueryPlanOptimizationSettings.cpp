@@ -42,6 +42,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
 
     settings.remove_redundant_sorting = from.query_plan_enable_optimizations && from.query_plan_remove_redundant_sorting;
 
+    settings.optimize_sorting_by_input_stream_properties = from.query_plan_enable_optimizations && from.optimize_sorting_by_input_stream_properties;
+
     settings.aggregate_partitions_independently = from.query_plan_enable_optimizations && from.allow_aggregate_partitions_independently;
 
     settings.remove_redundant_distinct = from.query_plan_enable_optimizations && from.query_plan_remove_redundant_distinct;
