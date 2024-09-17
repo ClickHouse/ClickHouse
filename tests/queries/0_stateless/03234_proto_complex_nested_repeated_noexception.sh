@@ -9,7 +9,7 @@ SOURCE_SCHEMA_FILE="${CURDIR}/format_schemas/03234_proto_complex_nested_repeated
 TARGET_SCHEMA_FILE="${CLICKHOUSE_SCHEMA_FILES}/03234_proto_complex_nested_repeated_noexception.proto"
 cp "${SOURCE_SCHEMA_FILE}" "${TARGET_SCHEMA_FILE}"
 
-cat <<'EOF' | clickhouse-client -mn
+cat <<'EOF' | $CLICKHOUSE_CLIENT -mn
 
 DROP TABLE IF EXISTS exception_counter ;
 CREATE TABLE exception_counter (`val` UInt32) ENGINE = Memory ;
