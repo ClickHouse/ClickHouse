@@ -376,17 +376,20 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (state_initialized)
         return;
 
-    for (auto && part : announcement.description)
     {
-        auto intersecting_it = std::find_if(
-            all_parts_to_read.begin(),
-            all_parts_to_read.end(),
-            [&part](const Part & other) { return !other.description.info.isDisjoint(part.info); });
+        /// To speedup search for adjacent parts
+        Parts known_parts(all_parts_to_read.begin(), all_parts_to_read.end());
 
-        if (intersecting_it != all_parts_to_read.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
+        for (auto && part : announcement.description)
+        {
+            auto intersecting_it = known_parts.lower_bound(Part{.description = part, .replicas = {}});
 
-        all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+            if (intersecting_it != known_parts.end() && !intersecting_it->description.info.isDisjoint(part.info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
+
+            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+            known_parts.emplace(Part{.description = part, .replicas = {}});
+        }
     }
 
     std::ranges::sort(
