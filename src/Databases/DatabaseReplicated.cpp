@@ -4,47 +4,49 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabaseReplicatedWorker.h>
+#include <Databases/TablesDependencyGraph.h>
+#include <Databases/enableAllExperimentalSettings.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/StorageKeeperMap.h>
 #include <base/chrono_io.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/PoolId.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/PoolId.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
-#include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabaseReplicatedWorker.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/TablesDependencyGraph.h>
-#include <Databases/enableAllExperimentalSettings.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/SharedThreadPools.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/queryToString.h>
-#include <Storages/StorageKeeperMap.h>
-#include <Storages/AlterCommands.h>
 
 namespace DB
 {
@@ -419,7 +421,6 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
     cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
     cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
-
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
 {
@@ -1068,7 +1069,8 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
             hosts_to_wait.push_back(unfiltered_hosts[i]);
     }
 
-    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
+
+    return getQueryStatus(node_path, query_context, hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -2002,5 +2004,21 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             std::move(database_replicated_settings), args.context);
     };
     factory.registerDatabase("Replicated", create_fn);
+}
+
+BlockIO DatabaseReplicated::getQueryStatus(const String & node_path, ContextPtr context_, const Strings & hosts_to_wait)
+{
+    BlockIO io;
+    if (context_->getSettingsRef().distributed_ddl_task_timeout == 0)
+        return io;
+
+    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(node_path, context_, hosts_to_wait);
+    io.pipeline = QueryPipeline(std::move(source));
+
+    if (context_->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE
+        || context_->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
+
+    return io;
 }
 }

@@ -151,6 +151,8 @@ private:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
 
+    static BlockIO getQueryStatus(const String & node_path, ContextPtr context, const Strings & hosts_to_wait);
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
