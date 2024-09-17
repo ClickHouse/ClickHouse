@@ -1430,6 +1430,10 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         visit_rows_map(sorted_blocks, map);
         doDebugAsserts();
         data->blocks.swap(sorted_blocks);
+        size_t new_blocks_allocated_size = 0;
+        for (const auto & block : data->blocks)
+            new_blocks_allocated_size += block.allocatedBytes();
+        data->blocks_allocated_size = new_blocks_allocated_size;
         doDebugAsserts();
     }
 }
