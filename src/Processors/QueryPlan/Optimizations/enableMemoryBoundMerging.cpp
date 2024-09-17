@@ -76,14 +76,14 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
 
     for (auto & reading : reading_steps)
     {
-        reading->enforceSorting(sort_description);
+        reading->enableMemoryBoundMerging();
         if (enforce_aggregation_in_order)
             reading->enforceAggregationInOrder();
     }
 
     for (auto & reading : async_reading_steps)
     {
-        reading->enforceSorting(sort_description);
+        reading->enableMemoryBoundMerging();
         if (enforce_aggregation_in_order)
             reading->enforceAggregationInOrder();
     }
