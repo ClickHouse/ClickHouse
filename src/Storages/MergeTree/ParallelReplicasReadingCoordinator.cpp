@@ -917,18 +917,15 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 #ifndef NDEBUG
     /// Double check that there are no intersecting parts
     {
-        auto part_it = all_parts_to_read.begin();
-        auto next_part_it = part_it;
-        if (next_part_it != all_parts_to_read.end())
-            ++next_part_it;
-        while (next_part_it != all_parts_to_read.end())
-        {
-            chassert(part_it->description.info.isDisjoint(next_part_it->description.info),
-                fmt::format("Parts {} and {} intersect",
-                    part_it->description.info.getPartNameV1(), next_part_it->description.info.getPartNameV1()));
-            ++part_it;
-            ++next_part_it;
-        }
+        auto intersecting_part_it = std::adjacent_find(all_parts_to_read.begin(), all_parts_to_read.end(),
+            [] (const Part & lhs, const Part & rhs)
+            {
+                return !lhs.description.info.isDisjoint(rhs.description.info);
+            });
+
+        if (intersecting_part_it != all_parts_to_read.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} intersect",
+                intersecting_part_it->description.info.getPartNameV1(), std::next(intersecting_part_it)->description.info.getPartNameV1());
     }
 #endif
 
