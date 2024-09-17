@@ -2545,6 +2545,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                 response.responses[i]->error = failed_multi->error_codes[i];
             }
 
+            response.error = failed_multi->global_error;
             storage.uncommitted_state.commit(zxid);
             return response_ptr;
         }
@@ -2901,7 +2902,19 @@ void KeeperStorage<Container>::preprocessRequest(
 
     if (check_acl && !request_processor->checkAuth(*this, session_id, false))
     {
-        uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+        /// Multi requests handle failures using FailedMultiDelta
+        if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
+        {
+            const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*zk_request);
+            std::vector<Coordination::Error> response_errors;
+            response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
+            uncommitted_state.deltas.emplace_back(
+                new_last_zxid, KeeperStorage<Container>::FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
+        }
+        else
+        {
+            uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+        }
         return;
     }
 

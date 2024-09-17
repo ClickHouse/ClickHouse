@@ -27,13 +27,12 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, NameSet columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_)
+ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
     : ITransformingStep(
         input_stream_,
-        ArrayJoinTransform::transformHeader(input_stream_.header, columns_),
+        ArrayJoinTransform::transformHeader(input_stream_.header, array_join_.columns),
         getTraits())
-    , columns(std::move(columns_))
-    , is_left(is_left_)
+    , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
 {
@@ -42,16 +41,16 @@ ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, NameSet columns_,
 void ArrayJoinStep::updateOutputStream()
 {
     output_stream = createOutputStream(
-        input_streams.front(), ArrayJoinTransform::transformHeader(input_streams.front().header, columns), getDataStreamTraits());
+        input_streams.front(), ArrayJoinTransform::transformHeader(input_streams.front().header, array_join.columns), getDataStreamTraits());
 }
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto array_join = std::make_shared<ArrayJoinAction>(columns, is_left, is_unaligned, max_block_size);
+    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size);
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<ArrayJoinTransform>(header, array_join, on_totals);
+        return std::make_shared<ArrayJoinTransform>(header, array_join_actions, on_totals);
     });
 }
 
@@ -60,8 +59,8 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    settings.out << prefix << (is_left ? "LEFT " : "") << "ARRAY JOIN ";
-    for (const auto & column : columns)
+    settings.out << prefix << (array_join.is_left ? "LEFT " : "") << "ARRAY JOIN ";
+    for (const auto & column : array_join.columns)
     {
         if (!first)
             settings.out << ", ";
@@ -75,10 +74,10 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
 
 void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Left", is_left);
+    map.add("Left", array_join.is_left);
 
     auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
-    for (const auto & column : columns)
+    for (const auto & column : array_join.columns)
         columns_array->add(column);
 
     map.add("Columns", std::move(columns_array));
@@ -92,15 +91,15 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings)
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
-    if (is_left)
+    if (array_join.is_left)
         flags |= 1;
     if (is_unaligned)
         flags |= 2;
 
     writeIntBinary(flags, ctx.out);
 
-    writeVarUInt(columns.size(), ctx.out);
-    for (const auto & column : columns)
+    writeVarUInt(array_join.columns.size(), ctx.out);
+    for (const auto & column : array_join.columns)
         writeStringBinary(column, ctx.out);
 }
 
@@ -114,15 +113,15 @@ std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx
 
     UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
-    NameSet columns;
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        String column;
-        readStringBinary(column, ctx.in);
-        columns.insert(std::move(column));
-    }
 
-    return std::make_unique<ArrayJoinStep>(ctx.input_streams.front(), std::move(columns), is_left, is_unaligned, ctx.settings.max_block_size);
+    ArrayJoin array_join;
+    array_join.is_left = is_left;
+    array_join.columns.resize(num_columns);
+
+    for (auto & column : array_join.columns)
+        readStringBinary(column, ctx.in);
+
+    return std::make_unique<ArrayJoinStep>(ctx.input_streams.front(), std::move(array_join), is_unaligned, ctx.settings.max_block_size);
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)

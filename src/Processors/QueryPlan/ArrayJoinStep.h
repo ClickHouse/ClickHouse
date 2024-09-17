@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Interpreters/ArrayJoin.h>
 
 namespace DB
 {
@@ -10,7 +11,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ArrayJoinStep : public ITransformingStep
 {
 public:
-    ArrayJoinStep(const DataStream & input_stream_, NameSet columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_);
+    ArrayJoinStep(const DataStream & input_stream_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_);
     String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -18,8 +19,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const NameSet & getColumns() const { return columns; }
-    bool isLeft() const { return is_left; }
+    const Names & getColumns() const { return array_join.columns; }
+    bool isLeft() const { return array_join.is_left; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
@@ -29,10 +30,9 @@ public:
 private:
     void updateOutputStream() override;
 
-    NameSet columns;
-    bool is_left;
-    bool is_unaligned;
-    size_t max_block_size;
+    ArrayJoin array_join;
+    bool is_unaligned = false;
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
 }

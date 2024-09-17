@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <base/sleep.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -249,6 +250,8 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
         }
         else if (code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, res);
+
+        sleepForMilliseconds(50);
     }
 
     if (counter_path.empty())

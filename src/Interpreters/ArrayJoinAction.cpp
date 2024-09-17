@@ -62,8 +62,8 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     return array_col;
 }
 
-ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_)
-    : columns(array_joined_columns_)
+ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_)
+    : columns(columns_.begin(), columns_.end())
     , is_left(is_left_)
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
@@ -78,6 +78,12 @@ ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool is_
     }
     else if (is_left)
         function_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(FunctionEmptyArrayToSingle::createImpl());
+}
+
+void ArrayJoinAction::prepare(const Names & columns, ColumnsWithTypeAndName & sample)
+{
+    NameSet columns_set(columns.begin(), columns.end());
+    prepare(columns_set, sample);
 }
 
 void ArrayJoinAction::prepare(const NameSet & columns, ColumnsWithTypeAndName & sample)

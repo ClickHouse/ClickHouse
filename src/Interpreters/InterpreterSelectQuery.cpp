@@ -1679,10 +1679,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 QueryPlanStepPtr array_join_step
                     = std::make_unique<ArrayJoinStep>(
                         query_plan.getCurrentDataStream(),
-                        expressions.array_join->columns,
-                        expressions.array_join->is_left,
-                        expressions.array_join->is_unaligned,
-                        expressions.array_join->max_block_size);
+                        *expressions.array_join,
+                        settings.enable_unaligned_array_join,
+                        settings.max_block_size);
 
                 array_join_step->setStepDescription("ARRAY JOIN");
                 query_plan.addStep(std::move(array_join_step));

@@ -38,8 +38,9 @@ public:
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
 
-    ArrayJoinAction(const NameSet & array_joined_columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_);
+    ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_);
     static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);
+    static void prepare(const Names & columns, ColumnsWithTypeAndName & sample);
 
     ArrayJoinResultIteratorPtr execute(Block block);
 };
