@@ -1,5 +1,3 @@
-#include <Common/AsynchronousMetrics.h>
-
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
@@ -8,8 +6,10 @@
 #include <base/find_symbols.h>
 #include <base/getPageSize.h>
 #include <sys/resource.h>
+#include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -69,10 +69,14 @@ static void openCgroupv2MetricFile(const std::string & filename, std::optional<R
 
 AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
+    , update_jemalloc_epoch(update_jemalloc_epoch_)
+    , update_rss(update_rss_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/cpuinfo", cpuinfo);
@@ -411,9 +415,7 @@ Value saveJemallocMetricImpl(
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
-    Value value{};
-    size_t size = sizeof(value);
-    mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
+    auto value = getJemallocValue<Value>(jemalloc_full_name.c_str());
     values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
@@ -768,8 +770,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = updateJemallocEpoch();
-    new_values["jemalloc.epoch"] = { epoch, "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other `jemalloc` metrics." };
+    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : getJemallocValue<uint64_t>("epoch");
+    new_values["jemalloc.epoch"]
+        = {epoch,
+           "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
+           "`jemalloc` metrics."};
 
     // Collect the statistics themselves.
     saveJemallocMetric<size_t>(new_values, "allocated");
@@ -782,10 +787,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
-    saveJemallocProf<size_t>(new_values, "active");
+    saveJemallocProf<bool>(new_values, "active");
     saveAllArenasMetric<size_t>(new_values, "pactive");
-    [[maybe_unused]] size_t je_malloc_pdirty = saveAllArenasMetric<size_t>(new_values, "pdirty");
-    [[maybe_unused]] size_t je_malloc_pmuzzy = saveAllArenasMetric<size_t>(new_values, "pmuzzy");
+    saveAllArenasMetric<size_t>(new_values, "pdirty");
+    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
@@ -814,41 +819,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
 
-        /// We must update the value of total_memory_tracker periodically.
-        /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/10293
-        {
-            Int64 amount = total_memory_tracker.get();
-            Int64 peak = total_memory_tracker.getPeak();
-            Int64 rss = data.resident;
-            Int64 free_memory_in_allocator_arenas = 0;
-
-#if USE_JEMALLOC
-            /// According to jemalloc man, pdirty is:
-            ///
-            ///     Number of pages within unused extents that are potentially
-            ///     dirty, and for which madvise() or similar has not been called.
-            ///
-            /// So they will be subtracted from RSS to make accounting more
-            /// accurate, since those pages are not really RSS but a memory
-            /// that can be used at anytime via jemalloc.
-            free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
-#endif
-
-            Int64 difference = rss - amount;
-
-            /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
-            if (difference >= 1048576 || difference <= -1048576)
-                LOG_TRACE(log,
-                    "MemoryTracking: was {}, peak {}, free memory in arenas {}, will set to {} (RSS), difference: {}",
-                    ReadableSize(amount),
-                    ReadableSize(peak),
-                    ReadableSize(free_memory_in_allocator_arenas),
-                    ReadableSize(rss),
-                    ReadableSize(difference));
-
-            MemoryTracker::setRSS(rss, free_memory_in_allocator_arenas);
-        }
+        if (update_rss)
+            MemoryTracker::updateRSS(data.resident);
     }
 
     {

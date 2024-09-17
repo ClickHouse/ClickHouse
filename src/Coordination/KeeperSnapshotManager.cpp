@@ -520,7 +520,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 session_auth_counter++;
             }
             if (!ids.empty())
-                storage.session_and_auth[active_session_id] = ids;
+                storage.committed_session_and_auth[active_session_id] = ids;
         }
         current_session_size++;
     }
@@ -555,7 +555,7 @@ KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
-    session_and_auth = storage->session_and_auth;
+    session_and_auth = storage->committed_session_and_auth;
 }
 
 template<typename Storage>
@@ -574,7 +574,7 @@ KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
-    session_and_auth = storage->session_and_auth;
+    session_and_auth = storage->committed_session_and_auth;
 }
 
 template<typename Storage>

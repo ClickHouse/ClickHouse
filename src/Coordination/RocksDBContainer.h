@@ -211,7 +211,7 @@ public:
         }
     }
 
-    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key_)
+    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key_, bool read_data = false)
     {
         rocksdb::ReadOptions read_options;
         read_options.total_order_seek = true;
@@ -232,6 +232,15 @@ public:
             typename Node::Meta & meta = node;
             /// We do not read data here
             readPODBinary(meta, buffer);
+            if (read_data)
+            {
+                readVarUInt(meta.stats.data_size, buffer);
+                if (meta.stats.data_size)
+                {
+                    node.data = std::unique_ptr<char[]>(new char[meta.stats.data_size]);
+                    buffer.readStrict(node.data.get(), meta.stats.data_size);
+                }
+            }
             std::string real_key(iter->key().data() + len, iter->key().size() - len);
             // std::cout << "real key: " << real_key << std::endl;
             result.emplace_back(std::move(real_key), std::move(node));

@@ -602,7 +602,7 @@ bool KeeperServer::isLeaderAlive() const
 bool KeeperServer::isExceedingMemorySoftLimit() const
 {
     Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-    return mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit;
+    return mem_soft_limit > 0 && std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) >= mem_soft_limit;
 }
 
 /// TODO test whether taking failed peer in count

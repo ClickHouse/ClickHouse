@@ -20,6 +20,7 @@
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
@@ -538,6 +539,13 @@ std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedS
 }
 
 template<typename Container>
+void KeeperStorage<Container>::UncommittedState::UncommittedNode::materializeACL(const ACLMap & current_acl_map)
+{
+    if (!acls.has_value())
+        acls.emplace(current_acl_map.convertNumber(node->acl_id));
+}
+
+template<typename Container>
 void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta)
 {
     chassert(!delta.path.empty());
@@ -632,7 +640,7 @@ bool KeeperStorage<Container>::UncommittedState::hasACL(int64_t session_id, bool
     if (is_local)
     {
         std::shared_lock lock(storage.auth_mutex);
-        return check_auth(storage.session_and_auth[session_id]);
+        return check_auth(storage.committed_session_and_auth[session_id]);
     }
 
     /// we want to close the session and with that we will remove all the auth related to the session
@@ -640,7 +648,7 @@ bool KeeperStorage<Container>::UncommittedState::hasACL(int64_t session_id, bool
         return false;
 
     std::shared_lock lock(storage.auth_mutex);
-    if (check_auth(storage.session_and_auth[session_id]))
+    if (check_auth(storage.committed_session_and_auth[session_id]))
         return true;
 
     // check if there are uncommitted
@@ -651,7 +659,7 @@ bool KeeperStorage<Container>::UncommittedState::hasACL(int64_t session_id, bool
     if (check_auth(auth_it->second))
         return true;
 
-    return check_auth(storage.session_and_auth[session_id]);
+    return check_auth(storage.committed_session_and_auth[session_id]);
 }
 
 template<typename Container>
@@ -860,13 +868,20 @@ std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedS
 }
 
 template<typename Container>
+const typename Container::Node * KeeperStorage<Container>::UncommittedState::getActualNodeView(StringRef path, const Node & storage_node) const
+{
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
+        return node_it->second.node.get();
+
+    return &storage_node;
+}
+
+template<typename Container>
 Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(StringRef path) const
 {
     if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
     {
-        if (!node_it->second.acls.has_value())
-            node_it->second.acls.emplace(storage.acl_map.convertNumber(node_it->second.node->acl_id));
-
+        node_it->second.materializeACL(storage.acl_map);
         return *node_it->second.acls;
     }
 
@@ -906,7 +921,7 @@ void KeeperStorage<Container>::UncommittedState::forEachAuthInSession(int64_t se
     /// both committed and uncommitted need to be under the lock to avoid fetching the same AuthID from both committed and uncommitted state
     std::shared_lock lock(storage.auth_mutex);
     // for committed
-    if (auto auth_it = storage.session_and_auth.find(session_id); auth_it != storage.session_and_auth.end())
+    if (auto auth_it = storage.committed_session_and_auth.find(session_id); auth_it != storage.committed_session_and_auth.end())
         call_for_each_auth(auth_it->second);
 
     // for uncommitted
@@ -917,11 +932,11 @@ void KeeperStorage<Container>::UncommittedState::forEachAuthInSession(int64_t se
 namespace
 {
 
-[[noreturn]] void onStorageInconsistency()
+[[noreturn]] void onStorageInconsistency(std::string_view message)
 {
     LOG_ERROR(
         getLogger("KeeperStorage"),
-        "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
+        "Inconsistency found between uncommitted and committed data ({}). Keeper will terminate to avoid undefined behaviour.", message);
     std::terminate();
 }
 
@@ -980,24 +995,21 @@ void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int6
 }
 
 template<typename Container>
-Coordination::Error KeeperStorage<Container>::commit(std::list<Delta> deltas)
+Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRange deltas)
 {
-    // Deltas are added with increasing ZXIDs
-    // If there are no deltas for the commit_zxid (e.g. read requests), we instantly return
-    // on first delta
-    for (auto & delta : deltas)
+    for (const auto & delta : deltas)
     {
         auto result = std::visit(
-            [&, &path = delta.path]<typename DeltaType>(DeltaType & operation) -> Coordination::Error
+            [&, &path = delta.path]<typename DeltaType>(const DeltaType & operation) -> Coordination::Error
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
                     if (!createNode(
                             path,
-                            std::move(operation.data),
+                            operation.data,
                             operation.stat,
-                            std::move(operation.acls)))
-                        onStorageInconsistency();
+                            operation.acls))
+                        onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
                 }
@@ -1005,10 +1017,10 @@ Coordination::Error KeeperStorage<Container>::commit(std::list<Delta> deltas)
                 {
                     auto node_it = container.find(path);
                     if (node_it == container.end())
-                        onStorageInconsistency();
+                        onStorageInconsistency("Node to be updated is missing");
 
                     if (operation.version != -1 && operation.version != node_it->value.stats.version)
-                        onStorageInconsistency();
+                        onStorageInconsistency("Node to be updated has invalid version");
 
                     if constexpr (!use_rocksdb)
                         removeDigest(node_it->value, path);
@@ -1027,7 +1039,7 @@ Coordination::Error KeeperStorage<Container>::commit(std::list<Delta> deltas)
                 else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
                 {
                     if (!removeNode(path, operation.version))
-                        onStorageInconsistency();
+                        onStorageInconsistency("Failed to remove node");
 
                     return Coordination::Error::ZOK;
                 }
@@ -1035,10 +1047,10 @@ Coordination::Error KeeperStorage<Container>::commit(std::list<Delta> deltas)
                 {
                     auto node_it = container.find(path);
                     if (node_it == container.end())
-                        onStorageInconsistency();
+                        onStorageInconsistency("Failed to set ACL because node is missing");
 
                     if (operation.version != -1 && operation.version != node_it->value.stats.aversion)
-                        onStorageInconsistency();
+                        onStorageInconsistency("Failed to set ACL because version of the node is invalid");
 
                     acl_map.removeUsage(node_it->value.acl_id);
 
@@ -1058,7 +1070,7 @@ Coordination::Error KeeperStorage<Container>::commit(std::list<Delta> deltas)
                 else if constexpr (std::same_as<DeltaType, AddAuthDelta>)
                 {
                     std::lock_guard auth_lock{auth_mutex};
-                    session_and_auth[operation.session_id].emplace_back(std::move(*operation.auth_id));
+                    committed_session_and_auth[operation.session_id].emplace_back(std::move(*operation.auth_id));
                     return Coordination::Error::ZOK;
                 }
                 else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
@@ -1068,7 +1080,7 @@ Coordination::Error KeeperStorage<Container>::commit(std::list<Delta> deltas)
                 else
                 {
                     // shouldn't be called in any process functions
-                    onStorageInconsistency();
+                    onStorageInconsistency("Invalid delta operation");
                 }
             },
             delta.operation);
@@ -1150,9 +1162,6 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
     if (version != -1 && version != node_it->value.stats.version)
         return false;
 
-    if (node_it->value.stats.numChildren())
-        return false;
-
     KeeperStorage::Node prev_node;
     prev_node.shallowCopy(node_it->value);
     acl_map.removeUsage(node_it->value.acl_id);
@@ -1200,6 +1209,8 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
             return function(dynamic_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
             return function(dynamic_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
+        case Coordination::OpNum::RemoveRecursive:
+            return function(dynamic_cast<const Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
         case Coordination::OpNum::Exists:
             return function(dynamic_cast<const Coordination::ZooKeeperExistsRequest &>(zk_request));
         case Coordination::OpNum::Set:
@@ -1291,7 +1302,7 @@ bool KeeperStorage<Container>::checkACL(StringRef path, int32_t permission, int6
 /// Default implementations ///
 template <std::derived_from<Coordination::ZooKeeperRequest> T, typename Storage>
 Coordination::ZooKeeperResponsePtr
-processLocal(const T & zk_request, Storage & /*storage*/, std::list<KeeperStorageBase::Delta> /*deltas*/)
+processLocal(const T & zk_request, Storage & /*storage*/, KeeperStorageBase::DeltaRange /*deltas*/)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Local processing not supported for request with type {}", zk_request.getOpNum());
 }
@@ -1311,7 +1322,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <std::derived_from<Coordination::ZooKeeperRequest> T>
 KeeperStorageBase::ResponsesForSessions
-processWatches(const T & /*zk_request*/, KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/)
+processWatches(const T & /*zk_request*/, KeeperStorageBase::DeltaRange /*deltas*/, KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/)
 {
     return {};
 }
@@ -1328,10 +1339,10 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(
     const Coordination::ZooKeeperHeartbeatRequest & zk_request,
     Storage & storage,
-    std::list<KeeperStorageBase::Delta> deltas)
+    KeeperStorageBase::DeltaRange deltas)
 {
     Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
-    response_ptr->error = storage.commit(std::move(deltas));
+    response_ptr->error = storage.commit(deltas);
     return response_ptr;
 }
 /// HEARTBEAT Request ///
@@ -1339,7 +1350,7 @@ Coordination::ZooKeeperResponsePtr process(
 /// SYNC Request ///
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperSyncRequest & zk_request, Storage & /* storage */, std::list<KeeperStorageBase::Delta> /* deltas */)
+process(const Coordination::ZooKeeperSyncRequest & zk_request, Storage & /* storage */, KeeperStorageBase::DeltaRange /* deltas */)
 {
     auto response = std::make_shared<Coordination::ZooKeeperSyncResponse>();
     response->path = zk_request.path;
@@ -1357,6 +1368,7 @@ bool checkAuth(const Coordination::ZooKeeperCreateRequest & zk_request, Storage 
 
 KeeperStorageBase::ResponsesForSessions processWatches(
     const Coordination::ZooKeeperCreateRequest & zk_request,
+    KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
     KeeperStorageBase::Watches & list_watches)
 {
@@ -1468,7 +1480,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
         ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
@@ -1536,7 +1548,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr
-processImpl(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+processImpl(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     auto response = std::make_shared<Coordination::ZooKeeperGetResponse>();
 
@@ -1564,7 +1576,7 @@ processImpl(const Coordination::ZooKeeperGetRequest & zk_request, Storage & stor
         if constexpr (local)
             response->error = Coordination::Error::ZNONODE;
         else
-            onStorageInconsistency();
+            onStorageInconsistency("Failed to get node because it's missing");
     }
     else
     {
@@ -1578,14 +1590,14 @@ processImpl(const Coordination::ZooKeeperGetRequest & zk_request, Storage & stor
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     return processImpl<false>(zk_request, storage, std::move(deltas));
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas));
@@ -1601,6 +1613,7 @@ bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage 
 
 KeeperStorageBase::ResponsesForSessions processWatches(
     const Coordination::ZooKeeperRemoveRequest & zk_request,
+    KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
     KeeperStorageBase::Watches & list_watches)
 {
@@ -1701,7 +1714,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperRemoveRequest & /*zk_request*/, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+process(const Coordination::ZooKeeperRemoveRequest & /*zk_request*/, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     auto response = std::make_shared<Coordination::ZooKeeperRemoveResponse>();
 
@@ -1710,6 +1723,313 @@ process(const Coordination::ZooKeeperRemoveRequest & /*zk_request*/, Storage & s
 }
 
 /// REMOVE Request ///
+
+/// REMOVERECURSIVE Request ///
+
+namespace
+{
+
+template <typename Storage>
+class ToDeleteTreeCollector
+{
+    Storage & storage;
+    int64_t zxid;
+    int64_t session_id;
+    uint32_t limit;
+
+    uint32_t nodes_observed = 1;  /// root node
+
+    std::list<KeeperStorageBase::Delta> deltas;
+    using UncommittedChildren = std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+
+public:
+    enum class CollectStatus
+    {
+        Ok,
+        NoAuth,
+        LimitExceeded,
+    };
+
+    friend struct KeeperStorageRemoveRecursiveRequestProcessor;
+
+    ToDeleteTreeCollector(Storage & storage_, int64_t zxid_, int64_t session_id_, uint32_t limit_)
+        : storage(storage_)
+        , zxid(zxid_)
+        , session_id(session_id_)
+        , limit(limit_)
+    {
+    }
+
+    CollectStatus collect(StringRef root_path, const Storage::Node & root_node)
+    {
+        if (checkLimits(root_node))
+            return CollectStatus::LimitExceeded;
+
+        addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()});
+
+        for (auto current_delta_it = deltas.rbegin(); current_delta_it != deltas.rend(); ++current_delta_it)
+        {
+            const auto & current_path = current_delta_it->path;
+            chassert(!current_path.empty());
+
+            if (!storage.checkACL(current_path, Coordination::ACL::Delete, session_id, /*is_local=*/false))
+                return CollectStatus::NoAuth;
+
+            UncommittedChildren uncommitted_children;
+            if (auto status = visitUncommitted(current_path, uncommitted_children); status != CollectStatus::Ok)
+                return status;
+
+            if constexpr (Storage::use_rocksdb)
+            {
+                if (auto status = visitRocksDBNode(current_path, uncommitted_children); status != CollectStatus::Ok)
+                    return status;
+            }
+            else
+            {
+                if (auto status = visitMemNode(current_path, uncommitted_children); status != CollectStatus::Ok)
+                    return status;
+            }
+        }
+
+        return CollectStatus::Ok;
+    }
+
+    std::list<typename Storage::Delta> extractDeltas()
+    {
+        return std::move(deltas);
+    }
+
+private:
+    CollectStatus visitRocksDBNode(StringRef current_path, const UncommittedChildren & uncommitted_children) requires Storage::use_rocksdb
+    {
+        std::filesystem::path current_path_fs(current_path.toString());
+
+        std::vector<std::pair<std::string, typename Storage::Node>> children;
+        {
+            std::lock_guard lock(storage.storage_mutex);
+            children = storage.container.getChildren(current_path.toString(), /*read_data=*/true);
+        }
+
+        for (auto && [child_name, child_node] : children)
+        {
+            auto child_path = (current_path_fs / child_name).generic_string();
+
+            if (uncommitted_children.contains(child_path))
+                continue;
+
+            if (checkLimits(child_node))
+                return CollectStatus::LimitExceeded;
+
+            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
+        }
+
+        return CollectStatus::Ok;
+    }
+
+    CollectStatus visitMemNode(StringRef current_path, const UncommittedChildren & uncommitted_children) requires (!Storage::use_rocksdb)
+    {
+        std::lock_guard lock(storage.storage_mutex);
+        auto node_it = storage.container.find(current_path);
+        if (node_it == storage.container.end())
+            return CollectStatus::Ok;
+
+        std::filesystem::path current_path_fs(current_path.toString());
+        const auto & children = node_it->value.getChildren();
+
+        for (const auto & child_name : children)
+        {
+            auto child_path = (current_path_fs / child_name.toView()).generic_string();
+
+            if (uncommitted_children.contains(child_path))
+                continue;
+
+            auto child_it = storage.container.find(child_path);
+            chassert(child_it != storage.container.end());
+            const auto & child_node = child_it->value;
+
+            if (checkLimits(child_node))
+                return CollectStatus::LimitExceeded;
+
+            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
+        }
+
+        return CollectStatus::Ok;
+    }
+
+    CollectStatus visitUncommitted(const std::string & path, UncommittedChildren & uncommitted_children)
+    {
+        auto & nodes = storage.uncommitted_state.nodes;
+
+        for (auto nodes_it = nodes.upper_bound(path + "/"); nodes_it != nodes.end() && parentNodePath(nodes_it->first) == path; ++nodes_it)
+        {
+            const auto actual_child_node_ptr = nodes_it->second.node.get();
+
+            uncommitted_children.insert(nodes_it->first);
+
+            if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                continue;
+
+            if (checkLimits(*actual_child_node_ptr))
+                return CollectStatus::LimitExceeded;
+
+            nodes_it->second.materializeACL(storage.acl_map);
+            addDelta(nodes_it->first, actual_child_node_ptr->stats, *nodes_it->second.acls, std::string{actual_child_node_ptr->getData()});
+        }
+
+        return CollectStatus::Ok;
+    }
+
+    void addDelta(StringRef path, const NodeStats & stats, Coordination::ACLs acls, std::string data)
+    {
+        deltas.emplace_front(std::string{path}, zxid, KeeperStorageBase::RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data)});
+    }
+
+    bool checkLimits(const Storage::Node & node)
+    {
+        nodes_observed += node.stats.numChildren();
+        return nodes_observed > limit;
+    }
+};
+}
+
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
+}
+
+KeeperStorageBase::ResponsesForSessions processWatches(
+    const Coordination::ZooKeeperRemoveRecursiveRequest & /*zk_request*/,
+    KeeperStorageBase::DeltaRange deltas,
+    KeeperStorageBase::Watches & watches,
+    KeeperStorageBase::Watches & list_watches)
+{
+    KeeperStorageBase::ResponsesForSessions responses;
+    for (const auto & delta : deltas)
+    {
+        const auto * remove_delta = std::get_if<KeeperStorageBase::RemoveNodeDelta>(&delta.operation);
+        if (remove_delta)
+        {
+            auto new_responses = processWatchesImpl(delta.path, watches, list_watches, Coordination::Event::DELETED);
+            responses.insert(responses.end(), std::make_move_iterator(new_responses.begin()), std::make_move_iterator(new_responses.end()));
+        }
+    }
+
+    return responses;
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t session_id,
+    int64_t /* time */,
+    uint64_t & digest,
+    const KeeperContext & keeper_context)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperRemoveRequest);
+
+    std::list<KeeperStorageBase::Delta> new_deltas;
+
+    if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+    {
+        auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", zk_request.path);
+
+        handleSystemNodeModification(keeper_context, error_msg);
+        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+    }
+
+    auto node = storage.uncommitted_state.getNode(zk_request.path);
+
+    auto parent_path = parentNodePath(zk_request.path);
+    auto parent_node = storage.uncommitted_state.getNode(parent_path);
+
+    std::optional<KeeperStorageBase::UpdateNodeStatDelta> update_parent_delta;
+    if (parent_node)
+        update_parent_delta.emplace(*parent_node);
+
+    const auto add_parent_update_delta = [&]
+    {
+        if (!update_parent_delta)
+            return;
+
+        new_deltas.emplace_back(
+            std::string{parent_path},
+            zxid,
+            std::move(*update_parent_delta)
+        );
+    };
+
+    const auto update_parent_pzxid = [&]()
+    {
+        if (!update_parent_delta)
+            return;
+
+        if (update_parent_delta->old_stats.pzxid < zxid)
+            update_parent_delta->new_stats.pzxid = zxid;
+    };
+
+    if (!node)
+    {
+        if (zk_request.restored_from_zookeeper_log)
+        {
+            update_parent_pzxid();
+            add_parent_update_delta();
+        }
+
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+    }
+
+    ToDeleteTreeCollector<Storage> collector(storage, zxid, session_id, zk_request.remove_nodes_limit);
+    auto collect_status = collector.collect(zk_request.path, *node);
+
+    if (collect_status == ToDeleteTreeCollector<Storage>::CollectStatus::NoAuth)
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNOAUTH}};
+
+    if (collect_status == ToDeleteTreeCollector<Storage>::CollectStatus::LimitExceeded)
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
+
+    if (zk_request.restored_from_zookeeper_log)
+    {
+        update_parent_pzxid();
+    }
+
+    chassert(update_parent_delta);
+    ++update_parent_delta->new_stats.cversion;
+    update_parent_delta->new_stats.decreaseNumChildren();
+    add_parent_update_delta();
+
+    auto delete_deltas = collector.extractDeltas();
+
+    for (const auto & delta : delete_deltas)
+    {
+        const auto * remove_delta = std::get_if<KeeperStorageBase::RemoveNodeDelta>(&delta.operation);
+        if (remove_delta && remove_delta->stat.ephemeralOwner())
+        {
+            std::lock_guard lock(storage.ephemeral_mutex);
+            unregisterEphemeralPath(
+                storage.uncommitted_state.ephemerals, remove_delta->stat.ephemeralOwner(), delta.path, /*throw_if_missing=*/false);
+        }
+    }
+
+    new_deltas.splice(new_deltas.end(), std::move(delete_deltas));
+
+    digest = storage.calculateNodesDigest(digest, new_deltas);
+
+    return new_deltas;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    response_ptr->error = storage.commit(std::move(deltas));
+    return response_ptr;
+}
+
+/// REMOVERECURSIVE Request ///
 
 /// EXISTS Request ///
 template <typename Storage>
@@ -1732,7 +2052,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr
-processImpl(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+processImpl(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     auto response = std::make_shared<Coordination::ZooKeeperExistsResponse>();
 
@@ -1752,7 +2072,7 @@ processImpl(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & s
         if constexpr (local)
             response->error = Coordination::Error::ZNONODE;
         else
-            onStorageInconsistency();
+            onStorageInconsistency("Node unexpectedly missing while checking if it exists");
     }
     else
     {
@@ -1764,14 +2084,14 @@ processImpl(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & s
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     return processImpl<false>(zk_request, storage, std::move(deltas));
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+processLocal(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas));
@@ -1786,7 +2106,10 @@ bool checkAuth(const Coordination::ZooKeeperSetRequest & zk_request, Storage & s
 }
 
 KeeperStorageBase::ResponsesForSessions processWatches(
-    const Coordination::ZooKeeperSetRequest & zk_request, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches)
+    const Coordination::ZooKeeperSetRequest & zk_request,
+    KeeperStorageBase::DeltaRange /*deltas*/,
+    KeeperStorageBase::Watches & watches,
+    KeeperStorageBase::Watches & list_watches)
 {
     return processWatchesImpl(zk_request.getPath(), watches, list_watches, Coordination::Event::CHANGED);
 }
@@ -1846,7 +2169,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     auto & container = storage.container;
 
@@ -1860,7 +2183,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetReque
 
     auto node_it = container.find(zk_request.path);
     if (node_it == container.end())
-        onStorageInconsistency();
+        onStorageInconsistency("Node to be updated is missing");
 
     node_it->value.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
@@ -1895,7 +2218,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 }
 
 template <bool local, typename Storage>
-Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     std::shared_ptr<Coordination::ZooKeeperListResponse> response = zk_request.getOpNum() == Coordination::OpNum::SimpleList
         ? std::make_shared<Coordination::ZooKeeperSimpleListResponse>()
@@ -1918,7 +2241,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
         if constexpr (local)
             response->error = Coordination::Error::ZNONODE;
         else
-            onStorageInconsistency();
+            onStorageInconsistency("Failed to list children of node because it's missing");
     }
     else
     {
@@ -1955,7 +2278,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
                 auto child_path = (std::filesystem::path(zk_request.path) / child.toView()).generic_string();
                 auto child_it = container.find(child_path);
                 if (child_it == container.end())
-                    onStorageInconsistency();
+                    onStorageInconsistency("Failed to find a child");
                 is_ephemeral = child_it->value.stats.isEphemeral();
             }
             else
@@ -1985,14 +2308,14 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     return processImpl<false>(zk_request, storage, std::move(deltas));
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     ProfileEvents::increment(ProfileEvents::KeeperListRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas));
@@ -2042,7 +2365,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 }
 
 template <bool local, typename Storage>
-Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     std::shared_ptr<Coordination::ZooKeeperCheckResponse> response = zk_request.not_exists
         ? std::make_shared<Coordination::ZooKeeperCheckNotExistsResponse>()
@@ -2062,7 +2385,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperChec
         if constexpr (local)
             response->error = error_code;
         else
-            onStorageInconsistency();
+            onStorageInconsistency("Node to check is unexpectedly missing");
     };
 
     auto & container = storage.container;
@@ -2089,14 +2412,14 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperChec
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     return processImpl<false>(zk_request, storage, std::move(deltas));
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+processLocal(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas));
@@ -2168,7 +2491,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     return {};
 }
 
-std::list<KeeperStorageBase::Delta> getSubdeltas(std::list<KeeperStorageBase::Delta> & deltas)
+KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
 {
     std::list<KeeperStorageBase::Delta> subdeltas;
     auto it = deltas.begin();
@@ -2182,17 +2505,14 @@ std::list<KeeperStorageBase::Delta> getSubdeltas(std::list<KeeperStorageBase::De
         }
     }
 
-    if (it == deltas.end())
-        subdeltas = std::move(deltas);
-    else
-        subdeltas.splice(subdeltas.end(), deltas, deltas.begin(), it);
-
-    return subdeltas;
+    KeeperStorageBase::DeltaRange result{.begin_it = deltas.begin(), .end_it = it};
+    deltas.begin_it = it;
+    return result;
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     std::shared_ptr<Coordination::ZooKeeperMultiResponse> response;
     if (zk_request.getOpNum() == Coordination::OpNum::Multi)
@@ -2219,7 +2539,7 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     for (const auto & multi_subrequest : subrequests)
     {
-        std::list<KeeperStorageBase::Delta> subdeltas = getSubdeltas(deltas);
+        auto subdeltas = extractSubdeltas(deltas);
         response->responses.push_back(callOnConcreteRequestType(
             *multi_subrequest, [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas)); }));
     }
@@ -2229,7 +2549,7 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     ProfileEvents::increment(ProfileEvents::KeeperMultiReadRequest);
     auto response = std::make_shared<Coordination::ZooKeeperMultiReadResponse>();
@@ -2237,7 +2557,7 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMul
 
     for (const auto & multi_subrequest : zk_request.requests)
     {
-        std::list<KeeperStorageBase::Delta> subdeltas = getSubdeltas(deltas);
+        auto subdeltas = extractSubdeltas(deltas);
         response->responses.push_back(callOnConcreteRequestType(
             *multi_subrequest, [&](const auto & subrequest) { return processLocal(subrequest, storage, std::move(subdeltas)); }));
     }
@@ -2247,15 +2567,19 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMul
 }
 
 KeeperStorageBase::ResponsesForSessions processWatches(
-    const Coordination::ZooKeeperMultiRequest & zk_request, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches)
+    const Coordination::ZooKeeperMultiRequest & zk_request,
+    KeeperStorageBase::DeltaRange deltas,
+    KeeperStorageBase::Watches & watches,
+    KeeperStorageBase::Watches & list_watches)
 {
     KeeperStorageBase::ResponsesForSessions result;
 
     const auto & subrequests = zk_request.requests;
     for (const auto & generic_request : subrequests)
     {
+        auto subdeltas = extractSubdeltas(deltas);
         auto responses = callOnConcreteRequestType(
-            *generic_request, [&](const auto & subrequest) { return processWatches(subrequest, watches, list_watches); });
+            *generic_request, [&](const auto & subrequest) { return processWatches(subrequest, subdeltas, watches, list_watches); });
         result.insert(result.end(), responses.begin(), responses.end());
     }
     return result;
@@ -2298,7 +2622,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperAuthRequest & /*zk_request*/, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+process(const Coordination::ZooKeeperAuthRequest & /*zk_request*/, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     auto response = std::make_shared<Coordination::ZooKeeperAuthResponse>();
 
@@ -2312,7 +2636,7 @@ process(const Coordination::ZooKeeperAuthRequest & /*zk_request*/, Storage & sto
 /// CLOSE Request ///
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperCloseRequest & /* zk_request */, Storage &, std::list<KeeperStorageBase::Delta> /* deltas */)
+process(const Coordination::ZooKeeperCloseRequest & /* zk_request */, Storage &, KeeperStorageBase::DeltaRange /* deltas */)
 {
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Called process on close request");
 }
@@ -2372,7 +2696,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperSetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+process(const Coordination::ZooKeeperSetACLRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     auto response = std::make_shared<Coordination::ZooKeeperSetACLResponse>();
 
@@ -2384,7 +2708,7 @@ process(const Coordination::ZooKeeperSetACLRequest & zk_request, Storage & stora
 
     auto node_it = storage.container.find(zk_request.path);
     if (node_it == storage.container.end())
-        onStorageInconsistency();
+        onStorageInconsistency("Failed to set ACL because node is missing");
     node_it->value.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
 
@@ -2416,7 +2740,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 }
 
 template <bool local, typename Storage>
-Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     auto response = std::make_shared<Coordination::ZooKeeperGetACLResponse>();
 
@@ -2436,7 +2760,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperGetA
         if constexpr (local)
             response->error = Coordination::Error::ZNONODE;
         else
-            onStorageInconsistency();
+            onStorageInconsistency("Failed to get ACL because node is missing");
     }
     else
     {
@@ -2448,13 +2772,13 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperGetA
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     return processImpl<false>(zk_request, storage, std::move(deltas));
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
     return processImpl<true>(zk_request, storage, std::move(deltas));
 }
@@ -2781,6 +3105,8 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
         deltas.splice(deltas.end(), uncommitted_state.deltas, uncommitted_state.deltas.begin(), it);
     }
 
+    KeeperStorageBase::DeltaRange deltas_range{.begin_it = deltas.begin(), .end_it = deltas.end()};
+
     ResponsesForSessions results;
 
     /// ZooKeeper update sessions expirity for each request, not only for heartbeats
@@ -2799,13 +3125,13 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
 
         {
             std::lock_guard lock(storage_mutex);
-            commit(std::move(deltas));
+            commit(deltas_range);
         }
         {
             std::lock_guard lock(auth_mutex);
-            auto auth_it = session_and_auth.find(session_id);
-            if (auth_it != session_and_auth.end())
-                session_and_auth.erase(auth_it);
+            auto auth_it = committed_session_and_auth.find(session_id);
+            if (auth_it != committed_session_and_auth.end())
+                committed_session_and_auth.erase(auth_it);
         }
 
         clearDeadWatches(session_id);
@@ -2823,7 +3149,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
         Coordination::ZooKeeperResponsePtr response = nullptr;
         {
             std::lock_guard lock(storage_mutex);
-            response = process(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(*zk_request), *this, std::move(deltas));
+            response = process(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(*zk_request), *this, deltas_range);
         }
         response->xid = zk_request->xid;
         response->zxid = commit_zxid;
@@ -2848,13 +3174,13 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
                 else
                 {
                     std::shared_lock lock(storage_mutex);
-                    response = processLocal(concrete_zk_request, *this, std::move(deltas));
+                    response = processLocal(concrete_zk_request, *this, deltas_range);
                 }
             }
             else
             {
                 std::lock_guard lock(storage_mutex);
-                response = process(concrete_zk_request, *this, std::move(deltas));
+                response = process(concrete_zk_request, *this, deltas_range);
             }
 
             /// Watches for this requests are added to the watches lists
@@ -2884,7 +3210,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
             /// If this requests processed successfully we need to check watches
             if (response->error == Coordination::Error::ZOK)
             {
-                auto watch_responses = processWatches(concrete_zk_request, watches, list_watches);
+                auto watch_responses = processWatches(concrete_zk_request, deltas_range, watches, list_watches);
                 results.insert(results.end(), watch_responses.begin(), watch_responses.end());
             }
 

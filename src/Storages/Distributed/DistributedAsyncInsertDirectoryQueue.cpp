@@ -415,8 +415,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
         auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = results.front();
-        pool->checkTryResultIsValid(result, insert_settings.distributed_insert_skip_read_only_replicas);
+        auto result = pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",

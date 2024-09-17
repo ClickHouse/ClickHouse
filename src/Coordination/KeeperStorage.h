@@ -426,6 +426,33 @@ public:
         Operation operation;
     };
 
+    using DeltaIterator = std::list<KeeperStorageBase::Delta>::const_iterator;
+    struct DeltaRange
+    {
+        DeltaIterator begin_it;
+        DeltaIterator end_it;
+
+        auto begin() const
+        {
+            return begin_it;
+        }
+
+        auto end() const
+        {
+            return end_it;
+        }
+
+        bool empty() const
+        {
+            return begin_it == end_it;
+        }
+
+        const auto & front() const
+        {
+            return *begin_it;
+        }
+    };
+
     struct Stats
     {
         std::atomic<uint64_t> nodes_count = 0;
@@ -475,7 +502,7 @@ public:
     int64_t session_id_counter{1};
 
     mutable SharedMutex auth_mutex;
-    SessionAndAuth session_and_auth;
+    SessionAndAuth committed_session_and_auth;
 
     mutable SharedMutex storage_mutex;
     /// Main hashtable with nodes. Contain all information about data.
@@ -493,6 +520,8 @@ public:
         void rollback(std::list<Delta> rollback_deltas);
 
         std::shared_ptr<Node> getNode(StringRef path, bool should_lock_storage = true) const;
+        const Node * getActualNodeView(StringRef path, const Node & storage_node) const;
+
         Coordination::ACLs getACLs(StringRef path) const;
 
         void applyDeltas(const std::list<Delta> & new_deltas);
@@ -505,7 +534,6 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
 
-        std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
         std::unordered_set<int64_t> closed_sessions;
 
         using ZxidToNodes = std::map<int64_t, std::unordered_set<std::string_view>>;
@@ -514,35 +542,27 @@ public:
             std::shared_ptr<Node> node{nullptr};
             std::optional<Coordination::ACLs> acls{};
             std::unordered_set<uint64_t> applied_zxids{};
+
+            void materializeACL(const ACLMap & current_acl_map);
         };
 
-        struct Hash
+        struct PathCmp
         {
-            auto operator()(const std::string_view view) const
-            {
-                SipHash hash;
-                hash.update(view);
-                return hash.get64();
-            }
+            using is_transparent = std::true_type;
 
-            using is_transparent = void; // required to make find() work with different type than key_type
-        };
-
-        struct Equal
-        {
             auto operator()(const std::string_view a,
                             const std::string_view b) const
             {
-                return a == b;
+                return a.size() < b.size() || (a.size() == b.size() && a < b);
             }
-
-            using is_transparent = void; // required to make find() work with different type than key_type
         };
 
-        mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
-        mutable ZxidToNodes zxid_to_nodes;
-
         Ephemerals ephemerals;
+
+        std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
+
+        mutable std::map<std::string, UncommittedNode, PathCmp> nodes;
+        mutable ZxidToNodes zxid_to_nodes;
 
         mutable std::mutex deltas_mutex;
         std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);
@@ -555,7 +575,7 @@ public:
     // with zxid > last_zxid
     void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
 
-    Coordination::Error commit(std::list<Delta> deltas);
+    Coordination::Error commit(DeltaRange deltas);
 
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
