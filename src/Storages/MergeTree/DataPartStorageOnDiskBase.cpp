@@ -292,7 +292,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
     ReplicatedFilesDescription description;
     auto relative_path = fs::path(root_path) / part_dir;
     auto disk = volume->getDisk();
-    auto read_settings = Context::getGlobalContextInstance()->getReadSettings();
+    auto read_settings = getReadSettings();
 
     auto actual_file_names = getActualFileNamesOnDisk(file_names);
     for (const auto & name : actual_file_names)
