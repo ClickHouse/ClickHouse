@@ -472,14 +472,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
-        auto settings = query_context->getSettingsCopy();
-        settings.prefer_column_name_to_alias = true;
-        query_context->setSettings(settings);
 
         /// Update timeouts
-        socket().setReceiveTimeout(settings.receive_timeout);
-        socket().setSendTimeout(settings.send_timeout);
+        socket().setReceiveTimeout(query_context->getSettingsRef().receive_timeout);
+        socket().setSendTimeout(query_context->getSettingsRef().send_timeout);
 
         CurrentThread::QueryScope query_scope{query_context};
 
