@@ -13,7 +13,7 @@ namespace DB
 class OwnFilteringChannel : public Poco::Channel
 {
 public:
-    explicit OwnFilteringChannel(Poco::AutoPtr<Poco::Channel> pChannel_, Poco::AutoPtr<OwnPatternFormatter> pf, 
+    explicit OwnFilteringChannel(Poco::AutoPtr<Poco::Channel> pChannel_, Poco::AutoPtr<OwnPatternFormatter> pf,
         std::string positive_pattern_, std::string negative_pattern_)
     : positive_pattern(positive_pattern_), negative_pattern(negative_pattern_), pChannel(pChannel_), pFormatter(pf)
     {

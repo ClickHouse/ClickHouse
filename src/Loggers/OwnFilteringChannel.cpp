@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TYPE_MISMATCH;
-}
-
 void OwnFilteringChannel::log(const Poco::Message & msg)
 {
     std::string formatted_text;
@@ -20,7 +15,8 @@ void OwnFilteringChannel::log(const Poco::Message & msg)
     {
         pFormatter->formatExtended(ExtendedLogMessage::getFrom(msg), formatted_text);
     }
-    else {
+    else
+    {
         formatted_text = msg.getText();
     }
     if (!regexpFilteredOut(formatted_text))
@@ -29,7 +25,7 @@ void OwnFilteringChannel::log(const Poco::Message & msg)
 
 bool OwnFilteringChannel::regexpFilteredOut(std::string text) const
 {
-    if (positive_pattern != "")
+    if (!positive_pattern.empty())
     {
         Poco::RegularExpression positive_regexp(positive_pattern);
         if (!positive_regexp.match(text))
@@ -39,7 +35,7 @@ bool OwnFilteringChannel::regexpFilteredOut(std::string text) const
         }
     }
 
-    if (negative_pattern != "")
+    if (!negative_pattern.empty())
     {
         Poco::RegularExpression negative_regexp(negative_pattern);
         if (negative_regexp.match(text))
