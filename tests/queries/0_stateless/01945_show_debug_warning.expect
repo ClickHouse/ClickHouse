@@ -26,7 +26,7 @@ expect_after {
 
 set Debug_type 0
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
 expect ":) "
 
 # Check debug type
@@ -44,7 +44,7 @@ expect eof
 
 if { $Debug_type > 0} {
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
 expect "Warnings:"
 expect " * Server was built in debug mode. It will work slowly."
 expect ":) "
@@ -58,7 +58,7 @@ send -- "q\r"
 expect eof
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_for_all_queries=123 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --max_memory_usage_for_all_queries=123 --history_file=$history_file"
 expect "Warnings:"
 expect " * Obsolete setting"
 expect ":) "
