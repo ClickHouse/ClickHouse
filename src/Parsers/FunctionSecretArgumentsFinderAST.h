@@ -74,7 +74,8 @@ private:
             findMySQLFunctionSecretArguments();
         }
         else if ((function.name == "s3") || (function.name == "cosn") || (function.name == "oss") ||
-                    (function.name == "deltaLake") || (function.name == "hudi") || (function.name == "iceberg"))
+                 (function.name == "deltaLake") || (function.name == "hudi") || (function.name == "iceberg") ||
+                 (function.name == "gcs"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);

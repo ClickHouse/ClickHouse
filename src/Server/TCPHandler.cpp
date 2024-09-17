@@ -1592,7 +1592,17 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        if (session->getAuthenticationTypeOrLogInFailure(user) != AuthenticationType::SSH_KEY)
+        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user);
+
+        bool user_supports_ssh_authentication = std::find_if(
+            authentication_types.begin(),
+            authentication_types.end(),
+            [](auto authentication_type)
+            {
+               return authentication_type ==  AuthenticationType::SSH_KEY;
+            }) != authentication_types.end();
+
+        if (!user_supports_ssh_authentication)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
