@@ -3363,7 +3363,7 @@ namespace
                     if (field_descriptor->is_repeated())
                     {
                         repeated_field_matching_nested_columns_are_all_arrays = true;
-                        for(const auto & nested_data_type : nested_data_types)
+                        for (const auto & nested_data_type : nested_data_types)
                         {
                             if (nested_data_type->getTypeId() == TypeIndex::Array)
                                 repeated_field_matching_nested_columns_have_some_arrays = true;
