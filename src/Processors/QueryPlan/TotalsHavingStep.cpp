@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 static ITransformingStep::Traits getTraits(bool has_filter)
 {
     return ITransformingStep::Traits

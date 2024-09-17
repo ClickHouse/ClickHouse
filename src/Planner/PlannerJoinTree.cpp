@@ -1172,7 +1172,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         rename_step->setStepDescription("Change column names to column identifiers");
         query_plan.addStep(std::move(rename_step));
     }
-    else if(from_stage == QueryProcessingStage::FetchColumns)
+    else if (from_stage == QueryProcessingStage::FetchColumns)
     {
     }
     else
