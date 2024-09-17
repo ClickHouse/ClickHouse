@@ -16,7 +16,7 @@ CREATE VIEW 02501_view(`a` UInt64) AS SELECT a FROM 02501_dist;
 insert into 02501_test values(5),(6),(7),(8);
 
 -- test
-SELECT * from 02501_view settings max_result_rows = 1; -- { serverError 396 }
+SELECT * from 02501_view settings max_result_rows = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 SELECT sum(a) from 02501_view settings max_result_rows = 1;
 
 

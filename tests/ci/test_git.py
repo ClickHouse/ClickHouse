@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
-from unittest.mock import patch
 import os.path as p
 import unittest
+from dataclasses import dataclass
+from unittest.mock import patch
 
-from git_helper import Git, Runner, CWD
+from git_helper import CWD, Git, Runner, git_runner
 
 
 class TestRunner(unittest.TestCase):
@@ -35,8 +36,10 @@ class TestRunner(unittest.TestCase):
 class TestGit(unittest.TestCase):
     def setUp(self):
         """we use dummy git object"""
+        # get the git_runner's cwd to set it properly before the Runner is patched
+        _ = git_runner.cwd
         run_patcher = patch("git_helper.Runner.run", return_value="")
-        self.run_mock = run_patcher.start()
+        run_mock = run_patcher.start()
         self.addCleanup(run_patcher.stop)
         update_patcher = patch("git_helper.Git.update")
         update_mock = update_patcher.start()
@@ -44,15 +47,13 @@ class TestGit(unittest.TestCase):
         self.git = Git()
         update_mock.assert_called_once()
         self.git.run("test")
-        self.run_mock.assert_called_once()
-        self.git.new_branch = "NEW_BRANCH_NAME"
-        self.git.new_tag = "v21.12.333.22222-stable"
+        run_mock.assert_called_once()
         self.git.branch = "old_branch"
         self.git.sha = ""
         self.git.sha_short = ""
         self.git.latest_tag = ""
-        self.git.description = ""
-        self.git.commits_since_tag = 0
+        self.git.commits_since_latest = 0
+        self.git.commits_since_new = 0
 
     def test_tags(self):
         self.git.new_tag = "v21.12.333.22222-stable"
@@ -71,11 +72,30 @@ class TestGit(unittest.TestCase):
                     setattr(self.git, tag_attr, tag)
 
     def test_tweak(self):
-        self.git.commits_since_tag = 0
-        self.assertEqual(self.git.tweak, 1)
-        self.git.commits_since_tag = 2
-        self.assertEqual(self.git.tweak, 2)
-        self.git.latest_tag = "v21.12.333.22222-testing"
-        self.assertEqual(self.git.tweak, 22224)
-        self.git.commits_since_tag = 0
-        self.assertEqual(self.git.tweak, 22222)
+        # tweak for the latest tag
+        @dataclass
+        class TestCase:
+            tag: str
+            commits: int
+            tweak: int
+
+        cases = (
+            TestCase("", 0, 1),
+            TestCase("", 2, 2),
+            TestCase("v21.12.333.22222-stable", 0, 22222),
+            TestCase("v21.12.333.22222-stable", 2, 2),
+            TestCase("v21.12.333.22222-testing", 0, 22222),
+            TestCase("v21.12.333.22222-testing", 2, 22224),
+        )
+        for tag, commits, tweak in (
+            ("latest_tag", "commits_since_latest", "tweak"),
+            ("new_tag", "commits_since_new", "tweak_to_new"),
+        ):
+            for tc in cases:
+                setattr(self.git, tag, tc.tag)
+                setattr(self.git, commits, tc.commits)
+                self.assertEqual(
+                    getattr(self.git, tweak),
+                    tc.tweak,
+                    f"Wrong tweak for tag {tc.tag} and commits {tc.commits} of {tag}",
+                )

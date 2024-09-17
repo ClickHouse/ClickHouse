@@ -23,9 +23,11 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
-
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+
+#include <Core/Settings.h>
 
 #include <base/sleep.h>
 
@@ -40,6 +42,11 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskS3NoSuchKeyErrors;
 }
 
 namespace DB
@@ -380,7 +387,8 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
+    return processRequestResult(
+        HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
@@ -400,7 +408,8 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
@@ -648,14 +657,14 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 if constexpr (IsReadMethod)
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
                 }
                 else
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
@@ -683,6 +692,26 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     };
 
     return doRequest(request, with_retries);
+}
+
+template <typename RequestResult>
+RequestResult Client::processRequestResult(RequestResult && outcome) const
+{
+    if (outcome.IsSuccess() || !isClientForDisk())
+        return std::forward<RequestResult>(outcome);
+
+    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
+
+    String enriched_message = fmt::format(
+        "{} {}",
+        outcome.GetError().GetMessage(),
+        "This error happened for S3 disk.");
+
+    auto error = outcome.GetError();
+    error.SetMessage(enriched_message);
+
+    return RequestResult(error);
 }
 
 bool Client::supportsMultiPartCopy() const
@@ -805,6 +834,17 @@ void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) con
     cache->uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
 }
 
+ClientCache::ClientCache(const ClientCache & other)
+{
+    {
+        std::lock_guard lock(other.region_cache_mutex);
+        region_for_bucket_cache = other.region_for_bucket_cache;
+    }
+    {
+        std::lock_guard lock(other.uri_cache_mutex);
+        uri_for_bucket_cache = other.uri_for_bucket_cache;
+    }
+}
 
 void ClientCache::clearCache()
 {
@@ -942,10 +982,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,

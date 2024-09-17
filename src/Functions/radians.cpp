@@ -23,7 +23,7 @@ namespace
 
 REGISTER_FUNCTION(Radians)
 {
-    factory.registerFunction<FunctionRadians>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRadians>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

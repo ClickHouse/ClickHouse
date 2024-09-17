@@ -5,8 +5,11 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Chunk.h>
 #include <Processors/Transforms/CountingTransform.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
@@ -15,6 +18,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Logger.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -23,9 +27,13 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include <Core/Field.h>
+#include <Core/Settings.h>
+#include <base/defines.h>
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 
 
 namespace ProfileEvents
@@ -104,7 +112,7 @@ private:
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
-    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_, ViewsDataPtr views_data_);
+    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_, ViewsDataPtr views_data_, bool disable_deduplication_for_children_);
 
     String getName() const override { return "ExecutingInnerQueryFromView"; }
 
@@ -115,6 +123,7 @@ protected:
 private:
     ViewsDataPtr views_data;
     ViewRuntimeData & view;
+    bool disable_deduplication_for_children;
 
     struct State
     {
@@ -137,7 +146,7 @@ class PushingToLiveViewSink final : public SinkToStorage
 public:
     PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, StoragePtr storage_holder_, ContextPtr context_);
     String getName() const override { return "PushingToLiveViewSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
 
 private:
     StorageLiveView & live_view;
@@ -151,7 +160,7 @@ class PushingToWindowViewSink final : public SinkToStorage
 public:
     PushingToWindowViewSink(const Block & header, StorageWindowView & window_view_, StoragePtr storage_holder_, ContextPtr context_);
     String getName() const override { return "PushingToWindowViewSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
 
 private:
     StorageWindowView & window_view;
@@ -215,44 +224,9 @@ std::optional<Chain> generateViewChain(
 
     const auto & insert_settings = insert_context->getSettingsRef();
 
-    // Do not deduplicate insertions into MV if the main insertion is Ok
     if (disable_deduplication_for_children)
     {
         insert_context->setSetting("insert_deduplicate", Field{false});
-    }
-    else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
-        !insert_settings.insert_deduplication_token.value.empty())
-    {
-        /** Update deduplication token passed to dependent MV with current view id. So it is possible to properly handle
-              * deduplication in complex INSERT flows.
-              *
-              * Example:
-              *
-              * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
-              *          |                                     |
-              *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
-              *
-              * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
-              * be inserted into `ds_2_1`.
-              *
-              * We are forced to use view id instead of table id because there are some possible INSERT flows where no tables
-              * are involved.
-              *
-              * Example:
-              *
-              * landing -┬--> mv_1_1 --┬-> ds_1_1
-              *          |             |
-              *          └--> mv_1_2 --┘
-              *
-              */
-        auto insert_deduplication_token = insert_settings.insert_deduplication_token.value;
-
-        if (view_id.hasUUID())
-            insert_deduplication_token += "_" + toString(view_id.uuid);
-        else
-            insert_deduplication_token += "_" + view_id.getFullNameNotQuoted();
-
-        insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
     }
 
     // Processing of blocks for MVs is done block by block, and there will
@@ -360,19 +334,32 @@ std::optional<Chain> generateViewChain(
                 insert_columns.emplace_back(column.name);
         }
 
-        InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
-        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, !materialized_view->hasInnerTable());
+        InterpreterInsertQuery interpreter(
+            nullptr,
+            insert_context,
+            /* allow_materialized */ false,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
+
+        /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
+        bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
+        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
         if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
 
-            out.addSource(std::make_shared<SquashingChunksTransform>(
+            out.addSource(std::make_shared<SquashingTransform>(
                 out.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
         }
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Before squashing", out.getInputHeader()));
+#endif
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
         counting->setProcessListElement(insert_context->getProcessListElement());
@@ -411,15 +398,24 @@ std::optional<Chain> generateViewChain(
         out.getInputHeader(),
         view_id,
         nullptr,
-        std::move(runtime_stats)});
+        std::move(runtime_stats),
+        insert_context});
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
+#ifdef ABORT_ON_LOGICAL_ERROR
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", out.getInputHeader()));
+#endif
+
         auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
-            storage_header, views_data->views.back(), views_data);
+            storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
         executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
         out.addSource(std::move(executing_inner_query));
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", out.getInputHeader()));
+#endif
     }
 
     return out;
@@ -460,11 +456,7 @@ Chain buildPushingToViewsChain(
       */
     result_chain.addTableLock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
-    /// If the "root" table deduplicates blocks, there are no need to make deduplication for children
-    /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
-    bool disable_deduplication_for_children = false;
-    if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-        disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
+    bool disable_deduplication_for_children = !context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views;
 
     auto table_id = storage->getStorageID();
     auto views = DatabaseCatalog::instance().getDependentViews(table_id);
@@ -555,12 +547,25 @@ Chain buildPushingToViewsChain(
         auto sink = std::make_shared<PushingToLiveViewSink>(live_view_header, *live_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
+
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
+
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
+    }
+    else if (dynamic_cast<StorageMaterializedView *>(storage.get()))
+    {
+        auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
+        metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        result_chain.addSource(std::move(sink));
+
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
@@ -568,7 +573,14 @@ Chain buildPushingToViewsChain(
         auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
+
         result_chain.addSource(std::move(sink));
+    }
+    else
+    {
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(storage_header));
     }
 
     if (result_chain.empty())
@@ -585,9 +597,9 @@ Chain buildPushingToViewsChain(
     return result_chain;
 }
 
-static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data)
+static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data, Chunk::ChunkInfoCollection && chunk_infos, bool disable_deduplication_for_children)
 {
-    const auto & context = views_data.context;
+    const auto & context = view.context;
 
     /// We create a table with the same name as original table and the same alias columns,
     ///  but it will contain single block (that is INSERT-ed into main table).
@@ -618,7 +630,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    pipeline.addTransform(std::make_shared<SquashingChunksTransform>(
+    pipeline.addTransform(std::make_shared<SquashingTransform>(
         pipeline.getHeader(),
         context->getSettingsRef().min_insert_block_size_rows,
         context->getSettingsRef().min_insert_block_size_bytes));
@@ -631,6 +643,19 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     pipeline.addTransform(std::make_shared<ExpressionTransform>(
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
+
+    pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getHeader()));
+
+    if (!disable_deduplication_for_children)
+    {
+        String materialize_view_id = view.table_id.hasUUID() ? toString(view.table_id.uuid) : view.table_id.getFullNameNotQuoted();
+        pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewIDTransform>(std::move(materialize_view_id), pipeline.getHeader()));
+        pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(pipeline.getHeader()));
+    }
+    else
+    {
+        pipeline.addTransform(std::make_shared<DeduplicationToken::ResetTokenTransform>(pipeline.getHeader()));
+    }
 
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
@@ -723,17 +748,19 @@ IProcessor::Status CopyingDataToViewsTransform::prepare()
 ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
     const Block & header,
     ViewRuntimeData & view_,
-    std::shared_ptr<ViewsData> views_data_)
+    std::shared_ptr<ViewsData> views_data_,
+    bool disable_deduplication_for_children_)
     : ExceptionKeepingTransform(header, view_.sample_block)
     , views_data(std::move(views_data_))
     , view(view_)
+    , disable_deduplication_for_children(disable_deduplication_for_children_)
 {
 }
 
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(process(block, view, *views_data));
+    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    state.emplace(process(std::move(block), view, *views_data, std::move(chunk.getChunkInfos()), disable_deduplication_for_children));
 }
 
 
@@ -765,10 +792,10 @@ PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveVi
 {
 }
 
-void PushingToLiveViewSink::consume(Chunk chunk)
+void PushingToLiveViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    live_view.writeBlock(getHeader().cloneWithColumns(chunk.detachColumns()), context);
+    live_view.writeBlock(live_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
@@ -788,11 +815,11 @@ PushingToWindowViewSink::PushingToWindowViewSink(
 {
 }
 
-void PushingToWindowViewSink::consume(Chunk chunk)
+void PushingToWindowViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
-        window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
+        window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
@@ -894,8 +921,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
     {
         return std::current_exception();
     }
-
-    UNREACHABLE();
 }
 
 void FinalizingViewsTransform::work()

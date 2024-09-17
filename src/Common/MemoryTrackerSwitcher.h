@@ -15,6 +15,7 @@ struct MemoryTrackerSwitcher
             return;
 
         auto * thread_tracker = CurrentThread::getMemoryTracker();
+
         prev_untracked_memory = current_thread->untracked_memory;
         prev_memory_tracker_parent = thread_tracker->getParent();
 
@@ -31,8 +32,10 @@ struct MemoryTrackerSwitcher
         CurrentThread::flushUntrackedMemory();
         auto * thread_tracker = CurrentThread::getMemoryTracker();
 
-        current_thread->untracked_memory = prev_untracked_memory;
+        /// It is important to set untracked memory after the call of
+        /// 'setParent' because it may flush untracked memory to the wrong parent.
         thread_tracker->setParent(prev_memory_tracker_parent);
+        current_thread->untracked_memory = prev_untracked_memory;
     }
 
 private:

@@ -96,7 +96,7 @@ inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
 
 struct FastHash64
 {
-    static inline uint64_t mix(uint64_t h)
+    static uint64_t mix(uint64_t h)
     {
         h ^= h >> 23;
         h *= 0x2127599bf4325c37ULL;

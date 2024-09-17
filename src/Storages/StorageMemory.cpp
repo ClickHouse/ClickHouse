@@ -1,5 +1,5 @@
-#include <cassert>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
 #include <Interpreters/MutationsInterpreter.h>
@@ -37,7 +37,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
 
-
 namespace DB
 {
 
@@ -63,7 +62,7 @@ public:
 
     String getName() const override { return "MemorySink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
@@ -162,6 +161,9 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
+    /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
+    /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
+    snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
 
     if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
@@ -408,7 +410,7 @@ namespace
                 auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
                 auto data_out_compressed = temp_disk->writeFile(data_file_path);
                 auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
+                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
                 data_out->finalize();

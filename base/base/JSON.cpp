@@ -651,7 +651,9 @@ std::string_view JSON::getRawString() const
     Pos s = ptr_begin;
     if (*s != '"')
         throw JSONException(std::string("JSON: expected \", got ") + *s);
-    while (++s != ptr_end && *s != '"');
+    ++s;
+    while (s != ptr_end && *s != '"')
+        ++s;
     if (s != ptr_end)
         return std::string_view(ptr_begin + 1, s - ptr_begin - 1);
     throw JSONException("JSON: incorrect syntax (expected end of string, found end of JSON).");

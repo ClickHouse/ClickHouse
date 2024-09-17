@@ -10,9 +10,9 @@
 
 #include <cerrno>
 #include <exception>
-#include <memory>
 #include <vector>
 
+#include <fmt/core.h>
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
@@ -23,8 +23,6 @@ namespace DB
 {
 
 class AtomicLogger;
-
-[[noreturn]] void abortOnFailedAssertion(const String & description);
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
@@ -50,30 +48,52 @@ public:
     {
         if (terminate_on_any_exception)
             std::terminate();
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
     }
 
     Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
     {
         if (terminate_on_any_exception)
             std::terminate();
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         message_format_string = msg.format_string;
+        message_format_string_args = msg.format_string_args;
     }
 
     Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
     {
         if (terminate_on_any_exception)
             std::terminate();
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         message_format_string = msg.format_string;
+        message_format_string_args = msg.format_string_args;
     }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
-    static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
+    static thread_local bool can_use_thread_frame_pointers;
+    /// Because of unknown order of static destructor calls,
+    /// thread_frame_pointers can already be uninitialized when a different destructor generates an exception.
+    /// To prevent such scenarios, a wrapper class is created and a function that will return empty vector
+    /// if its destructor is already called
+    using ThreadFramePointersBase = std::vector<StackTrace::FramePointers>;
+    struct ThreadFramePointers
+    {
+        ThreadFramePointers();
+        ~ThreadFramePointers();
+
+        ThreadFramePointersBase frame_pointers;
+    };
+
+    static ThreadFramePointersBase getThreadFramePointers();
+    static void setThreadFramePointers(ThreadFramePointersBase frame_pointers);
+
+    /// Callback for any exception
+    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
 
 protected:
+    static thread_local ThreadFramePointers thread_frame_pointers;
+
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
     struct MessageMasked
     {
@@ -105,12 +125,7 @@ public:
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
-    Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
-    {
-        capture_thread_frame_pointers = thread_frame_pointers;
-        message_format_string = fmt.message_format_string;
-    }
+    Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt.format(std::forward<Args>(args)...), code) {}
 
     struct CreateFromPocoTag {};
     struct CreateFromSTDTag {};
@@ -150,6 +165,8 @@ public:
 
     std::string_view tryGetMessageFormatString() const { return message_format_string; }
 
+    std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
+
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
@@ -160,10 +177,13 @@ private:
 
 protected:
     std::string_view message_format_string;
+    std::vector<std::string> message_format_string_args;
     /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
+[[noreturn]] void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size);
+[[noreturn]] void abortOnFailedAssertion(const String & description);
 
 std::string getExceptionStackTraceString(const std::exception & e);
 std::string getExceptionStackTraceString(std::exception_ptr e);
@@ -175,7 +195,7 @@ class ErrnoException : public Exception
 public:
     ErrnoException(std::string && msg, int code, int with_errno) : Exception(msg, code), saved_errno(with_errno)
     {
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         addMessage(", {}", errnoToString(saved_errno));
     }
 
@@ -184,33 +204,36 @@ public:
     requires std::is_convertible_v<T, String>
     ErrnoException(int code, T && message) : Exception(message, code), saved_errno(errno)
     {
-        capture_thread_frame_pointers = thread_frame_pointers;
+        capture_thread_frame_pointers = getThreadFramePointers();
         addMessage(", {}", errnoToString(saved_errno));
     }
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
     ErrnoException(int code, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code), saved_errno(errno)
+        : Exception(fmt.format(std::forward<Args>(args)...), code), saved_errno(errno)
     {
-        capture_thread_frame_pointers = thread_frame_pointers;
-        message_format_string = fmt.message_format_string;
+        addMessage(", {}", errnoToString(saved_errno));
+    }
+
+    template <typename... Args>
+    ErrnoException(int code, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
+        : Exception(fmt.format(std::forward<Args>(args)...), code), saved_errno(with_errno)
+    {
         addMessage(", {}", errnoToString(saved_errno));
     }
 
     template <typename... Args>
     [[noreturn]] static void throwWithErrno(int code, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
     {
-        auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
-        e.message_format_string = fmt.message_format_string;
+        auto e = ErrnoException(code, with_errno, std::move(fmt), std::forward<Args>(args)...);
         throw e; /// NOLINT
     }
 
     template <typename... Args>
     [[noreturn]] static void throwFromPath(int code, const std::string & path, FormatStringHelper<Args...> fmt, Args &&... args)
     {
-        auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, errno);
-        e.message_format_string = fmt.message_format_string;
+        auto e = ErrnoException(code, errno, std::move(fmt), std::forward<Args>(args)...);
         e.path = path;
         throw e; /// NOLINT
     }
@@ -219,8 +242,7 @@ public:
     [[noreturn]] static void
     throwFromPathWithErrno(int code, const std::string & path, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
     {
-        auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
-        e.message_format_string = fmt.message_format_string;
+        auto e = ErrnoException(code, with_errno, std::move(fmt), std::forward<Args>(args)...);
         e.path = path;
         throw e; /// NOLINT
     }
@@ -233,11 +255,20 @@ public:
 
 private:
     int saved_errno;
-    std::optional<std::string> path{};
+    std::optional<std::string> path;
 
     const char * name() const noexcept override { return "DB::ErrnoException"; }
     const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
+
+/// An exception to use in unit tests to test interfaces.
+/// It is distinguished from others, so it does not have to be logged.
+class TestException : public Exception
+{
+public:
+    using Exception::Exception;
+};
+
 
 using Exceptions = std::vector<std::exception_ptr>;
 

@@ -20,7 +20,7 @@ SET insert_quorum_timeout=0;
 
 SYSTEM STOP FETCHES quorum1;
 
-INSERT INTO quorum2 VALUES (4, toDate('2018-12-16')); -- { serverError 319 }
+INSERT INTO quorum2 VALUES (4, toDate('2018-12-16')); -- { serverError UNKNOWN_STATUS_OF_INSERT }
 
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;

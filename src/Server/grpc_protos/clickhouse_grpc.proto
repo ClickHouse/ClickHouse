@@ -90,6 +90,7 @@ message QueryInfo {
    string user_name = 9;
    string password = 10;
    string quota = 11;
+   string jwt = 25;
 
    // Works exactly like sessions in the HTTP protocol.
    string session_id = 12;
@@ -179,6 +180,8 @@ message Stats {
    uint64 allocated_bytes = 3;
    bool applied_limit = 4;
    uint64 rows_before_limit = 5;
+   bool applied_aggregation = 6;
+   uint64 rows_before_aggregation = 7;
 }
 
 message Exception {
@@ -192,7 +195,7 @@ message Exception {
 message Result {
    string query_id = 9;
    string time_zone = 10;
-   
+
    // The format in which `output`, `totals` and `extremes` are written.
    // It's either the same as `output_format` specified in `QueryInfo` or the format specified in the query itself.
    string output_format = 11;

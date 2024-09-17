@@ -1,38 +1,38 @@
 -- { echoOn }
 
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings allow_experimental_analyzer=0, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings enable_analyzer=0, convert_query_to_cnf=0;
 v1	1
 v1	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings allow_experimental_analyzer=0, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings enable_analyzer=0, convert_query_to_cnf=0;
 v1	1
 v2	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=0, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings enable_analyzer=0, convert_query_to_cnf=0;
 v1	1
-select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=0, convert_query_to_cnf=0;
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings allow_experimental_analyzer=0, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings enable_analyzer=0, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings enable_analyzer=0, convert_query_to_cnf=1;
 v1	1
 v1	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings allow_experimental_analyzer=0, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings enable_analyzer=0, convert_query_to_cnf=1;
 v1	1
 v2	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=0, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings enable_analyzer=0, convert_query_to_cnf=1;
 v1	1
-select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=0, convert_query_to_cnf=1;
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings allow_experimental_analyzer=1, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings enable_analyzer=0, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings enable_analyzer=1, convert_query_to_cnf=0;
 v1	1
 v1	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings allow_experimental_analyzer=1, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings enable_analyzer=1, convert_query_to_cnf=0;
 v1	1
 v2	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=1, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings enable_analyzer=1, convert_query_to_cnf=0;
 v1	1
-select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=1, convert_query_to_cnf=0;
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings allow_experimental_analyzer=1, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings enable_analyzer=1, convert_query_to_cnf=0;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') settings enable_analyzer=1, convert_query_to_cnf=1;
 v1	1
 v1	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings allow_experimental_analyzer=1, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') settings enable_analyzer=1, convert_query_to_cnf=1;
 v1	1
 v2	2
-select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=1, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings enable_analyzer=1, convert_query_to_cnf=1;
 v1	1
-select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings allow_experimental_analyzer=1, convert_query_to_cnf=1;
+select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings enable_analyzer=1, convert_query_to_cnf=1;

@@ -23,7 +23,8 @@ class ReadFromStorageKafka;
 class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
-struct StorageKafkaInterceptors;
+template <typename TStorageKafka>
+struct KafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
@@ -33,13 +34,15 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
   */
 class StorageKafka final : public IStorage, WithContext
 {
-    friend struct StorageKafkaInterceptors;
+    using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
+    friend KafkaInterceptors;
 
 public:
     StorageKafka(
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
+        const String & comment,
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
 
@@ -132,19 +135,19 @@ private:
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
-    SettingsChanges createSettingsAdjustments();
     /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
-    /// Returns consumer configuration with all changes that had been overwritten in config
+    /// Returns full consumer related configuration, also the configuration
+    /// contains global kafka properties.
     cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    /// Returns full producer related configuration, also the configuration
+    /// contains global kafka properties.
+    cppkafka::Configuration getProducerConfiguration();
 
     /// If named_collection is specified.
     String collection_name;
 
     std::atomic<bool> shutdown_called = false;
-
-    // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config);
 
     void threadFunc(size_t idx);
 
@@ -152,15 +155,9 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
 
-    static Names parseTopics(String topic_list);
-    static String getDefaultClientId(const StorageID & table_id_);
-
     bool streamToViews();
-    bool checkDependencies(const StorageID & table_id);
 
     void cleanConsumers();
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

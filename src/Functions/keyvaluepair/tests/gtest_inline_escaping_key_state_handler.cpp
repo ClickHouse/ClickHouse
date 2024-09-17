@@ -84,7 +84,6 @@ TEST(extractKVPairInlineEscapingKeyStateHandler, Read)
 
     std::string key_str = "name";
     std::string key_with_delimiter_str = key_str + ':';
-    std::string key_with_delimiter_and_left_spacing = "  " + key_with_delimiter_str;
     std::string key_with_delimiter_and_random_characters_str = key_str + ':' + "a$a\\:''\"";
 
     // no delimiter, should discard

@@ -653,7 +653,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     /// Given left_lower >= left_point, right_lower >= right_point, find if there may be a match in between left_lower and right_lower.
     if (left_lower + 1 < right_lower)
     {
-        /// There is an point in between: left_lower + 1
+        /// There is a point in between: left_lower + 1
         return {true, true};
     }
     else if (left_lower + 1 == right_lower)

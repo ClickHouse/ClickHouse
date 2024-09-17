@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {

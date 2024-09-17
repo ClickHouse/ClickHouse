@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -257,8 +256,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
             }
             e.addMessage("After successfully inserting {}/{}: {}", successfully_inserted.size(), multiple_entities.size(), successfully_inserted_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -361,8 +359,7 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             }
             e.addMessage("After successfully removing {}/{}: {}", removed_names.size(), ids.size(), removed_names_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -458,8 +455,7 @@ std::vector<UUID> IAccessStorage::update(const std::vector<UUID> & ids, const Up
             }
             e.addMessage("After successfully updating {}/{}: {}", names_of_updated.size(), ids.size(), names_of_updated_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -528,15 +524,32 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            auto auth_type = user->auth_data.getType();
-            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
-                throwAuthenticationTypeNotAllowed(auth_type);
+            bool skipped_not_allowed_authentication_methods = false;
 
-            if (!areCredentialsValid(*user, credentials, external_authenticators, auth_result.settings))
-                throwInvalidCredentials();
+            for (const auto & auth_method : user->authentication_methods)
+            {
+                auto auth_type = auth_method.getType();
+                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                {
+                    skipped_not_allowed_authentication_methods = true;
+                    continue;
+                }
 
-            return auth_result;
+                if (areCredentialsValid(user->getName(), user->valid_until, auth_method, credentials, external_authenticators, auth_result.settings))
+                {
+                    auth_result.authentication_data = auth_method;
+                    return auth_result;
+                }
+            }
+
+            if (skipped_not_allowed_authentication_methods)
+            {
+                LOG_INFO(log, "Skipped the check for not allowed authentication methods,"
+                              "check allow_no_password and allow_plaintext_password settings in the server configuration");
+            }
+
+            throwInvalidCredentials();
         }
     }
 
@@ -546,9 +559,10 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
         return std::nullopt;
 }
 
-
 bool IAccessStorage::areCredentialsValid(
-    const User & user,
+    const std::string & user_name,
+    time_t valid_until,
+    const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     SettingsChanges & settings) const
@@ -556,20 +570,19 @@ bool IAccessStorage::areCredentialsValid(
     if (!credentials.isReady())
         return false;
 
-    if (credentials.getUserName() != user.getName())
+    if (credentials.getUserName() != user_name)
         return false;
 
-    if (user.valid_until)
+    if (valid_until)
     {
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-        if (now > user.valid_until)
+        if (now > valid_until)
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators, settings);
+    return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, settings);
 }
-
 
 bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const
 {
@@ -583,7 +596,7 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
         throwBackupNotAllowed();
 
     auto entities = readAllWithIDs(type);
-    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
     if (entities.empty())
         return;
@@ -748,14 +761,6 @@ void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const Stri
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
     throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
-}
-
-void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_type)
-{
-    throw Exception(
-        ErrorCodes::AUTHENTICATION_FAILED,
-        "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-        toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
 }
 
 void IAccessStorage::throwInvalidCredentials()

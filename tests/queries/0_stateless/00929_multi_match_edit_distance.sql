@@ -8,8 +8,8 @@ SELECT '- const pattern';
 select multiFuzzyMatchAny('abc', 0, ['a1c']) from system.numbers limit 3;
 select multiFuzzyMatchAny('abc', 1, ['a1c']) from system.numbers limit 3;
 select multiFuzzyMatchAny('abc', 2, ['a1c']) from system.numbers limit 3;
-select multiFuzzyMatchAny('abc', 3, ['a1c']) from system.numbers limit 3; -- { serverError 36 }
-select multiFuzzyMatchAny('abc', 4, ['a1c']) from system.numbers limit 3; -- { serverError 36 }
+select multiFuzzyMatchAny('abc', 3, ['a1c']) from system.numbers limit 3; -- { serverError BAD_ARGUMENTS }
+select multiFuzzyMatchAny('abc', 4, ['a1c']) from system.numbers limit 3; -- { serverError BAD_ARGUMENTS }
 
 select multiFuzzyMatchAny('leftabcright', 1, ['a1c']) from system.numbers limit 3;
 
@@ -19,9 +19,9 @@ select multiFuzzyMatchAny('halo some wrld', 2, ['^hello.*world$']);
 select multiFuzzyMatchAny('halo some wrld', 2, ['^hello.*world$', '^halo.*world$']);
 select multiFuzzyMatchAny('halo some wrld', 2, ['^halo.*world$', '^hello.*world$']);
 select multiFuzzyMatchAny('halo some wrld', 3, ['^hello.*world$']);
-select multiFuzzyMatchAny('hello some world', 10, ['^hello.*world$']); -- { serverError 36 }
-select multiFuzzyMatchAny('hello some world', -1, ['^hello.*world$']); -- { serverError 43 }
-select multiFuzzyMatchAny('hello some world', 10000000000, ['^hello.*world$']); -- { serverError 44 }
+select multiFuzzyMatchAny('hello some world', 10, ['^hello.*world$']); -- { serverError BAD_ARGUMENTS }
+select multiFuzzyMatchAny('hello some world', -1, ['^hello.*world$']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select multiFuzzyMatchAny('hello some world', 10000000000, ['^hello.*world$']); -- { serverError ILLEGAL_COLUMN }
 select multiFuzzyMatchAny('http://hyperscan_is_nice.de/st', 2, ['http://hyperscan_is_nice.de/(st\\d\\d$|st\\d\\d\\.|st1[0-4]\\d|st150|st\\d$|gl|rz|ch)']);
 select multiFuzzyMatchAny('string', 0, ['zorro$', '^tring', 'in$', 'how.*', 'it{2}', 'works']);
 select multiFuzzyMatchAny('string', 1, ['zorro$', '^tring', 'ip$', 'how.*', 'it{2}', 'works']);
@@ -37,8 +37,8 @@ SELECT '- non-const pattern';
 select multiFuzzyMatchAny(materialize('abc'), 0, materialize(['a1c'])) from system.numbers limit 3;
 select multiFuzzyMatchAny(materialize('abc'), 1, materialize(['a1c'])) from system.numbers limit 3;
 select multiFuzzyMatchAny(materialize('abc'), 2, materialize(['a1c'])) from system.numbers limit 3;
-select multiFuzzyMatchAny(materialize('abc'), 3, materialize(['a1c'])) from system.numbers limit 3; -- { serverError 36}
-select multiFuzzyMatchAny(materialize('abc'), 4, materialize(['a1c'])) from system.numbers limit 3; -- { serverError 36}
+select multiFuzzyMatchAny(materialize('abc'), 3, materialize(['a1c'])) from system.numbers limit 3; -- { serverError BAD_ARGUMENTS}
+select multiFuzzyMatchAny(materialize('abc'), 4, materialize(['a1c'])) from system.numbers limit 3; -- { serverError BAD_ARGUMENTS}
 
 select multiFuzzyMatchAny(materialize('leftabcright'), 1, materialize(['a1c']));
 
@@ -48,9 +48,9 @@ select multiFuzzyMatchAny(materialize('halo some wrld'), 2, materialize(['^hello
 select multiFuzzyMatchAny(materialize('halo some wrld'), 2, materialize(['^hello.*world$', '^halo.*world$']));
 select multiFuzzyMatchAny(materialize('halo some wrld'), 2, materialize(['^halo.*world$', '^hello.*world$']));
 select multiFuzzyMatchAny(materialize('halo some wrld'), 3, materialize(['^hello.*world$']));
-select multiFuzzyMatchAny(materialize('hello some world'), 10, materialize(['^hello.*world$'])); -- { serverError 36 }
-select multiFuzzyMatchAny(materialize('hello some world'), -1, materialize(['^hello.*world$'])); -- { serverError 43 }
-select multiFuzzyMatchAny(materialize('hello some world'), 10000000000, materialize(['^hello.*world$'])); -- { serverError 44 }
+select multiFuzzyMatchAny(materialize('hello some world'), 10, materialize(['^hello.*world$'])); -- { serverError BAD_ARGUMENTS }
+select multiFuzzyMatchAny(materialize('hello some world'), -1, materialize(['^hello.*world$'])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select multiFuzzyMatchAny(materialize('hello some world'), 10000000000, materialize(['^hello.*world$'])); -- { serverError ILLEGAL_COLUMN }
 select multiFuzzyMatchAny(materialize('http://hyperscan_is_nice.de/st'), 2, materialize(['http://hyperscan_is_nice.de/(st\\d\\d$|st\\d\\d\\.|st1[0-4]\\d|st150|st\\d$|gl|rz|ch)']));
 select multiFuzzyMatchAny(materialize('string'), 0, materialize(['zorro$', '^tring', 'in$', 'how.*', 'it{2}', 'works']));
 select multiFuzzyMatchAny(materialize('string'), 1, materialize(['zorro$', '^tring', 'ip$', 'how.*', 'it{2}', 'works']));

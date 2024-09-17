@@ -95,12 +95,14 @@ public:
         START_CLEANUP,
         RESET_COVERAGE,
         REFRESH_VIEW,
+        WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
         STOP_VIEW,
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
+        UNLOAD_PRIMARY_KEY,
         END
     };
 
@@ -128,6 +130,8 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+
+    std::optional<String> query_cache_tag;
 
     String filesystem_cache_name;
     std::string key_to_drop;

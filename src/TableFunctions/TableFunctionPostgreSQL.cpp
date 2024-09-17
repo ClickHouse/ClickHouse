@@ -4,6 +4,7 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Core/Settings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -80,8 +81,9 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         *configuration,
         settings.postgresql_connection_pool_size,
         settings.postgresql_connection_pool_wait_timeout,
-        POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-        settings.postgresql_connection_pool_auto_close_connection);
+        settings.postgresql_connection_pool_retries,
+        settings.postgresql_connection_pool_auto_close_connection,
+        settings.postgresql_connection_attempt_timeout);
 }
 
 }

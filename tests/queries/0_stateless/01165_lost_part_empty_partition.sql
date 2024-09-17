@@ -4,8 +4,8 @@ create table rmt1 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{d
 create table rmt2 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '2') order by n partition by toYYYYMMDD(d);
 
 system stop replicated sends rmt1;
-insert into rmt1 values (now(), arrayJoin([1, 2])); -- { clientError 36 }
-insert into rmt1(n) select * from system.numbers limit arrayJoin([1, 2]); -- { serverError 36, 440 }
+insert into rmt1 values (now(), arrayJoin([1, 2])); -- { clientError BAD_ARGUMENTS }
+insert into rmt1(n) select * from system.numbers limit arrayJoin([1, 2]); -- { serverError BAD_ARGUMENTS, INVALID_LIMIT_EXPRESSION }
 insert into rmt1 values (now(), rand());
 drop table rmt1;
 

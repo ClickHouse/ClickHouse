@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_restricted_user>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/disk_s3_restricted_user/</endpoint>
+                <access_key_id>miniorestricted1</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </disk_s3_restricted_user>
+        </disks>
+        <policies>
+            <policy_s3_restricted>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_restricted_user</disk>
+                    </main>
+                </volumes>
+            </policy_s3_restricted>
+        </policies>
+    </storage_configuration>
+</clickhouse>

@@ -416,7 +416,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        std::filesystem::remove_all(metadata_base_path);
+        (void)std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -740,7 +740,14 @@ bool StorageFileLog::streamToViews()
 
     auto new_context = Context::createCopy(getContext());
 
-    InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        new_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_isnert */ false);
+
     auto block_io = interpreter.execute();
 
     /// Each stream responsible for closing it's files and store meta
@@ -1009,7 +1016,7 @@ bool StorageFileLog::updateFileInfos()
                     file_infos.meta_by_inode.erase(meta);
 
                 if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    std::filesystem::remove(getFullMetaPath(file_name));
+                    (void)std::filesystem::remove(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else

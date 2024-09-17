@@ -21,7 +21,7 @@ REGISTER_FUNCTION(Sin)
             .returned_value = "The sine of x.",
             .examples = {{.name = "simple", .query = "SELECT sin(1.23)", .result = "0.9424888019316975"}},
             .categories{"Mathematical", "Trigonometric"}},
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 }
 
 }

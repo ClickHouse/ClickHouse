@@ -86,6 +86,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::JWT),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
@@ -93,7 +94,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 10);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 11);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -104,9 +105,10 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
             {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
-            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)}
+            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
+            {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 7);
+    static_assert(magic_enum::enum_count<Interface>() == 8);
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
@@ -212,17 +214,20 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const Settings & settings,
                                  const ContextAccessPtr & access,
                                  const ClientInfo & client_info,
-                                 const UserPtr & login_user)
+                                 const UserPtr & login_user,
+                                 const AuthenticationData & user_authenticated_with)
 {
-    DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
+    SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
     if (login_user)
     {
         log_entry.user = login_user->getName();
-        log_entry.user_identified_with = login_user->auth_data.getType();
+        log_entry.user_identified_with = user_authenticated_with.getType();
     }
-    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
+
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
+
 
     log_entry.session_id = session_id;
 
@@ -254,15 +259,19 @@ void SessionLog::addLoginFailure(
     add(std::move(log_entry));
 }
 
-void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
+void SessionLog::addLogOut(
+    const UUID & auth_id,
+    const UserPtr & login_user,
+    const AuthenticationData & user_authenticated_with,
+    const ClientInfo & client_info)
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
     if (login_user)
     {
         log_entry.user = login_user->getName();
-        log_entry.user_identified_with = login_user->auth_data.getType();
+        log_entry.user_identified_with = user_authenticated_with.getType();
     }
-    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
     log_entry.client_info = client_info;
 
     add(std::move(log_entry));

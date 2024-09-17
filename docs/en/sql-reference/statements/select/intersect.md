@@ -108,7 +108,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin Diamond', 5000);
 ```
 
-We can use `INTERSECT` to answer questions like **"Which coins do we own have traded at a price greater than $100?"**:
+We can use `INTERSECT` to answer questions like **"Which coins do we own that have traded at a price greater than $100?"**:
 
 ```sql
 SELECT crypto_name FROM holdings

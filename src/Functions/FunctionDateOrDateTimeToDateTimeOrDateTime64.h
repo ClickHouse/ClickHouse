@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Core/Settings.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 
 namespace DB

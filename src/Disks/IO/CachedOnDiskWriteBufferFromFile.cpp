@@ -41,7 +41,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 {
 }
 
-bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
+bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
 {
     if (finalized)
         return false;
@@ -91,7 +91,8 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
 
         size_t size_to_write = std::min(available_size, size);
 
-        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds);
+        std::string failure_reason;
+        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason);
         if (!reserved)
         {
             appendFilesystemCacheLog(*file_segment);

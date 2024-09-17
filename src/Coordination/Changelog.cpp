@@ -808,7 +808,11 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
 
     for (; current_index <= max_index_for_prefetch; ++current_index)
     {
-        const auto & [changelog_description, position, size] = logs_location.at(current_index);
+        auto location_it = logs_location.find(current_index);
+        if (location_it == logs_location.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", current_index);
+
+        const auto & [changelog_description, position, size] = location_it->second;
         if (total_size == 0)
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
         else if (total_size + size > commit_logs_cache.size_threshold)
@@ -1416,7 +1420,11 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
         }
         else
         {
-            const auto & log_location = logs_location.at(i);
+            auto location_it = logs_location.find(i);
+            if (location_it == logs_location.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", i);
+
+            const auto & log_location = location_it->second;
 
             if (!read_info)
                 set_new_file(log_location);
@@ -2262,7 +2270,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 
     nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + size_total);
     buf_out->pos(0);
-    buf_out->put(static_cast<int32_t>(count));
+    buf_out->put(count);
 
     for (auto & entry : returned_logs)
     {

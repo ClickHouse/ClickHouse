@@ -15,14 +15,11 @@
 #include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
-#include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
-#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
@@ -175,10 +172,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             const auto & erase_position = group_exprs.begin() + i;
             group_exprs.erase(erase_position);
             const auto & insert_position = group_exprs.begin() + i;
-            std::remove_copy_if(
-                    std::begin(args_ast->children), std::end(args_ast->children),
-                    std::inserter(group_exprs, insert_position), is_literal
-            );
+            (void)std::remove_copy_if(
+                std::begin(args_ast->children), std::end(args_ast->children),
+                std::inserter(group_exprs, insert_position), is_literal);
         }
         else if (is_literal(group_exprs[i]))
         {
@@ -188,7 +184,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
                 if (value.getType() == Field::Types::UInt64)
                 {
-                    auto pos = value.get<UInt64>();
+                    auto pos = value.safeGet<UInt64>();
                     if (pos > 0 && pos <= select_query->select()->children.size())
                         keep_position = true;
                 }
@@ -368,92 +364,6 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
     return names;
 }
 
-/// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
-/// has a single argument and not an aggregate functions.
-void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
-                                          const TablesWithColumns & tables_with_columns,
-                                          const TreeRewriterResult & result)
-{
-    auto order_by = select_query->orderBy();
-    if (!order_by)
-        return;
-
-    /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their underlying tables
-    /// and we can break the matching of the sorting key for `read_in_order`
-    /// optimization by removing monotonous functions from the prefix of key.
-    if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
-        return;
-
-    for (const auto & child : order_by->children)
-    {
-        auto * order_by_element = child->as<ASTOrderByElement>();
-
-        if (!order_by_element || order_by_element->children.empty())
-            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
-
-        if (order_by_element->with_fill)
-            return;
-    }
-
-    std::unordered_set<String> group_by_hashes;
-    if (auto group_by = select_query->groupBy())
-    {
-        if (select_query->group_by_with_grouping_sets)
-        {
-            for (auto & set : group_by->children)
-            {
-                for (auto & elem : set->children)
-                {
-                    const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
-                    const auto key = toString(hash);
-                    group_by_hashes.insert(key);
-                }
-            }
-        }
-        else
-        {
-            for (auto & elem : group_by->children)
-            {
-                const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
-                const auto key = toString(hash);
-                group_by_hashes.insert(key);
-            }
-        }
-    }
-
-    auto sorting_key_columns = result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{};
-
-    bool is_sorting_key_prefix = true;
-    for (size_t i = 0; i < order_by->children.size(); ++i)
-    {
-        auto * order_by_element = order_by->children[i]->as<ASTOrderByElement>();
-
-        auto & ast_func = order_by_element->children[0];
-        if (!ast_func->as<ASTFunction>())
-            continue;
-
-        if (i >= sorting_key_columns.size() || ast_func->getColumnName() != sorting_key_columns[i])
-            is_sorting_key_prefix = false;
-
-        /// If order by expression matches the sorting key, do not remove
-        /// functions to allow execute reading in order of key.
-        if (is_sorting_key_prefix)
-            continue;
-
-        MonotonicityCheckVisitor::Data data{tables_with_columns, context, group_by_hashes};
-        MonotonicityCheckVisitor(data).visit(ast_func);
-
-        if (!data.isRejected())
-        {
-            ast_func = data.identifier->clone();
-            ast_func->setAlias("");
-            if (!data.monotonicity.is_positive)
-                order_by_element->direction *= -1;
-        }
-    }
-}
-
 /// If ORDER BY has argument x followed by f(x) transforms it to ORDER BY x.
 /// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
 /// in case if f(), g(), h(), t() are deterministic (in scope of query).
@@ -602,12 +512,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeSumIfFunctions(ASTPtr & query)
-{
-    RewriteSumIfFunctionVisitor::Data data = {};
-    RewriteSumIfFunctionVisitor(data).visit(query);
-}
-
 void optimizeArrayExistsFunctions(ASTPtr & query)
 {
     RewriteArrayExistsFunctionVisitor::Data data = {};
@@ -659,12 +563,6 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
-{
-    RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
-    RewriteFunctionToSubcolumnVisitor(data).visit(query);
-}
-
 void optimizeOrLikeChain(ASTPtr & query)
 {
     ConvertFunctionOrLikeVisitor::Data data = {};
@@ -679,7 +577,8 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         optimizeMultiIfToIf(query);
 
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
-    OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
+    OptimizeIfWithConstantConditionVisitorData visitor_data(aliases);
+    OptimizeIfWithConstantConditionVisitor(visitor_data).visit(query);
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
@@ -729,9 +628,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
 
-    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
-        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
-
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
@@ -768,9 +664,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query, context);
 
-    if (settings.optimize_rewrite_sum_if_to_count_if)
-        optimizeSumIfFunctions(query);
-
     if (settings.optimize_rewrite_array_exists_to_has)
         optimizeArrayExistsFunctions(query);
 
@@ -788,10 +681,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove functions from ORDER BY if its argument is also in ORDER BY
     if (settings.optimize_redundant_functions_in_order_by)
         optimizeRedundantFunctionsInOrderBy(select_query, context);
-
-    /// Replace monotonous functions with its argument
-    if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns, result);
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,

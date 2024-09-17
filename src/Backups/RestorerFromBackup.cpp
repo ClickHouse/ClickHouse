@@ -23,8 +23,9 @@
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
-#include <boost/algorithm/string/join.hpp>
+#include <Core/Settings.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
@@ -109,7 +110,7 @@ RestorerFromBackup::~RestorerFromBackup()
     if (getNumFutures() > 0)
     {
         LOG_INFO(log, "Waiting for {} tasks to finish", getNumFutures());
-        waitFutures();
+        waitFutures(/* throw_if_error= */ false);
     }
 }
 
@@ -161,7 +162,7 @@ void RestorerFromBackup::run(Mode mode)
     setStage(Stage::COMPLETED);
 }
 
-void RestorerFromBackup::waitFutures()
+void RestorerFromBackup::waitFutures(bool throw_if_error)
 {
     std::exception_ptr error;
 
@@ -176,11 +177,7 @@ void RestorerFromBackup::waitFutures()
         if (futures_to_wait.empty())
             break;
 
-        /// Wait for all tasks.
-        for (auto & future : futures_to_wait)
-            future.wait();
-
-        /// Check if there is an exception.
+        /// Wait for all tasks to finish.
         for (auto & future : futures_to_wait)
         {
             try
@@ -197,7 +194,12 @@ void RestorerFromBackup::waitFutures()
     }
 
     if (error)
-        std::rethrow_exception(error);
+    {
+        if (throw_if_error)
+            std::rethrow_exception(error);
+        else
+            tryLogException(error, log);
+    }
 }
 
 size_t RestorerFromBackup::getNumFutures() const
@@ -220,10 +222,19 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     if (restore_coordination)
     {
         restore_coordination->setStage(new_stage, message);
-        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-        else
-            restore_coordination->waitForStage(new_stage);
+
+        /// The initiator of a RESTORE ON CLUSTER query waits for other hosts to complete their work (see waitForStage(Stage::COMPLETED) in BackupsWorker::doRestore),
+        /// but other hosts shouldn't wait for each others' completion. (That's simply unnecessary and also
+        /// the initiator may start cleaning up (e.g. removing restore-coordination ZooKeeper nodes) once all other hosts are in Stage::COMPLETED.)
+        bool need_wait = (new_stage != Stage::COMPLETED);
+
+        if (need_wait)
+        {
+            if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+                restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+            else
+                restore_coordination->waitForStage(new_stage);
+        }
     }
 }
 
@@ -234,7 +245,7 @@ void RestorerFromBackup::schedule(std::function<void()> && task_, const char * t
 
     checkIsQueryCancelled();
 
-    auto future = scheduleFromThreadPool<void>(
+    auto future = scheduleFromThreadPoolUnsafe<void>(
         [this, task = std::move(task_)]() mutable
         {
             if (exception_caught)
@@ -437,7 +448,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     String create_table_query_str = serializeAST(*create_table_query);
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query);
+    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
     std::lock_guard lock{mutex};
@@ -797,7 +808,7 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
         {
             if (restore_settings.storage_policy.value().empty())
                 /// it has been set to "" deliberately, so the source storage policy is erased
-                storage->settings->changes.removeSetting(setting_name);
+                storage->settings->changes.removeSetting(setting_name); // NOLINT
             else
                 /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
                 storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
@@ -837,7 +848,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         return true; /// Exclude this dependency.
     };
 
-    tables_dependencies.removeTablesIf(need_exclude_dependency);
+    tables_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
 
     if (tables_dependencies.getNumberOfTables() != table_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");
@@ -902,11 +913,15 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             table_info.database = DatabaseCatalog::instance().getDatabase(table_name.database);
         DatabasePtr database = table_info.database;
 
+        auto query_context = Context::createCopy(context);
+        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
+        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
             create_table_query,
-            context,
+            query_context,
             restore_coordination,
             std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
     }

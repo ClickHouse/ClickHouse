@@ -6,6 +6,8 @@ DROP TABLE IF EXISTS without_deduplication;
 DROP TABLE IF EXISTS with_deduplication_mv;
 DROP TABLE IF EXISTS without_deduplication_mv;
 
+SET database_replicated_allow_explicit_uuid=3;
+SET database_replicated_allow_replicated_engine_arguments=3;
 CREATE TABLE with_deduplication(x UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00510/with_deduplication', 'r1') ORDER BY x;
 CREATE TABLE without_deduplication(x UInt32)
@@ -29,7 +31,7 @@ INSERT INTO without_deduplication VALUES (43);
 SELECT count() FROM with_deduplication;
 SELECT count() FROM without_deduplication;
 
--- Implicit insert isn't deduplicated
+-- Implicit insert isn't deduplicated, because deduplicate_blocks_in_dependent_materialized_views = 0 by default
 SELECT '';
 SELECT countMerge(cnt) FROM with_deduplication_mv;
 SELECT countMerge(cnt) FROM without_deduplication_mv;

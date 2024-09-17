@@ -1,7 +1,7 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB

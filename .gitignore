@@ -21,6 +21,9 @@
 *.stderr
 *.stdout
 
+# llvm-xray logs
+xray-log.*
+
 /docs/build
 /docs/publish
 /docs/edit

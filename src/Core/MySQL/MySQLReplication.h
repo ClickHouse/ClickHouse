@@ -119,7 +119,7 @@ namespace MySQLReplication
     {
         BINLOG_CHECKSUM_ALG_OFF = 0,
         BINLOG_CHECKSUM_ALG_CRC32 = 1,
-        BINLOG_CHECKSUM_ALG_ENUM_END,
+        BINLOG_CHECKSUM_ALG_ENUM_END = 3,
         BINLOG_CHECKSUM_ALG_UNDEF = 255
     };
 

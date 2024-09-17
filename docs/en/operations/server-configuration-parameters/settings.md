@@ -103,8 +103,6 @@ Default: 2
 
 The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
-## background_merges_mutations_scheduling_policy
-
 Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
 Could be applied from the `default` profile for backward compatibility.
 
@@ -493,10 +491,20 @@ Type: Double
 
 Default: 0.9
 
+## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
+
+The maximum number of threads to use for building vector indexes. 0 means all cores.
+
+Type: UInt64
+
+Default: 16
+
 ## cgroups_memory_usage_observer_wait_time
 
 Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
 settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
+
+To disable the cgroup observer, set this value to `0`.
 
 Type: UInt64
 
@@ -523,7 +531,7 @@ See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watche
 
 Type: Double
 
-Default: 0.95
+Default: 0.9
 
 ## max_table_size_to_drop
 
@@ -561,6 +569,25 @@ Default value: 5000
 <max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
+## max\_view\_num\_to\_warn {#max-view-num-to-warn}
+If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 10000
+
+**Example**
+
+``` xml
+<max_view_num_to_warn>400</max_view_num_to_warn>
+```
+
+## max\_dictionary\_num\_to\_warn {#max-dictionary-num-to-warn}
+If the number of attached dictionaries exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 1000
+
+**Example**
+
+``` xml
+<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
+```
 
 ## max\_part\_num\_to\_warn {#max-part-num-to-warn}
 If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
@@ -572,6 +599,22 @@ Default value: 100000
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
+## max\_table\_num\_to\_throw {#max-table-num-to-throw}
+If number of tables is greater than this value, server will throw an exception. 0 means no limitation. View, remote tables, dictionary, system tables are not counted. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.Default value: 0
+
+**Example**
+```xml
+<max_table_num_to_throw>400</max_table_num_to_throw>
+```
+
+## max\_database\_num\_to\_throw {#max-table-num-to-throw}
+If number of _database is greater than this value, server will throw an exception. 0 means no limitation.
+Default value: 0
+
+**Example**
+```xml
+<max_database_num_to_throw>400</max_database_num_to_throw>
+```
 
 ## max_temporary_data_on_disk_size
 
@@ -919,6 +962,38 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
+## error_log {#error_log}
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on error history collection [`system.error_log`](../../operations/system-tables/error_log.md), create `/etc/clickhouse-server/config.d/error_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </error_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `error_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_error_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<error_log remove="1" />
+</clickhouse>
+```
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -1187,9 +1262,19 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
+## mlock_executable {#mlock_executable}
+
+Perform mlockall after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
+Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capability.
+**Example**
+
+``` xml
+<mlock_executable>false</mlock_executable>
+```
+
 ## include_from {#include_from}
 
-The path to the file with substitutions.
+The path to the file with substitutions. Both XML and YAML formats are supported.
 
 For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
@@ -1323,6 +1408,16 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
+## max_keep_alive_requests {#max-keep-alive-requests}
+
+Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server. Default to 10000.
+
+**Example**
+
+``` xml
+<max_keep_alive_requests>10</max_keep_alive_requests>
+```
+
 ## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
@@ -1332,6 +1427,26 @@ Examples:
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
+```
+
+## listen_try {#listen_try}
+
+The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
+
+Examples:
+
+``` xml
+<listen_try>0</listen_try>
+```
+
+## listen_reuse_port {#listen_reuse_port}
+
+Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
+
+Examples:
+
+``` xml
+<listen_reuse_port>0</listen_reuse_port>
 ```
 
 ## listen_backlog {#listen_backlog}
@@ -1356,23 +1471,29 @@ Examples:
 
 ## logger {#logger}
 
-Logging settings.
+The location and format of log messages.
 
 Keys:
 
-- `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
-- `log` – The log file. Contains all the entries according to `level`.
-- `errorlog` – Error log file.
-- `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
-- `count` – The number of archived log files that ClickHouse stores.
-- `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
-- `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
-- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
+- `level` – Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,
+  `debug`, `trace`, `test`
+- `log` – The path to the log file.
+- `errorlog` – The path to the error log file.
+- `size` – Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.
+- `count` – Rotation policy: How many historical log files Clickhouse are kept at most.
+- `stream_compress` – Compress log messages using LZ4. Set to `1` or `true` to enable.
+- `console` – Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is
+  `1` if Clickhouse does not run in daemon mode, `0` otherwise.
+- `console_log_level` – Log level for console output. Defaults to `level`.
+- `formatting` – Log format for console output. Currently, only `json` is supported).
+- `use_syslog` - Also forward log output to syslog.
+- `syslog_level` - Log level for logging to syslog.
 
-Both log and error log file names (only file names, not directories) support date and time format specifiers.
+**Log format specifiers**
 
-**Format specifiers**
-Using the following format specifiers, you can define a pattern for the resulting file name. “Example” column shows possible results for `2023-07-06 18:32:07`.
+File names in `log` and `errorLog` paths support below format specifiers for the resulting file name (the directory part does not support them).
+
+Column “Example” shows the output at `2023-07-06 18:32:07`.
 
 | Specifier   | Description                                                                                                         | Example                  |
 |-------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
@@ -1427,18 +1548,37 @@ Using the following format specifiers, you can define a pattern for the resultin
 </logger>
 ```
 
-Writing to the console can be configured. Config example:
+To print log messages only in the console:
 
 ``` xml
 <logger>
     <level>information</level>
-    <console>1</console>
+    <console>true</console>
+</logger>
+```
+
+**Per-level Overrides**
+
+The log level of individual log names can be overridden. For example, to mute all messages of loggers "Backup" and "RBAC".
+
+```xml
+<logger>
+    <levels>
+        <logger>
+            <name>Backup</name>
+            <level>none</level>
+        </logger>
+        <logger>
+            <name>RBAC</name>
+            <level>none</level>
+        </logger>
+    </levels>
 </logger>
 ```
 
 ### syslog
 
-Writing to the syslog is also supported. Config example:
+To write log messages additionally to syslog:
 
 ``` xml
 <logger>
@@ -1452,14 +1592,12 @@ Writing to the syslog is also supported. Config example:
 </logger>
 ```
 
-Keys for syslog:
+Keys for `<syslog>`:
 
-- use_syslog — Required setting if you want to write to the syslog.
-- address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
-- hostname — Optional. The name of the host that logs are sent from.
-- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
-    Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
-- format – Message format. Possible values: `bsd` and `syslog.`
+- `address` — The address of syslog in format `host\[:port\]`. If omitted, the local daemon is used.
+- `hostname` — The name of the host from which logs are send. Optional.
+- `facility` — The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a “LOG_” prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
+- `format` – Log message format. Possible values: `bsd` and `syslog.`
 
 ### Log formats
 
@@ -1478,6 +1616,7 @@ You can specify the log format that will be outputted in the console log. Curren
   "source_line": "192"
 }
 ```
+
 To enable JSON logging support, use the following snippet:
 
 ```xml
@@ -1517,6 +1656,7 @@ The server will need access to the public Internet via IPv4 (at the time of writ
 Keys:
 
 - `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.
+- `send_logical_errors` – `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (default: `false`).
 - `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.
 - `anonymize` - Avoid attaching the server hostname to the crash report.
 - `http_proxy` - Configure HTTP proxy for sending crash reports.
@@ -1851,7 +1991,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 ## metric_log {#metric_log}
 
-It is enabled by default. If it`s not, you can do this manually.
+It is disabled by default.
 
 **Enabling**
 
@@ -2009,48 +2149,6 @@ The trailing slash is mandatory.
 
 ``` xml
 <path>/var/lib/clickhouse/</path>
-```
-
-## Prometheus {#prometheus}
-
-:::note
-ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
-:::
-
-Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
-
-Settings:
-
-- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
-- `port` – Port for `endpoint`.
-- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
-- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
-
-**Example**
-
-``` xml
-<clickhouse>
-    <listen_host>0.0.0.0</listen_host>
-    <http_port>8123</http_port>
-    <tcp_port>9000</tcp_port>
-    <!-- highlight-start -->
-    <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>9363</port>
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
-        <errors>true</errors>
-    </prometheus>
-    <!-- highlight-end -->
-</clickhouse>
-```
-
-Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
-```bash
-curl 127.0.0.1:9363/metrics
 ```
 
 ## query_log {#query-log}
@@ -2859,7 +2957,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 
@@ -2873,6 +2971,8 @@ Default value: 0.
 Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
 
 There are three ways to define proxy servers: environment variables, proxy lists, and remote proxy resolvers.
+
+Bypassing proxy servers for specific hosts is also supported with the use of `no_proxy`.
 
 ### Environment variables
 
@@ -2983,6 +3083,29 @@ This also allows a mix of resolver types can be used.
 
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
 
+### no_proxy
+By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
+
+Example:
+
+The below configuration bypasses proxy requests to `clickhouse.cloud` and all of its subdomains (e.g, `auth.clickhouse.cloud`).
+The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` and `about.gitlab.com` would bypass the proxy.
+
+``` xml
+<proxy>
+    <no_proxy>clickhouse.cloud,.gitlab.com</no_proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
 ## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 A limit on the number of materialized views attached to a table.
@@ -3009,3 +3132,33 @@ This setting is only necessary for the migration period and will become obsolete
 Type: Bool
 
 Default: 1
+
+## merge_workload {#merge_workload}
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload {#mutation_workload}
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
+
+The maximum number of authentication methods a user can be created with or altered to.
+Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
+Non authentication create/alter queries will succeed.
+
+Type: UInt64
+
+Default value: 100
+
+Zero means unlimited

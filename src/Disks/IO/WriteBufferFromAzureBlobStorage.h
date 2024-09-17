@@ -13,7 +13,7 @@
 #include <azure/core/io/body_stream.hpp>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 namespace Poco
 {
@@ -35,8 +35,8 @@ public:
         const String & blob_path_,
         size_t buf_size_,
         const WriteSettings & write_settings_,
-        std::shared_ptr<const AzureObjectStorageSettings> settings_,
-        ThreadPoolCallbackRunner<void> schedule_ = {});
+        std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
+        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
 
@@ -48,8 +48,13 @@ public:
 private:
     struct PartData;
 
-    void writePart();
+    void writeMultipartUpload();
+    void writePart(PartData && part_data);
+    void detachBuffer();
+    void reallocateFirstBuffer();
     void allocateBuffer();
+    void hidePartialData();
+    void setFakeBufferWhenPreFinalized();
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
@@ -77,9 +82,16 @@ private:
 
     MemoryBufferPtr allocateBuffer() const;
 
+    char fake_buffer_when_prefinalized[1] = {};
+
     bool first_buffer=true;
 
+    size_t total_size = 0;
+    size_t hidden_size = 0;
+
     std::unique_ptr<TaskTracker> task_tracker;
+
+    std::deque<PartData> detached_part_data;
 };
 
 }

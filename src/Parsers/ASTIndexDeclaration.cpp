@@ -79,7 +79,7 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
         }
         else
         {
-            s.ostr << backQuoteIfNeed(name);
+            s.writeIdentifier(name);
             s.ostr << " ";
             expr->formatImpl(s, state, frame);
         }

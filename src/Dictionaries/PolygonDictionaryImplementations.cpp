@@ -8,6 +8,7 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 #include <numeric>
 
@@ -166,7 +167,6 @@ DictionaryPtr createLayout(const std::string & ,
                            ContextPtr global_context,
                            bool /*created_from_ddl*/)
 {
-    const String database = config.getString(config_prefix + ".database", "");
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)

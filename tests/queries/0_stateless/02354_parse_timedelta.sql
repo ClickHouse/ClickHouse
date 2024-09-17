@@ -11,8 +11,8 @@ SELECT parseTimeDelta('1s - 1ms : 1μs ; 1ns');
 SELECT parseTimeDelta('1.11s1.11ms1.11us1.11ns');
 
 -- invalid expressions
-SELECT parseTimeDelta(); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
-SELECT parseTimeDelta('1yr', 1); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT parseTimeDelta(); -- {serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION}
+SELECT parseTimeDelta('1yr', 1); -- {serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION}
 SELECT parseTimeDelta(1); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT parseTimeDelta(' '); -- {serverError BAD_ARGUMENTS}
 SELECT parseTimeDelta('-1yr'); -- {serverError BAD_ARGUMENTS}

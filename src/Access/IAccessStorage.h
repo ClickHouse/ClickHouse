@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Access/AuthenticationData.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Parsers/IParser.h>
@@ -24,7 +25,7 @@ namespace DB
 struct User;
 class Credentials;
 class ExternalAuthenticators;
-enum class AuthenticationType;
+enum class AuthenticationType : uint8_t;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
@@ -34,6 +35,7 @@ struct AuthResult
     UUID user_id;
     /// Session settings received from authentication server (if any)
     SettingsChanges settings{};
+    AuthenticationData authentication_data {};
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -43,6 +45,11 @@ class IAccessStorage : public boost::noncopyable
 public:
     explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
     virtual ~IAccessStorage() = default;
+
+    /// If the AccessStorage has to do some complicated work when destroying - do it in advance.
+    /// For example, if the AccessStorage contains any threads for background work - ask them to complete and wait for completion.
+    /// By default, does nothing.
+    virtual void shutdown() {}
 
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
@@ -222,7 +229,9 @@ protected:
         bool allow_no_password,
         bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(
-        const User & user,
+        const std::string & user_name,
+        time_t valid_until,
+        const AuthenticationData & authentication_method,
         const Credentials & credentials,
         const ExternalAuthenticators & external_authenticators,
         SettingsChanges & settings) const;
@@ -243,7 +252,6 @@ protected:
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
-    [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
     [[noreturn]] void throwBackupNotAllowed() const;
     [[noreturn]] void throwRestoreNotAllowed() const;
 

@@ -12,9 +12,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
 #include <Databases/DatabaseFactory.h>
@@ -22,7 +22,9 @@
 #include <Common/quoteString.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -241,7 +243,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
     if (fs::exists(table_marked_as_removed))
-        fs::remove(table_marked_as_removed);
+        (void)fs::remove(table_marked_as_removed);
 }
 
 
@@ -298,7 +300,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    fs::remove_all(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 
@@ -368,7 +370,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
             iter = detached_or_dropped.erase(iter);
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
             if (fs::exists(table_marked_as_removed))
-                fs::remove(table_marked_as_removed);
+                (void)fs::remove(table_marked_as_removed);
         }
         else
             ++iter;
@@ -431,7 +433,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
-        const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
         column_declaration->type = getColumnDeclaration(column_type_and_name.type);
         columns_expression_list->children.emplace_back(column_declaration);
@@ -469,17 +471,15 @@ ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) c
     WhichDataType which(data_type);
 
     if (which.isNullable())
-        return makeASTFunction("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
+        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
 
     if (which.isArray())
-        return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
+        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
     if (which.isDateTime64())
-    {
-        return makeASTFunction("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
-    }
+        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
 
-    return std::make_shared<ASTIdentifier>(data_type->getName());
+    return makeASTDataType(data_type->getName());
 }
 
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
@@ -545,8 +545,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             configuration,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+            settings.postgresql_connection_pool_retries,
+            settings.postgresql_connection_pool_auto_close_connection,
+            settings.postgresql_connection_attempt_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,

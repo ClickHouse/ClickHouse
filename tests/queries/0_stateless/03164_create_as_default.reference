@@ -1,0 +1,5 @@
+CREATE TABLE default.src_table\n(\n    `time` DateTime(\'UTC\') DEFAULT fromUnixTimestamp(sipTimestamp),\n    `sipTimestamp` UInt64\n)\nENGINE = MergeTree\nORDER BY time\nSETTINGS index_granularity = 8192
+sipTimestamp	
+time	fromUnixTimestamp(sipTimestamp)
+{"time":"2024-05-20 09:00:00","sipTimestamp":"1716195600"}
+{"time":"2024-05-20 09:00:00","sipTimestamp":"1716195600"}

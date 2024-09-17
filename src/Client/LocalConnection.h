@@ -101,7 +101,7 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
-    const String & getDescription() const override { return description; }
+    const String & getDescription([[maybe_unused]] bool with_extra = false) const override { return description; }  /// NOLINT
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
 
@@ -151,7 +151,10 @@ private:
 
     void sendProfileEvents();
 
+    /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
+
+    bool needSendProgressOrMetrics();
 
     ContextMutablePtr query_context;
     Session session;
@@ -172,4 +175,5 @@ private:
 
     ReadBuffer * in;
 };
+
 }

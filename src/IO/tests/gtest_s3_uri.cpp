@@ -204,11 +204,14 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
-}
-
-TEST_P(S3UriTest, invalidPatterns)
-{
-    ASSERT_ANY_THROW(S3::URI new_uri(GetParam()));
+    {
+        S3::URI uri("https://bucket-test.cn-beijing-internal.oss-data-acc.aliyuncs.com/cc-2zeh496zqm0g6e09g");
+        ASSERT_EQ("https://cn-beijing-internal.oss-data-acc.aliyuncs.com", uri.endpoint);
+        ASSERT_EQ("bucket-test", uri.bucket);
+        ASSERT_EQ("cc-2zeh496zqm0g6e09g", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
 }
 
 TEST(S3UriTest, versionIdChecks)
@@ -223,19 +226,5 @@ TEST(S3UriTest, versionIdChecks)
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    S3,
-    S3UriTest,
-    testing::Values(
-        "https:///",
-        "https://.s3.amazonaws.com/key",
-        "https://s3.amazonaws.com/key",
-        "https://jokserfn.s3amazonaws.com/key",
-        "https://s3.amazonaws.com//",
-        "https://amazonaws.com/",
-        "https://amazonaws.com//",
-        "https://amazonaws.com//key"));
-
 }
-
 #endif

@@ -19,7 +19,7 @@ struct FactorialImpl
     static const constexpr bool allow_decimal = false;
     static const constexpr bool allow_string_or_fixed_string = false;
 
-    static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
+    static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (std::is_floating_point_v<A> || is_over_big_int<A>)
             throw Exception(
@@ -106,7 +106,7 @@ The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any ne
 )",
             .examples{{"factorial", "SELECT factorial(10)", ""}},
             .categories{"Mathematical"}},
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 }
 
 }

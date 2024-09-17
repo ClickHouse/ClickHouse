@@ -11,6 +11,7 @@ public:
     MergeTreeReadPoolParallelReplicas(
         ParallelReadingExtension extension_,
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -32,6 +33,7 @@ private:
 
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
+    size_t min_marks_per_task{0};
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");

@@ -5,12 +5,12 @@ from pathlib import Path
 import shutil
 from typing import Dict, Set
 import unittest
-from ci_config import Build, JobNames
 from s3_helper import S3Helper
-from ci import CiCache
+from ci_cache import CiCache
 from digest_helper import JOB_DIGEST_LEN
 from commit_status_helper import CommitStatusData
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
+from ci_config import CI
 
 
 def _create_mock_digest_1(string):
@@ -21,8 +21,8 @@ def _create_mock_digest_2(string):
     return md5((string + "+nonce").encode("utf-8")).hexdigest()[:JOB_DIGEST_LEN]
 
 
-DIGESTS = {job: _create_mock_digest_1(job) for job in JobNames}
-DIGESTS2 = {job: _create_mock_digest_2(job) for job in JobNames}
+DIGESTS = {job: _create_mock_digest_1(job) for job in CI.JobNames}
+DIGESTS2 = {job: _create_mock_digest_2(job) for job in CI.JobNames}
 
 
 # pylint:disable=protected-access
@@ -84,8 +84,10 @@ class TestCiCache(unittest.TestCase):
         NUM_BATCHES = 10
 
         DOCS_JOBS_NUM = 1
-        assert len(set(job for job in JobNames)) == len(list(job for job in JobNames))
-        NONDOCS_JOBS_NUM = len(set(job for job in JobNames)) - DOCS_JOBS_NUM
+        assert len(set(job for job in CI.JobNames)) == len(
+            list(job for job in CI.JobNames)
+        )
+        NONDOCS_JOBS_NUM = len(set(job for job in CI.JobNames)) - DOCS_JOBS_NUM
 
         PR_NUM = 123456
         status = CommitStatusData(
@@ -97,13 +99,13 @@ class TestCiCache(unittest.TestCase):
         )
 
         ### add some pending statuses for two batches, non-release branch
-        for job in JobNames:
+        for job in CI.JobNames:
             ci_cache.push_pending(job, [0, 1, 2], NUM_BATCHES, release_branch=False)
             ci_cache_2.push_pending(job, [0, 1, 2], NUM_BATCHES, release_branch=False)
 
         ### add success status for 0 batch, non-release branch
         batch = 0
-        for job in JobNames:
+        for job in CI.JobNames:
             ci_cache.push_successful(
                 job, batch, NUM_BATCHES, status, release_branch=False
             )
@@ -113,21 +115,17 @@ class TestCiCache(unittest.TestCase):
 
         ### add failed status for 2 batch, non-release branch
         batch = 2
-        for job in JobNames:
+        for job in CI.JobNames:
             ci_cache.push_failed(job, batch, NUM_BATCHES, status, release_branch=False)
             ci_cache_2.push_failed(
                 job, batch, NUM_BATCHES, status, release_branch=False
             )
 
         ### check all expected directories were created on s3 mock
-        expected_build_path_1 = f"{CiCache.JobType.SRCS.value}-{_create_mock_digest_1(Build.PACKAGE_RELEASE)}"
-        expected_docs_path_1 = (
-            f"{CiCache.JobType.DOCS.value}-{_create_mock_digest_1(JobNames.DOCS_CHECK)}"
-        )
-        expected_build_path_2 = f"{CiCache.JobType.SRCS.value}-{_create_mock_digest_2(Build.PACKAGE_RELEASE)}"
-        expected_docs_path_2 = (
-            f"{CiCache.JobType.DOCS.value}-{_create_mock_digest_2(JobNames.DOCS_CHECK)}"
-        )
+        expected_build_path_1 = f"{CiCache.JobType.SRCS.value}-{_create_mock_digest_1(CI.BuildNames.PACKAGE_RELEASE)}"
+        expected_docs_path_1 = f"{CiCache.JobType.DOCS.value}-{_create_mock_digest_1(CI.JobNames.DOCS_CHECK)}"
+        expected_build_path_2 = f"{CiCache.JobType.SRCS.value}-{_create_mock_digest_2(CI.BuildNames.PACKAGE_RELEASE)}"
+        expected_docs_path_2 = f"{CiCache.JobType.DOCS.value}-{_create_mock_digest_2(CI.JobNames.DOCS_CHECK)}"
         self.assertCountEqual(
             list(s3_mock.files_on_s3_paths.keys()),
             [
@@ -174,7 +172,7 @@ class TestCiCache(unittest.TestCase):
         )
 
         ### check statuses for all jobs in cache
-        for job in JobNames:
+        for job in CI.JobNames:
             self.assertEqual(
                 ci_cache.is_successful(job, 0, NUM_BATCHES, release_branch=False), True
             )
@@ -212,7 +210,7 @@ class TestCiCache(unittest.TestCase):
             assert status2 is None
 
         ### add some more pending statuses for two batches and for a release branch
-        for job in JobNames:
+        for job in CI.JobNames:
             ci_cache.push_pending(
                 job, batches=[0, 1], num_batches=NUM_BATCHES, release_branch=True
             )
@@ -226,7 +224,7 @@ class TestCiCache(unittest.TestCase):
             sha="deadbeaf2",
             pr_num=PR_NUM,
         )
-        for job in JobNames:
+        for job in CI.JobNames:
             ci_cache.push_successful(job, 0, NUM_BATCHES, status, release_branch=True)
 
         ### check number of cache files is as expected
@@ -249,7 +247,7 @@ class TestCiCache(unittest.TestCase):
         )
 
         ### check statuses
-        for job in JobNames:
+        for job in CI.JobNames:
             self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, False), True)
             self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, True), True)
             self.assertEqual(ci_cache.is_successful(job, 1, NUM_BATCHES, False), False)
@@ -273,7 +271,7 @@ class TestCiCache(unittest.TestCase):
 
         ### create new cache object and verify the same checks
         ci_cache = CiCache(s3_mock, DIGESTS)
-        for job in JobNames:
+        for job in CI.JobNames:
             self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, False), True)
             self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, True), True)
             self.assertEqual(ci_cache.is_successful(job, 1, NUM_BATCHES, False), False)

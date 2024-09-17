@@ -10,7 +10,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
+TaskTracker::TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
@@ -19,10 +19,14 @@ TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_t
 
 TaskTracker::~TaskTracker()
 {
+    /// Tasks should be waited outside of dtor.
+    /// Important for WriteBufferFromS3/AzureBlobStorage, where TaskTracker is currently used.
+    chassert(finished_futures.empty() && futures.empty());
+
     safeWaitAll();
 }
 
-ThreadPoolCallbackRunner<void> TaskTracker::syncRunner()
+ThreadPoolCallbackRunnerUnsafe<void> TaskTracker::syncRunner()
 {
     return [](Callback && callback, int64_t) mutable -> std::future<void>
     {
@@ -170,4 +174,3 @@ bool TaskTracker::isAsync() const
 }
 
 }
-

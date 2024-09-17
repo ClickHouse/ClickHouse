@@ -99,8 +99,7 @@ void insertPostgreSQLValue(
             ReadBufferFromString in(value);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
-            if (time < 0)
-                time = 0;
+            time = std::max<time_t>(time, 0);
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
         }
@@ -217,8 +216,7 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
-            if (time < 0)
-                time = 0;
+            time = std::max<time_t>(time, 0);
             return time;
         };
     else if (which.isDateTime64())
@@ -227,8 +225,7 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             DateTime64 time = 0;
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
-            if (time < 0)
-                time = 0;
+            time = std::max<time_t>(time, 0);
             return time;
         };
     else if (which.isDecimal32())

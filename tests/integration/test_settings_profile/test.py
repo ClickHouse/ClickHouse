@@ -3,7 +3,9 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+
+# `randomize_settings` is set tot `False` to maake result of `SHOW CREATE SETTINGS PROFILE` consistent
+instance = cluster.add_instance("instance", randomize_settings=False)
 
 
 def system_settings_profile(profile_name):
@@ -128,7 +130,7 @@ def test_smoke():
     instance.query("ALTER USER robin SETTINGS PROFILE xyz")
     assert (
         instance.query("SHOW CREATE USER robin")
-        == "CREATE USER robin SETTINGS PROFILE `xyz`\n"
+        == "CREATE USER robin IDENTIFIED WITH no_password SETTINGS PROFILE `xyz`\n"
     )
     assert (
         instance.query(
@@ -152,7 +154,10 @@ def test_smoke():
     ]
 
     instance.query("ALTER USER robin SETTINGS NONE")
-    assert instance.query("SHOW CREATE USER robin") == "CREATE USER robin\n"
+    assert (
+        instance.query("SHOW CREATE USER robin")
+        == "CREATE USER robin IDENTIFIED WITH no_password\n"
+    )
     assert (
         instance.query(
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
@@ -459,7 +464,7 @@ def test_show_profiles():
 
     query_possible_response = [
         "CREATE SETTINGS PROFILE `default`\n",
-        "CREATE SETTINGS PROFILE `default` SETTINGS allow_experimental_analyzer = true\n",
+        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n",
     ]
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
@@ -470,7 +475,7 @@ def test_show_profiles():
         "CREATE SETTINGS PROFILE `default`\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n",
-        "CREATE SETTINGS PROFILE `default` SETTINGS allow_experimental_analyzer = true\n"
+        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n",
     ]
@@ -482,7 +487,7 @@ def test_show_profiles():
         "CREATE SETTINGS PROFILE `xyz`\n"
     )
     expected_access_analyzer = (
-        "CREATE SETTINGS PROFILE `default` SETTINGS allow_experimental_analyzer = true\n"
+        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n"
     )
@@ -621,6 +626,7 @@ def test_allow_ddl():
     )
 
     instance.query("GRANT CREATE ON tbl TO robin")
+    instance.query("GRANT TABLE ENGINE ON Log TO robin")
     instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
     instance.query("DROP TABLE tbl")
 

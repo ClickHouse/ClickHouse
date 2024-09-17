@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-s3-storage
+# Tags: no-fasttest, no-parallel, no-object-storage
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 disk_name="s3_cache_02933"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
-config_path=/etc/clickhouse-server/config.d/storage_conf.xml
+config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf.xml
 config_path_tmp=$config_path.tmp
 
 cat $config_path \

@@ -13,7 +13,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
@@ -273,6 +273,8 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.default_database,
             address.user,
             address.password,
+            address.proto_send_chunked,
+            address.proto_recv_chunked,
             address.quota_key,
             address.cluster,
             address.cluster_secret,
@@ -283,7 +285,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
-    const auto settings = storage.getContext()->getSettings();
+    const auto & settings = storage.getContext()->getSettingsRef();
     return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -412,8 +414,9 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-        auto result = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto connection = std::move(result.front().entry);
+        auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto result = pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
+        auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
@@ -554,7 +557,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         {
             if (!fs::exists(file_path))
             {
-                LOG_WARNING(log, "File {} does not exists, likely due to current_batch.txt processing", file_path);
+                LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);
                 continue;
             }
 

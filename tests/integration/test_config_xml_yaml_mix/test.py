@@ -1,10 +1,3 @@
-import time
-import threading
-from os import path as p, unlink
-from tempfile import NamedTemporaryFile
-
-import helpers
-import pytest
 from helpers.cluster import ClickHouseCluster
 
 
@@ -17,6 +10,7 @@ def test_extra_yaml_mix():
     all_confd = [
         "configs/config.d/0_common_instance_config.yaml",
         "configs/config.d/access_control.yaml",
+        "configs/config.d/error_log.xml",
         "configs/config.d/keeper_port.xml",
         "configs/config.d/logging_no_rotate.xml",
         "configs/config.d/log_to_console.yaml",

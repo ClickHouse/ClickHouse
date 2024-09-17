@@ -44,6 +44,7 @@ ASTPtr ASTSelectQuery::clone() const
 
 void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    hash_state.update(recursive_with);
     hash_state.update(distinct);
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
@@ -64,6 +65,10 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (with())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH" << (s.hilite ? hilite_none : "");
+
+        if (recursive_with)
+            s.ostr << (s.hilite ? hilite_keyword : "") << " RECURSIVE" << (s.hilite ? hilite_none : "");
+
         s.one_line
             ? with()->formatImpl(s, state, frame)
             : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -142,6 +147,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
             "WINDOW" << (s.hilite ? hilite_none : "");
         window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+    }
+
+    if (qualify())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "QUALIFY " << (s.hilite ? hilite_none : "");
+        qualify()->formatImpl(s, state, frame);
     }
 
     if (!order_by_all && orderBy())
