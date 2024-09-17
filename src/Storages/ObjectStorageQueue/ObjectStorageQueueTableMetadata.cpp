@@ -48,6 +48,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , tracked_file_ttl_sec(engine_settings.tracked_file_ttl_sec)
     , buckets(engine_settings.buckets)
     , processing_threads_num(engine_settings.processing_threads_num)
+    , last_processed_path(engine_settings.last_processed_path)
     , loading_retries(engine_settings.loading_retries)
 {
 }
