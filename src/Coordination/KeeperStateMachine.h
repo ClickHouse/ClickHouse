@@ -126,8 +126,11 @@ protected:
     /// Mutex for snapshots
     mutable std::mutex snapshots_lock;
 
+    /// Lock for the storage
+    /// Storage works in thread-safe way ONLY for preprocessing/processing
+    /// In any other case, unique storage lock needs to be taken
     mutable SharedMutex storage_mutex;
-    /// Lock for storage and responses_queue. It's important to process requests
+    /// Lock for processing and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response

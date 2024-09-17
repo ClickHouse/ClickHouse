@@ -772,6 +772,7 @@ void KeeperStorage<Container>::UncommittedState::cleanup(int64_t commit_zxid)
 template<typename Container>
 void KeeperStorage<Container>::UncommittedState::rollback(int64_t rollback_zxid)
 {
+    // we can only rollback the last zxid (if there is any)
     std::list<Delta> rollback_deltas;
     {
         std::lock_guard lock(deltas_mutex);
