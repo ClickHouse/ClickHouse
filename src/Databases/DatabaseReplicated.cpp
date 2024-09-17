@@ -2001,6 +2001,6 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn);
+    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true});
 }
 }
