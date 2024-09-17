@@ -118,7 +118,8 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
     if (auto * sorting_step = typeid_cast<SortingStep *>(parent->step.get()))
     {
-        if (optimization_settings.optimize_sorting_by_input_stream_properties && !sorting_step->hasPartitions())
+        if (optimization_settings.optimize_sorting_by_input_stream_properties
+            && !sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::Full)
         {
             auto common_prefix = commonPrefix(properties->sort_description, sorting_step->getSortDescription());
             if (!common_prefix.empty())
