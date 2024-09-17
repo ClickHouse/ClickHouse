@@ -67,7 +67,7 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
     {
         if (mergine_aggeregated->memoryBoundMergingWillBeUsed())
         {
-            sort_description = mergine_aggeregated->getSortDescription();
+            sort_description = mergine_aggeregated->getGroupBySortDescription();
         }
     }
 
