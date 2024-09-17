@@ -520,13 +520,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * array_join = typeid_cast<ArrayJoinStep *>(child.get()))
     {
-        const auto & array_join_actions = array_join->arrayJoin();
-        const auto & keys = array_join_actions->columns;
+        const auto & keys = array_join->getColumns();
+        std::unordered_set<std::string_view> keys_set(keys.begin(), keys.end());
+
         const auto & array_join_header = array_join->getInputStreams().front().header;
 
         Names allowed_inputs;
         for (const auto & column : array_join_header)
-            if (!keys.contains(column.name))
+            if (!keys_set.contains(column.name))
                 allowed_inputs.push_back(column.name);
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))

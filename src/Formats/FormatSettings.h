@@ -35,6 +35,7 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
+    bool try_infer_variant = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
@@ -76,7 +77,7 @@ struct FormatSettings
         Raw
     };
 
-    bool schema_inference_make_columns_nullable = true;
+    UInt64 schema_inference_make_columns_nullable = 1;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -236,6 +237,7 @@ struct FormatSettings
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
+        bool empty_as_default = false;
         bool type_json_skip_duplicated_paths = false;
     } json{};
 

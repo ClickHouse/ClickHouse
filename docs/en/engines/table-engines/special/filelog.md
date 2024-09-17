@@ -97,7 +97,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
 - `_offset` - Offset in the log file. Data type: `UInt64`.
 
-Additional virtual columns when `kafka_handle_error_mode='stream'`:
+Additional virtual columns when `handle_error_mode='stream'`:
 
 - `_raw_record` - Raw record that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
