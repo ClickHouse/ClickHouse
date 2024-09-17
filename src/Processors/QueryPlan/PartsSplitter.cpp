@@ -50,6 +50,9 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float64:
         case TypeIndex::Nullable:
         case TypeIndex::ObjectDeprecated:
+        case TypeIndex::Object:
+        case TypeIndex::Variant:
+        case TypeIndex::Dynamic:
             return false;
         case TypeIndex::Array:
         {
@@ -75,16 +78,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         {
             const auto & data_type_map = static_cast<const DataTypeMap &>(data_type);
             return isSafePrimaryDataKeyType(*data_type_map.getKeyType()) && isSafePrimaryDataKeyType(*data_type_map.getValueType());
-        }
-        case TypeIndex::Variant:
-        {
-            const auto & data_type_variant = static_cast<const DataTypeVariant &>(data_type);
-            const auto & data_type_variant_elements = data_type_variant.getVariants();
-            for (const auto & data_type_variant_element : data_type_variant_elements)
-                if (!isSafePrimaryDataKeyType(*data_type_variant_element))
-                    return false;
-
-            return false;
         }
         default:
         {
@@ -229,7 +222,6 @@ public:
         {
             ranges_in_data_parts.emplace_back(
                 initial_ranges_in_data_parts[part_index].data_part,
-                initial_ranges_in_data_parts[part_index].alter_conversions,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
                 MarkRanges{mark_range});
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;

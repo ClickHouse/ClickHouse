@@ -5,6 +5,7 @@ sidebar_label: S3Queue
 ---
 
 # S3Queue Table Engine
+
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
 
 ## Create Table {#creating-a-table}
@@ -16,27 +17,25 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [mode = '',]
     [after_processing = 'keep',]
     [keeper_path = '',]
-    [s3queue_loading_retries = 0,]
-    [s3queue_processing_threads_num = 1,]
-    [s3queue_enable_logging_to_s3queue_log = 0,]
-    [s3queue_polling_min_timeout_ms = 1000,]
-    [s3queue_polling_max_timeout_ms = 10000,]
-    [s3queue_polling_backoff_ms = 0,]
-    [s3queue_tracked_file_ttl_sec = 0,]
-    [s3queue_tracked_files_limit = 1000,]
-    [s3queue_cleanup_interval_min_ms = 10000,]
-    [s3queue_cleanup_interval_max_ms = 30000,]
+    [loading_retries = 0,]
+    [processing_threads_num = 1,]
+    [enable_logging_to_s3queue_log = 0,]
+    [polling_min_timeout_ms = 1000,]
+    [polling_max_timeout_ms = 10000,]
+    [polling_backoff_ms = 0,]
+    [tracked_file_ttl_sec = 0,]
+    [tracked_files_limit = 1000,]
+    [cleanup_interval_min_ms = 10000,]
+    [cleanup_interval_max_ms = 30000,]
 ```
 
-Starting with `24.7` settings without `s3queue_` prefix are also supported.
+:::warning
+Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
+:::
 
 **Engine parameters**
 
-- `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
-- `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](../../../interfaces/formats.md#formats) of the file.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
-- `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will autodetect compression by file extension.
+`S3Queue` parameters are the same as `S3` table engine supports. See parameters section [here](../../../engines/table-engines/integrations/s3.md#parameters).
 
 **Example**
 

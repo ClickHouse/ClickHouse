@@ -1,0 +1,42 @@
+<clickhouse>
+    <logger>
+        <level>test</level>
+    </logger>
+
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3>
+            <encrypted>
+                <type>encrypted</type>
+                <disk>s3</disk>
+                <key_hex>9bb21f41535d8e89098f3f23a62c661e</key_hex>
+            </encrypted>
+        </disks>
+        <policies>
+            <encrypted>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                    </volumes>
+            </encrypted>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+        <disable_freeze_partition_for_zero_copy_replication>false</disable_freeze_partition_for_zero_copy_replication>
+    </merge_tree>
+    <enable_system_unfreeze>true</enable_system_unfreeze>
+</clickhouse>

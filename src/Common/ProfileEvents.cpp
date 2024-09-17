@@ -376,6 +376,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash") \
     M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled") \
     M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash") \
+    M(ParallelReplicasReadMarks, "How many marks were read by the given replica") \
     \
     M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash") \
     M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts") \
@@ -529,6 +530,7 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
+    M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data") \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time") \
@@ -827,6 +829,9 @@ The server successfully detected this situation and will download merged part fr
     M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
     M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
     M(GWPAsanFree, "Number of free operations done by GWPAsan") \
+    \
+    M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background") \
+    M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

@@ -99,6 +99,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
@@ -478,6 +479,8 @@ void logQueryFinish(
                     processor_elem.parent_ids = std::move(parents);
 
                     processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                    processor_elem.plan_step_name = processor->getPlanStepName();
+                    processor_elem.plan_step_description = processor->getPlanStepDescription();
                     processor_elem.plan_group = processor->getQueryPlanStepGroup();
 
                     processor_elem.processor_name = processor->getName();
@@ -793,7 +796,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -818,7 +821,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1118,6 +1121,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
+
+        /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
+        /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
+        /// is truncated. Therefore throw an exception, to notify the user to disable either the query cache or use another overflow mode.
+        if (settings.use_query_cache && (settings.read_overflow_mode != OverflowMode::THROW
+            || settings.read_overflow_mode_leaf != OverflowMode::THROW
+            || settings.group_by_overflow_mode != OverflowMode::THROW
+            || settings.sort_overflow_mode != OverflowMode::THROW
+            || settings.result_overflow_mode != OverflowMode::THROW
+            || settings.timeout_overflow_mode != OverflowMode::THROW
+            || settings.set_overflow_mode != OverflowMode::THROW
+            || settings.join_overflow_mode != OverflowMode::THROW
+            || settings.transfer_overflow_mode != OverflowMode::THROW
+            || settings.distinct_overflow_mode != OverflowMode::THROW))
+            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
 
         /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
         /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
