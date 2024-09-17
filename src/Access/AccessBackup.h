@@ -17,6 +17,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 struct RestoreSettings;
+enum class RestoreAccessCreationMode : uint8_t;
 
 
 /// Makes a backup of access entities of a specified type.
@@ -45,7 +46,8 @@ public:
 
 private:
     BackupPtr backup;
-    bool allow_unresolved_access_dependencies = false;
+    RestoreAccessCreationMode creation_mode;
+    bool allow_unresolved_dependencies = false;
     std::vector<std::pair<UUID, AccessEntityPtr>> entities;
     std::unordered_map<UUID, std::pair<String, AccessEntityType>> dependencies;
     std::unordered_set<String> data_paths;
