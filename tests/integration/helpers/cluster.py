@@ -4100,7 +4100,7 @@ class ClickHouseInstance:
         exclusion_substring="",
     ):
         if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
+            # We check first file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
