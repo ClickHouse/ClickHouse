@@ -175,7 +175,7 @@ private:
 
     // increments every time new thread joins the thread pool, or job finishes
     // decrements every time when task schedule starts
-    std::atomic<size_t> available_threads;
+    std::atomic<int> available_threads;
 
     bool shutdown = false;
     bool threads_remove_themselves = true;
