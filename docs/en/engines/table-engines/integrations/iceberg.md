@@ -7,7 +7,11 @@ sidebar_label: Iceberg
 # Iceberg Table Engine
 
 :::warning 
-We strongly advise against using the Iceberg Table Engine right now because ClickHouse wasn’t originally designed to support tables that have externally changing schemas. As a result, some features that work with regular tables may be unavailable or may not function correctly (especially for the old analyzer). We recommend using the [Iceberg Table Function](/docs/en/sql-reference/table-functions/iceberg.md) instead (right now it is sufficient, because CH supports only partial read-only interface for Iceberg tables)."
+We recommend using the Iceberg Table Function for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+
+The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
+
+For optimal performance and compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
 This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure and locally stored tables.
