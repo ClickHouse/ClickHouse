@@ -1142,6 +1142,16 @@ bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
     return false;
 }
 
+bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == INVERTED_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
