@@ -5,11 +5,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_READ_METHOD;
-    extern const int INVALID_SETTING_VALUE;
-}
 
 ReadSettings getReadSettings()
 {
