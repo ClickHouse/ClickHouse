@@ -27,6 +27,7 @@ struct ObjectStorageQueueTableMetadata
     const UInt64 buckets;
     UInt64 processing_threads_num; /// Can be changed from keeper.
     const String last_processed_path;
+    const UInt64 loading_retries;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
@@ -38,6 +39,8 @@ struct ObjectStorageQueueTableMetadata
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
 
     String toString() const;
+
+    ObjectStorageQueueMode getMode() const;
 
     bool adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
 
