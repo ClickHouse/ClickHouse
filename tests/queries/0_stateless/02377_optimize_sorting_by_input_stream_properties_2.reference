@@ -1,30 +1,27 @@
 0
-8
-6
-4
-10
 2
+4
+6
+8
+10
 12
 14
+16
 18
+20
+22
+24
+26
 28
+30
+32
+34
 36
 38
-30
-16
-32
-24
-22
-20
-26
-34
-sort properties are reused after MergingAggregated
 Sorting
 Sorting: x ASC
-Prefix sort description: x ASC
-Result sort description: x ASC
+Sort description: x ASC
 MergingAggregated
-Sorting: x ASC
 Aggregates:
 Aggregating
 Sorting: x ASC
@@ -51,12 +48,10 @@ Sorting: x ASC
 4
 2
 0
-choosing of sort order is not working
 Sorting
 Sorting: x DESC
 Sort description: x DESC
 MergingAggregated
-Sorting: x ASC
 Aggregates:
 Aggregating
 Sorting: x ASC
@@ -83,13 +78,10 @@ Sorting: x ASC
 34
 36
 38
-finish sorting is used
 Sorting
 Sorting: x ASC, sum(y) ASC
-Prefix sort description: x ASC
-Result sort description: x ASC, sum(y) ASC
+Sort description: x ASC, sum(y) ASC
 MergingAggregated
-Sorting: x ASC
 Aggregates:
 Aggregating
 Sorting: x ASC

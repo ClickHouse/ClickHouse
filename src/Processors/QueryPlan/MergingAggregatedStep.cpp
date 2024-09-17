@@ -6,6 +6,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -41,7 +42,6 @@ MergingAggregatedStep::MergingAggregatedStep(
     bool should_produce_results_in_order_of_bucket_number_,
     size_t max_block_size_,
     size_t memory_bound_merging_max_block_bytes_,
-    SortDescription group_by_sort_description_,
     bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
         input_stream_,
@@ -55,13 +55,12 @@ MergingAggregatedStep::MergingAggregatedStep(
     , memory_efficient_merge_threads(memory_efficient_merge_threads_)
     , max_block_size(max_block_size_)
     , memory_bound_merging_max_block_bytes(memory_bound_merging_max_block_bytes_)
-    , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
 }
 
-void MergingAggregatedStep::applyOrder(SortDescription input_sort_description) ///, DataStream::SortScope sort_scope)
+void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
 {
     /// Columns might be reordered during optimization, so we better to update sort description.
     group_by_sort_description = std::move(input_sort_description);
@@ -132,11 +131,18 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+    if (!group_by_sort_description.empty())
+    {
+        String prefix(settings.offset, settings.indent_char);
+        settings.out << prefix << "Order: " << dumpSortDescription(group_by_sort_description) << '\n';
+    }
 }
 
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
+    if (!group_by_sort_description.empty())
+        map.add("Order", dumpSortDescription(group_by_sort_description));
 }
 
 void MergingAggregatedStep::updateOutputStream()
@@ -153,7 +159,7 @@ bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const
 
 const SortDescription & MergingAggregatedStep::getSortDescription() const
 {
-    if (memoryBoundMergingWillBeUsed())
+    if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
         return group_by_sort_description;
 
     return IQueryPlanStep::getSortDescription();
