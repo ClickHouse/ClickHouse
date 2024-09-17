@@ -636,6 +636,7 @@ public:
 
     /// Mapping session_id -> set of watched nodes paths
     SessionAndWatcher sessions_and_watchers;
+    size_t total_watches_count = 0;
 
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
