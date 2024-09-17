@@ -524,8 +524,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         parallel_replicas_from_merge_tree = it->second.isMergeTree() && query_context->canUseParallelReplicasOnInitiator();
     }
 
-    SortDescription group_by_sort_description;
-
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
         params,
@@ -538,7 +536,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings.max_block_size,
         settings.aggregation_in_order_max_block_bytes,
-        std::move(group_by_sort_description),
         settings.enable_memory_bound_merging_of_aggregation_results);
     query_plan.addStep(std::move(merging_aggregated));
 }

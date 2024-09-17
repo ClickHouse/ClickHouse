@@ -2027,8 +2027,7 @@ static void executeMergeAggregatedImpl(
     const NamesAndTypesList & aggregation_keys,
     const NamesAndTypesLists & aggregation_keys_list,
     const AggregateDescriptions & aggregates,
-    bool should_produce_results_in_order_of_bucket_number,
-    [[maybe_unused]] SortDescription group_by_sort_description)
+    bool should_produce_results_in_order_of_bucket_number)
 {
     auto keys = aggregation_keys.getNames();
 
@@ -2062,7 +2061,6 @@ static void executeMergeAggregatedImpl(
         should_produce_results_in_order_of_bucket_number,
         settings.max_block_size,
         settings.aggregation_in_order_max_block_bytes,
-        SortDescription{},
         settings.enable_memory_bound_merging_of_aggregation_results);
 
     query_plan.addStep(std::move(merging_aggregated));
@@ -2745,10 +2743,6 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 {
     const Settings & settings = context->getSettingsRef();
 
-    /// Used to determine if we should use memory bound merging strategy.
-    auto group_by_sort_description
-        = !query_analyzer->useGroupingSetKey() ? getSortDescriptionFromGroupBy(getSelectQuery()) : SortDescription{};
-
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
         && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
     const bool parallel_replicas_from_merge_tree = storage->isMergeTree() && context->canUseParallelReplicasOnInitiator();
@@ -2763,8 +2757,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregationKeysList(),
         query_analyzer->aggregates(),
-        should_produce_results_in_order_of_bucket_number,
-        std::move(group_by_sort_description));
+        should_produce_results_in_order_of_bucket_number);
 }
 
 
