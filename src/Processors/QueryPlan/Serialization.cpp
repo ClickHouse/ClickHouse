@@ -30,6 +30,7 @@
 #include <Storages/StorageSet.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Storages/StorageMerge.h>
 
 #include <stack>
 
@@ -446,12 +447,18 @@ static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_express
 
     auto tables = std::make_shared<ASTTablesInSelectQuery>();
     auto table_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    table_element->children.push_back(table_expression);
     table_element->table_expression = std::move(table_expression);
     tables->children.push_back(std::move(table_element));
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(columns));
     select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
+    return select;
+}
+
+static ASTPtr wrapWithUnion(ASTPtr select)
+{
     auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
     auto selects = std::make_shared<ASTExpressionList>();
     selects->children.push_back(select);
@@ -517,32 +524,44 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
-    QueryPlan reading_plan;
-    if (storage->isRemote())
+    ASTPtr query;
+    bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
+    if (storage->isRemote() || is_storage_merge)
     {
         auto table_expression = std::make_shared<ASTTableExpression>();
         if (table_function_ast)
-            table_expression->table_function = table_function_ast;
+        {
+            table_expression->children.push_back(table_function_ast);
+            table_expression->table_function = std::move(table_function_ast);
+        }
         else
         {
             const auto & table_id = storage->getStorageID();
             auto table_identifier = std::make_shared<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
+            table_expression->children.push_back(table_identifier);
             table_identifier->uuid = table_id.uuid;
             table_expression->database_and_table_name = std::move(table_identifier);
         }
 
-        auto query_ptr = makeASTForReadingColumns(column_names, std::move(table_expression));
+        query = makeASTForReadingColumns(column_names, std::move(table_expression));
+        // std::cerr << query->dumpTree() << std::endl;
+    }
+
+    QueryPlan reading_plan;
+    if (storage->isRemote() || is_storage_merge)
+    {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(query_ptr, context, options, column_names);
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options, column_names);
         reading_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        SelectQueryOptions options(QueryProcessingStage::QueryPlan);
+        SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         auto storage_limits = std::make_shared<StorageLimitsList>();
         storage_limits->emplace_back(buildStorageLimits(*context, options));
         select_query_info.storage_limits = std::move(storage_limits);
+        select_query_info.query = std::move(query);
 
         storage->read(
             reading_plan,
