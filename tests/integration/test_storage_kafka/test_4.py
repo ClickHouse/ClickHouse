@@ -554,7 +554,6 @@ def test_kafka_rebalance(
                 FROM test.{table_name};
             """
             )
-            # kafka_cluster.open_bash_shell('instance')
             # Waiting for test.kafka_consumerX to start consume ...
             instance.wait_for_log_line(log_line.format(table_name))
 
@@ -566,9 +565,6 @@ def test_kafka_rebalance(
             instance.query(
                 "DROP TABLE IF EXISTS test.kafka_consumer{} SYNC".format(consumer_index)
             )
-
-        # logging.debug(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
-        # kafka_cluster.open_bash_shell('instance')
 
         while 1:
             messages_consumed = int(
@@ -1206,10 +1202,7 @@ def test_kafka_consumer_hang(
     instance.wait_for_log_line("heartbeat error")
     kafka_cluster.unpause_container("kafka1")
 
-    # logging.debug("Attempt to drop")
     instance.query("DROP TABLE test.kafka")
-
-    # kafka_cluster.open_bash_shell('instance')
 
     instance.query(
         """

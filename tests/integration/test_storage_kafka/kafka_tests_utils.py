@@ -262,9 +262,6 @@ def avro_message(value):
         }
     )
     bytes_writer = io.BytesIO()
-    # writer = avro.io.DatumWriter(schema)
-    # encoder = avro.io.BinaryEncoder(bytes_writer)
-    # writer.write(value, encoder)
 
     # DataFileWrite seems to be mandatory to get schema encoded
     writer = avro.datafile.DataFileWriter(bytes_writer, avro.io.DatumWriter(), schema)

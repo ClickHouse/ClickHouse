@@ -488,11 +488,6 @@ def test_kafka_virtual_columns2(
 
             instance.wait_for_log_line(log_line, repetitions=4, look_behind_lines=6000)
 
-            describe_consumer_group(kafka_cluster, consumer_group)
-            # pprint.pprint(members)
-            # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
-            # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
-
             result = instance.query(
                 "SELECT * FROM test.view ORDER BY value", ignore_error=True
             )
@@ -585,8 +580,6 @@ def test_kafka_produce_key_timestamp(
                 5, 5, "k5", 1577836805
             )
         )
-
-        # instance.wait_for_log_line(log_line)
 
         expected = """\
     1	1	k1	1577836801	k1	insert3	0	0	1577836801
@@ -1052,7 +1045,6 @@ kafka_topic_old	old_t
 
     members = describe_consumer_group(kafka_cluster, KAFKA_CONSUMER_GROUP_OLD)
     assert members[0]["client_id"] == "ClickHouse-instance-test-kafka"
-    # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
 
 def test_kafka_json_without_delimiter(

@@ -399,7 +399,6 @@ def test_kafka_duplicates_when_commit_failed(
 
     kafka_cluster.unpause_container("kafka1")
 
-    # kafka_cluster.open_bash_shell('instance')
     instance.wait_for_log_line("Committed offset 22")
 
     result = instance.query("SELECT count(), uniqExact(key), max(key) FROM test.view")
@@ -515,9 +514,6 @@ def test_commits_of_unprocessed_messages_on_drop(
 
     cancel.set()
     instance.wait_for_log_line("kafka.*Stalled", repetitions=5)
-
-    # kafka_cluster.open_bash_shell('instance')
-    # SELECT key, _timestamp, _offset FROM test.destination where runningDifference(key) <> 1 ORDER BY key;
 
     result = instance.query(
         "SELECT count(), uniqExact(key), max(key) FROM test.destination"
@@ -1295,7 +1291,6 @@ def test_exception_from_destructor(
     """
     )
 
-    # kafka_cluster.open_bash_shell('instance')
     assert TSV(instance.query("SELECT 1")) == TSV("1")
 
 

@@ -523,8 +523,6 @@ def test_kafka_no_holes_when_write_suffix_failed(
         )
         logging.debug(result)
 
-        # kafka_cluster.open_bash_shell('instance')
-
         instance.query(
             """
             DROP TABLE test.consumer;
@@ -600,7 +598,7 @@ def test_kafka_flush_by_block_size(
 
         # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
         result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
-        # logging.debug(result)
+        logging.debug(result)
 
         instance.query(
             """
