@@ -27,6 +27,12 @@ namespace
             return ObjectStorageQueueMode::UNORDERED;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
+
+    void validateMode(const std::string & mode)
+    {
+        if (mode != "ordered" && mode != "unordered")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
+    }
 }
 
 
@@ -99,6 +105,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10))
 {
+    validateMode(mode);
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
