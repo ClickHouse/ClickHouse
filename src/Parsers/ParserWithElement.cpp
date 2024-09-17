@@ -26,6 +26,10 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         with_element->children.push_back(with_element->subquery);
         node = with_element;
     }
+    else if (with_recursive)
+    {
+        return false;
+    }
     else
     {
         pos = old_pos;
