@@ -46,7 +46,6 @@ namespace DB
     \
 
 
-
 DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
 
 struct QueryPlanSerializationSettings : public BaseSettings<QueryPlanSerializationSettingsTraits>

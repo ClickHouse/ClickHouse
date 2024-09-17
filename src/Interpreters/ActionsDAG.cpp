@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -3499,7 +3500,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
 
                 if (!node.function_base->getResultType()->equals(*node.result_type))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Deserialized function {} has type. Expected {}, deserialzied {}.",
+                        "Deserialized function {} has type. Expected {}, deserialized {}.",
                         function_name,
                         node.function_base->getResultType()->getName(),
                         node.result_type->getName());

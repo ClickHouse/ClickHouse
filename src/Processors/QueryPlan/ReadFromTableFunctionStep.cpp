@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 ReadFromTableFunctionStep::ReadFromTableFunctionStep(
     Block output_header,
     std::string serialized_ast_,

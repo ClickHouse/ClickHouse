@@ -31,6 +31,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+    extern const int UNKNOWN_TABLE;
+}
+
 static void serializeHeader(const Block & header, WriteBuffer & out)
 {
     /// Write only names and types.

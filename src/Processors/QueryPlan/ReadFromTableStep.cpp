@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 ReadFromTableStep::ReadFromTableStep(
     Block output_header,
     String table_name_,

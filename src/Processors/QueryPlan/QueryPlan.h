@@ -142,7 +142,7 @@ using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// This is a structure which contains a query plan and a list of StorageSet.
 /// The reason is that StorageSet is specified by name,
-/// and we do not whant to resolve the storage name while deserializing.
+/// and we do not want to resolve the storage name while deserializing.
 /// Now, it allows to deserialize the plan without the context.
 /// Potentially, it may help to get the atomic snapshot for all the storages.
 ///

@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 static ITransformingStep::Traits getTraits(bool pre_distinct)
@@ -203,7 +204,7 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) 
 
 void DistinctStep::serialize(Serialization & ctx) const
 {
-    /// Let's not serialzie limit_hint.
+    /// Let's not serialize limit_hint.
     /// Ideally, we can get if from a query plan optimization on the follower.
 
     writeVarUInt(columns.size(), ctx.out);
@@ -243,7 +244,7 @@ std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(Deserialization & c
 void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.
-    /// It's easier to serialzie it using different names, so that pre-distinct can be potentially removed later.
+    /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
     registry.registerStep("Distinct", DistinctStep::deserializeNormal);
     registry.registerStep("PreDistinct", DistinctStep::deserializePre);
 }

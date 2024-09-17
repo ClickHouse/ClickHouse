@@ -11,6 +11,12 @@
 namespace DB
 {
 
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 static ITransformingStep::Traits getTraits(const ActionsDAG & expression, const Block & header, const SortDescription & sort_description, bool remove_filter_column, const String & filter_column_name)
 {
     bool preserves_sorting = expression.isSortingPreserved(header, sort_description, remove_filter_column ? filter_column_name : "");
