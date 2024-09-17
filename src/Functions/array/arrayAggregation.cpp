@@ -104,7 +104,7 @@ struct ArrayAggregateImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
-        if (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
+        if (!isNumber(expression_return->getColumnType()) && (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min))
         {
             return expression_return;
         }
