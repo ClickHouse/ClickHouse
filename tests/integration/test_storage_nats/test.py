@@ -98,7 +98,7 @@ def nats_setup_teardown():
 
 # Tests
 
-@pytest.mark.skip(reason="test broken")
+
 async def nats_produce_messages(cluster_inst, subject, messages=(), bytes=None):
     nc = await nats_connect_ssl(
         cluster_inst.nats_port,
@@ -117,7 +117,7 @@ async def nats_produce_messages(cluster_inst, subject, messages=(), bytes=None):
     await nc.close()
     return messages
 
-@pytest.mark.skip(reason="test broken")
+
 def check_table_is_ready(instance, table_name):
     try:
         instance.query("SELECT * FROM {}".format(table_name))
@@ -125,7 +125,7 @@ def check_table_is_ready(instance, table_name):
     except Exception:
         return False
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_select(nats_cluster):
     instance.query(
         """
