@@ -968,6 +968,11 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         if (database && database->getEngineName() != "Atomic")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Refreshable materialized views (except with APPEND) only support Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+
+        std::string message;
+        if (!supportsAtomicRename(&message))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
     Block input_block;

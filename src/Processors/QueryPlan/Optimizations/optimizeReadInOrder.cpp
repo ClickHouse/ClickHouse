@@ -231,13 +231,15 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
-        if (!array_join->arrayJoin()->is_left)
+        if (!array_join->isLeft())
             limit = 0;
 
-        const auto & array_joined_columns = array_join->arrayJoin()->columns;
+        const auto & array_joined_columns = array_join->getColumns();
 
         if (dag)
         {
+            std::unordered_set<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
+
             /// Remove array joined columns from outputs.
             /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
             ActionsDAG::NodeRawConstPtrs outputs;
@@ -245,7 +247,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 
             for (const auto & output : dag->getOutputs())
             {
-                if (!array_joined_columns.contains(output->result_name))
+                if (!keys_set.contains(output->result_name))
                     outputs.push_back(output);
             }
 
