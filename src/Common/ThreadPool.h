@@ -167,26 +167,29 @@ private:
     size_t queue_size;
 
     size_t scheduled_jobs = 0;
+
+    // originally equeals to max_threads, but changes dynamically
+    // decrement with every new thread started, decrements when finishes
+    // if positive then more threads can be started
+    std::atomic<size_t> remaining_pool_capacity;
+
+    // increments every time new thread joins the thread pool, or job finishes
+    // decrements every time when task schedule starts
+    std::atomic<size_t> available_threads;
+
     bool shutdown = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
-
-    std::atomic<size_t> more_threads_required;
-    std::atomic<size_t> currently_starting_threads;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
     std::list<std::unique_ptr<ThreadFromThreadPool>> threads;
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
+    std::unique_ptr<ThreadFromThreadPool> maybeStartNewThread();
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
-
-
-  //      std::unique_ptr<ThreadFromThreadPool> prepareNewThreadIfNeeded();
-
-    void checkIfMoreThreadsRequiredNoLock();
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
     void startNewThreadsNoLock();
