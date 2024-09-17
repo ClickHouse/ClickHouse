@@ -911,6 +911,24 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
         std::sort(ranges.begin(), ranges.end());
     }
 
+#ifndef NDEBUG
+    /// Double check that there are no intersecting parts
+    {
+        auto part_it = all_parts_to_read.begin();
+        auto next_part_it = part_it;
+        if (next_part_it != all_parts_to_read.end())
+            ++next_part_it;
+        while (next_part_it != all_parts_to_read.end())
+        {
+            chassert(part_it->description.info.isDisjoint(next_part_it->description.info),
+                fmt::format("Parts {} and {} intersect",
+                    part_it->description.info.getPartNameV1(), next_part_it->description.info.getPartNameV1()));
+            ++part_it;
+            ++next_part_it;
+        }
+    }
+#endif
+
     state_initialized = true;
 
     // progress_callback is not set when local plan is used for initiator
