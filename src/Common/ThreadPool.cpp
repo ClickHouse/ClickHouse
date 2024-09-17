@@ -125,14 +125,17 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     , max_free_threads(std::min(max_free_threads_, max_threads))
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
-    , more_threads_required(1) // first schedule will need to start one thread (and later it will decide)
+
 {
+    remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
+    available_threads.store(0, std::memory_order_relaxed);
 }
 
 template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
+    remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
 
@@ -153,6 +156,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
         /// Wake up free threads so they can finish themselves.
         new_job_or_shutdown.notify_all();
     }
+
 }
 
 template <typename Thread>
@@ -186,46 +190,50 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
     jobs.reserve(queue_size);
 }
 
-
-// should be called under the lock
 template <typename Thread>
-void ThreadPoolImpl<Thread>::checkIfMoreThreadsRequiredNoLock()
+std::unique_ptr<typename ThreadPoolImpl<Thread>::ThreadFromThreadPool>
+ThreadPoolImpl<Thread>::maybeStartNewThread()
 {
-    // The current thread count is fixed during the function execution (due to the lock)
-    size_t current_threads_count = threads.size();
+    std::unique_ptr<ThreadFromThreadPool> new_thread;
 
-    // while (true)
-    // {
+    // Attempt to start a new thread if capacity allows
+    while (true)
+    {
+        // Capacity changed, reload and retry
+        size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
 
-        // Calculate the target number of threads required (fixed scheduled_jobs + 1)
-        size_t target_threads = std::min(max_threads, scheduled_jobs + 1);
+        // Try to decrement remaining_pool_capacity atomically
+        if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1))
+        {
+            try
+            {
+                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                break;  // Successfully started a new thread
+            }
+            catch (...)
+            {
+                // Failed to create the thread, restore capacity
+                remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+                throw;  // Rethrow exception to be handled outside
+            }
+        }
+    }
 
-        // Load the current value of currently_starting_threads (which can change during iterations)
-       // size_t starting_threads_count = currently_starting_threads.load();
-
-        // Calculate how many more threads are required based on current threads and starting threads
-        size_t more_required = (target_threads +2 > current_threads_count)
-                               ? target_threads + 2 - current_threads_count
-                               : 0;
-        
-        more_threads_required.store(more_required);
-
-        // Atomically update more_threads_required and break if successful
-        // if (more_threads_required.compare_exchange_weak(starting_threads_count, starting_threads_count))
-        // {
-        //     break;
-        // }
-
-        // Retry with updated values if compare_exchange_weak fails
-    // }
+    // Return the new thread (may be nullptr if no capacity)
+    return new_thread;
 }
+
 
 template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
+    available_threads.fetch_sub(1, std::memory_order_relaxed); // one thread will be busy after that schedule, so number of avaliable threads goes down
+
     auto on_error = [&](const std::string & reason)
     {
+        available_threads.fetch_add(1, std::memory_order_relaxed);
+
         if constexpr (std::is_same_v<ReturnType, void>)
         {
             if (first_exception)
@@ -244,34 +252,22 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
 
-    while (true)
+    // Decide whether to start a new thread
+    try
     {
-        size_t more_required = more_threads_required.load();
-        if (more_required)
+        // If no available threads and capacity allows, start a new thread
+        if (available_threads.load(std::memory_order_relaxed) <= 0)
         {
-            if (more_threads_required.compare_exchange_strong(more_required, more_required - 1))
-            {
-                try
-                {
-                    new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                    // Successfully created the thread, break the loop
-                   break;
-                }
-                catch (...)
-                {
-                    std::lock_guard lock(mutex);
-                    more_threads_required.fetch_add(1);
-                    return on_error("shutdown");
-                }
-            }
-        }
-        else
-        {
-            // No more threads required, exit the loop
-            break;
+            new_thread = maybeStartNewThread();
+            available_threads.fetch_add(1, std::memory_order_relaxed);
         }
     }
-    
+    catch (...)
+    {
+        std::lock_guard lock(mutex); // needed to change first_exception.
+        return on_error("failed to start the thread");
+    }
+
     {
         Stopwatch watch;
         std::unique_lock lock(mutex);
@@ -296,42 +292,66 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (shutdown)
             return on_error("shutdown");
 
-        auto thread_id = threads.end();
-
         /// We must not to allocate any memory after we emplaced a job in a queue.
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
         if (new_thread)
         {
-            try
+            // we've got the new thread, it was started out of the locked section,
+            // so in between the demand on thread may have been changed.
+            //
+            // Even if the demand can be lower already but if the pool can still take
+            // new thread - let's add it since we already have it.
+            if (threads.size() < std::min(max_threads, scheduled_jobs + max_free_threads))
             {
-                threads.push_front(std::move(new_thread));
-                thread_id = threads.begin();
+                try
+                {
+                    threads.emplace_front(nullptr);
+                }
+                catch (...)
+                {
+                    /// Most likely this is a std::bad_alloc exception
+                    return on_error("cannot allocate thread slot");
+                }
             }
-            catch (...)
+            else
             {
-                /// Most likely this is a std::bad_alloc exception
-                return on_error("cannot allocate thread slot");
+                // new thread can not be added to the pool, we just need to destroy that new thread,
+                // we don't need it.
+                new_thread = nullptr;
+            }
+        }
+
+        try
+        {
+            jobs.emplace(std::move(job),
+                        priority,
+                        metric_scheduled_jobs,
+                        /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+                        propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                        /// capture_frame_pointers
+                        DB::Exception::enable_job_stack_trace);
+
+            ++scheduled_jobs;
+
+            if (new_thread)
+            {
+                auto thread_slot = threads.begin();
+                (*thread_slot) = std::move(new_thread);
+                (*thread_slot)->start(thread_slot);
             }
 
         }
-
-        checkIfMoreThreadsRequiredNoLock();
-
-        /// Place the job in the queue if there are enough threads
-        jobs.emplace(std::move(job),
-                     priority,
-                     metric_scheduled_jobs,
-                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
-                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
-                     /// capture_frame_pointers
-                     DB::Exception::enable_job_stack_trace);
-
-        ++scheduled_jobs;
-
-        if (thread_id != threads.end())
-            (*thread_id)->start(thread_id);
-
+        catch (...)
+        {
+            if (new_thread)
+            {
+                threads.pop_front();
+                new_thread = nullptr;
+            }
+            return on_error("cannot allocate start the job or thread");
+        }
     }
+
     /// Wake up a free thread to run the new job.
     new_job_or_shutdown.notify_one();
 
@@ -349,25 +369,42 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
     /// Start new threads while there are more scheduled jobs in the queue and the limit `max_threads` is not reached.
     while (threads.size() < std::min(scheduled_jobs, max_threads))
     {
+        std::unique_ptr<ThreadFromThreadPool> new_thread;
+
         try
         {
-            // Create and add a new thread to the front of the list
-            threads.emplace_front(std::make_unique<ThreadFromThreadPool>(*this));
+            remaining_pool_capacity.fetch_sub(1, std::memory_order_relaxed);
+            new_thread = std::make_unique<ThreadFromThreadPool>(*this);
         }
         catch (...)
         {
+            remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
             break; /// failed to start more threads
         }
+
+        available_threads.fetch_add(1, std::memory_order_relaxed);
+
         try
         {
-            auto it = threads.begin();
-            (*it)->start(it);
+            threads.emplace_front(nullptr);
+        }
+        catch (...)
+        {
+            break;
+        }
+
+        try
+        {
+            auto thread_slot = threads.begin();
+            (*thread_slot) = std::move(new_thread);
+            (*thread_slot)->start(thread_slot);
         }
         catch (...)
         {
             threads.pop_front();
             break;
         }
+
     }
 }
 
@@ -484,8 +521,6 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
 
     thread = Thread(&ThreadFromThreadPool::worker, this);
 
-    parent_pool.currently_starting_threads.fetch_add(1);
-
     ProfileEvents::increment(
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
         watch2.elapsedMicroseconds());
@@ -502,7 +537,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename std::list<std:
     if (thread_state.compare_exchange_strong(expected, ThreadState::Running))
     {
         thread_it = it;
-        parent_pool.currently_starting_threads.fetch_sub(1);
     }
     else
     {
@@ -518,11 +552,16 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::removeSelfFromPoolNoPoolLock(
         thread.detach();
 
     parent_pool.threads.erase(thread_it);
+    parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
+    parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
 }
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 {
+    // the thread destructed, so the capacity grows
+    parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+
     thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
 
     // Ensure the thread is joined before destruction if still joinable
@@ -543,8 +582,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     {
         std::this_thread::yield();  // let's try to yield to avoid consuming too much CPU in the busy-loop
     }
-
-    parent_pool.currently_starting_threads.fetch_sub(1);
 
     // If the thread transitions to Failed, exit
     if (thread_state.load() == ThreadState::Destructing)
@@ -586,6 +623,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 }
 
                 --parent_pool.scheduled_jobs;
+                parent_pool.available_threads.fetch_add(1, std::memory_order_relaxed);
 
                 parent_pool.job_finished.notify_all();
                 if (parent_pool.shutdown)
