@@ -152,6 +152,8 @@ bool WorkloadEntityStorageBase::storeEntity(
         onEntityAdded(entity_type, entity_name, create_entity_query);
     }
 
+    sendNotifications();
+
     return stored;
 }
 
@@ -182,6 +184,8 @@ bool WorkloadEntityStorageBase::removeEntity(
         entities.erase(entity_name);
         onEntityRemoved(entity_type, entity_name);
     }
+
+    sendNotifications();
 
     return removed;
 }
