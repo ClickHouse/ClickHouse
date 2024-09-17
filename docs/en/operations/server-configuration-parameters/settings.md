@@ -1480,6 +1480,8 @@ Keys:
 - `formatting` – Log format for console output. Currently, only `json` is supported).
 - `use_syslog` - Also forward log output to syslog.
 - `syslog_level` - Log level for logging to syslog.
+- `message_regexp` - Only log messages that match this regular expression. Defaults to `""`, indicating no filtering.
+- `message_regexp_negative` - Only log messages that don't match this regular expression. Defaults to `""`, indicating no filtering.
 
 **Log format specifiers**
 
@@ -1563,6 +1565,28 @@ The log level of individual log names can be overridden. For example, to mute al
         <logger>
             <name>RBAC</name>
             <level>none</level>
+        </logger>
+    </levels>
+</logger>
+```
+
+**Regular Expression Filtering**
+
+The messages logged can be filtered using regular expressions using `message_regexp` and `message_regexp_negative`. This can be done on a per-level basis or globally. If both are specified for a particular logger, the global expression is ignored and the per-level one overrides it.
+
+
+```xml
+<logger>
+    <!-- Global: Only log messages that have 'executeQuery' in them and not 'ConfigReloader' -->
+    <message_regexp>.*executeQuery.*</message_regexp>
+    <message_regexp>.*ConfigReloader.*</message_regexp>
+
+    <levels>
+        <logger>
+            <name>RBAC</name>
+            <!-- For logger 'RBAC', instead of matching for '.*executeQuery.*' and '.*ConfigReloader.*' match instead for '.*Application.*' and '.*Setting.*'. -->
+            <message_regexp>.*Application.*</message_regexp>
+            <message_regexp_negative>.*Setting.*</message_regexp_negative>
         </logger>
     </levels>
 </logger>
