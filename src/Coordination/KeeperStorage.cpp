@@ -2535,6 +2535,7 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
             response->responses[i]->error = failed_multi->error_codes[i];
         }
 
+        response->error = failed_multi->global_error;
         return response;
     }
 
@@ -3036,7 +3037,19 @@ void KeeperStorage<Container>::preprocessRequest(
     {
         if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, false))
         {
-            new_deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+            /// Multi requests handle failures using FailedMultiDelta
+            if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
+            {
+                const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*zk_request);
+                std::vector<Coordination::Error> response_errors;
+                response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
+                new_deltas.emplace_back(
+                    new_last_zxid, KeeperStorage<Container>::FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
+            }
+            else
+            {
+                new_deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+            }
             return;
         }
 
