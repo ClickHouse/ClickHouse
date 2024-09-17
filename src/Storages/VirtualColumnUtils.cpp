@@ -262,9 +262,7 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
     Block block;
-    NameSet common_virtuals;
-    if (context->getSettingsRef().use_hive_partitioning)
-        common_virtuals = getVirtualNamesForFileLikeStorage();
+    NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
         if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
