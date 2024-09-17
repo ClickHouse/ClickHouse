@@ -1,4 +1,5 @@
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionDynamicAdaptor.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -449,6 +450,20 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
+    if (useDefaultImplementationForDynamic())
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isDynamic(arg.type))
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
     auto return_type = getReturnType(arguments);
     return buildImpl(arguments, return_type);
 }

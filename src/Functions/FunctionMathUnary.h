@@ -58,6 +58,11 @@ private:
             return argument;
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return Impl::always_returns_float64 ? std::make_shared<DataTypeFloat64>() : nullptr;
+    }
+
     template <typename T, typename ReturnType>
     static void executeInIterations(const T * src_data, ReturnType * dst_data, size_t size)
     {

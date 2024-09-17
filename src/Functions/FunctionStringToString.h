@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -55,6 +56,13 @@ public:
                 arguments[0]->getName(), getName());
 
         return arguments[0];
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        /// In case of default implementation for Dynamic always return String even for FixedString types
+        /// to avoid Dynamic result of this function.
+        return std::make_shared<DataTypeString>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
