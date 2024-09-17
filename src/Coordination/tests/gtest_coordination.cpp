@@ -2199,6 +2199,58 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     }
 }
 
+TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+    int64_t session_without_auth = 1;
+    int64_t session_with_auth = 2;
+    size_t term = 0;
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
+    state_machine->init();
+
+    auto & storage = state_machine->getStorageUnsafe();
+
+    auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = "test_user:test_password";
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+    state_machine->commit(1, auth_entry->get_buf());
+
+    std::string node_with_acl = "/node_with_acl";
+    {
+        auto create_req = std::make_shared<ZooKeeperCreateRequest>();
+        create_req->path = node_with_acl;
+        create_req->data = "notmodified";
+        create_req->acls = {{.permissions = ACL::Read, .scheme = "auth", .id = ""}};
+        auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
+        state_machine->pre_commit(3, create_entry->get_buf());
+        state_machine->commit(3, create_entry->get_buf());
+        ASSERT_TRUE(storage.container.contains(node_with_acl));
+    }
+    Requests ops;
+    ops.push_back(zkutil::makeSetRequest(node_with_acl, "modified", -1));
+    ops.push_back(zkutil::makeCheckRequest("/nonexistentnode", -1));
+    auto multi_req = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+    auto multi_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), multi_req);
+    state_machine->pre_commit(4, multi_entry->get_buf());
+    state_machine->commit(4, multi_entry->get_buf());
+
+    auto node_it = storage.container.find(node_with_acl);
+    ASSERT_FALSE(node_it == storage.container.end());
+    ASSERT_TRUE(node_it->value.getData() == "notmodified");
+}
+
 TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
 {
     using namespace Coordination;
