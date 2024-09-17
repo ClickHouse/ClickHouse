@@ -25,7 +25,6 @@ public:
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
 
     MutableColumnPtr createColumn() const override;
 
