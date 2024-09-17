@@ -212,14 +212,11 @@ using PartRefs = std::deque<Parts::iterator>;
 class DefaultCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
-    explicit DefaultCoordinator(size_t replicas_count_, size_t mark_segment_size_)
+    explicit DefaultCoordinator(size_t replicas_count_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
-        , mark_segment_size(mark_segment_size_)
         , replica_status(replicas_count_)
         , distribution_by_hash_queue(replicas_count_)
     {
-        if (mark_segment_size == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
     }
 
     ~DefaultCoordinator() override;
@@ -232,7 +229,7 @@ public:
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
-    const size_t mark_segment_size{0};
+    size_t mark_segment_size{0};
 
     bool state_initialized{false};
     size_t finished_replicas{0};
@@ -394,7 +391,11 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     state_initialized = true;
     source_replica_for_parts_snapshot = announcement.replica_num;
 
-    LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
+    mark_segment_size = announcement.mark_segment_size;
+    if (mark_segment_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
+
+    LOG_DEBUG(log, "Reading state is fully initialized: {}, mark_segment_size: {}", fmt::join(all_parts_to_read, "; "), mark_segment_size);
 }
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
@@ -1062,7 +1063,7 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
     switch (mode)
     {
         case CoordinationMode::Default:
-            pimpl = std::make_unique<DefaultCoordinator>(replicas_count, mark_segment_size);
+            pimpl = std::make_unique<DefaultCoordinator>(replicas_count);
             break;
         case CoordinationMode::WithOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::WithOrder>>(replicas_count);
@@ -1080,8 +1081,7 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
         pimpl->markReplicaAsUnavailable(replica);
 }
 
-ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_, size_t mark_segment_size_)
-    : replicas_count(replicas_count_), mark_segment_size(mark_segment_size_)
+ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
 {
 }
 
