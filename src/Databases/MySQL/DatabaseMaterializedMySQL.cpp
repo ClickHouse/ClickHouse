@@ -291,11 +291,11 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
             std::move(materialize_mode_settings));
     };
 
-    DatabaseFactory::Features features{
+    DatabaseFactory::EngineFeatures features{
         .supports_arguments = true,
         .supports_settings = true,
         .supports_table_overrides = true,
-    }
+    };
     factory.registerDatabase("MaterializeMySQL", create_fn, features);
     factory.registerDatabase("MaterializedMySQL", create_fn, features);
 }
