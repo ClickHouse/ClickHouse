@@ -781,7 +781,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
 
 InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, false);
+    QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ false);
     if (!reading_node)
         return nullptr;
 
@@ -835,7 +835,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
 
 InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, false);
+    QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ false);
     if (!reading_node)
         return {};
 
@@ -923,7 +923,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
     /// Example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
     /// If read in order for ORDER BY is already applied, then output sort description will contain only column `a`,
     /// but we need columns `a, b`, applying read in order for distinct will still benefit `order by`
-    QueryPlan::Node * reading_node = findReadingStep(node, true);
+    QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ true);
     if (!reading_node)
         return {};
 
@@ -1083,7 +1083,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering);
-        // updateStepsDataStreams(steps_to_update);
     }
 }
 
