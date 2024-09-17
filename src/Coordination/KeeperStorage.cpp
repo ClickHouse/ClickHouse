@@ -2403,7 +2403,7 @@ void KeeperStorage::preprocessRequest(
             std::vector<Coordination::Error> response_errors;
             response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
             uncommitted_state.deltas.emplace_back(
-                new_last_zxid, KeeperStorage<Container>::FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
+                new_last_zxid, KeeperStorage::FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
         }
         else
         {
