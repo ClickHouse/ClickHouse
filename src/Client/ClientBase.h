@@ -340,7 +340,7 @@ protected:
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
-    std::atomic_bool show_progress_table = true;
+    std::atomic_bool show_progress_table = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.

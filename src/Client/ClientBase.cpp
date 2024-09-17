@@ -453,7 +453,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
-        progress_table.writeTable(*tty_buf, show_progress_table.load());
+        bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
+        progress_table.writeTable(*tty_buf, show_progress_table.load(), toggle_enabled);
     }
 }
 
@@ -864,7 +865,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
 void ClientBase::initKeystrokeInterceptor()
 {
-    if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("progress-interactive", true))
+    if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("enable-progress-table-toggle", true))
     {
         keystroke_interceptor = std::make_unique<KeystrokeInterceptor>(in_fd);
         keystroke_interceptor->registerCallback(' ', [this]() { show_progress_table = !show_progress_table; });
@@ -1381,7 +1382,10 @@ void ClientBase::onProfileEvents(Block & block)
         if (need_render_progress && tty_buf)
             progress_indication.writeProgress(*tty_buf);
         if (need_render_progress_table && tty_buf)
-            progress_table.writeTable(*tty_buf, show_progress_table.load());
+        {
+            bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
+            progress_table.writeTable(*tty_buf, show_progress_table.load(), toggle_enabled);
+        }
 
         if (profile_events.print)
         {
@@ -2085,7 +2089,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             output_stream << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
         output_stream << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
-        if (need_render_progress_table)
+        if (need_render_progress_table && show_progress_table)
             progress_table.writeFinalTable();
         output_stream << std::endl << std::endl;
     }

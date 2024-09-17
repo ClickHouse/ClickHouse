@@ -26,7 +26,7 @@ public:
     {}
 
     /// Write progress table with metrics.
-    void writeTable(WriteBufferFromFileDescriptor & message, bool show_table);
+    void writeTable(WriteBufferFromFileDescriptor & message, bool show_table, bool toggle_enabled);
     void clearTableOutput(WriteBufferFromFileDescriptor & message);
     void writeFinalTable();
 
