@@ -100,7 +100,7 @@ using ASTPtr = std::shared_ptr<IAST>;
  *     Users need to take these duplicated results into account.
  */
 
-class StorageWindowView final : public IStorage, WithContext
+class StorageWindowView final : public IStorage
 {
     friend class WindowViewSource;
     friend class WatermarkTransform;
