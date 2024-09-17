@@ -207,7 +207,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     return desc;
 }
 
-static void addFilterDataToDefaultColumns(Block & block, const String & path, size_t idx)
+static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool use_hive_partitioning)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -224,20 +224,20 @@ static void addFilterDataToDefaultColumns(Block & block, const String & path, si
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
-}
-
-static void addFilterDataToPartitioningColumns(Block & block, ColumnsWithTypeAndName partitioning_keys, const ContextPtr & context)
-{
-    for (const auto & item : partitioning_keys)
+    if (use_hive_partitioning)
     {
-        if (block.has(item.name))
+        auto keys_and_values = parseHivePartitioningKeysAndValues(path);
+        for (const auto & [key, value] : keys_and_values)
         {
-            auto & column = block.getByName(item.name).column;
-            ReadBufferFromString buf(item.column->getDataAt(0).toView());
-            item.type->getDefaultSerialization()->deserializeWholeText(column->assumeMutableRef(), buf, getFormatSettings(context));
+            if (const auto * column = block.findByName(key))
+            {
+                ReadBufferFromString buf(value);
+                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
+            }
         }
     }
+
+    block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
@@ -262,41 +262,18 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
     Block block;
-    std::vector<std::unordered_map<std::string, std::string>> keys_vec;
-    ColumnsWithTypeAndName partitioning_columns;
+    NameSet common_virtuals;
     if (context->getSettingsRef().use_hive_partitioning)
-    {
-        for (const auto & path : paths)
-            keys_vec.push_back(parseHivePartitioningKeysAndValues(path));
-    }
+        common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path")
+        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
-        else
-        {
-            for (auto & keys : keys_vec)
-            {
-                const auto & it = keys.find(column.name);
-                if (it != keys.end())
-                {
-                    auto string_column = std::make_shared<DataTypeString>()->createColumn();
-                    string_column->insert(it->second);
-                    if (!block.has(column.name))
-                        block.insert({column.type->createColumn(), column.type, column.name});
-                    partitioning_columns.push_back({string_column->getPtr(), column.type, column.name});
-                    keys.erase(it);
-                }
-            }
-        }
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addFilterDataToDefaultColumns(block, paths[i], i);
-
-    if (context->getSettingsRef().use_hive_partitioning)
-        addFilterDataToPartitioningColumns(block, partitioning_columns, context);
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef().use_hive_partitioning);
 
     filterBlockWithExpression(actions, block);
 
