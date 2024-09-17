@@ -5,6 +5,8 @@
 namespace DB
 {
 
+/// Special adapter classes that implement functions execution with Dynamic arguments.
+
 class ExecutableFunctionDynamicAdaptor final : public IExecutableFunction
 {
 public:
@@ -31,6 +33,7 @@ protected:
 private:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
     size_t dynamic_argument_index;
 };
@@ -65,6 +68,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
 private:
+    /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
     DataTypes arguments;
     DataTypePtr return_type;
