@@ -57,6 +57,7 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_count;
 
     bool build_logical_plan = false;
+    bool ignore_rename_columns = false;
 
     /** During read from MergeTree parts will be removed from snapshot after they are not needed.
       * This optimization will break subsequent execution of the same query tree, because table node

@@ -1152,7 +1152,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         table_expression->formatASTForErrorMessage());
     }
 
-    if (from_stage == QueryProcessingStage::FetchColumns)
+    if (from_stage == QueryProcessingStage::FetchColumns && !select_query_options.ignore_rename_columns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
@@ -1171,6 +1171,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
         rename_step->setStepDescription("Change column names to column identifiers");
         query_plan.addStep(std::move(rename_step));
+    }
+    else if(from_stage == QueryProcessingStage::FetchColumns)
+    {
     }
     else
     {

@@ -23,8 +23,13 @@
 #include <Interpreters/SetSerialization.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Planner/Utils.h>
 #include <Storages/StorageSet.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <stack>
 
@@ -407,7 +412,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     subqueries.reserve(sets_from_subqueries.size());
     for (auto & set : sets_from_subqueries)
     {
-        QueryPlan::resolveReadFromTable(*set.plan, context, nullptr);
+        QueryPlan::resolveReadFromTable(*set.plan, context);
         makeSetsFromSubqueries(*set.plan, std::move(set.sets), context);
 
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
@@ -432,17 +437,44 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     plan.addStep(std::move(step));
 }
 
+static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_expression)
+{
+    auto select = std::make_shared<ASTSelectQuery>();
+    auto columns = std::make_shared<ASTExpressionList>();
+    for (const auto & name : names)
+        columns->children.push_back(std::make_shared<ASTIdentifier>(name));
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context, const ASTPtr & query)
+    auto tables = std::make_shared<ASTTablesInSelectQuery>();
+    auto table_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    table_element->table_expression = std::move(table_expression);
+    tables->children.push_back(std::move(table_element));
+
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(columns));
+    select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
+    auto selects = std::make_shared<ASTExpressionList>();
+    selects->children.push_back(select);
+    select_with_union->list_of_selects = selects;
+    select_with_union->children.push_back(select_with_union->list_of_selects);
+
+    return select_with_union;
+}
+
+static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
     if (!reading_from_table && !reading_from_table_function)
         return {};
 
+    const auto & header = node.step->getOutputStream().header;
+    auto column_names = header.getNames();
+
     StoragePtr storage;
     StorageSnapshotPtr snapshot;
     SelectQueryInfo select_query_info;
+    ASTPtr table_function_ast;
 
     if (reading_from_table)
     {
@@ -458,14 +490,14 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         auto serialized_ast = reading_from_table_function->getSerializedAST();
         ParserFunction parser(false, true);
         const auto & settings = context->getSettingsRef();
-        auto ast = parseQuery(
+        table_function_ast = parseQuery(
             parser,
             serialized_ast,
             settings.max_query_size,
             settings.max_parser_depth,
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-        auto query_tree_node = resolveTableFunction(ast, context);
+        auto query_tree_node = resolveTableFunction(table_function_ast, context);
         if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
         {
             storage = table_function_node->getStorage();
@@ -485,28 +517,44 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
-    const auto & header = node.step->getOutputStream().header;
-    auto column_names = header.getNames();
-
-    SelectQueryOptions options(QueryProcessingStage::QueryPlan);
-    auto storage_limits = std::make_shared<StorageLimitsList>();
-    storage_limits->emplace_back(buildStorageLimits(*context, options));
-    select_query_info.storage_limits = std::move(storage_limits);
-    /// Query is needed for StorageDistributed now.
-    /// Distributed over Distributed is not supported properly now, but at least we can FetchColumns.
-    select_query_info.query = query;
-
     QueryPlan reading_plan;
-    storage->read(
-        reading_plan,
-        column_names,
-        snapshot,
-        select_query_info,
-        context,
-        QueryProcessingStage::FetchColumns,
-        context->getSettingsRef().max_block_size,
-        context->getSettingsRef().max_threads
-    );
+    if (storage->isRemote())
+    {
+        auto table_expression = std::make_shared<ASTTableExpression>();
+        if (table_function_ast)
+            table_expression->table_function = table_function_ast;
+        else
+        {
+            const auto & table_id = storage->getStorageID();
+            auto table_identifier = std::make_shared<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
+            table_identifier->uuid = table_id.uuid;
+            table_expression->database_and_table_name = std::move(table_identifier);
+        }
+
+        auto query_ptr = makeASTForReadingColumns(column_names, std::move(table_expression));
+        SelectQueryOptions options(QueryProcessingStage::FetchColumns);
+        options.ignore_rename_columns = true;
+        InterpreterSelectQueryAnalyzer interpreter(query_ptr, context, options, column_names);
+        reading_plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        SelectQueryOptions options(QueryProcessingStage::QueryPlan);
+        auto storage_limits = std::make_shared<StorageLimitsList>();
+        storage_limits->emplace_back(buildStorageLimits(*context, options));
+        select_query_info.storage_limits = std::move(storage_limits);
+
+        storage->read(
+            reading_plan,
+            column_names,
+            snapshot,
+            select_query_info,
+            context,
+            QueryProcessingStage::FetchColumns,
+            context->getSettingsRef().max_block_size,
+            context->getSettingsRef().max_threads
+        );
+    }
 
     if (!reading_plan.isInitialized())
     {
@@ -532,7 +580,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     return std::move(nodes_and_resource.second);
 }
 
-void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & context, const ASTPtr & query)
+void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & context)
 {
     std::stack<QueryPlan::Node *> stack;
     stack.push(plan.getRootNode());
@@ -545,15 +593,15 @@ void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & contex
             stack.push(child);
 
         if (node->children.empty())
-            plan.addResources(replaceReadingFromTable(*node, plan.nodes, context, query));
+            plan.addResources(replaceReadingFromTable(*node, plan.nodes, context));
     }
 }
 
-QueryPlan QueryPlan::resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context, const ASTPtr & query)
+QueryPlan QueryPlan::resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context)
 {
     auto & plan = plan_and_sets.plan;
 
-    resolveReadFromTable(plan, context, query);
+    resolveReadFromTable(plan, context);
 
     makeSetsFromStorage(std::move(plan_and_sets.sets_from_storage), context);
     makeSetsFromTuple(std::move(plan_and_sets.sets_from_tuple), context);

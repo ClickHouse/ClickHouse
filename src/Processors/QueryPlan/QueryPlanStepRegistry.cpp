@@ -46,6 +46,7 @@ void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
+void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
@@ -64,6 +65,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerLimitStep(registry);
     registerOffsetStep(registry);
     registerFilterStep(registry);
+    registerTotalsHavingStep(registry);
 
     registerReadFromTableStep(registry);
     registerReadFromTableFunctionStep(registry);

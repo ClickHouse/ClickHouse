@@ -1,8 +1,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <Parsers/NullsAction.h>
 
 
 namespace DB
@@ -119,6 +121,65 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
         args_array->add(name);
 
     map.add("Arguments", std::move(args_array));
+}
+
+void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
+{
+    writeVarUInt(aggregates.size(), out);
+    for (const auto & aggregate : aggregates)
+    {
+        writeStringBinary(aggregate.column_name, out);
+
+        writeVarUInt(aggregate.argument_names.size(), out);
+        for (const auto & name : aggregate.argument_names)
+            writeStringBinary(name, out);
+
+        writeStringBinary(aggregate.function->getName(), out);
+
+        writeVarUInt(aggregate.parameters.size(), out);
+        for (const auto & param : aggregate.parameters)
+            writeFieldBinary(param, out);
+    }
+}
+
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, const Block & header)
+{
+    UInt64 num_aggregates;
+    readVarUInt(num_aggregates, in);
+    aggregates.resize(num_aggregates);
+    for (auto & aggregate : aggregates)
+    {
+        readStringBinary(aggregate.column_name, in);
+
+        UInt64 num_args;
+        readVarUInt(num_args, in);
+        aggregate.argument_names.resize(num_args);
+        for (auto & arg_name : aggregate.argument_names)
+            readStringBinary(arg_name, in);
+
+        String function_name;
+        readStringBinary(function_name, in);
+
+        UInt64 num_params;
+        readVarUInt(num_params, in);
+        aggregate.parameters.resize(num_params);
+        for (auto & param : aggregate.parameters)
+            param = readFieldBinary(in);
+
+        DataTypes argument_types;
+        argument_types.reserve(num_args);
+        for (const auto & arg_name : aggregate.argument_names)
+        {
+            const auto & arg = header.getByName(arg_name);
+            argument_types.emplace_back(arg.type);
+        }
+
+        auto action = NullsAction::EMPTY; /// As I understand, it should be resolved to function name.
+        AggregateFunctionProperties properties;
+        aggregate.function = AggregateFunctionFactory::instance().get(
+            function_name, action, argument_types, aggregate.parameters, properties);
+    }
+
 }
 
 }

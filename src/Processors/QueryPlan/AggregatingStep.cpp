@@ -1,7 +1,6 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -774,21 +773,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     for (const auto & key : params.keys)
         writeStringBinary(key, ctx.out);
 
-    writeVarUInt(params.aggregates.size(), ctx.out);
-    for (const auto & aggregate : params.aggregates)
-    {
-        writeStringBinary(aggregate.column_name, ctx.out);
-
-        writeVarUInt(aggregate.argument_names.size(), ctx.out);
-        for (const auto & name : aggregate.argument_names)
-            writeStringBinary(name, ctx.out);
-
-        writeStringBinary(aggregate.function->getName(), ctx.out);
-
-        writeVarUInt(aggregate.parameters.size(), ctx.out);
-        for (const auto & param : aggregate.parameters)
-            writeFieldBinary(param, ctx.out);
-    }
+    serializeAggregateDescriptions(params.aggregates, ctx.out);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
@@ -822,41 +807,8 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
     for (auto & key : keys)
         readStringBinary(key, ctx.in);
 
-    UInt64 num_aggregates;
-    readVarUInt(num_aggregates, ctx.in);
-    AggregateDescriptions aggregates(num_aggregates);
-    for (auto & aggregate : aggregates)
-    {
-        readStringBinary(aggregate.column_name, ctx.in);
-
-        UInt64 num_args;
-        readVarUInt(num_args, ctx.in);
-        aggregate.argument_names.resize(num_args);
-        for (auto & arg_name : aggregate.argument_names)
-            readStringBinary(arg_name, ctx.in);
-
-        String function_name;
-        readStringBinary(function_name, ctx.in);
-
-        UInt64 num_params;
-        readVarUInt(num_params, ctx.in);
-        aggregate.parameters.resize(num_params);
-        for (auto & param : aggregate.parameters)
-            param = readFieldBinary(ctx.in);
-
-        DataTypes argument_types;
-        argument_types.reserve(num_args);
-        for (const auto & arg_name : aggregate.argument_names)
-        {
-            const auto & arg = ctx.input_streams.front().header.getByName(arg_name);
-            argument_types.emplace_back(arg.type);
-        }
-
-        auto action = NullsAction::EMPTY; /// As I understand, it should be resolved to function name.
-        AggregateFunctionProperties properties;
-        aggregate.function = AggregateFunctionFactory::instance().get(
-            function_name, action, argument_types, aggregate.parameters, properties);
-    }
+    AggregateDescriptions aggregates;
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.input_streams.front().header);
 
     UInt64 stats_key = 0;
     if (has_stats_key)
