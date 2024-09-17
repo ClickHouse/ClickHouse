@@ -129,6 +129,20 @@ def check_table_is_ready(instance, table_name):
     except Exception:
         return False
 
+def test_nats_select_empty(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'empty',
+                     nats_format = 'TSV',
+                     nats_row_delimiter = '\\n';
+        """
+    )
+
+    assert int(instance.query("SELECT count() FROM test.nats")) == 0
+
 
 def test_nats_select(nats_cluster):
     instance.query(
@@ -163,20 +177,6 @@ def test_nats_select(nats_cluster):
 
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
-def test_nats_select_empty(nats_cluster):
-    instance.query(
-        """
-        CREATE TABLE test.nats (key UInt64, value UInt64)
-            ENGINE = NATS
-            SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'empty',
-                     nats_format = 'TSV',
-                     nats_row_delimiter = '\\n';
-        """
-    )
-
-    assert int(instance.query("SELECT count() FROM test.nats")) == 0
 
 @pytest.mark.skip(reason="test broken")
 def test_nats_json_without_delimiter(nats_cluster):
