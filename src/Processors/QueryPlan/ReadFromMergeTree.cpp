@@ -661,7 +661,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         Pipe pipe(source);
 
-        if (enable_current_virtual_row)
+        if (enable_current_virtual_row && (read_type == ReadType::InOrder))
         {
             pipe.addSimpleTransform([&](const Block & header)
             {

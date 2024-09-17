@@ -24,7 +24,7 @@ public:
     String getName() const override { return "BufferChunks"; }
 
 private:
-    Chunk pullChunk();
+    Chunk pullChunk(bool & virtual_row);
 
     InputPort & input;
     OutputPort & output;

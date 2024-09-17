@@ -35,11 +35,9 @@ ExpressionTransform
           ExpressionTransform × 2
             (ReadFromMergeTree)
             ReverseTransform
-              VirtualRowTransform
-                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
-                  ReverseTransform
-                    VirtualRowTransform
-                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+                ReverseTransform
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9
