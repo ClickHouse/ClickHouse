@@ -1,7 +1,5 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 
-#include <algorithm>
-#include <array>
 
 namespace DB
 {

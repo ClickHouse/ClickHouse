@@ -2,7 +2,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/randomSeed.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -112,9 +112,6 @@ Cluster::Address::Address(
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
-
-    proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
-    proto_recv_chunked = config.getString(config_prefix + ".proto_caps.recv", "notchunked");
 
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
@@ -230,37 +227,21 @@ String Cluster::Address::toFullString(bool use_compact_format) const
     }
 }
 
-Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
+Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 {
-    std::string_view user_password;
-    if (auto pos = full_string.find('@'); pos != std::string_view::npos)
-        user_password = full_string.substr(pos + 1);
+    const char * address_begin = full_string.data();
+    const char * address_end = address_begin + full_string.size();
+
+    const char * user_pw_end = strchr(full_string.data(), '@');
 
     /// parsing with the new shard{shard_index}[_replica{replica_index}] format
-    if (user_password.empty() && full_string.starts_with("shard"))
+    if (!user_pw_end && startsWith(full_string, "shard"))
     {
+        const char * underscore = strchr(full_string.data(), '_');
+
         Address address;
-
-        if (auto underscore_pos = full_string.find('_'); underscore_pos != std::string_view::npos)
-        {
-            address.shard_index = parse<UInt32>(full_string.substr(0, underscore_pos).substr(strlen("shard")));
-
-            if (full_string.substr(underscore_pos + 1).starts_with("replica"))
-            {
-                address.replica_index = parse<UInt32>(full_string.substr(underscore_pos + 1 + strlen("replica")));
-            }
-            else if (full_string.substr(underscore_pos + 1).starts_with("all_replicas"))
-            {
-                address.replica_index = 0;
-            }
-            else
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', should be in a form of `shardN_all_replicas` or `shardN_replicaM`", full_string);
-        }
-        else
-        {
-            address.shard_index = parse<UInt32>(full_string.substr(strlen("shard")));
-            address.replica_index = 0;
-        }
+        address.shard_index = parse<UInt32>(address_begin + strlen("shard"));
+        address.replica_index = underscore ? parse<UInt32>(underscore + strlen("_replica")) : 0;
 
         return address;
     }
@@ -271,13 +252,9 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
         /// - credentials are exposed in file name;
         /// - the file name can be too long.
 
-        const char * address_begin = full_string.data();
-        const char * address_end = address_begin + full_string.size();
-        const char * user_pw_end = strchr(address_begin, '@');
-
         Protocol::Secure secure = Protocol::Secure::Disable;
         const char * secure_tag = "+secure";
-        if (full_string.ends_with(secure_tag))
+        if (endsWith(full_string, secure_tag))
         {
             address_end -= strlen(secure_tag);
             secure = Protocol::Secure::Enable;
@@ -415,10 +392,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     config_prefix += ".";
 
     secret = config.getString(config_prefix + "secret", "");
-    std::erase(config_keys, "secret");
+    boost::range::remove_erase(config_keys, "secret");
 
     allow_distributed_ddl_queries = config.getBool(config_prefix + "allow_distributed_ddl_queries", true);
-    std::erase(config_keys, "allow_distributed_ddl_queries");
+    boost::range::remove_erase(config_keys, "allow_distributed_ddl_queries");
 
     if (config_keys.empty())
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
@@ -448,9 +425,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             auto pool = ConnectionPoolFactory::instance().get(
                 static_cast<unsigned>(settings.distributed_connections_pool_size),
                 address.host_name, address.port,
-                address.default_database, address.user, address.password,
-                address.proto_send_chunked, address.proto_recv_chunked,
-                address.quota_key,
+                address.default_database, address.user, address.password, address.quota_key,
                 address.cluster, address.cluster_secret,
                 "server", address.compression,
                 address.secure, address.priority);
@@ -614,8 +589,6 @@ void Cluster::addShard(
             replica.default_database,
             replica.user,
             replica.password,
-            replica.proto_send_chunked,
-            replica.proto_recv_chunked,
             replica.quota_key,
             replica.cluster,
             replica.cluster_secret,
@@ -771,8 +744,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     address.default_database,
                     address.user,
                     address.password,
-                    address.proto_send_chunked,
-                    address.proto_recv_chunked,
                     address.quota_key,
                     address.cluster,
                     address.cluster_secret,
