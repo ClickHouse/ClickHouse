@@ -1,7 +1,7 @@
+import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
-import os
-import logging
 
 from env_helper import (
     GITHUB_JOB_URL,
@@ -12,6 +12,8 @@ from env_helper import (
 from report import TestResults, create_test_html_report
 from s3_helper import S3Helper
 
+logger = logging.getLogger(__name__)
+
 
 def process_logs(
     s3_client: S3Helper,
@@ -19,7 +21,7 @@ def process_logs(
     s3_path_prefix: str,
     test_results: TestResults,
 ) -> List[str]:
-    logging.info("Upload files to s3 %s", additional_logs)
+    logger.info("Upload files to s3 %s", additional_logs)
 
     processed_logs = {}  # type: Dict[str, str]
     # Firstly convert paths of logs from test_results to urls to s3.
@@ -33,9 +35,19 @@ def process_logs(
             if path in processed_logs:
                 test_result.log_urls.append(processed_logs[str(path)])
             elif path:
-                url = s3_client.upload_test_report_to_s3(
-                    Path(path), s3_path_prefix + "/" + str(path)
-                )
+                try:
+                    url = s3_client.upload_test_report_to_s3(
+                        Path(path), s3_path_prefix + "/" + str(path)
+                    )
+                except FileNotFoundError:
+                    # Breaking the whole run on the malformed test is a bad idea
+                    # FIXME: report the failure
+                    logger.error(
+                        "A broken TestResult, file '%s' does not exist: %s",
+                        path,
+                        test_result,
+                    )
+                    continue
                 test_result.log_urls.append(url)
                 processed_logs[str(path)] = url
 
@@ -48,7 +60,7 @@ def process_logs(
                 )
             )
         else:
-            logging.error("File %s is missing - skip", log_path)
+            logger.error("File %s is missing - skip", log_path)
 
     return additional_urls
 
@@ -116,8 +128,8 @@ def upload_results(
         report_path.write_text(html_report, encoding="utf-8")
         url = s3_client.upload_test_report_to_s3(report_path, s3_path_prefix + ".html")
     else:
-        logging.info("report.html was prepared by test job itself")
+        logger.info("report.html was prepared by test job itself")
         url = ready_report_url
 
-    logging.info("Search result in url %s", url)
+    logger.info("Search result in url %s", url)
     return url
