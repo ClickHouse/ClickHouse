@@ -630,10 +630,10 @@ void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
 
-    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists] mutable
+    restorer.addDataRestoreTask([this, entities_to_restore = std::move(entities), replace_if_exists, throw_if_exists] mutable
     {
         std::unordered_map<UUID, UUID> new_to_existing_ids;
-        for (auto & [id, entity] : my_entities)
+        for (auto & [id, entity] : entities_to_restore)
         {
             UUID existing_entity_id;
             if (!insert(id, entity, replace_if_exists, throw_if_exists, &existing_entity_id))
@@ -654,7 +654,8 @@ void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
                 return res;
             };
             std::vector<UUID> ids;
-            boost::copy(my_entities | boost::adaptors::map_keys, std::back_inserter(ids));
+            ids.reserve(entities_to_restore.size());
+            boost::copy(entities_to_restore | boost::adaptors::map_keys, std::back_inserter(ids));
             tryUpdate(ids, update_func);
         }
     });
