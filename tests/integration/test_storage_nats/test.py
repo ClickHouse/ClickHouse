@@ -97,7 +97,7 @@ def nats_setup_teardown():
 
     yield  # run test
 
-    instance.query("DROP DATABASE test")
+    instance.query("DROP DATABASE test", ignore_error=True)
 
 
 # Tests
