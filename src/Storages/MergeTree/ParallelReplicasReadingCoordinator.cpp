@@ -387,8 +387,8 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
             if (intersecting_it != known_parts.end() && !intersecting_it->description.info.isDisjoint(part.info))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
 
-            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
             known_parts.emplace(Part{.description = part, .replicas = {}});
+            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
         }
     }
 
