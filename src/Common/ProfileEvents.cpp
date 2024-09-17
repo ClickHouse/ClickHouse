@@ -376,6 +376,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash", ValueType::Number) \
     M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled", ValueType::Number) \
     M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash", ValueType::Number) \
+    M(ParallelReplicasReadMarks, "How many marks were read by the given replica", ValueType::Number) \
     \
     M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash", ValueType::Microseconds) \
     M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts", ValueType::Microseconds) \
@@ -529,6 +530,7 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache", ValueType::Bytes) \
+    M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time", ValueType::Microseconds) \
