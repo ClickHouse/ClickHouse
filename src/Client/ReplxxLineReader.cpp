@@ -1,4 +1,5 @@
 #include <Client/ReplxxLineReader.h>
+#include <Client/Autocomplete.h>
 #include <base/errnoToString.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -22,6 +23,7 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
+#include <replxx.hxx>
 #include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
@@ -355,6 +357,239 @@ ReplxxLineReader::ReplxxLineReader(
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
     rx.set_indent_multiline(false);
+
+    if (highlighter)
+        rx.set_highlighter_callback(highlighter);
+
+    /// By default C-p/C-n binded to COMPLETE_NEXT/COMPLETE_PREV,
+    /// bind C-p/C-n to history-previous/history-next like readline.
+    rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
+    rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+
+    /// We don't want the default, "suspend" behavior, it confuses people.
+    if (ignore_shell_suspend)
+        rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
+
+    auto commit_action = [this](char32_t code)
+    {
+        /// If we allow multiline and there is already something in the input, start a newline.
+        /// NOTE: Lexer is only available if we use highlighter.
+        if (highlighter && multiline && !replxx_last_is_delimiter)
+            return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        replxx_last_is_delimiter = false;
+        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+    };
+    /// bind C-j to ENTER action.
+    rx.bind_key(Replxx::KEY::control('J'), commit_action);
+    rx.bind_key(Replxx::KEY::ENTER, commit_action);
+
+    /// By default COMPLETE_NEXT/COMPLETE_PREV was binded to C-p/C-n, re-bind
+    /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
+    /// it also binded to M-p/M-n).
+    rx.bind_key(Replxx::KEY::meta('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_NEXT, code); });
+    rx.bind_key(Replxx::KEY::meta('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_PREVIOUS, code); });
+    /// By default M-BACKSPACE is KILL_TO_WHITESPACE_ON_LEFT, while in readline it is backward-kill-word
+    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::BACKSPACE), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_BEGINING_OF_WORD, code); });
+    /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
+    rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
+
+    rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
+
+    /// readline insert-comment
+    auto insert_comment_action = [this](char32_t code)
+    {
+        replxx::Replxx::State state(rx.get_state());
+        const char * line = state.text();
+        const char * line_end = line + strlen(line);
+
+        std::string commented_line;
+        if (std::find(line, line_end, '\n') != line_end)
+        {
+            /// If query has multiple lines, multiline comment is used over
+            /// commenting each line separately for easier uncomment (though
+            /// with invoking editor it is simpler to uncomment multiple lines)
+            ///
+            /// Note, that using multiline comment is OK even with nested
+            /// comments, since nested comments are supported.
+            commented_line = fmt::format("/* {} */", state.text());
+        }
+        else
+        {
+            // In a simplest case use simple comment.
+            commented_line = fmt::format("-- {}", state.text());
+        }
+        rx.set_state(replxx::Replxx::State(commented_line.c_str(), static_cast<int>(commented_line.size())));
+
+        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+    };
+    rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
+
+#if USE_SKIM
+    auto interactive_history_search = [this](char32_t code)
+    {
+        std::vector<std::string> words;
+        {
+            auto hs(rx.history_scan());
+            while (hs.next())
+                words.push_back(hs.get().text());
+        }
+
+        std::string current_query(rx.get_state().text());
+        std::string new_query;
+        try
+        {
+            new_query = std::string(skim(current_query, words));
+        }
+        catch (const std::exception & e)
+        {
+            rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
+        }
+
+        /// REPAINT before to avoid prompt overlap by the query
+        rx.invoke(Replxx::ACTION::REPAINT, code);
+
+        if (!new_query.empty())
+            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+
+        if (bracketed_paste_enabled)
+            enableBracketedPaste();
+
+        rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
+        return rx.invoke(Replxx::ACTION::REPAINT, code);
+    };
+
+    rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+#endif
+
+    /// Rebind regular incremental search to C-T.
+    ///
+    /// NOTE: C-T by default this is a binding to swap adjustent chars
+    /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
+    rx.bind_key(Replxx::KEY::control('T'), [this](char32_t)
+    {
+        /// Reverse search is detected by C-R.
+        uint32_t reverse_search = Replxx::KEY::control('R');
+        return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
+    });
+
+    /// Change cursor style for overwrite mode to blinking (see console_codes(5))
+    rx.bind_key(Replxx::KEY::INSERT, [this](char32_t)
+    {
+        overwrite_mode = !overwrite_mode;
+        if (overwrite_mode)
+            rx.print("%s", "\033[5 q");
+        else
+            rx.print("%s", "\033[0 q");
+        return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
+    });
+}
+
+ReplxxLineReader::ReplxxLineReader(
+    Suggest & suggest,
+    Autocomplete & autocomplete,
+    const String & history_file_path_,
+    bool multiline_,
+    bool ignore_shell_suspend,
+    Patterns extenders_,
+    Patterns delimiters_,
+    const char word_break_characters_[],
+    replxx::Replxx::highlighter_callback_t highlighter_,
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    int in_fd_,
+    int out_fd_,
+    int err_fd_
+)
+    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_), input_stream_, output_stream_, in_fd_)
+    , rx(input_stream_, output_stream_, in_fd_, out_fd_, err_fd_)
+    , highlighter(std::move(highlighter_))
+    , word_break_characters(word_break_characters_)
+    , editor(getEditor())
+{
+    using Replxx = replxx::Replxx;
+
+    if (!history_file_path.empty())
+    {
+        history_file_fd = open(history_file_path.c_str(), O_RDWR);
+        if (history_file_fd < 0)
+        {
+            rx.print("Open of history file failed: %s\n", errnoToString().c_str());
+        }
+        else
+        {
+            convertHistoryFile(history_file_path, rx);
+
+            if (flock(history_file_fd, LOCK_SH))
+            {
+                rx.print("Shared lock of history file failed: %s\n", errnoToString().c_str());
+            }
+            else
+            {
+                if (!rx.history_load(history_file_path))
+                {
+                    rx.print("Loading history failed: %s\n", errnoToString().c_str());
+                }
+
+                if (flock(history_file_fd, LOCK_UN))
+                {
+                    rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
+                }
+            }
+        }
+    }
+
+    rx.install_window_change_handler();
+
+    auto suggestion_callback = [&autocomplete, &suggest, this] (const String & context, size_t context_size)
+    {
+        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters)) {
+            return autocomplete.getPossibleNextWords<Replxx::completions_t>(context, context_size, word_break_characters);
+        }
+        return suggest.getCompletions(context, context_size, word_break_characters);
+    };
+
+    auto hints_callback = [&autocomplete, this](const String & context, size_t context_size, Replxx::Color& color)
+    {
+        color = replxx::color::rgb666(5, 5, 0);
+        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters)) {
+            return autocomplete.getPossibleNextWords<Replxx::hints_t>(context, context_size, word_break_characters);
+        }
+        return Replxx::hints_t{};
+    };
+
+    Replxx::key_press_handler_t cycle_forward_handler = [this](char32_t) {
+        //std::cout << hintIndex << "\n";
+        rx.invoke(Replxx::ACTION::HINT_NEXT, 0);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    };
+
+    // Key handler for cycling hints backward
+    Replxx::key_press_handler_t cycle_backward_handler = [this](char32_t) {
+        rx.invoke(Replxx::ACTION::HINT_PREVIOUS, 0);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    };
+
+    Replxx::key_press_handler_t complete_hint_handler = [this](char32_t) {
+        rx.invoke(Replxx::ACTION::COMPLETE_LINE, 0);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    };
+
+    rx.set_completion_callback(suggestion_callback);
+    rx.set_hint_callback(hints_callback);
+    rx.set_complete_on_empty(false);
+    rx.set_word_break_characters(word_break_characters);
+    rx.set_ignore_case(true);
+    rx.set_indent_multiline(false);
+
+    rx.bind_key(Replxx::KEY::shift(Replxx::KEY::DOWN), cycle_forward_handler);
+
+    // Bind Ctrl + Left Arrow to cycle hints backward
+    rx.bind_key(Replxx::KEY::shift(Replxx::KEY::UP), cycle_backward_handler);
+
+    rx.bind_key(Replxx::KEY::shift(Replxx::KEY::RIGHT), complete_hint_handler);
+
+    rx.set_max_hint_rows(2);
+    rx.set_hint_delay(0);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);

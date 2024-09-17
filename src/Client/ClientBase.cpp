@@ -928,8 +928,15 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         throw;
     }
 
-    if (have_error)
+    if (have_error) {
         processError(full_query);
+    }
+
+    if (!have_error) {
+        if (autocomplete) {
+            autocomplete->addQuery(full_query);
+        }
+    }
 }
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
@@ -2409,6 +2416,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error)
                     processError(full_query);
 
+                if (!have_error) {
+                    if (autocomplete) {
+                        autocomplete->addQuery(full_query);
+                    }
+                }
+
                 // Stop processing queries if needed.
                 if (have_error && !ignore_error)
                     return is_interactive;
@@ -2531,6 +2544,14 @@ void ClientBase::runInteractive()
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
+    autocomplete.emplace();
+    if (load_autocomplete) {
+        if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
+            autocomplete->load<Connection>(global_context, connection_parameters);
+        else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)
+            autocomplete->load<LocalConnection>(global_context, connection_parameters);
+    }
+
     if (home_path.empty())
     {
         const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
@@ -2577,6 +2598,7 @@ void ClientBase::runInteractive()
 
     ReplxxLineReader lr(
         *suggest,
+        *autocomplete,
         history_file,
         getClientConfiguration().has("multiline"),
         getClientConfiguration().getBool("ignore_shell_suspend", true),

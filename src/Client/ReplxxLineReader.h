@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Client/Autocomplete.h>
 #include <Client/LineReader.h>
 #include <base/strong_typedef.h>
 #include <replxx.hxx>
@@ -10,6 +11,24 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
+    ReplxxLineReader
+    (
+        Suggest & suggest,
+        Autocomplete & autocomplete,
+        const String & history_file_path,
+        bool multiline,
+        bool ignore_shell_suspend,
+        Patterns extenders_,
+        Patterns delimiters_,
+        const char word_break_characters_[],
+        replxx::Replxx::highlighter_callback_t highlighter_,
+        std::istream & input_stream_ = std::cin,
+        std::ostream & output_stream_ = std::cout,
+        int in_fd_ = STDIN_FILENO,
+        int out_fd_ = STDOUT_FILENO,
+        int err_fd_ = STDERR_FILENO
+    );
+
     ReplxxLineReader
     (
         Suggest & suggest,

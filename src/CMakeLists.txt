@@ -306,6 +306,8 @@ if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
             PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
 endif()
 
+target_include_directories(clickhouse_common_io SYSTEM PUBLIC "${GGML_INCLUDE_DIR}")
+
 target_link_libraries (clickhouse_common_io
         PRIVATE
             widechar_width
@@ -315,6 +317,7 @@ target_link_libraries (clickhouse_common_io
             ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
             ch_contrib::libdivide
+	    ch_contrib::ggml
 )
 
 
