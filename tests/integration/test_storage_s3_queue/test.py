@@ -1919,6 +1919,8 @@ def test_replicated(started_cluster):
         database_name="r",
     )
 
+    assert "\"processing_threads_num\":16" in node1.query(f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'")
+
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
