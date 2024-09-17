@@ -24,41 +24,94 @@ namespace ErrorCodes
 
 namespace
 {
-    parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_t * buffer, uint32_t buffer_size)
+//    parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_t * buffer, uint32_t buffer_size)
+//    {
+//        if (isStringOrFixedString(type))
+//        {
+//            return view;
+//        }
+//        else
+//        {
+//            auto size = static_cast<uint32_t>(std::max(view.size(), sizeof(uint32_t)));
+//            chassert(size <= buffer_size);
+//            std::copy(view.begin(), view.end(), buffer);
+//            return parquet::ByteArray(size, buffer);
+//        }
+//    }
+
+    template <typename IntegerType, typename ColumnType = IntegerType>
+    void hashInt(const IColumn * data_column, ColumnUInt64::Container & hashes_internal_data)
     {
-        if (isStringOrFixedString(type))
+        parquet::XxHasher hasher;
+
+        const auto * internal_column = assert_cast<const ColumnVector<ColumnType> *>(data_column);
+
+        for (size_t i = 0u; i < internal_column->size(); i++)
         {
-            return view;
-        }
-        else
-        {
-            auto size = static_cast<uint32_t>(std::max(view.size(), sizeof(uint32_t)));
-            chassert(size <= buffer_size);
-            std::copy(view.begin(), view.end(), buffer);
-            return parquet::ByteArray(size, buffer);
+            IntegerType element = internal_column->getElement(i);
+            hashes_internal_data[i] = hasher.Hash(element);
         }
     }
 
-    ColumnPtr hash(const IColumn * data_column)
+    template <typename StringType>
+    void hashString(const IColumn * data_column, ColumnUInt64::Container & hashes_internal_data)
     {
-        static constexpr uint32_t buffer_size = 32;
-        uint8_t buffer[buffer_size] = {0};
+        parquet::XxHasher hasher;
 
+        const auto * internal_column = assert_cast<const StringType *>(assert_cast<const ColumnNullable *>(data_column)->getNestedColumnPtr().get());
+
+        for (size_t i = 0u; i < internal_column->size(); i++)
+        {
+            auto element = internal_column->getDataAt(i).toView();
+            auto byte_array = parquet::ByteArray {element};
+            hashes_internal_data[i] = hasher.Hash(&byte_array);
+        }
+    }
+
+    ColumnPtr hash(const IColumn * data_column, const DataTypePtr & clickhouse_type)
+    {
         auto column_size = data_column->size();
 
         auto hashes_column = ColumnUInt64::create(column_size);
         ColumnUInt64::Container & hashes_internal_data = hashes_column->getData();
 
-        parquet::XxHasher hasher;
-        for (size_t i = 0; i < column_size; ++i)
+        switch (clickhouse_type->getTypeId())
         {
-            const auto data_view = data_column->getDataAt(i).toView();
-
-            const auto ba = createByteArray(data_view, data_column->getDataType(), buffer, buffer_size);
-
-            const auto hash = hasher.Hash(&ba);
-
-            hashes_internal_data[i] = hash;
+            case TypeIndex::UInt8:
+                hashInt<uint8_t>(data_column, hashes_internal_data);
+                break;
+            case TypeIndex::UInt16:
+                hashInt<uint8_t>(data_column, hashes_internal_data);
+                break;
+            case TypeIndex::UInt32:
+                hashInt<uint8_t>(data_column, hashes_internal_data);
+                break;
+//            case TypeIndex::UInt64:
+//                break;
+            case TypeIndex::Int8:
+                hashInt<int8_t>(data_column, hashes_internal_data);
+                break;
+            case TypeIndex::Int16:
+                hashInt<int16_t>(data_column, hashes_internal_data);
+                break;
+            case TypeIndex::Int32:
+                hashInt<int32_t>(data_column, hashes_internal_data);
+                break;
+            case TypeIndex::Int64:
+                hashInt<int64_t>(data_column, hashes_internal_data);
+                break;
+            case TypeIndex::String:
+                hashString<ColumnString>(data_column, hashes_internal_data);
+                break;
+            case TypeIndex::FixedString:
+                hashString<ColumnFixedString>(data_column, hashes_internal_data);
+                break;
+//            case TypeIndex::IPv4:
+//                break;
+//            case TypeIndex::JSONPaths:
+//                break;
+            default:
+                break;
         }
 
         return hashes_column;
@@ -335,7 +388,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             auto column = actual_type->createColumn();
             column->insert(rpn_element.range.left);
 
-            auto hashed = hash(column.get());
+            auto hashed = hash(column.get(), actual_type);
             columns.emplace_back(std::move(hashed));
 
             auto function = rpn_element.function == RPNElement::FUNCTION_IN_RANGE
@@ -389,7 +442,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                     continue;
                 }
 
-                columns.emplace_back(hash(set_column.get()));
+                columns.emplace_back(hash(set_column.get(), actual_type));
                 key_columns.push_back(indexes_mapping[i].key_index);
             }
 
