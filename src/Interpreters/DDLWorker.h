@@ -1,21 +1,22 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Storages/IStorage_fwd.h>
-#include <Parsers/IAST_fwd.h>
-#include <Interpreters/Context.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
+#include <filesystem>
 #include <mutex>
 #include <shared_mutex>
-#include <thread>
 #include <unordered_set>
+
+namespace fs = std::filesystem;
 
 namespace zkutil
 {
@@ -146,6 +147,10 @@ protected:
 
     /// Return false if the worker was stopped (stop_flag = true)
     virtual bool initializeMainThread();
+    virtual void initializeReplication();
+
+    void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
+    void markReplicasActive(bool reinitialized);
 
     void runMainThread();
     void runCleanupThread();
@@ -157,7 +162,8 @@ protected:
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
-    std::string queue_dir;      /// dir with queue of queries
+    std::string queue_dir; /// dir with queue of queries
+    fs::path replicas_dir;
 
     mutable std::mutex zookeeper_mutex;
     ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
@@ -199,6 +205,8 @@ protected:
 
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
+
+    std::unordered_map<String, std::pair<ZooKeeperPtr, zkutil::EphemeralNodeHolderPtr>> active_node_holders;
 };
 
 
