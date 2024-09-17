@@ -91,9 +91,13 @@ def nats_cluster():
 @pytest.fixture(autouse=True)
 def nats_setup_teardown():
     print("NATS is available - running test")
-    yield  # run test
-    instance.query("DROP DATABASE test SYNC")
+
+    instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
+
+    yield  # run test
+
+    instance.query("DROP DATABASE test")
 
 
 # Tests
