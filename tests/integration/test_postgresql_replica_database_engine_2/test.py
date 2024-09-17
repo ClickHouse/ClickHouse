@@ -1253,8 +1253,15 @@ def test_partial_and_full_table(started_cluster):
 
 
 def test_quoting_publication(started_cluster):
-    NUM_TABLES = 5
     postgres_database = "postgres-postgres"
+    pg_manager3 = PostgresManager()
+    pg_manager3.init(
+        instance,
+        cluster.postgres_ip,
+        cluster.postgres_port,
+        default_database=postgres_database,
+    )
+    NUM_TABLES = 5
     materialized_database = "test-database"
 
     pg_manager3.create_and_fill_postgres_tables(NUM_TABLES, 10000)
@@ -1346,6 +1353,7 @@ def test_quoting_publication(started_cluster):
     assert (
         result
         == "postgresql-replica-5\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
+    )
 
 
 if __name__ == "__main__":
