@@ -1,3 +1,4 @@
+#include "Loggers/OwnFilteringChannel.h"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <base/defines.h>
@@ -625,7 +626,12 @@ void BaseDaemon::setupWatchdog()
                 pf = new OwnJSONPatternFormatter(config());
             else
                 pf = new OwnPatternFormatter;
-            Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+
+            // Apply regexp filtering after receiving the formatting channel
+            std::string pos_pattern = config().getRawString("logger.message_regexp", "");
+            std::string neg_pattern = config().getRawString("logger.message_regexp_negative", "");
+            Poco::AutoPtr<OwnFilteringChannel> filter_channel = new OwnFilteringChannel(new Poco::ConsoleChannel(std::cerr), nullptr, pos_pattern, neg_pattern);
+            Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, filter_channel);
             logger().setChannel(log);
         }
 

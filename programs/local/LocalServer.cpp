@@ -34,6 +34,7 @@
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Loggers/OwnFilteringChannel.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -611,10 +612,14 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("server_logs_file"))
     {
+        std::string pos_pattern = getClientConfiguration().getRawString("logger.message_regexp", "");
+        std::string neg_pattern = getClientConfiguration().getRawString("logger.message_regexp_negative", "");
+        Poco::AutoPtr<OwnFilteringChannel> filter_channel = new OwnFilteringChannel(new Poco::SimpleFileChannel(server_logs_file), nullptr, pos_pattern, neg_pattern);
+
         auto poco_logs_level = Poco::Logger::parseLevel(level);
         Poco::Logger::root().setLevel(poco_logs_level);
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, filter_channel);
         Poco::Logger::root().setChannel(log);
     }
     else
