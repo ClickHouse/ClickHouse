@@ -340,6 +340,7 @@ size_t HashJoin::getTotalRowCount() const
 
 void HashJoin::doDebugAsserts() const
 {
+#ifdef NDEBUG
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
         debug_blocks_allocated_size += block.allocatedBytes();
@@ -355,6 +356,7 @@ void HashJoin::doDebugAsserts() const
     if (data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size ({} != {})",
                         data->blocks_nullmaps_allocated_size, debug_blocks_nullmaps_allocated_size);
+#endif
 }
 
 size_t HashJoin::getTotalByteCount() const
@@ -362,9 +364,7 @@ size_t HashJoin::getTotalByteCount() const
     if (!data)
         return 0;
 
-#ifndef NDEBUG
     doDebugAsserts();
-#endif
 
     size_t res = 0;
 
@@ -549,16 +549,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             have_compressed = true;
         }
 
-#ifndef NDEBUG
         doDebugAsserts();
-#endif
         data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
-
-#ifndef NDEBUG
         doDebugAsserts();
-#endif
 
         if (rows)
             data->empty = false;
@@ -646,15 +641,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
             if (!flag_per_row && !is_inserted)
             {
-#ifndef NDEBUG
                 doDebugAsserts();
-#endif
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->blocks_allocated_size -= stored_block->allocatedBytes();
                 data->blocks.pop_back();
-#ifndef NDEBUG
                 doDebugAsserts();
-#endif
             }
 
             if (!check_limits)
@@ -705,9 +696,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         stored_block = stored_block.shrinkToFit();
         size_t new_size = stored_block.allocatedBytes();
 
-#ifndef NDEBUG
         doDebugAsserts();
-#endif
 
         if (old_size >= new_size)
         {
@@ -723,9 +712,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
             /// Sometimes after clone resized block can be bigger than original
             data->blocks_allocated_size += new_size - old_size;
 
-#ifndef NDEBUG
         doDebugAsserts();
-#endif
     }
 
     auto new_total_bytes_in_join = getTotalByteCount();
@@ -1441,13 +1428,9 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         };
         BlocksList sorted_blocks;
         visit_rows_map(sorted_blocks, map);
-#ifdef NDEBUG
         doDebugAsserts();
-#endif
         data->blocks.swap(sorted_blocks);
-#ifdef NDEBUG
         doDebugAsserts();
-#endif
     }
 }
 
