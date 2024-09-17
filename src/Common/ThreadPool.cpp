@@ -552,14 +552,13 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::removeSelfFromPoolNoPoolLock(
         thread.detach();
 
     parent_pool.threads.erase(thread_it);
-    parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
-    parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
 }
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 {
     // the thread destructed, so the capacity grows
+    parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
     parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
 
     thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
