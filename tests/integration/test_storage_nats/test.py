@@ -178,7 +178,6 @@ def test_nats_select(nats_cluster):
     nats_check_result(result, True)
 
 
-@pytest.mark.skip(reason="test broken")
 def test_nats_json_without_delimiter(nats_cluster):
     instance.query(
         """
