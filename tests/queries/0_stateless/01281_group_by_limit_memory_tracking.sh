@@ -23,7 +23,7 @@ set -o pipefail
 
 function execute_null()
 {
-    ${CLICKHOUSE_CLIENT} -u u01281 --format Null -n "$@"
+    ${CLICKHOUSE_CLIENT} -u u01281 --format Null "$@"
 }
 
 function execute_group_by()
