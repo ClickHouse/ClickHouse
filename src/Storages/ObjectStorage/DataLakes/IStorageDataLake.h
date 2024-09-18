@@ -142,6 +142,14 @@ public:
         Storage::configuration = updated_configuration;
     }
 
+    void getPartitionFiles(auto & filter_dag)
+    {
+        if constexpr (std::is_same_v<IcebergMetadata, DataLakeMetadata>)
+        {
+            configuration->setPaths(current_metadata->getDataFileInfos(filter_dag));
+        }
+    }
+
     template <typename... Args>
     IStorageDataLake(
         ConfigurationPtr base_configuration_,
@@ -179,6 +187,8 @@ public:
     }
 
     bool hasExternalDynamicMetadata() const override { return std::is_same_v<DataLakeMetadata, IcebergMetadata>; }
+
+    bool isDataLake() const override { return true; }
 
 
 private:

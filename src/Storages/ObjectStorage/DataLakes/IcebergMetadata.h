@@ -71,15 +71,30 @@ class IcebergSchemaProcessor
 {
     using Node = ActionsDAG::Node;
 
+    struct SimpleTypeRepresentation;
+    {
+        optional<String> name;
+        bool required;
+        String type;
+
+        bool operator<=>(const SimpleTypeRepresentation & other) const
+        {
+            return std::tie(name, required, type) <=> std::tie(other.name, other.required, other.type);
+        }
+    };
+
 public:
     void addIcebergTableSchema(Poco::JSON::Object::Ptr ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
+    std::optional<NameAndType> getSimpleNameAndTypeByVersion(Int32 field_id, std::optional<Int32> schema_id);
 
 private:
     std::map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+    std::map<std::vector<std::pair<Int32, std::optional<SimpleTypeRepresentation>>>> simple_type_by_field_id;
+    std::map<Int32, Int32> parents;
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
@@ -92,8 +107,11 @@ private:
 
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
-    Int32 current_old_id = -1;
-    Int32 current_new_id = -1;
+    std::optional<Int32> current_old_id;
+    std::optional<Int32> current_new_id;
+
+    std::optional<Int32> last_schema_id;
+    std::optional<Int32> current_schema_id;
 
     // std::pair<const Node *, const Node *>
     // getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
@@ -150,6 +168,44 @@ private:
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
+    enum class PartitionTransform
+    {
+        Identity,
+        Year,
+        Month,
+        Day,
+        Hour,
+        Unsupported
+    };
+
+    static PartitionTransform getTransform(const String & trasform_name)
+    {
+        if (transform_name == "identity")
+        {
+            return PartitionTransform::Identity;
+        }
+        else if (transform_name == "year")
+        {
+            return PartitionTransform::Year;
+        }
+        else if (transform_name == "month")
+        {
+            return PartitionTransform::Month;
+        }
+        else if (transform_name == "day")
+        {
+            return PartitionTransform::Day;
+        }
+        else if (transform_name == "hour")
+        {
+            return PartitionTransform::Hour;
+        }
+        else
+        {
+            return PartitionTransform::Unsupported;
+        }
+    }
+
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     static constexpr auto name = "Iceberg";
@@ -166,7 +222,7 @@ public:
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
-    DataFileInfos getDataFileInfos() const override;
+    DataFileInfos getDataFileInfos(const ActionsDAG * filter_dag) const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return schema; }

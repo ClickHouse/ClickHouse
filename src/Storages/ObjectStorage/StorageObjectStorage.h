@@ -122,6 +122,10 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
+    virtual bool isDataLake() const {
+        return false;
+    }
+
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
     static ColumnsDescription resolveSchemaFromData(
