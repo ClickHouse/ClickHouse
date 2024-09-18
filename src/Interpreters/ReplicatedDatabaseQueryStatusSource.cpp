@@ -138,6 +138,8 @@ void ReplicatedDatabaseQueryStatusSource::fillHostStatus(const String & host_id,
     columns[num++]->insert(shard);
     columns[num++]->insert(replica);
     columns[num++]->insert(OK);
+    columns[num++]->insert(waiting_hosts.size() - num_hosts_finished);
+    columns[num++]->insert(current_active_hosts.size());
 }
 
 Block ReplicatedDatabaseQueryStatusSource::getSampleBlock()
