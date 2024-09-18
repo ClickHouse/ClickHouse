@@ -1065,3 +1065,27 @@ Possible values:
 - throw, drop, rebuild
 
 Default value: throw
+
+## min_free_disk_bytes_to_throw_insert 
+
+The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_throw_insert` then an exception is thrown and the insert is not executed. Note that this setting:
+- takes into account the `keep_free_space_bytes` setting.
+- does not take into account the amount of data that will be written by the `INSERT` operation.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 0 bytes.
+
+## min_free_disk_ratio_to_throw_insert 
+
+The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
+- takes into account the `keep_free_space_bytes` setting.
+- does not take into account the amount of data that will be written by the `INSERT` operation.
+
+Possible values:
+
+- Float, 0.0 - 1.0
+
+Default value: 0.0

@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace
@@ -553,6 +554,39 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
+    const auto & global_settings = context->getSettingsRef();
+    const auto & data_settings = data.getSettings();
+
+    UInt64 min_bytes = global_settings.min_free_disk_bytes_to_throw_insert;
+    if (data_settings->min_free_disk_bytes_to_throw_insert.changed)
+        min_bytes = data_settings->min_free_disk_bytes_to_throw_insert;
+
+    Float64 min_ratio = global_settings.min_free_disk_ratio_to_throw_insert;
+    if (data_settings->min_free_disk_ratio_to_throw_insert.changed)
+        min_ratio = data_settings->min_free_disk_ratio_to_throw_insert;
+
+    if (min_bytes > 0 || min_ratio > 0.0)
+    {
+        const auto disk = data_part_volume->getDisk();
+        const UInt64 total_disk_bytes = *disk->getTotalSpace();
+        const UInt64 free_disk_bytes = *disk->getAvailableSpace();
+
+        const UInt64 min_bytes_from_ratio = static_cast<UInt64>(min_ratio * total_disk_bytes);
+        const UInt64 needed_free_bytes = std::max(min_bytes, min_bytes_from_ratio);
+
+        if (needed_free_bytes > free_disk_bytes)
+        {
+            throw Exception(
+                ErrorCodes::NOT_ENOUGH_SPACE,
+                "Could not perform insert: less than {} free bytes in disk space ({}). "
+                "Configure this limit with user settings {} or {}",
+                needed_free_bytes,
+                free_disk_bytes,
+                "min_free_disk_bytes_to_throw_insert",
+                "min_free_disk_ratio_to_throw_insert");
+        }
+    }
+
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
         .withPartInfo(new_part_info)
@@ -563,8 +597,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
-
-    const auto & data_settings = data.getSettings();
 
     SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);

@@ -225,6 +225,14 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
             merge_selecting_sleep_slowdown_factor);
     }
+
+    if (min_free_disk_ratio_to_throw_insert < 0.0 || min_free_disk_ratio_to_throw_insert > 1.0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of setting min_free_disk_ratio_to_throw_insert ({}) must be between 0.0 and 1.0",
+            min_free_disk_ratio_to_throw_insert);
+    }
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
