@@ -347,7 +347,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings settings = context->getSettingsCopy();
+        const Settings & settings = context->getSettingsRef();
 
         size_t rows = shard_block.rows();
 
@@ -604,7 +604,7 @@ void DistributedSink::onFinish()
     }
 }
 
-void DistributedSink::onCancel() noexcept
+void DistributedSink::onCancel()
 {
     std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
@@ -615,26 +615,14 @@ void DistributedSink::onCancel() noexcept
         }
         catch (...)
         {
-            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
+            tryLogCurrentException(storage.log);
         }
     }
 
     for (auto & shard_jobs : per_shard_jobs)
-    {
         for (JobReplica & job : shard_jobs.replicas_jobs)
-        {
-            try
-            {
-                if (job.executor)
-                    job.executor->cancel();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(storage.log, "Error occurs on cancellation.");
-            }
-        }
-    }
-
+            if (job.executor)
+                job.executor->cancel();
 }
 
 

@@ -37,7 +37,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
 #include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
@@ -121,7 +120,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
-    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace fs = std::filesystem;
@@ -228,8 +226,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
 
-        if (!create.attach && fs::exists(metadata_path) && !fs::is_empty(metadata_path))
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
+        if (!create.attach && fs::exists(metadata_path))
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
     }
     else if (create.storage->engine->name == "MaterializeMySQL"
         || create.storage->engine->name == "MaterializedMySQL")
@@ -329,9 +327,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
 
-        /// Needed to make database creation retriable if it fails after the file is created
-        fs::remove(metadata_file_tmp_path);
-
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
@@ -353,23 +348,31 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
+        if (need_write_metadata)
+        {
+            /// Prevents from overwriting metadata of detached database
+            renameNoReplace(metadata_file_tmp_path, metadata_file_path);
+            renamed = true;
+        }
+
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
             auto load_tasks = loader.loadTablesAsync();
             auto startup_tasks = loader.startupTablesAsync();
-            /// First prioritize, schedule and wait all the load table tasks
-            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
-            /// Only then prioritize, schedule and wait all the startup tasks
-            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
-        }
-
-        if (need_write_metadata)
-        {
-            /// Prevents from overwriting metadata of detached database
-            renameNoReplace(metadata_file_tmp_path, metadata_file_path);
-            renamed = true;
+            if (getContext()->getGlobalContext()->getServerSettings().async_load_databases)
+            {
+                scheduleLoad(load_tasks);
+                scheduleLoad(startup_tasks);
+            }
+            else
+            {
+                /// First prioritize, schedule and wait all the load table tasks
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
+                /// Only then prioritize, schedule and wait all the startup tasks
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
+            }
         }
     }
     catch (...)
@@ -694,7 +697,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Neither default value expression nor type is provided for a column");
 
         if (col_decl.comment)
-            column.comment = col_decl.comment->as<ASTLiteral &>().value.safeGet<String>();
+            column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
         {
@@ -704,6 +707,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
+        column.statistics.column_name = column.name; /// We assign column name here for better exception error message.
         if (col_decl.statistics_desc)
         {
             if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistics)
@@ -755,10 +759,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.storage && create.storage->engine)
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
-    /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
-    if (create.is_time_series_table && (mode < LoadingStrictnessLevel::ATTACH))
-        StorageTimeSeries::normalizeTableDefinition(create, getContext());
-
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
@@ -784,14 +784,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_full_text_index)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is disabled. Turn on setting 'allow_experimental_full_text_index'");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_full_text_index')");
                 /// ----
                 /// Temporary check during a transition period. Please remove at the end of 2024.
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
                 /// ----
-                if (index_desc.type == "vector_similarity" && !settings.allow_experimental_vector_similarity_index)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental vector similarity index is disabled. Turn on setting 'allow_experimental_vector_similarity_index'");
+                if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
+                if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index is disabled. Turn on allow_experimental_usearch_index");
 
                 properties.indices.push_back(index_desc);
             }
@@ -850,7 +852,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
-        properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
     {
@@ -940,110 +941,6 @@ void validateVirtualColumns(const IStorage & storage)
     }
 }
 
-void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
-{
-    /// This is not strict validation, just catches common errors that would make the view not work.
-    /// It's possible to circumvent these checks by ALTERing the view or target table after creation;
-    /// we should probably do some of these checks on ALTER as well.
-
-    NamesAndTypesList all_output_columns;
-    bool check_columns = false;
-    if (create.hasTargetTableID(ViewTarget::To))
-     {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
-                create.getTargetTableID(ViewTarget::To), getContext()))
-        {
-            all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock().getNamesAndTypesList();
-            check_columns = true;
-        }
-    }
-    else if (!properties.columns_inferred_from_select_query)
-    {
-        all_output_columns = properties.columns.getInsertable();
-        check_columns = true;
-    }
-
-    if (create.refresh_strategy && !create.refresh_strategy->append)
-    {
-        if (database && database->getEngineName() != "Atomic")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-
-        std::string message;
-        if (!supportsAtomicRename(&message))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
-    }
-
-    Block input_block;
-
-    if (check_columns)
-    {
-        try
-        {
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
-            {
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-            }
-            else
-            {
-                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
-            }
-        }
-        catch (Exception &)
-        {
-            if (!getContext()->getSettingsRef().allow_materialized_view_with_bad_select)
-                throw;
-            check_columns = false;
-        }
-    }
-
-    if (check_columns)
-    {
-        std::unordered_map<std::string_view, DataTypePtr> output_types;
-        for (const NameAndTypePair & nt : all_output_columns)
-            output_types[nt.name] = nt.type;
-
-        ColumnsWithTypeAndName input_columns;
-        ColumnsWithTypeAndName output_columns;
-        for (const auto & input_column : input_block)
-        {
-            auto it = output_types.find(input_column.name);
-            if (it != output_types.end())
-            {
-                input_columns.push_back(input_column.cloneEmpty());
-                output_columns.push_back(ColumnWithTypeAndName(it->second->createColumn(), it->second, input_column.name));
-            }
-            else if (create.refresh_strategy)
-            {
-                /// Unrecognized columns produced by SELECT query are allowed by regular materialized
-                /// views, but not by refreshable ones. This is in part because it was easier to
-                /// implement, in part because refreshable views have less concern about ALTERing target
-                /// tables.
-                ///
-                /// The motivating scenario for allowing this in regular MV is ALTERing the table+query.
-                /// Suppose the user removes a column from target table, then a minute later
-                /// correspondingly updates the view's query to not produce that column.
-                /// If MV didn't allow unrecognized columns then during that minute all INSERTs into the
-                /// source table would fail - unacceptable.
-                /// For refreshable views, during that minute refreshes will fail - acceptable.
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that matches a column name.", input_column.name);
-            }
-        }
-
-        if (input_columns.empty())
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "None of the columns produced by the SELECT query are present in the target table. Use 'AS' to assign aliases that match column names.");
-
-        ActionsDAG::makeConvertingActions(
-            input_columns,
-            output_columns,
-            ActionsDAG::MatchColumnsMode::Position
-        );
-    }
-}
-
 namespace
 {
     void checkTemporaryTableEngineName(const String & name)
@@ -1062,45 +959,12 @@ namespace
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
-
-    void setNullTableEngine(ASTStorage & storage)
-    {
-        storage.forEachPointerToChild([](void ** ptr) mutable
-        {
-            *ptr = nullptr;
-        });
-
-        auto engine_ast = std::make_shared<ASTFunction>();
-        engine_ast->name = "Null";
-        engine_ast->no_empty_args = true;
-        storage.set(storage.engine, engine_ast);
-    }
-
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
-    {
-        if (getContext()->getSettingsRef().restore_replace_external_table_functions_to_null)
-        {
-            const auto & factory = TableFunctionFactory::instance();
-
-            auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
-            if (properties && properties->allow_readonly)
-                return;
-            if (!create.storage)
-            {
-                auto storage_ast = std::make_shared<ASTStorage>();
-                create.set(create.storage, storage_ast);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-            create.as_table_function = nullptr;
-            setNullTableEngine(*create.storage);
-        }
         return;
-    }
 
     if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
         return;
@@ -1150,15 +1014,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
-        }
-        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-        /// Null table engine.
-        else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
-        {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
-            {
-                setNullTableEngine(*create.storage);
-            }
         }
         return;
     }
@@ -1211,7 +1066,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         else if (as_create.storage)
         {
             storage_def = typeid_cast<std::shared_ptr<ASTStorage>>(as_create.storage->ptr());
-            create.is_time_series_table = as_create.is_time_series_table;
         }
         else
         {
@@ -1241,32 +1095,18 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     bool from_path = create.attach_from_path.has_value();
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !is_on_cluster && !create.attach)
-    {
-        if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 0)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It's not allowed to explicitly specify UUIDs for tables in Replicated databases, "
-                                                       "see database_replicated_allow_explicit_uuid");
-        }
-        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 1)
-        {
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "It's not recommended to explicitly specify UUIDs for tables in Replicated databases");
-        }
-        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 2)
-        {
-            UUID old_uuid = create.uuid;
-            create.uuid = UUIDHelpers::Nil;
-            create.generateRandomUUIDs();
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Replaced a user-provided UUID ({}) with a random one ({}) "
-                                                                   "to make sure it's unique", old_uuid, create.uuid);
-        }
-    }
-
     if (is_replicated_database_internal && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table UUID is not specified in DDL log");
     }
+
+    if (create.refresh_strategy && database->getEngineName() != "Atomic")
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+            /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
+            ///       Figure out how to make the refreshed data appear all at once on other
+            ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
 
     if (database->getUUID() != UUIDHelpers::Nil)
     {
@@ -1488,15 +1328,50 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
+    /// Check type compatible for materialized dest table and select columns
+    if (create.is_materialized_view_with_external_target() && create.select && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(create.getTargetTableID(ViewTarget::To), getContext()))
+        {
+            Block input_block;
+
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            {
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            }
+            else
+            {
+                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
+                    getContext(),
+                    SelectQueryOptions().analyze()).getSampleBlock();
+            }
+
+            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+
+            ColumnsWithTypeAndName input_columns;
+            ColumnsWithTypeAndName output_columns;
+            for (const auto & input_column : input_block)
+            {
+                if (const auto * output_column = output_block.findByName(input_column.name))
+                {
+                    input_columns.push_back(input_column.cloneEmpty());
+                    output_columns.push_back(output_column->cloneEmpty());
+                }
+            }
+
+            ActionsDAG::makeConvertingActions(
+                input_columns,
+                output_columns,
+                ActionsDAG::MatchColumnsMode::Position
+            );
+        }
+    }
+
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
-        validateMaterializedViewColumnsAndEngine(create, properties, database);
 
     bool allow_heavy_populate = getContext()->getSettingsRef().database_replicated_allow_heavy_create && create.is_populate;
     if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
@@ -2008,7 +1883,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
         if (has_explicit_zk_path_arg)
         {
-            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.safeGet<String>();
+            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
             Macros::MacroExpansionInfo info;
             info.table_id.uuid = create.uuid;
             info.ignore_unknown = true;
@@ -2037,8 +1912,6 @@ BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
-
-    create.if_not_exists |= getContext()->getSettingsRef().create_if_not_exists;
 
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

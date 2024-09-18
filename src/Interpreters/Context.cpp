@@ -5,12 +5,10 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
-#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
@@ -101,7 +99,6 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -121,6 +118,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
+
 
 namespace fs = std::filesystem;
 
@@ -164,9 +162,6 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderForegroundThreadsActive;
     extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
-    extern const Metric BuildVectorSimilarityIndexThreads;
-    extern const Metric BuildVectorSimilarityIndexThreadsActive;
-    extern const Metric BuildVectorSimilarityIndexThreadsScheduled;
     extern const Metric AttachedTable;
     extern const Metric AttachedView;
     extern const Metric AttachedDictionary;
@@ -300,8 +295,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
-    mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
-    mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
@@ -386,10 +379,6 @@ struct ContextSharedPart : boost::noncopyable
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
     std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
-
-    mutable std::mutex dashboard_mutex;
-    std::optional<Context::Dashboards> dashboards;
-
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
@@ -625,7 +614,7 @@ struct ContextSharedPart : boost::noncopyable
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
+        SHUTDOWN(log, "system logs", system_logs, shutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
@@ -899,12 +888,6 @@ ContextData::ContextData(const ContextData &o) :
 {
 }
 
-void ContextData::resetSharedContext()
-{
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    shared = nullptr;
-}
-
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
 
@@ -924,6 +907,14 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
+}
+
+void Context::initGlobal()
+{
+    assert(!global_context_instance);
+    global_context_instance = shared_from_this();
+    DatabaseCatalog::init(shared_from_this());
+    EventNotifier::init();
 }
 
 SharedContextHolder Context::createShared()
@@ -2275,7 +2266,7 @@ bool Context::displaySecretsInShowAndSelect() const
     return shared->server_settings.display_secrets_in_show_and_select;
 }
 
-Settings Context::getSettingsCopy() const
+Settings Context::getSettings() const
 {
     SharedLockGuard lock(mutex);
     return *settings;
@@ -2696,11 +2687,7 @@ void Context::makeSessionContext()
 
 void Context::makeGlobalContext()
 {
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
-
+    initGlobal();
     global_context = shared_from_this();
 }
 
@@ -2965,9 +2952,6 @@ ProgressCallback Context::getProgressCallback() const
 
 void Context::setProcessListElement(QueryStatusPtr elem)
 {
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have process list element");
-
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
     has_process_list_elem = elem.get();
@@ -3236,12 +3220,12 @@ QueryCachePtr Context::getQueryCache() const
     return shared->query_cache;
 }
 
-void Context::clearQueryCache(const std::optional<String> & tag) const
+void Context::clearQueryCache() const
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->query_cache)
-        shared->query_cache->clear(tag);
+        shared->query_cache->clear();
 }
 
 void Context::clearCaches() const
@@ -3300,21 +3284,6 @@ size_t Context::getPrefetchThreadpoolSize() const
 {
     const auto & config = getConfigRef();
     return config.getUInt(".prefetch_threadpool_pool_size", 100);
-}
-
-ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
-{
-    callOnce(shared->build_vector_similarity_index_threadpool_initialized, [&] {
-            size_t pool_size = shared->server_settings.max_build_vector_similarity_index_thread_pool_size > 0
-                ? shared->server_settings.max_build_vector_similarity_index_thread_pool_size
-                : getNumberOfPhysicalCPUCores();
-            shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
-                CurrentMetrics::BuildVectorSimilarityIndexThreads,
-                CurrentMetrics::BuildVectorSimilarityIndexThreadsActive,
-                CurrentMetrics::BuildVectorSimilarityIndexThreadsScheduled,
-                pool_size);
-        });
-    return *shared->build_vector_similarity_index_threadpool;
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
@@ -4111,13 +4080,8 @@ void Context::initializeTraceCollector()
 }
 
 /// Call after unexpected crash happen.
-void Context::handleCrash() const
+void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    if (!shared)
-        return;
-
-    SharedLockGuard lock2(shared->mutex);
     if (shared->system_logs)
         shared->system_logs->handleCrash();
 }
@@ -4287,7 +4251,7 @@ std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->s3queue_log;
+    return shared->system_logs->s3_queue_log;
 }
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
@@ -4344,60 +4308,15 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
-SystemLogs Context::getSystemLogs() const
+std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-    return *shared->system_logs;
+    return shared->system_logs->logs;
 }
 
-std::optional<Context::Dashboards> Context::getDashboards() const
-{
-    std::lock_guard lock(shared->dashboard_mutex);
-
-    if (!shared->dashboards)
-        return {};
-    return shared->dashboards;
-}
-
-namespace
-{
-
-String trim(const String & text)
-{
-    std::string_view view(text);
-    ::trim(view, '\n');
-    return String(view);
-}
-
-}
-
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
-
-    Dashboards dashboards;
-    for (const auto & key : keys)
-    {
-        const auto & prefix = "dashboards." + key + ".";
-        dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
-        });
-    }
-
-    {
-        std::lock_guard lock(shared->dashboard_mutex);
-        if (!dashboards.empty())
-            shared->dashboards.emplace(std::move(dashboards));
-        else
-            shared->dashboards.reset();
-    }
-}
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {

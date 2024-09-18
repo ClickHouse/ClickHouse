@@ -36,7 +36,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
 }
 
@@ -85,10 +84,7 @@ namespace
         }
     }
 
-    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(
-        const ObjectStoragePtr & storage,
-        const ContextPtr & context,
-        const ObjectStorageQueueSettings & table_settings)
+    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(const ObjectStoragePtr & storage, const ContextPtr & context, const ObjectStorageQueueSettings & table_settings)
     {
         const auto & settings = context->getSettingsRef();
         switch (storage->getType())
@@ -108,6 +104,7 @@ namespace
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
+
     }
 }
 
@@ -141,7 +138,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
     else if (!configuration->isPathWithGlobs())
     {
-        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
     checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
@@ -151,26 +148,32 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     configuration->check(context_);
 
     ColumnsDescription columns{columns_};
-    std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
-
-    ObjectStorageQueueTableMetadata table_metadata(*queue_settings, storage_metadata.getColumns(), configuration_->format);
-    ObjectStorageQueueMetadata::syncWithKeeper(zk_path, table_metadata, *queue_settings, log);
-
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), *queue_settings);
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
-
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
+
+    /// Get metadata manager from ObjectStorageQueueMetadataFactory,
+    /// it will increase the ref count for the metadata object.
+    /// The ref count is decreased when StorageObjectStorageQueue::drop() method is called.
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, *queue_settings);
+    try
+    {
+        files_metadata->initialize(configuration_, storage_metadata);
+    }
+    catch (...)
+    {
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
+        throw;
+    }
 }
 
 void StorageObjectStorageQueue::startup()

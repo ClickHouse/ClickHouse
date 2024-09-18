@@ -176,8 +176,8 @@ public:
             SparseElements,
             SparseOffsets,
 
-            DeprecatedObjectStructure,
-            DeprecatedObjectData,
+            ObjectStructure,
+            ObjectData,
 
             VariantDiscriminators,
             NamedVariantDiscriminators,
@@ -188,12 +188,6 @@ public:
 
             DynamicData,
             DynamicStructure,
-
-            ObjectData,
-            ObjectTypedPath,
-            ObjectDynamicPath,
-            ObjectSharedData,
-            ObjectStructure,
 
             Regular,
         };
@@ -208,9 +202,6 @@ public:
 
         /// Name of substream for type from 'named_types'.
         String name_of_substream;
-
-        /// Path name for Object type elements.
-        String object_path_name;
 
         /// Data for current substream.
         SubstreamData data;
@@ -241,10 +232,6 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
-        /// If set to false, don't enumerate dynamic subcolumns
-        /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
-        /// It may be needed when dynamic subcolumns are processed separately.
-        bool enumerate_dynamic_streams = true;
     };
 
     virtual void enumerateStreams(
@@ -276,13 +263,13 @@ public:
 
         bool use_compact_variant_discriminators_serialization = false;
 
-        enum class ObjectAndDynamicStatisticsMode
+        enum class DynamicStatisticsMode
         {
             NONE,   /// Don't write statistics.
             PREFIX, /// Write statistics in prefix.
             SUFFIX, /// Write statistics in suffix.
         };
-        ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
+        DynamicStatisticsMode dynamic_write_statistics = DynamicStatisticsMode::NONE;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -303,7 +290,7 @@ public:
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
 
-        bool object_and_dynamic_read_statistics = false;
+        bool dynamic_read_statistics = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -452,13 +439,6 @@ public:
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
-
-    /// Returns true if subcolumn doesn't actually stores any data in column and doesn't require a separate stream
-    /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.
-    static bool isEphemeralSubcolumn(const SubstreamPath & path, size_t prefix_len);
-
-    /// Returns true if stream with specified path corresponds to dynamic subcolumn.
-    static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>
