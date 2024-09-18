@@ -1718,7 +1718,7 @@ def test_row_based_formats(nats_cluster):
         result = instance.query("SELECT * FROM test.view")
         assert result == expected
 
-@pytest.mark.skip(reason="test broken")
+
 def test_block_based_formats_1(nats_cluster):
     instance.query(
         """
@@ -1772,10 +1772,16 @@ def test_block_based_formats_1(nats_cluster):
     data = []
     for message in insert_messages:
         splitted = message.split("\n")
-        assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+
+        assert len(splitted) >= 3
+        assert splitted[0] == "    key   value"
         assert splitted[1] == ""
         assert splitted[-1] == ""
-        data += [line.split() for line in splitted[2:-1]]
+
+        for line in splitted[2:-1]:
+            elements = line.split()
+            assert len(elements) >= 3
+            data += [[elements[1], elements[2]]]
 
     assert data == [
         ["0", "0"],
