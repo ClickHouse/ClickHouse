@@ -85,7 +85,8 @@ private:
         const IColumn & scores,
         const IColumn & labels,
         ColumnArray::Offset current_offset,
-        ColumnArray::Offset next_offset)
+        ColumnArray::Offset next_offset,
+        bool scale = true)
     {
         struct ScoreLabel
         {
@@ -131,12 +132,15 @@ private:
 
         area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
 
-        /// Then normalize it dividing by the area to the area of rectangle.
+        /// Then normalize it, if scale is true, dividing by the area to the area of rectangle.
 
-        if (curr_tp == 0 || curr_tp == size)
+        if (scale && (curr_tp == 0 || curr_tp == size))
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return area / curr_tp / (size - curr_tp);
+        if (scale)
+            return area / curr_tp / (size - curr_tp);
+        else
+            return area; 
     }
 
     static void vector(
@@ -144,7 +148,8 @@ private:
         const IColumn & labels,
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<Float64> & result,
-        size_t input_rows_count)
+        size_t input_rows_count,
+        bool scale = true)
     {
         result.resize(input_rows_count);
 
@@ -152,28 +157,34 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto next_offset = offsets[i];
-            result[i] = apply(scores, labels, current_offset, next_offset);
+            result[i] = apply(scores, labels, current_offset, next_offset, scale);
             current_offset = next_offset;
         }
     }
 
 public:
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 3; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
+        for (size_t i = 0; i < 2; ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for function {} must be an array.", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The two first arguments for function {} must be an array.", getName());
 
             const auto & nested_type = array_type->getNestedType();
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}",
                                 getName(), nested_type->getName());
+        }
+
+        if (arguments.size() == 3)
+        {
+            if (!isBool(arguments[2]))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument must be a boolean (scale)");
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -197,6 +208,13 @@ public:
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
+        // Handle third argument for scale (if passed, otherwise default to true)
+        bool scale = true;
+        if (arguments.size() == 3)
+        {
+            scale = arguments[2].column->getBool(0);  // Assumes it's a scalar boolean column
+        }
+
         auto col_res = ColumnVector<Float64>::create();
 
         vector(
@@ -204,7 +222,8 @@ public:
             col_array2->getData(),
             col_array1->getOffsets(),
             col_res->getData(),
-            input_rows_count);
+            input_rows_count,
+            scale);
 
         return col_res;
     }

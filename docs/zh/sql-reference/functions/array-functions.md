@@ -1221,41 +1221,6 @@ select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 └───────────────────────────────────────────────┘
 ```
 
-## arrayAUCUnscaled {#arrayaucunscaled}
-
-计算没有归一化的AUC (ROC曲线下的面积，这是机器学习中的一个概念，更多细节请查看：https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve)。
-
-**语法**
-
-``` sql
-arrayAUCUnscaled(arr_scores, arr_labels)
-```
-
-**参数**
-
-- `arr_scores` — 分数预测模型给出。
-- `arr_labels` — 样本的标签，通常为 1 表示正样本，0 表示负样本。
-
-**返回值**
-
-返回 Float64 类型的非标准化 AUC 值。
-
-**示例**
-
-查询语句:
-
-``` sql
-select arrayAUCUnscaled([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
-```
-
-结果:
-
-``` text
-┌─arrayAUCUnscaled([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
-│                                                   3.0 │
-└───────────────────────────────────────────────────────┘
-```
-
 ## arrayMap(func, arr1, ...) {#array-map}
 
 将从 `func` 函数的原始应用中获得的数组返回给 `arr` 数组中的每个元素。

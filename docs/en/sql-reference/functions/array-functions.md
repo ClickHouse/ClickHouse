@@ -2088,13 +2088,14 @@ Calculate AUC (Area Under the Curve, which is a concept in machine learning, see
 **Syntax**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels)
+arrayAUC(arr_scores, arr_labels[, scale])
 ```
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
 
 **Returned value**
 
@@ -2114,41 +2115,6 @@ Result:
 ┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                                          0.75 │
 └───────────────────────────────────────────────┘
-```
-
-## arrayAUC
-
-Calculate unscaled AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>), i.e. without dividing it by total true positives and total false positives.
-
-**Syntax**
-
-``` sql
-arrayAUCUnscaled(arr_scores, arr_labels)
-```
-
-**Arguments**
-
-- `arr_scores` — scores prediction model gives.
-- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
-
-**Returned value**
-
-Returns unscaled AUC value with type Float64.
-
-**Example**
-
-Query:
-
-``` sql
-select arrayAUCUnscaled([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
-```
-
-Result:
-
-``` text
-┌─arrayAUCUnscaled([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
-│                                                   3.0 │
-└───────────────────────────────────────────────────────┘
 ```
 
 ## arrayMap(func, arr1, ...)

@@ -1216,7 +1216,6 @@
 "argMinState"
 "array"
 "arrayAUC"
-"arrayAUCUnscaled"
 "arrayAll"
 "arrayAvg"
 "arrayCompact"
