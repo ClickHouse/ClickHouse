@@ -8,7 +8,6 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
 #include "IO/ReadBufferFromString.h"
 #include "IServer.h"
 
