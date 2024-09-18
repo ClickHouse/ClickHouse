@@ -32,6 +32,8 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
 
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_suspicious_fixed_string_types", 1);
+    context->setSetting("allow_suspicious_types_in_group_by", 1);
+    context->setSetting("allow_suspicious_types_in_order_by", 1);
     context->setSetting("allow_suspicious_indices", 1);
     context->setSetting("allow_suspicious_codecs", 1);
     context->setSetting("allow_hyperscan", 1);

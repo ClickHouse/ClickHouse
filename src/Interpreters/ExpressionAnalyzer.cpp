@@ -98,6 +98,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
