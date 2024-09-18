@@ -1,0 +1,67 @@
+MergeTree
+test_table_03093_merge_tree	0
+0
+MergeTree DETACH PERMANENTLY
+test_table_03093_merge_tree_perm	1
+0
+ReplacingMergeTree
+test_table_03093_repl_merge_tree	0
+0
+ReplacingMergeTree DETACH PERMANENTLY
+test_table_03093_repl_merge_tree_perm	1
+0
+SummingMergeTree
+test_table_03093_sum_merge_tree	0
+0
+SummingMergeTree DETACH PERMANENTLY
+test_table_03093_sum_merge_tree_perm	1
+0
+AggregatingMergeTree
+test_table_03093_agg_merge_tree	0
+0
+AggregatingMergeTree DETACH PERMANENTLY
+test_table_03093_agg_merge_tree_perm	1
+0
+CollapsingMergeTree
+test_table_03093_col_merge_tree	0
+0
+CollapsingMergeTree DETACH PERMANENTLY
+test_table_03093_col_merge_tree_perm	1
+0
+VersionedCollapsingMergeTree
+test_table_03093_vcol_merge_tree	0
+0
+VersionedCollapsingMergeTree DETACH PERMANENTLY
+test_table_03093_vcol_merge_tree_perm	1
+0
+Log
+test_table_03093_log	0
+0
+Log DETACH PERMANENTLY
+test_table_03093_log_perm	1
+0
+TinyLog
+test_table_03093_tiny_log	0
+0
+TinyLog DETACH PERMANENTLY
+test_table_03093_tiny_log_perm	1
+0
+StripeLog
+test_table_03093_stripe_log	0
+0
+StripeLog DETACH PERMANENTLY
+test_table_03093_stripe_log_perm	1
+0
+Null
+test_table_03093_null	0
+0
+Null DETACH PERMANENTLY
+test_table_03093_null_perm	1
+0
+Buffer
+test_table_03093_buffer	0
+0
+Buffer DETACH PERMANENTLY
+test_table_03093_buffer_perm	1
+0
+total

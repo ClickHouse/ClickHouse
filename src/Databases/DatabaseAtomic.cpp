@@ -180,6 +180,55 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, sync);
 }
 
+void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & table_name, const bool sync)
+{
+    waitDatabaseStarted();
+
+    assert(fs::exists(getObjectMetadataPath(table_name)));
+
+    const String table_metadata_path = getObjectMetadataPath(table_name);
+    const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
+    const StorageID storage_id{getDatabaseName(), table_name, uuid_table};
+    String table_metadata_path_drop;
+
+    {
+        std::lock_guard lock(mutex);
+        table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
+
+        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
+
+        auto txn = local_context->getZooKeeperMetadataTransaction();
+        if (txn && !local_context->isInternalSubquery())
+            txn->commit();
+
+        fs::rename(table_metadata_path, table_metadata_path_drop);
+        LOG_TRACE(log, "Rename {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
+
+        table_name_to_path.erase(table_name);
+    }
+
+    if (fs::exists(getPathSymlink(table_name)))
+    {
+        LOG_TRACE(log, "Remove symlink for {}", table_name);
+        tryRemoveSymlink(table_name);
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        detached_tables.erase(uuid_table);
+        permanently_detached_tables.erase(
+            std::remove_if(
+                permanently_detached_tables.begin(),
+                permanently_detached_tables.end(),
+                [&table_name](const auto & permanently_detached_table_name) { return permanently_detached_table_name == table_name; }),
+            permanently_detached_tables.end());
+        snapshot_detached_tables.erase(table_name);
+    }
+
+    LOG_TRACE(log, "Table {} ready for remove.", table_name);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, table_metadata_path_drop, sync, true);
+}
+
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                  const String & to_table_name, bool exchange, bool dictionary)
     TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking
@@ -526,7 +575,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
 {
     try
     {
-        String link = path_to_table_symlinks + escapeForFileName(table_name);
+        String link = getPathSymlink(table_name);
         fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
 
         /// If it already points where needed.
@@ -545,11 +594,16 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
 }
 
+String DatabaseAtomic::getPathSymlink(const String & table_name) const
+{
+    return path_to_table_symlinks + escapeForFileName(table_name);
+}
+
 void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 {
     try
     {
-        String path = path_to_table_symlinks + escapeForFileName(table_name);
+        String path = getPathSymlink(table_name);
         (void)fs::remove(path);
     }
     catch (...)
