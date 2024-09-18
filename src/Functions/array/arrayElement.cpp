@@ -1400,7 +1400,7 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::removeNullableIfNeeded(const ColumnPtr & column, const DataTypePtr & expect_type)
 {
     const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get());
-    if (nullable_column && expect_type->isNullable())
+    if (nullable_column && !expect_type->isNullable())
     {
         /// It happens when input argument is Array(Tuple(T1, T2, ...)) or Array(Map(K, V)) in function ArrayElementOrNull.
         /// e.g. arrayElementOrNull(Array(Tuple(T1, T2))) would be transformed into Tuple(ArrayElementOrNull(T1), ArrayElementOrNull(T2))
@@ -2140,8 +2140,16 @@ ColumnPtr FunctionArrayElement<mode>::perform(
         if (builder)
             builder.initSink(input_rows_count);
 
-        if (index == 0u)
-            throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
+        if constexpr (!is_null_mode)
+        {
+            if (index == 0u)
+            {
+                /// It is very confusing that arrayElement throws an exception only for a constant index 0, but return default value for a non-constant index 0.
+                /// e.g. `select [1,2,3][0]` throws exception, but `select [1,2,3][number] from numbers(1)` returns 0.
+                /// TODO: do we need to fix it?
+                throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
+            }
+        }
 
         if (!((res = executeNumberConst<UInt8>(arguments, result_type, index, builder))
               || (res = executeNumberConst<UInt16>(arguments, result_type, index, builder))
