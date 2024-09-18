@@ -3962,6 +3962,8 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             sort_node.getExpression() = sort_column_list_node->getNodes().front();
         }
 
+        validateSortingKeyType(sort_node.getExpression()->getResultType(), scope);
+
         size_t sort_expression_projection_names_size = sort_expression_projection_names.size();
         if (sort_expression_projection_names_size != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -4047,6 +4049,24 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
     return result_projection_names;
 }
 
+void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const
+{
+    if (scope.context->getSettingsRef().allow_suspicious_types_in_order_by)
+        return;
+
+    auto check = [](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. "
+                "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
+    };
+
+    check(*sorting_key_type);
+    sorting_key_type->forEachChild(check);
+}
+
 namespace
 {
 
@@ -4086,11 +4106,12 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             expandTuplesInList(group_by_list);
         }
 
-        if (scope.group_by_use_nulls)
+        for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
         {
-            for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
+            for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
             {
-                for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
+                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+                if (scope.group_by_use_nulls)
                     scope.nullable_group_by_keys.insert(group_by_elem);
             }
         }
@@ -4106,12 +4127,33 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         auto & group_by_list = query_node_typed.getGroupBy().getNodes();
         expandTuplesInList(group_by_list);
 
-        if (scope.group_by_use_nulls)
+        for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {
-            for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+            if (scope.group_by_use_nulls)
                 scope.nullable_group_by_keys.insert(group_by_elem);
         }
     }
+}
+
+/** Validate data types of GROUP BY key.
+  */
+void QueryAnalyzer::validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const
+{
+    if (scope.context->getSettingsRef().allow_suspicious_types_in_group_by)
+        return;
+
+    auto check = [](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
+                "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
+    };
+
+    check(*group_by_key_type);
+    group_by_key_type->forEachChild(check);
 }
 
 /** Resolve interpolate columns nodes list.

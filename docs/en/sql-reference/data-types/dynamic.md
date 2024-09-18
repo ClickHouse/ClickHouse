@@ -411,6 +411,9 @@ SELECT d, dynamicType(d) FROM test ORDER by d;
 └─────┴────────────────┘
 ```
 
+**Note** by default `Dynamic` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you want to use it consider its special comparison rule and enable `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` settings.
+
+
 ## Reaching the limit in number of different data types stored inside Dynamic
 
 `Dynamic` data type can store only limited number of different data types as separate subcolumns. By default, this limit is 32, but you can change it in type declaration using syntax `Dynamic(max_types=N)` where N is between 0 and 254 (due to implementation details, it's impossible to have more than 254 different data types that can be stored as separate subcolumns inside Dynamic).

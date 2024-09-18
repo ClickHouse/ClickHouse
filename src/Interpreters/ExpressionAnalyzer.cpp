@@ -1367,6 +1367,9 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         }
     }
 
+    for (const auto & result_column : step.getResultColumns())
+        validateGroupByKeyType(result_column.type);
+
     if (optimize_aggregation_in_order)
     {
         for (auto & child : asts)
@@ -1379,6 +1382,24 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     }
 
     return true;
+}
+
+void SelectQueryExpressionAnalyzer::validateGroupByKeyType(const DB::DataTypePtr & key_type) const
+{
+    if (getContext()->getSettingsRef().allow_suspicious_types_in_group_by)
+        return;
+
+    auto check = [](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
+                "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
+    };
+
+    check(*key_type);
+    key_type->forEachChild(check);
 }
 
 void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
@@ -1564,6 +1585,9 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(Expr
 
     getRootActions(select_query->orderBy(), only_types, step.actions()->dag);
 
+    for (const auto & result_column : step.getResultColumns())
+        validateOrderByKeyType(result_column.type);
+
     bool with_fill = false;
 
     for (auto & child : select_query->orderBy()->children)
@@ -1641,6 +1665,24 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(Expr
     auto actions = chain.getLastActions();
     chain.addStep(non_constant_inputs);
     return actions;
+}
+
+void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & key_type) const
+{
+    if (getContext()->getSettingsRef().allow_suspicious_types_in_order_by)
+        return;
+
+    auto check = [](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. "
+                "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
+    };
+
+    check(*key_type);
+    key_type->forEachChild(check);
 }
 
 bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)

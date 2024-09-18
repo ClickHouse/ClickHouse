@@ -5682,3 +5682,25 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
+
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+
+Possible values:
+
+- 1 — Usage of `Variant` and `Dynamic` types is not restricted.
+- 0 — Usage of `Variant` and `Dynamic` types is restricted.
+
+Default value: 0.
+
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
+
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+
+Possible values:
+
+- 1 — Usage of `Variant` and `Dynamic` types is not restricted.
+- 0 — Usage of `Variant` and `Dynamic` types is restricted.
+
+Default value: 0.
