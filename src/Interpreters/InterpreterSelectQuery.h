@@ -26,6 +26,7 @@ class Logger;
 namespace DB
 {
 
+class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
@@ -239,7 +240,7 @@ private:
     Block source_header;
 
     /// Actions to calculate ALIAS if required.
-    std::optional<ActionsDAG> alias_actions;
+    ActionsDAGPtr alias_actions;
 
     /// The subquery interpreter, if the subquery
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;

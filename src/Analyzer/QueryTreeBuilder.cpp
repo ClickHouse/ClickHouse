@@ -237,7 +237,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     /// Remove global settings limit and offset
     if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
     {
-        Settings settings = updated_context->getSettingsCopy();
+        Settings settings = updated_context->getSettings();
         limit = settings.limit;
         offset = settings.offset;
         settings.limit = 0;
@@ -268,8 +268,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
         }
     }
 
-    const auto enable_order_by_all = updated_context->getSettingsRef().enable_order_by_all;
-
     auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
 
     current_query_tree->setIsSubquery(is_subquery);
@@ -283,10 +281,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
-    /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
-    /// since SETTINGS section has not been parsed yet, - so, check the setting here
-    if (enable_order_by_all)
-        current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
+    current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
     current_query_tree->setOriginalAST(select_query);
 
     auto current_context = current_query_tree->getContext();
@@ -471,7 +466,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
 
         std::shared_ptr<Collator> collator;
         if (order_by_element.getCollation())
-            collator = std::make_shared<Collator>(order_by_element.getCollation()->as<ASTLiteral &>().value.safeGet<String &>());
+            collator = std::make_shared<Collator>(order_by_element.getCollation()->as<ASTLiteral &>().value.get<String &>());
 
         const auto & sort_expression_ast = order_by_element.children.at(0);
         auto sort_expression = buildExpression(sort_expression_ast, context);

@@ -632,7 +632,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -646,10 +646,11 @@ public:
             const ColumnString::Chars & in_vec = col->getChars();
             const ColumnString::Offsets & in_offsets = col->getOffsets();
 
-            out_offsets.resize(input_rows_count);
+            size_t size = in_offsets.size();
+            out_offsets.resize(size);
 
             size_t max_out_len = 0;
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < in_offsets.size(); ++i)
             {
                 const size_t len = in_offsets[i] - (i == 0 ? 0 : in_offsets[i - 1])
                     - /* trailing zero symbol that is always added in ColumnString and that is ignored while decoding */ 1;
@@ -661,7 +662,7 @@ public:
             char * pos = begin;
             size_t prev_offset = 0;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 size_t new_offset = in_offsets[i];
 
@@ -690,14 +691,15 @@ public:
             const ColumnString::Chars & in_vec = col_fix_string->getChars();
             const size_t n = col_fix_string->getN();
 
-            out_offsets.resize(input_rows_count);
-            out_vec.resize(((n + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1) * input_rows_count);
+            size_t size = col_fix_string->size();
+            out_offsets.resize(size);
+            out_vec.resize(((n + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1) * size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 size_t new_offset = prev_offset + n;
 

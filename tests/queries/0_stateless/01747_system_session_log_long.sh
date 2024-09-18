@@ -82,7 +82,7 @@ trap "cleanup" EXIT
 function executeQueryExpectError()
 {
     cat - > "${TMP_QUERY_FILE}"
-    ! ${CLICKHOUSE_CLIENT} --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a "${TMP_QUERY_FILE}"
+    ! ${CLICKHOUSE_CLIENT} --multiquery --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a "${TMP_QUERY_FILE}"
 }
 
 function createUser()
@@ -303,7 +303,7 @@ function runEndpointTests()
     if [[ -n "${setup_queries}" ]]
     then
         # echo "Executing setup queries: ${setup_queries}"
-        echo "${setup_queries}" | executeQuery
+        echo "${setup_queries}" | executeQuery --multiquery
     fi
 
     testTCP "${auth_type}" "${username}" "${password}"
@@ -357,7 +357,7 @@ testAsUserIdentifiedBy "plaintext_password"
 testAsUserIdentifiedBy "sha256_password"
 testAsUserIdentifiedBy "double_sha1_password"
 
-executeQuery <<EOF
+executeQuery --multiquery <<EOF
 SYSTEM FLUSH LOGS;
 
 WITH

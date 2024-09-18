@@ -77,8 +77,7 @@ StorageExecutable::StorageExecutable(
     const ExecutableSettings & settings_,
     const std::vector<ASTPtr> & input_queries_,
     const ColumnsDescription & columns,
-    const ConstraintsDescription & constraints,
-    const String & comment)
+    const ConstraintsDescription & constraints)
     : IStorage(table_id_)
     , settings(settings_)
     , input_queries(input_queries_)
@@ -87,7 +86,6 @@ StorageExecutable::StorageExecutable(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     ShellCommandSourceCoordinator::Configuration configuration
@@ -239,7 +237,7 @@ void registerStorageExecutable(StorageFactory & factory)
             settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
-        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints, args.comment);
+        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints);
     };
 
     StorageFactory::StorageFeatures storage_features;
@@ -257,3 +255,4 @@ void registerStorageExecutable(StorageFactory & factory)
 }
 
 }
+

@@ -64,6 +64,7 @@ private:
     void reallocateFirstBuffer();
     void detachBuffer();
     void allocateBuffer();
+    void allocateFirstBuffer();
     void setFakeBufferWhenPreFinalized();
 
     S3::UploadPartRequest getUploadRequest(size_t part_number, PartData & data);

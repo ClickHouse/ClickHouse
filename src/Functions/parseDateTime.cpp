@@ -582,11 +582,11 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
-                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
             };
 
             FunctionArgumentDescriptors optional_args{
-                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
                 {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
             };
 
@@ -2029,24 +2029,14 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            if (arguments.size() == 1)
-            {
-                if constexpr (parse_syntax == ParseSyntax::MySQL)
-                    return "%Y-%m-%d %H:%i:%s";
-                else
-                    return "yyyy-MM-dd HH:mm:ss";
-            }
-            else
-            {
-                const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-                if (!col_format)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                        arguments[1].column->getName(),
-                        getName());
-                return col_format->getValue<String>();
-            }
+            const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+            if (!format_column)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
+                    arguments[1].column->getName(),
+                    getName());
+            return format_column->getValue<String>();
         }
 
         const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const

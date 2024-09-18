@@ -26,10 +26,10 @@ public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS>
     void reinit(size_t size)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
         {
             assert(flags[nullptr].size() <= size);
             need_flags = true;
@@ -43,10 +43,10 @@ public:
         }
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS>
     void reinit(const Block * block_ptr)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
         {
             assert(flags[block_ptr].size() <= block_ptr->rows());
             need_flags = true;
@@ -147,31 +147,6 @@ public:
             return flags[nullptr][off].compare_exchange_strong(expected, true);
         }
 
-    }
-    template <bool use_flags, bool flag_per_row>
-    bool setUsedOnce(const Block * block, size_t row_num, size_t offset)
-    {
-        if constexpr (!use_flags)
-            return true;
-
-        if constexpr (flag_per_row)
-        {
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (flags[block][row_num].load(std::memory_order_relaxed))
-                return false;
-
-            bool expected = false;
-            return flags[block][row_num].compare_exchange_strong(expected, true);
-        }
-        else
-        {
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (flags[nullptr][offset].load(std::memory_order_relaxed))
-                return false;
-
-            bool expected = false;
-            return flags[nullptr][offset].compare_exchange_strong(expected, true);
-        }
     }
 };
 

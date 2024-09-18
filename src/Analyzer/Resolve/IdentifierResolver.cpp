@@ -1,5 +1,5 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -452,10 +452,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
         if (auto * column = compound_expression->as<ColumnNode>())
         {
             const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
-            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
+            if (column_type->getTypeId() == TypeIndex::Object)
             {
-                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
-                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
+                const auto * object_type = checkAndGetDataType<DataTypeObject>(column_type.get());
+                if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
                 {
                     QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
                     return constant_node_null;
@@ -692,7 +692,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
         result_column_node = it->second;
     }
     /// Check if it's a dynamic subcolumn
-    else if (table_expression_data.supports_subcolumns)
+    else
     {
         auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
         auto jt = table_expression_data.column_name_to_column_node.find(column_name);
@@ -1000,6 +1000,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
     if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
     {
         auto & join_using_list = from_join_node.getJoinExpression()->as<ListNode &>();
+
         for (auto & join_using_node : join_using_list.getNodes())
         {
             auto & column_node = join_using_node->as<ColumnNode &>();
@@ -1272,7 +1273,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
             const auto & constant_node_value = constant_node.getValue();
             if (constant_node_value.getType() == Field::Types::String)
             {
-                array_join_subcolumn_prefix = constant_node_value.safeGet<String>() + ".";
+                array_join_subcolumn_prefix = constant_node_value.get<String>() + ".";
                 array_join_parent_column = argument_nodes.at(0).get();
             }
         }
@@ -1286,7 +1287,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!second_argument || second_argument->getValue().getType() != Field::Types::String)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected constant string as second argument of getSubcolumn function {}", resolved_function->dumpTree());
 
-    const auto & resolved_subcolumn_path = second_argument->getValue().safeGet<String &>();
+    const auto & resolved_subcolumn_path = second_argument->getValue().get<String &>();
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 
@@ -1330,7 +1331,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
             size_t nested_function_arguments_size = nested_function_arguments.size();
 
             const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode & >();
-            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
+            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().get<Array &>();
             size_t nested_keys_names_size = nested_keys_names.size();
 
             if (nested_keys_names_size == nested_function_arguments_size - 1)
@@ -1343,7 +1344,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
                     auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
                         array_join_column_expression_typed.getColumnSource());
 
-                    const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
+                    const auto & nested_key_name = nested_keys_names[i - 1].get<String &>();
                     Identifier nested_identifier = Identifier(nested_key_name);
                     array_join_resolved_expression = wrapExpressionNodeInTupleElement(array_join_column, nested_identifier, scope.context);
                     break;
