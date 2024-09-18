@@ -1164,6 +1164,7 @@ arrayDifference
 arrayDistinct
 arrayDotProduct
 arrayElement
+arrayElementOrNull
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
