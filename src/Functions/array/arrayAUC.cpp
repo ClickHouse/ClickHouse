@@ -87,7 +87,7 @@ private:
         const IColumn & labels,
         ColumnArray::Offset current_offset,
         ColumnArray::Offset next_offset,
-        bool scale = true)
+        bool scale)
     {
         struct ScoreLabel
         {
@@ -116,10 +116,10 @@ private:
         size_t curr_fp = 0, curr_tp = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            // Only increment the area when the score changes
+            /// Only increment the area when the score changes
             if (sorted_labels[i].score != prev_score)
             {
-                area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; // Trapezoidal area under curve (might degenerate to zero or to a rectangle)
+                area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; /// Trapezoidal area under curve (might degenerate to zero or to a rectangle)
                 prev_fp = curr_fp;
                 prev_tp = curr_tp;
                 prev_score = sorted_labels[i].score;
@@ -135,12 +135,12 @@ private:
 
         /// Then normalize it, if scale is true, dividing by the area to the area of rectangle.
 
-        if (scale && (curr_tp == 0 || curr_tp == size))
-            return std::numeric_limits<Float64>::quiet_NaN();
-
         if (scale)
+        {
+            if (curr_tp == 0 || curr_tp == size)
+                return std::numeric_limits<Float64>::quiet_NaN();
             return area / curr_tp / (size - curr_tp);
-
+        }
         return area;
     }
 
@@ -150,7 +150,7 @@ private:
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<Float64> & result,
         size_t input_rows_count,
-        bool scale = true)
+        bool scale)
     {
         result.resize(input_rows_count);
 
@@ -195,7 +195,7 @@ public:
         if (number_of_arguments == 3)
         {
             if (!isBool(arguments[2]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument must be a boolean (scale)");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be a bool.", getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -221,11 +221,11 @@ public:
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
-        // Handle third argument for scale (if passed, otherwise default to true)
+        /// Handle third argument for scale (if passed, otherwise default to true)
         bool scale = true;
         if (number_of_arguments == 3)
         {
-            scale = arguments[2].column->getBool(0); // Assumes it's a scalar boolean column
+            scale = arguments[2].column->getBool(0); /// Assumes it's a scalar boolean column
         }
 
         auto col_res = ColumnVector<Float64>::create();
