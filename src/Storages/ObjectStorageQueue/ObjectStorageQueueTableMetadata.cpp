@@ -116,14 +116,16 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
     return ObjectStorageQueueTableMetadata(json);
 }
 
-bool ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
+void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
 {
     if (processing_threads_num != from_zk.processing_threads_num)
     {
+        LOG_TRACE(getLogger("ObjectStorageQueueTableMetadata"),
+                  "Using `processing_threads_num` from keeper: {} (local: {})",
+                  from_zk.processing_threads_num, processing_threads_num);
+
         processing_threads_num = from_zk.processing_threads_num;
-        return true;
     }
-    return false;
 }
 
 void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const

@@ -42,7 +42,7 @@ struct ObjectStorageQueueTableMetadata
 
     ObjectStorageQueueMode getMode() const;
 
-    bool adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
+    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 

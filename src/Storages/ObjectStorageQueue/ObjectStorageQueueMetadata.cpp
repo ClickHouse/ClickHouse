@@ -256,12 +256,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
 
-            if (table_metadata.adjustFromKeeper(metadata_from_zk))
-            {
-                LOG_TRACE(log, "Using `processing_threads_num` from keeper: {} (local: {})",
-                          table_metadata.processing_threads_num, settings.processing_threads_num);
-            }
-
+            table_metadata.adjustFromKeeper(metadata_from_zk);
             table_metadata.checkEquals(metadata_from_zk);
             return table_metadata;
         }
