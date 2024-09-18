@@ -212,14 +212,6 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 }
 
 template <typename Thread>
-std::unique_ptr<typename ThreadPoolImpl<Thread>::ThreadFromThreadPool>
-ThreadPoolImpl<Thread>::maybeStartNewThread()
-{
-    return nullptr;
-}
-
-
-template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
@@ -242,7 +234,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     };
 
     auto available_threads_decrement = std::make_unique<ScopedDecrement>(available_threads);
-    
+
     std::unique_ptr<ThreadFromThreadPool> new_thread;
 
     // Load the current capacity
@@ -268,7 +260,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 return on_error("failed to start the thread");
             }
         }
-        else 
+        else
         {
             capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
             currently_available_threads = available_threads.load(std::memory_order_relaxed);
@@ -396,13 +388,13 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
                     break;
                 }
             }
-            else 
+            else
             {
                 capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
             }
         }
 
-        if (!new_thread) 
+        if (!new_thread)
             break; /// failed to start more threads
 
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_slot;
@@ -422,7 +414,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
             (*thread_slot)->start(thread_slot);
         }
         catch (...)
-        {   
+        {
             threads.pop_front();
             break;
         }
