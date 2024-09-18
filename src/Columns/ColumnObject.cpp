@@ -1356,6 +1356,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
     /// Reset current state.
     dynamic_paths.clear();
     dynamic_paths_ptrs.clear();
+    sorted_dynamic_paths.clear();
     max_dynamic_paths = global_max_dynamic_paths;
     Statistics new_statistics(Statistics::Source::MERGE);
 
