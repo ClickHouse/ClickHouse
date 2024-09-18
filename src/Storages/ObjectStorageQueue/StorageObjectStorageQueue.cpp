@@ -62,7 +62,7 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(
+    void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
     {
@@ -144,7 +144,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
+    validateSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -164,10 +164,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
-    ObjectStorageQueueTableMetadata table_metadata(*queue_settings, storage_metadata.getColumns(), configuration_->format);
-    ObjectStorageQueueMetadata::syncWithKeeper(zk_path, table_metadata, *queue_settings, log);
+    auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
+        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, log);
 
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), *queue_settings);
+    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
+        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
+
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });

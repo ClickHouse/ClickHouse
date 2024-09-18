@@ -1777,7 +1777,8 @@ private:
                     auto child_path = (root_fs_path / child_name).generic_string();
                     const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
 
-                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                    /// if node was changed in previous step of multi transaction - skip until the uncommitted state visit
+                    if (actual_child_node_ptr != &child_node)
                         continue;
 
                     if (checkLimits(actual_child_node_ptr))
@@ -1811,7 +1812,8 @@ private:
 
                     const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
 
-                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                    /// if node was changed in previous step of multi transaction - skip until the uncommitted state visit
+                    if (actual_child_node_ptr != &child_node)
                         continue;
 
                     if (checkLimits(actual_child_node_ptr))
@@ -2545,6 +2547,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                 response.responses[i]->error = failed_multi->error_codes[i];
             }
 
+            response.error = failed_multi->global_error;
             storage.uncommitted_state.commit(zxid);
             return response_ptr;
         }
@@ -2901,7 +2904,19 @@ void KeeperStorage<Container>::preprocessRequest(
 
     if (check_acl && !request_processor->checkAuth(*this, session_id, false))
     {
-        uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+        /// Multi requests handle failures using FailedMultiDelta
+        if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
+        {
+            const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*zk_request);
+            std::vector<Coordination::Error> response_errors;
+            response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
+            uncommitted_state.deltas.emplace_back(
+                new_last_zxid, KeeperStorage<Container>::FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
+        }
+        else
+        {
+            uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+        }
         return;
     }
 

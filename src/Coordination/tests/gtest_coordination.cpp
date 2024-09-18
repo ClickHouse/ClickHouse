@@ -2280,6 +2280,62 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     }
 }
 
+TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+    int64_t session_without_auth = 1;
+    int64_t session_with_auth = 2;
+    size_t term = 0;
+
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+
+    auto & storage = state_machine->getStorageUnsafe();
+
+    auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = "test_user:test_password";
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+    state_machine->commit(1, auth_entry->get_buf());
+
+    std::string node_with_acl = "/node_with_acl";
+    {
+        auto create_req = std::make_shared<ZooKeeperCreateRequest>();
+        create_req->path = node_with_acl;
+        create_req->data = "notmodified";
+        create_req->acls = {{.permissions = ACL::Read, .scheme = "auth", .id = ""}};
+        auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
+        state_machine->pre_commit(3, create_entry->get_buf());
+        state_machine->commit(3, create_entry->get_buf());
+        ASSERT_TRUE(storage.container.contains(node_with_acl));
+    }
+    Requests ops;
+    ops.push_back(zkutil::makeSetRequest(node_with_acl, "modified", -1));
+    ops.push_back(zkutil::makeCheckRequest("/nonexistentnode", -1));
+    auto multi_req = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+    auto multi_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), multi_req);
+    state_machine->pre_commit(4, multi_entry->get_buf());
+    state_machine->commit(4, multi_entry->get_buf());
+
+    auto node_it = storage.container.find(node_with_acl);
+    ASSERT_FALSE(node_it == storage.container.end());
+    ASSERT_TRUE(node_it->value.getData() == "notmodified");
+}
+
 TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
 {
     using namespace Coordination;
@@ -3682,6 +3738,72 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         ASSERT_FALSE(exists("/A/B"));
         ASSERT_FALSE(exists("/A/B/D"));
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove For Subtree With Updated Node");
+        int create_zxid = ++zxid;
+        auto ops = prepare_create_tree();
+
+        /// First create nodes
+        const auto create_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(create_request, 1, 0, create_zxid);
+        auto create_responses = storage.processRequest(create_request, 1, create_zxid);
+        ASSERT_EQ(create_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(create_responses[0].response));
+
+        /// Small limit
+        int remove_zxid = ++zxid;
+        ops = {
+            zkutil::makeSetRequest("/A/B", "", -1),
+            zkutil::makeRemoveRecursiveRequest("/A", 3),
+        };
+        auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        auto remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_FALSE(is_multi_ok(remove_responses[0].response));
+
+        /// Big limit
+        remove_zxid = ++zxid;
+        ops[1] = zkutil::makeRemoveRecursiveRequest("/A", 4);
+        remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(remove_responses[0].response));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/C"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("[BUG] Recursive Remove Level Sorting");
+        int new_zxid = ++zxid;
+
+        Coordination::Requests ops = {
+            zkutil::makeCreateRequest("/a", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/a/bbbbbb", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/B", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/CCCCCCCCCCCC", "", zkutil::CreateMode::Persistent),
+            zkutil::makeRemoveRecursiveRequest("/A", 3),
+        };
+        auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid);
+        auto remove_responses = storage.processRequest(remove_request, 1, new_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(remove_responses[0].response));
+        ASSERT_TRUE(exists("/a"));
+        ASSERT_TRUE(exists("/a/bbbbbb"));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/CCCCCCCCCCCC"));
+    }
+
 }
 
 TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)

@@ -1675,11 +1675,12 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     PlannerActionsVisitor actions_visitor(planner_context);
     std::unordered_set<std::string> array_join_expressions_output_nodes;
 
-    NameSet array_join_column_names;
+    Names array_join_column_names;
+    array_join_column_names.reserve(array_join_node.getJoinExpressions().getNodes().size());
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
     {
         const auto & array_join_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(array_join_expression);
-        array_join_column_names.insert(array_join_column_identifier);
+        array_join_column_names.push_back(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
         auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
@@ -1728,8 +1729,13 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     drop_unused_columns_before_array_join_transform_step->setStepDescription("DROP unused columns before ARRAY JOIN");
     plan.addStep(std::move(drop_unused_columns_before_array_join_transform_step));
 
-    auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_column_names, array_join_node.isLeft(), planner_context->getQueryContext());
-    auto array_join_step = std::make_unique<ArrayJoinStep>(plan.getCurrentDataStream(), std::move(array_join_action));
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto array_join_step = std::make_unique<ArrayJoinStep>(
+        plan.getCurrentDataStream(),
+        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
+        settings.enable_unaligned_array_join,
+        settings.max_block_size);
+
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
 

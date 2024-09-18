@@ -584,7 +584,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn);
+    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true});
 }
 }
 
