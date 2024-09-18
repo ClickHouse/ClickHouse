@@ -323,7 +323,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     broken_projections_message += "\n";
 
                 broken_projections_message += fmt::format(
-                    "Part {} has a broken projection {} (error: {})",
+                    "Part `{}` has broken projection `{}` (error: {})",
                     data_part->name, name, exception_message);
             }
 

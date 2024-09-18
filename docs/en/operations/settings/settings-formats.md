@@ -752,6 +752,17 @@ Possible values:
 
 Default value: 0.
 
+### input_format_json_empty_as_default {#input_format_json_empty_as_default}
+
+When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
+
+Default value: 0.
+
 ## TSV format settings {#tsv-format-settings}
 
 ### input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
