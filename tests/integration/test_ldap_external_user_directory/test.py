@@ -90,6 +90,9 @@ def test_authentication_fail():
 
 
 def test_role_mapping(ldap_cluster):
+    instance.query("DROP ROLE IF EXISTS role_1")
+    instance.query("DROP ROLE IF EXISTS role_2")
+    instance.query("DROP ROLE IF EXISTS role_3")
     instance.query("CREATE ROLE role_1")
     instance.query("CREATE ROLE role_2")
     add_ldap_group(ldap_cluster, group_cn="clickhouse-role_1", member_cn="johndoe")
@@ -124,3 +127,4 @@ def test_role_mapping(ldap_cluster):
     delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_1")
     delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_2")
     delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_3")
+    delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_4")
