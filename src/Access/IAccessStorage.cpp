@@ -16,7 +16,7 @@
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
-
+#include <base/range.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -71,6 +71,18 @@ std::vector<UUID> IAccessStorage::find(AccessEntityType type, const Strings & na
             ids.push_back(*id);
     }
     return ids;
+}
+
+
+std::vector<UUID> IAccessStorage::findAllImpl() const
+{
+    std::vector<UUID> res;
+    for (auto type : collections::range(AccessEntityType::MAX))
+    {
+        auto ids = findAllImpl(type);
+        res.insert(res.end(), ids.begin(), ids.end());
+    }
+    return res;
 }
 
 
