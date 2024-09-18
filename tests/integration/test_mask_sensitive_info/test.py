@@ -393,6 +393,7 @@ def test_table_functions():
         f"azureBlobStorageCluster('test_shard_localhost', named_collection_2, connection_string = '{azure_conn_string}', container = 'cont', blob_path = 'test_simple_16.csv', format = 'CSV')",
         f"azureBlobStorageCluster('test_shard_localhost', named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_17.csv', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+        f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
     ]
 
     def make_test_case(i):

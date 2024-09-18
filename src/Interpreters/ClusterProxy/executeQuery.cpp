@@ -532,7 +532,7 @@ void executeQueryWithParallelReplicas(
         max_replicas_to_use = shard.getAllNodeCount();
     }
 
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use, settings.parallel_replicas_mark_segment_size);
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
 
     auto external_tables = new_context->getExternalTables();
 

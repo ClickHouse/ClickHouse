@@ -237,6 +237,7 @@ struct FormatSettings
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
+        bool empty_as_default = false;
         bool type_json_skip_duplicated_paths = false;
     } json{};
 
@@ -415,6 +416,7 @@ struct FormatSettings
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
         bool dictionary_as_low_cardinality = true;
+        double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
     /// For capnProto format we should determine how to
