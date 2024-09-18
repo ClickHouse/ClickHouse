@@ -62,7 +62,7 @@ public:
     {
         return std::make_shared<DataTypeString>();
     }
-    
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnString::create();

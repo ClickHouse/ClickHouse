@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
@@ -281,7 +280,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
                 result_offsets.emplace_back();
             }
         }
-        
+
         return result;
     }
 
