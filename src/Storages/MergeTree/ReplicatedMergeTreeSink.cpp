@@ -583,7 +583,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         {
             error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
             if (!endsWith(part->getDataPartStorage().getRelativePath(), "detached/attaching_" + part->name + "/"))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected relative path for a part: {}", part->getDataPartStorage().getRelativePath());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected relative path for a deduplicated part: {}", part->getDataPartStorage().getRelativePath());
             fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
             part->renameTo(new_relative_path, false);
         }
@@ -1013,16 +1013,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        transaction.rollback();
-
-        if (!Coordination::isUserError(multi_code))
-            throw Exception(
-                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                    "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
-                    block_number,
-                    toString(block_id),
-                    multi_code);
-
         auto failed_op_idx = zkutil::getFailedOpIndex(multi_code, responses);
         String failed_op_path = ops[failed_op_idx]->getPath();
 
@@ -1031,6 +1021,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
             LOG_INFO(log, "Block with ID {} already exists (it was just appeared) for part {}. Ignore it.",
                      toString(block_id), part->name);
+
+            transaction.rollbackPartsToTemporaryState();
+            part->is_temp = true;
+            part->renameTo(temporary_part_relative_path, false);
 
             if constexpr (async_insert)
             {
@@ -1042,6 +1036,16 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             return CommitRetryContext::DUPLICATED_PART;
         }
+
+        transaction.rollback(); // Not in working set (data_parts)
+
+        if (!Coordination::isUserError(multi_code))
+            throw Exception(
+                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                    "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
+                    block_number,
+                    toString(block_id),
+                    multi_code);
 
         if (multi_code == Coordination::Error::ZNONODE && failed_op_idx == block_unlock_op_idx)
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
