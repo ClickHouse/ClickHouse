@@ -108,7 +108,7 @@ struct RestoreSettings
     /// and now we're restoring only user `u2` and role `r2` doesn't exist, then
     /// this flag is whether RESTORE should continue with restoring user `u2` without that grant.
     /// If this flag is false then RESTORE will throw an exception in that case.
-    bool allow_unresolved_access_dependencies = false;
+    bool skip_unresolved_access_dependencies = false;
 
     /// Try to update dependents of restored access entities.
     /// For example: if a backup contains a profile assigned to a user: `CREATE PROFILE p1; CREATE USER u1 SETTINGS PROFILE p1`

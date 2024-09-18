@@ -240,7 +240,7 @@ AccessRestorerFromBackup::AccessRestorerFromBackup(
     const BackupPtr & backup_, const RestoreSettings & restore_settings_)
     : backup(backup_)
     , creation_mode(restore_settings_.create_access)
-    , skip_unresolved_dependencies(restore_settings_.allow_unresolved_access_dependencies)
+    , skip_unresolved_dependencies(restore_settings_.skip_unresolved_access_dependencies)
     , update_dependents(restore_settings_.update_access_entities_dependents)
     , log(getLogger("AccessRestorerFromBackup"))
 {
