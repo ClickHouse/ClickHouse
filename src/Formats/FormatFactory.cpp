@@ -152,6 +152,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
+    format_settings.json.empty_as_default = settings.input_format_json_empty_as_default;
     format_settings.json.type_json_skip_duplicated_paths = settings.type_json_skip_duplicated_paths;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
@@ -243,6 +244,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.orc.output_compression_method = settings.output_format_orc_compression_method;
     format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
+    format_settings.orc.output_dictionary_key_size_threshold = settings.output_format_orc_dictionary_key_size_threshold;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
     format_settings.orc.reader_time_zone_name = settings.input_format_orc_reader_time_zone_name;
