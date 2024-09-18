@@ -79,7 +79,7 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
         }
         else
         {
-            s.writeIdentifier(name, false);
+            s.writeIdentifier(name, /*ambiguous=*/false);
             s.ostr << " ";
             expr->formatImpl(s, state, frame);
         }

@@ -254,7 +254,7 @@ IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingRule,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"UserDisplay", IdentifierQuotingRule::UserDisplay},
-     {"WhenNecessary", IdentifierQuotingRule::WhenNecessary},
-     {"Always", IdentifierQuotingRule::Always}})
+    {{"user_display", IdentifierQuotingRule::UserDisplay},
+     {"when_necessary", IdentifierQuotingRule::WhenNecessary},
+     {"always", IdentifierQuotingRule::Always}})
 }

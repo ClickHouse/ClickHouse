@@ -66,7 +66,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
 {
     frame.need_parens = false;
 
-    format_settings.writeIdentifier(name, true);
+    format_settings.writeIdentifier(name, /*ambiguous=*/true);
 
     if (type)
     {
