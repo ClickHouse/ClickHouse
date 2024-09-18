@@ -540,7 +540,6 @@ inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
     return data_type->isNullable() || data_type->isLowCardinalityNullable();
 }
 
-
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
@@ -549,7 +548,6 @@ template <typename DataType> constexpr bool IsDataTypeEnum = false;
 template <typename DataType> constexpr bool IsDataTypeStringOrFixedString = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
-
 
 template <is_decimal T>
 class DataTypeDecimal;
