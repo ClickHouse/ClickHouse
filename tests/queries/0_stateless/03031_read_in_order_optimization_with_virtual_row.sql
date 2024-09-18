@@ -182,3 +182,35 @@ optimize_read_in_order = 1,
 read_in_order_two_level_merge_threshold = 0;  --force preliminary merge
 
 DROP TABLE function_pk;
+
+-- modified from 02317_distinct_in_order_optimization
+SELECT '-- test distinct ----';
+
+DROP TABLE IF EXISTS distinct_in_order SYNC;
+
+CREATE TABLE distinct_in_order
+(
+    `a` int,
+    `b` int,
+    `c` int
+)
+ENGINE = MergeTree
+ORDER BY (a, b)
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+
+SYSTEM STOP MERGES distinct_in_order;
+
+INSERT INTO distinct_in_order SELECT
+    number % number,
+    number % 5,
+    number % 10
+FROM numbers(1, 1000000);
+
+SELECT DISTINCT a
+FROM distinct_in_order
+ORDER BY a ASC
+SETTINGS read_in_order_two_level_merge_threshold = 0,
+optimize_read_in_order = 1,
+max_threads = 2;
+
+DROP TABLE distinct_in_order;

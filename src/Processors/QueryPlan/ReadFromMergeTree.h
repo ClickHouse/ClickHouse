@@ -108,6 +108,14 @@ public:
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
 
+    enum class VirtualRowStatus
+    {
+        NoConsiderInLogicalPlan,
+        Possible,
+        No,
+        Yes,
+    };
+
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
@@ -210,7 +218,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    void enableVirtualRow() { enable_virtual_row = true; }
+    void setVirtualRowStatus(VirtualRowStatus virtual_row_status_) { virtual_row_status = virtual_row_status_; }
 
 private:
     int getSortDirection() const
@@ -284,7 +292,9 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
-    bool enable_virtual_row = false;
+
+    VirtualRowStatus virtual_row_status = VirtualRowStatus::NoConsiderInLogicalPlan;
+
     std::optional<size_t> number_of_current_replica;
 };
 

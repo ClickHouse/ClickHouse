@@ -94,6 +94,17 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & bac
     return nullptr;
 }
 
+static bool checkVirtualRowSupport(const StepStack & backward_path)
+{
+    for (size_t i = 0; i < backward_path.size() - 1; i++)
+    {
+        IQueryPlanStep * step = backward_path[i];
+        if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step))
+            return false;
+    }
+    return true;
+}
+
 void updateStepsDataStreams(StepStack & steps_to_update)
 {
     /// update data stream's sorting properties for found transforms
@@ -825,8 +836,10 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             if (!can_read)
                 return nullptr;
 
-            if (!order_info->first_prefix_fixed)
-                reading->enableVirtualRow();
+            if (!checkVirtualRowSupport(backward_path))
+                reading->setVirtualRowStatus(ReadFromMergeTree::VirtualRowStatus::No);
+            else if (!order_info->first_prefix_fixed)
+                reading->setVirtualRowStatus(ReadFromMergeTree::VirtualRowStatus::Possible);
         }
 
         return order_info;

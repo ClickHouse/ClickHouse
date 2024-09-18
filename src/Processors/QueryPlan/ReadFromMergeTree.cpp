@@ -1109,17 +1109,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
 
-        /// If enabled in the optimization stage, check whether there are more than one branch.
-        if (enable_virtual_row)
-            enable_virtual_row = splitted_parts_and_ranges.size() > 1
-                || (splitted_parts_and_ranges.size() == 1 && splitted_parts_and_ranges[0].size() > 1);
+        /// If possible in the optimization stage, check whether there are more than one branch.
+        if (virtual_row_status == VirtualRowStatus::Possible)
+            virtual_row_status = splitted_parts_and_ranges.size() > 1
+                || (splitted_parts_and_ranges.size() == 1 && splitted_parts_and_ranges[0].size() > 1)
+                    ? VirtualRowStatus::Yes : VirtualRowStatus::NoConsiderInLogicalPlan;
 
         for (auto && item : splitted_parts_and_ranges)
         {
-            /// If not enabled before, try to enable it when conditions meet, as in the following section of preliminary merge,
-            /// only ExpressionTransform is added between MergingSortedTransform and readFromMergeTree.
-            bool enable_current_virtual_row = enable_virtual_row;
-            if (!enable_virtual_row)
+            bool enable_current_virtual_row = false;
+            if (virtual_row_status == VirtualRowStatus::Yes)
+                enable_current_virtual_row = true;
+            else if (virtual_row_status == VirtualRowStatus::NoConsiderInLogicalPlan)
                 enable_current_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
 
             pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit,
