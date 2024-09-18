@@ -5,7 +5,7 @@ import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Union
+from typing import Any, Dict, Iterator, List, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,37 @@ def cd(path: Union[Path, str]) -> Iterator[None]:
         yield
     finally:
         os.chdir(oldpwd)
+
+
+def is_hex(s):
+    try:
+        int(s, 16)
+        return True
+    except ValueError:
+        return False
+
+
+def normalize_string(string: str) -> str:
+    lowercase_string = string.lower()
+    normalized_string = (
+        lowercase_string.replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(",", "")
+    )
+    return normalized_string
+
+
+class GHActions:
+    @staticmethod
+    def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
+        lines = list(lines)
+        print(f"::group::{group_name}")
+        for line in lines:
+            print(line)
+        print("::endgroup::")
 
 
 def kill_ci_runner(message: str) -> None:
@@ -51,14 +82,6 @@ def kill_ci_runner(message: str) -> None:
     time.sleep(5)
     # The current process will be killed too
     subprocess.run(f"kill -9 {' '.join(pids.keys())}", check=False, shell=True)
-
-    @staticmethod
-    def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
-        lines = list(lines)
-        print(f"::group::{group_name}")
-        for line in lines:
-            print(line)
-        print("::endgroup::")
 
 
 def set_job_timeout():
