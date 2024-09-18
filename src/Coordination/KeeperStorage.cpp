@@ -1777,7 +1777,8 @@ private:
                     auto child_path = (root_fs_path / child_name).generic_string();
                     const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
 
-                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                    /// if node was changed in previous step of multi transaction - skip until the uncommitted state visit
+                    if (actual_child_node_ptr != &child_node)
                         continue;
 
                     if (checkLimits(actual_child_node_ptr))
@@ -1811,7 +1812,8 @@ private:
 
                     const auto actual_child_node_ptr = storage.uncommitted_state.getActualNodeView(child_path, child_node);
 
-                    if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                    /// if node was changed in previous step of multi transaction - skip until the uncommitted state visit
+                    if (actual_child_node_ptr != &child_node)
                         continue;
 
                     if (checkLimits(actual_child_node_ptr))
