@@ -2372,6 +2372,7 @@ quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
+quantileexactweightedInterpolated
 quantiles
 quantilesExactExclusive
 quantilesExactInclusive
