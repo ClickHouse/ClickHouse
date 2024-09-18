@@ -241,7 +241,10 @@ def main():
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
-        if any(r.status == "FAIL" for r in test_result):
+        if len(test_result) == 0:
+            status = FAILURE
+            description = "No test results found"
+        elif any(r.status == "FAIL" for r in test_result):
             status = FAILURE
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
