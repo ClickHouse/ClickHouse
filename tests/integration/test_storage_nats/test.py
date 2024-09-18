@@ -219,7 +219,7 @@ def test_nats_json_without_delimiter(nats_cluster):
 
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_csv_with_delimiter(nats_cluster):
     instance.query(
         """
@@ -253,7 +253,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
 
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_tsv_with_delimiter(nats_cluster):
     instance.query(
         """
@@ -291,7 +291,7 @@ def test_nats_tsv_with_delimiter(nats_cluster):
 
 #
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_macros(nats_cluster):
     instance.query(
         """
@@ -323,7 +323,7 @@ def test_nats_macros(nats_cluster):
 
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_materialized_view(nats_cluster):
     instance.query(
         """
@@ -375,7 +375,7 @@ def test_nats_materialized_view(nats_cluster):
 
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_materialized_view_with_subquery(nats_cluster):
     instance.query(
         """
@@ -411,7 +411,7 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
 
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_many_materialized_views(nats_cluster):
     instance.query(
         """
@@ -467,7 +467,7 @@ def test_nats_many_materialized_views(nats_cluster):
     nats_check_result(result1, True)
     nats_check_result(result2, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_protobuf(nats_cluster):
     instance.query(
         """
@@ -524,7 +524,7 @@ def test_nats_protobuf(nats_cluster):
 
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_big_message(nats_cluster):
     # Create batchs of messages of size ~100Kb
     nats_messages = 1000
@@ -563,7 +563,7 @@ def test_nats_big_message(nats_cluster):
             int(result) == nats_messages * batch_messages
     ), "ClickHouse lost some messages: {}".format(result)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_mv_combo(nats_cluster):
     NUM_MV = 5
     NUM_CONSUMERS = 4
@@ -648,7 +648,7 @@ def test_nats_mv_combo(nats_cluster):
             int(result) == messages_num * threads_num * NUM_MV
     ), "ClickHouse lost some messages: {}".format(result)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_insert(nats_cluster):
     instance.query(
         """
@@ -707,7 +707,7 @@ def test_nats_insert(nats_cluster):
     result = "\n".join(insert_messages)
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_many_subjects_insert_wrong(nats_cluster):
     instance.query(
         """
@@ -760,7 +760,7 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
         )
     )
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_many_subjects_insert_right(nats_cluster):
     instance.query(
         """
@@ -823,7 +823,7 @@ def test_nats_many_subjects_insert_right(nats_cluster):
     result = "\n".join(insert_messages)
     nats_check_result(result, True)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_many_inserts(nats_cluster):
     instance.query(
         """
@@ -907,7 +907,7 @@ def test_nats_many_inserts(nats_cluster):
         result
     )
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_overloaded_insert(nats_cluster):
     instance.query(
         """
@@ -996,7 +996,7 @@ def test_nats_overloaded_insert(nats_cluster):
         result
     )
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_virtual_column(nats_cluster):
     instance.query(
         """
@@ -1057,7 +1057,7 @@ def test_nats_virtual_column(nats_cluster):
 
     assert TSV(result) == TSV(expected)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_virtual_column_with_materialized_view(nats_cluster):
     instance.query(
         """
@@ -1116,7 +1116,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
 
     assert TSV(result) == TSV(expected)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_many_consumers_to_each_queue(nats_cluster):
     instance.query(
         """
@@ -1205,7 +1205,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
             int(result1) == messages_num * threads_num
     ), "ClickHouse lost some messages: {}".format(result1)
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     instance.query(
         """
@@ -1277,7 +1277,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
         result
     )
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_no_connection_at_startup_1(nats_cluster):
     # no connection when table is initialized
     nats_cluster.pause_container("nats1")
@@ -1294,7 +1294,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
     )
     nats_cluster.unpause_container("nats1")
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_no_connection_at_startup_2(nats_cluster):
     instance.query(
         """
@@ -1344,7 +1344,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         result
     )
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_format_factory_settings(nats_cluster):
     instance.query(
         """
@@ -1400,7 +1400,7 @@ def test_nats_format_factory_settings(nats_cluster):
 
     assert result == expected
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_bad_args(nats_cluster):
     instance.query_and_get_error(
         """
@@ -1412,7 +1412,7 @@ def test_nats_bad_args(nats_cluster):
     """
     )
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_drop_mv(nats_cluster):
     instance.query(
         """
@@ -1475,7 +1475,7 @@ def test_nats_drop_mv(nats_cluster):
 
     assert count > 0
 
-@pytest.mark.skip(reason="test broken")
+
 def test_nats_predefined_configuration(nats_cluster):
     instance.query(
         """
@@ -1498,7 +1498,7 @@ def test_nats_predefined_configuration(nats_cluster):
         if result == "1\t2\n":
             break
 
-@pytest.mark.skip(reason="test broken")
+
 def test_format_with_prefix_and_suffix(nats_cluster):
     instance.query(
         """
@@ -1550,7 +1550,7 @@ def test_format_with_prefix_and_suffix(nats_cluster):
             == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
     )
 
-@pytest.mark.skip(reason="test broken")
+
 def test_max_rows_per_message(nats_cluster):
     instance.query(
         """
@@ -1624,7 +1624,7 @@ def test_max_rows_per_message(nats_cluster):
     result = instance.query("SELECT * FROM test.view")
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
-@pytest.mark.skip(reason="test broken")
+
 def test_row_based_formats(nats_cluster):
     num_rows = 10
 
@@ -1785,7 +1785,7 @@ def test_block_based_formats_1(nats_cluster):
         ["40", "400"],
     ]
 
-@pytest.mark.skip(reason="test broken")
+
 def test_block_based_formats_2(nats_cluster):
     num_rows = 100
 
