@@ -28,10 +28,31 @@ std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
     size_t counter,
     const AccessControl & access_control);
 
+struct AccessEntitiesToRestore
+{
+    /// Access entities loaded from backup with new randomly generated UUIDs.
+    std::vector<std::pair<UUID /* new_id */, AccessEntityPtr /* new_entity */>> new_entities;
+
+    /// Dependents are access entities which exist already and they should be updated after restoring.
+    /// For example, if there were a role granted to a user: `CREATE USER user1; CREATE ROLE role1; GRANT role1 TO user1`,
+    /// and we're restoring only role `role1` because user `user1` already exists,
+    /// then user `user1` should be modified after restoring role `role1` to add this grant `GRANT role1 TO user1`.
+    struct Dependent
+    {
+        /// UUID of an existing access entities.
+        UUID existing_id;
+
+        /// Source access entity from backup to copy dependencies from.
+        AccessEntityPtr source;
+    };
+    using Dependents = std::vector<Dependent>;
+    Dependents dependents;
+};
+
 /// Restores access entities from a backup.
 void restoreAccessEntitiesFromBackup(
     IAccessStorage & access_storage,
-    const std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
+    const AccessEntitiesToRestore & entities_to_restore,
     const RestoreSettings & restore_settings);
 
 
@@ -56,14 +77,15 @@ public:
     /// and finds IDs of existing access entities which are used as dependencies.
     void generateRandomIDsAndResolveDependencies(const AccessControl & access_control);
 
-    /// Returns access entities prepared for insertion into an access storage and new random UUIDs generated for those access entities.
+    /// Returns access entities loaded from backup and prepared for insertion into an access storage.
     /// Both functions loadFromBackup() and generateRandomIDsAndResolveDependencies() must be called before that.
-    std::vector<std::pair<UUID, AccessEntityPtr>> getEntities(const String & data_path_in_backup) const;
+    AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
 
 private:
     const BackupPtr backup;
     const RestoreAccessCreationMode creation_mode;
     const bool skip_unresolved_dependencies;
+    const bool update_dependents;
     const LoggerPtr log;
 
     /// Whether loadFromBackup() finished.
@@ -98,6 +120,12 @@ private:
         /// then `restore=true` for `user1` and `is_dependency=true` for `role1`, `role2`, `profile1`, `profile2`.
         /// Flags `restore` and `is_dependency` both can be set at the same time.
         bool is_dependency = false;
+
+        /// Whether this entity info is a dependent of another entity which we're going to restore.
+        /// For example, if we're going to restore role `role1` and there is also the following user stored in the backup:
+        /// `CREATE USER user1 DEFAULT ROLE role1`, then `is_dependent=true` for `user1`.
+        /// This flags is set by generateRandomIDsAndResolveDependencies().
+        bool is_dependent = false;
 
         /// New UUID for this entity - either randomly generated or copied from an existing entity.
         /// This UUID is assigned by generateRandomIDsAndResolveDependencies().

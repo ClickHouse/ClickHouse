@@ -55,14 +55,10 @@ ${CLICKHOUSE_CLIENT} --query "DROP USER ${user_a}"
 ${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} FORMAT Null"
 do_check
 
-# TODO: Cannot restore a dropped role granted to an existing user. The result after RESTORE ALL below is the following:
-# CREATE USER user_a DEFAULT ROLE NONE SETTINGS custom_x = 2; GRANT NONE TO user_a; CREATE ROLE role_b SETTINGS custom_x = 1
-# because `role_b` is restored but not granted to existing user `user_a`.
-#
-# echo "Role dropped"
-# ${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
-# ${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} FORMAT Null"
-# do_check
+echo "Role dropped"
+${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
+${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} SETTINGS update_access_entities_dependents=true FORMAT Null"
+do_check
 
 echo "Nothing dropped"
 ${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} FORMAT Null"

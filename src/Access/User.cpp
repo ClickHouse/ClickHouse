@@ -62,6 +62,17 @@ void User::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new
     settings.replaceDependencies(old_to_new_ids);
 }
 
+void User::copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids)
+{
+    if (getType() != src.getType())
+        return;
+    const auto & src_user = typeid_cast<const User &>(src);
+    default_roles.copyDependenciesFrom(src_user.default_roles, ids);
+    granted_roles.copyDependenciesFrom(src_user.granted_roles, ids);
+    grantees.copyDependenciesFrom(src_user.grantees, ids);
+    settings.copyDependenciesFrom(src_user.settings, ids);
+}
+
 void User::removeDependencies(const std::unordered_set<UUID> & ids)
 {
     default_roles.removeDependencies(ids);

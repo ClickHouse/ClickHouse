@@ -712,13 +712,13 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     context->checkAccess(required_access);
 }
 
-std::vector<std::pair<UUID, AccessEntityPtr>> RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
+AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
 {
     std::lock_guard lock{mutex};
     if (!access_restorer)
         return {};
     access_restorer->generateRandomIDsAndResolveDependencies(context->getAccessControl());
-    return access_restorer->getEntities(data_path_in_backup);
+    return access_restorer->getEntitiesToRestore(data_path_in_backup);
 }
 
 void RestorerFromBackup::createDatabases()

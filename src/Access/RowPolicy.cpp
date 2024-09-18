@@ -73,6 +73,14 @@ void RowPolicy::replaceDependencies(const std::unordered_map<UUID, UUID> & old_t
     to_roles.replaceDependencies(old_to_new_ids);
 }
 
+void RowPolicy::copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids)
+{
+    if (getType() != src.getType())
+        return;
+    const auto & src_policy = typeid_cast<const RowPolicy &>(src);
+    to_roles.copyDependenciesFrom(src_policy.to_roles, ids);
+}
+
 void RowPolicy::removeDependencies(const std::unordered_set<UUID> & ids)
 {
     to_roles.removeDependencies(ids);

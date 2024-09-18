@@ -652,9 +652,9 @@ void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const Stri
     restorer.addDataRestoreTask(
         [this, &restorer, data_path_in_backup]
         {
-            auto entities = restorer.getAccessEntitiesToRestore(data_path_in_backup);
+            auto entities_to_restore = restorer.getAccessEntitiesToRestore(data_path_in_backup);
             const auto & restore_settings = restorer.getRestoreSettings();
-            restoreAccessEntitiesFromBackup(*this, entities, restore_settings);
+            restoreAccessEntitiesFromBackup(*this, entities_to_restore, restore_settings);
         });
 }
 

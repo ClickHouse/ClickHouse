@@ -354,6 +354,24 @@ void RolesOrUsersSet::replaceDependencies(const std::unordered_map<UUID, UUID> &
     boost::range::copy(new_ids, std::inserter(except_ids, except_ids.end()));
 }
 
+void RolesOrUsersSet::copyDependenciesFrom(const RolesOrUsersSet & src, const std::unordered_set<UUID> & dependencies_ids)
+{
+    if (all != src.all)
+        return;
+
+    for (const auto & id : src.ids)
+    {
+        if (dependencies_ids.contains(id))
+            ids.emplace(id);
+    }
+
+    for (const auto & id : src.except_ids)
+    {
+        if (dependencies_ids.contains(id))
+            except_ids.emplace(id);
+    }
+}
+
 void RolesOrUsersSet::removeDependencies(const std::unordered_set<UUID> & dependencies_ids)
 {
     for (auto it = ids.begin(); it != ids.end();)
