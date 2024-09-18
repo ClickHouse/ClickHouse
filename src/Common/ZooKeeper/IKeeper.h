@@ -248,23 +248,6 @@ struct RemoveResponse : virtual Response
 {
 };
 
-struct RemoveRecursiveRequest : virtual Request
-{
-    String path;
-
-    /// strict limit for number of deleted nodes
-    uint32_t remove_nodes_limit = 1;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
-};
-
-struct RemoveRecursiveResponse : virtual Response
-{
-};
-
 struct ExistsRequest : virtual Request
 {
     String path;
@@ -447,7 +430,6 @@ struct ErrorResponse : virtual Response
 
 using CreateCallback = std::function<void(const CreateResponse &)>;
 using RemoveCallback = std::function<void(const RemoveResponse &)>;
-using RemoveRecursiveCallback = std::function<void(const RemoveRecursiveResponse &)>;
 using ExistsCallback = std::function<void(const ExistsResponse &)>;
 using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
@@ -566,7 +548,7 @@ public:
     virtual bool isExpired() const = 0;
 
     /// Get the current connected node idx.
-    virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
+    virtual Int8 getConnectedNodeIdx() const = 0;
 
     /// Get the current connected host and port.
     virtual String getConnectedHostPort() const = 0;
@@ -576,8 +558,6 @@ public:
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
-
-    virtual String tryGetAvailabilityZone() { return ""; }
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -604,11 +584,6 @@ public:
         const String & path,
         int32_t version,
         RemoveCallback callback) = 0;
-
-    virtual void removeRecursive(
-        const String & path,
-        uint32_t remove_nodes_limit,
-        RemoveRecursiveCallback callback) = 0;
 
     virtual void exists(
         const String & path,
@@ -659,6 +634,10 @@ public:
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
+
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;

@@ -11,13 +11,12 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObjectDeprecated.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -47,11 +46,7 @@ String IColumn::dumpStructure() const
     return res.str();
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void IColumn::insertFrom(const IColumn & src, size_t n)
-#else
-void IColumn::doInsertFrom(const IColumn & src, size_t n)
-#endif
 {
     insert(src[n]);
 }
@@ -467,13 +462,12 @@ template class IColumnHelper<ColumnArray, IColumn>;
 template class IColumnHelper<ColumnTuple, IColumn>;
 template class IColumnHelper<ColumnMap, IColumn>;
 template class IColumnHelper<ColumnSparse, IColumn>;
-template class IColumnHelper<ColumnObjectDeprecated, IColumn>;
+template class IColumnHelper<ColumnObject, IColumn>;
 template class IColumnHelper<ColumnAggregateFunction, IColumn>;
 template class IColumnHelper<ColumnFunction, IColumn>;
 template class IColumnHelper<ColumnCompressed, IColumn>;
 template class IColumnHelper<ColumnVariant, IColumn>;
 template class IColumnHelper<ColumnDynamic, IColumn>;
-template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 

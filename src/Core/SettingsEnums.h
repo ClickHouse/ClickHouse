@@ -1,16 +1,11 @@
 #pragma once
 
 #include <Core/Joins.h>
-#include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
-#include <Core/QueryLogElementType.h>
-#include <Core/SchemaInferenceMode.h>
 #include <Core/SettingsFields.h>
-#include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Parsers/ASTSQLSecurity.h>
-#include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
 
@@ -120,6 +115,25 @@ constexpr auto getEnumValues();
         return getEnumValues<EnumType>().size();\
     }
 
+enum class LoadBalancing : uint8_t
+{
+    /// among replicas with a minimum number of errors selected randomly
+    RANDOM = 0,
+    /// a replica is selected among the replicas with the minimum number of errors
+    /// with the minimum number of distinguished characters in the replica name prefix and local hostname prefix
+    NEAREST_HOSTNAME,
+    /// just like NEAREST_HOSTNAME, but it count distinguished characters in a levenshtein distance manner
+    HOSTNAME_LEVENSHTEIN_DISTANCE,
+    // replicas with the same number of errors are accessed in the same order
+    // as they are specified in the configuration.
+    IN_ORDER,
+    /// if first replica one has higher number of errors,
+    ///   pick a random one from replicas with minimum number of errors
+    FIRST_OR_RANDOM,
+    // round robin across replicas with the same number of errors.
+    ROUND_ROBIN,
+};
+
 DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
@@ -189,6 +203,16 @@ DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalO
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
 DECLARE_SETTING_ENUM(LogsLevel)
+
+
+// Make it signed for compatibility with DataTypeEnum8
+enum QueryLogElementType : int8_t
+{
+    QUERY_START = 1,
+    QUERY_FINISH = 2,
+    EXCEPTION_BEFORE_START = 3,
+    EXCEPTION_WHILE_PROCESSING = 4,
+};
 
 DECLARE_SETTING_ENUM_WITH_RENAME(LogQueriesType, QueryLogElementType)
 
@@ -268,6 +292,13 @@ enum class StreamingHandleErrorMode : uint8_t
 
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
+enum class ShortCircuitFunctionEvaluation : uint8_t
+{
+    ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.
+    FORCE_ENABLE, // Use short-circuit function evaluation for all functions.
+    DISABLE, // Disable short-circuit function evaluation.
+};
+
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
 enum class TransactionsWaitCSNMode : uint8_t
@@ -308,24 +339,6 @@ enum class ParallelReplicasCustomKeyFilterType : uint8_t
 
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
-enum class LightweightMutationProjectionMode : uint8_t
-{
-    THROW,
-    DROP,
-    REBUILD,
-};
-
-DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
-
-enum class DeduplicateMergeProjectionMode : uint8_t
-{
-    THROW,
-    DROP,
-    REBUILD,
-};
-
-DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
-
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 
 enum class ObjectStorageQueueMode : uint8_t
@@ -346,13 +359,17 @@ DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
+enum class SchemaInferenceMode : uint8_t
+{
+    DEFAULT,
+    UNION,
+};
+
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
-
-DECLARE_SETTING_ENUM(IdentifierQuotingStyle)
 
 enum class GroupArrayActionWhenLimitReached : uint8_t
 {

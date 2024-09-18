@@ -1,16 +1,18 @@
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+
+#include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
-#include <Core/Settings.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -63,10 +65,9 @@ public:
             auto multiplier_node = function_node_arguments_nodes[0];
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
             function_node_arguments_nodes.resize(1);
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf");
-
-            if (constant_value_literal.safeGet<UInt64>() != 1)
+            if (constant_value_literal.get<UInt64>() != 1)
             {
                 /// Rewrite `sumIf(123, cond)` into `123 * countIf(cond)`
                 node = getMultiplyFunction(std::move(multiplier_node), node);
@@ -105,8 +106,8 @@ public:
         const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
         const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
 
-        auto if_true_condition_value = if_true_condition_constant_value_literal.safeGet<UInt64>();
-        auto if_false_condition_value = if_false_condition_constant_value_literal.safeGet<UInt64>();
+        auto if_true_condition_value = if_true_condition_constant_value_literal.get<UInt64>();
+        auto if_false_condition_value = if_false_condition_constant_value_literal.get<UInt64>();
 
         if (if_false_condition_value == 0)
         {
@@ -114,7 +115,7 @@ public:
             function_node_arguments_nodes[0] = nested_if_function_arguments_nodes[0];
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
 
             if (if_true_condition_value != 1)
             {
@@ -143,7 +144,7 @@ public:
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
 
             if (if_false_condition_value != 1)
             {
@@ -155,6 +156,15 @@ public:
     }
 
 private:
+    static void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
+    {
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get(
+            "countIf", NullsAction::EMPTY, {argument_type}, function_node.getAggregateFunction()->getParameters(), properties);
+
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+    }
+
     QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
     {
         auto multiply_function_node = std::make_shared<FunctionNode>("multiply");

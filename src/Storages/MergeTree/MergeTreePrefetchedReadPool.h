@@ -14,12 +14,11 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
-class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase
+class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase, private WithContext
 {
 public:
     MergeTreePrefetchedReadPool(
         RangesInDataParts && parts_,
-        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,

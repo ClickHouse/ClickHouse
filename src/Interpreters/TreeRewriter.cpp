@@ -47,10 +47,10 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
@@ -1158,8 +1158,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             }
         }
 
-        has_virtual_shard_num
-            = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
+        has_virtual_shard_num = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()) && virtuals->has("_shard_num");
     }
 
     /// Collect missed object subcolumns
@@ -1173,9 +1172,9 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 if (object_pos != std::string::npos)
                 {
                     String object_name = it->substr(0, object_pos);
-                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::ObjectDeprecated)
+                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::Object)
                     {
-                        const auto * object_type = typeid_cast<const DataTypeObjectDeprecated *>(pair.type.get());
+                        const auto * object_type = typeid_cast<const DataTypeObject *>(pair.type.get());
                         if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
                         {
                             missed_subcolumns.insert(*it);
@@ -1189,7 +1188,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
     }
 
-    /// Check for dynamic subcolumns in unknown required columns.
+    /// Check for dynamic subcolums in unknown required columns.
     if (!unknown_required_source_columns.empty())
     {
         for (const NameAndTypePair & pair : source_columns_ordinary)

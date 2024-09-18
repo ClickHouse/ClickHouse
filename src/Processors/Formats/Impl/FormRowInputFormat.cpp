@@ -1,8 +1,6 @@
-#include <Processors/Formats/Impl/FormRowInputFormat.h>
+#include<Processors/Formats/Impl/FormRowInputFormat.h>
 #include "Formats/EscapingRuleUtils.h"
 #include <Formats/FormatFactory.h>
-
-#include <Poco/URI.h>
 
 namespace DB
 {

@@ -1,3 +1,5 @@
+#include <memory>
+#include <stdexcept>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -6,15 +8,11 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
-#include <Core/Settings.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
-
-#include <memory>
 
 namespace CurrentMetrics
 {
@@ -40,7 +38,6 @@ SortingStep::Settings::Settings(const Context & context)
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
     max_block_bytes = settings.prefer_external_sort_block_bytes;
-    read_in_order_use_buffering = settings.read_in_order_use_buffering;
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -156,11 +153,10 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_)
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
-    use_buffering = use_buffering_;
 }
 
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
@@ -248,14 +244,6 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
-        if (use_buffering && sort_settings.read_in_order_use_buffering)
-        {
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
-            });
-        }
-
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),
             pipeline.getNumStreams(),
@@ -385,8 +373,9 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
         if (need_finish_sorting)
+        {
             finishSorting(pipeline, prefix_description, result_description, limit);
-
+        }
         return;
     }
 

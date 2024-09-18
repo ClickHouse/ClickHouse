@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,7 +22,7 @@ function wait_for_alter()
     done
 }
 
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} -n --query "
 DROP TABLE IF EXISTS t_limit_mutations SYNC;
 
 CREATE TABLE t_limit_mutations (id UInt64, v UInt64)
@@ -48,14 +47,14 @@ SELECT count() FROM system.mutations WHERE database = currentDatabase() AND tabl
 SHOW CREATE TABLE t_limit_mutations;
 "
 
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} -n --query "
 ALTER TABLE t_limit_mutations UPDATE v = 6 WHERE 1 SETTINGS number_of_mutations_to_throw = 100;
 ALTER TABLE t_limit_mutations MODIFY COLUMN v String SETTINGS number_of_mutations_to_throw = 100, alter_sync = 0;
 "
 
 wait_for_alter "String"
 
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} -n --query "
 SELECT * FROM t_limit_mutations ORDER BY id;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_limit_mutations' AND NOT is_done;
 SHOW CREATE TABLE t_limit_mutations;
@@ -65,7 +64,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES t_limit_mutations"
 
 wait_for_mutation "t_limit_mutations" "0000000003"
 
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} -n --query "
 SELECT * FROM t_limit_mutations ORDER BY id;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_limit_mutations' AND NOT is_done;
 SHOW CREATE TABLE t_limit_mutations;
