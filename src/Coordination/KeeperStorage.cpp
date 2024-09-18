@@ -1750,7 +1750,8 @@ class ToDeleteTreeCollector
     uint32_t nodes_observed = 1;  /// root node
 
     std::list<KeeperStorageBase::Delta> deltas;
-    using UncommittedChildren = std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using UncommittedChildren
+        = std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
 public:
     enum class CollectStatus

@@ -326,7 +326,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn);
+    factory.registerDatabase("S3", create_fn, {.supports_arguments = true});
 }
 }
 #endif

@@ -3739,6 +3739,72 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         ASSERT_FALSE(exists("/A/B"));
         ASSERT_FALSE(exists("/A/B/D"));
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove For Subtree With Updated Node");
+        int create_zxid = ++zxid;
+        auto ops = prepare_create_tree();
+
+        /// First create nodes
+        const auto create_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(create_request, 1, 0, create_zxid);
+        auto create_responses = storage.processRequest(create_request, 1, create_zxid);
+        ASSERT_EQ(create_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(create_responses[0].response));
+
+        /// Small limit
+        int remove_zxid = ++zxid;
+        ops = {
+            zkutil::makeSetRequest("/A/B", "", -1),
+            zkutil::makeRemoveRecursiveRequest("/A", 3),
+        };
+        auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        auto remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_FALSE(is_multi_ok(remove_responses[0].response));
+
+        /// Big limit
+        remove_zxid = ++zxid;
+        ops[1] = zkutil::makeRemoveRecursiveRequest("/A", 4);
+        remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(remove_responses[0].response));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/C"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("[BUG] Recursive Remove Level Sorting");
+        int new_zxid = ++zxid;
+
+        Coordination::Requests ops = {
+            zkutil::makeCreateRequest("/a", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/a/bbbbbb", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/B", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/CCCCCCCCCCCC", "", zkutil::CreateMode::Persistent),
+            zkutil::makeRemoveRecursiveRequest("/A", 3),
+        };
+        auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid);
+        auto remove_responses = storage.processRequest(remove_request, 1, new_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(remove_responses[0].response));
+        ASSERT_TRUE(exists("/a"));
+        ASSERT_TRUE(exists("/a/bbbbbb"));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/CCCCCCCCCCCC"));
+    }
+
 }
 
 TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
