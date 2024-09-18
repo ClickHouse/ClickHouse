@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 set allow_experimental_dynamic_type = 1;
 
 drop table if exists test;
