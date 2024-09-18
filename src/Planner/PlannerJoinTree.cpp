@@ -778,7 +778,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 auto & prewhere_info = table_expression_query_info.prewhere_info;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
 
-                if (prewhere_actions)
+                std::vector<std::pair<FilterDAGInfo, std::string>> where_filters;
+
+                if (prewhere_actions && select_query_options.build_logical_plan)
+                {
+                    where_filters.emplace_back(
+                        FilterDAGInfo{
+                            prewhere_actions->clone(),
+                            prewhere_actions->getOutputs().at(0)->result_name,
+                            true},
+                        "Prewhere");
+                }
+                else if (prewhere_actions)
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
                     prewhere_info->prewhere_actions = prewhere_actions->clone();
@@ -791,7 +802,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 const auto & columns_names = table_expression_data.getColumnNames();
 
-                std::vector<std::pair<FilterDAGInfo, std::string>> where_filters;
                 const auto add_filter = [&](FilterDAGInfo & filter_info, std::string description)
                 {
                     bool is_final = table_expression_query_info.table_expression_modifiers
