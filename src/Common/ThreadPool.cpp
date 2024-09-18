@@ -11,7 +11,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
-// #include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -48,34 +47,30 @@ namespace ProfileEvents
 
 }
 
+struct ScopedDecrement
+{
+    std::atomic<int>& atomic_var;
+
+    ScopedDecrement(std::atomic<int>& var)
+        : atomic_var(var)
+    {
+        atomic_var.fetch_sub(1, std::memory_order_relaxed);
+    }
+
+    ~ScopedDecrement()
+    {
+        atomic_var.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
 class JobWithPriority
 {
 public:
     using Job = std::function<void()>;
 
-    struct ScopedDecrement
-    {
-        std::atomic<int>& atomic_var;      // Reference to the atomic variable
-
-        // Constructor increments the atomic variable
-        ScopedDecrement(std::atomic<int>& var)
-            : atomic_var(var)
-        {
-            atomic_var.fetch_sub(1);
-            // LOG_DEBUG(&Poco::Logger::get("ScopedDecrement"),"available_threads: {}", atomic_var);
-        }
-
-        // Destructor decrements the atomic variable
-        ~ScopedDecrement()
-        {
-            atomic_var.fetch_add(1);
-            // LOG_DEBUG(&Poco::Logger::get("ScopedDecrement"),"available_threads2: {}", atomic_var);
-        }
-    };
-
     Job job;
     Priority priority;
-    std::unique_ptr<CurrentMetrics::Increment> metric_increment;
+    CurrentMetrics::Increment metric_increment;
     std::unique_ptr<ScopedDecrement> available_threads_decrement;
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
@@ -88,9 +83,9 @@ public:
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-        bool capture_frame_pointers, std::atomic<int>& available_threads)
-        : job(job_), priority(priority_), metric_increment(std::make_unique<CurrentMetrics::Increment>(metric)),
-        available_threads_decrement(std::make_unique<ScopedDecrement>(available_threads)),
+        bool capture_frame_pointers, std::unique_ptr<ScopedDecrement> available_threads_decrement_)
+        : job(job_), priority(priority_), metric_increment(metric),
+        available_threads_decrement(std::move(available_threads_decrement_)),
         thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
@@ -154,7 +149,6 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     // if zero - means that every thread have some job
     // if negative - it means that we have more jobs than threads
     available_threads.store(0, std::memory_order_relaxed);
-    // LOG_DEBUG(&Poco::Logger::get("ThreadPoolImpl"),"remaining_pool_capacity: {}, available_threads: {}", remaining_pool_capacity, available_threads);
 
 }
 
@@ -163,7 +157,6 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
-    // LOG_DEBUG(&Poco::Logger::get("setMaxThreads"),"remaining_pool_capacity: {}", remaining_pool_capacity);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -222,47 +215,7 @@ template <typename Thread>
 std::unique_ptr<typename ThreadPoolImpl<Thread>::ThreadFromThreadPool>
 ThreadPoolImpl<Thread>::maybeStartNewThread()
 {
-    std::unique_ptr<ThreadFromThreadPool> new_thread;
-
-    while (true)
-    {
-        // Load the current capacity
-        size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-        int currently_available_threads = available_threads.load(std::memory_order_relaxed);
-
-        // LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"remaining_pool_capacity: {}, available_threads: {}", remaining_pool_capacity, available_threads);
-
-
-        // Check if there's any capacity left to create a new thread
-        if (capacity == 0 || currently_available_threads > 0)
-        {
-            // No remaining capacity, return nullptr
-            return nullptr;
-        }
-
-        // Try to decrement remaining_pool_capacity atomically
-        if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1))
-        {
-            // LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"expanding, new remaining_pool_capacity2: {}", remaining_pool_capacity);
-
-            try
-            {
-                // Successfully decremented, attempt to create a new thread
-                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                break;  // Exit loop if thread creation succeeds
-            }
-            catch (...)
-            {
-                // Failed to create the thread, restore capacity
-                remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                // LOG_DEBUG(&Poco::Logger::get("maybeStartNewThread"),"revert expanding, remaining_pool_capacity3: {}", remaining_pool_capacity);
-                throw;  // Rethrow exception to be handled outside
-            }
-        }
-    }
-
-    // Return the new thread (may be nullptr if no capacity)
-    return new_thread;
+    return nullptr;
 }
 
 
@@ -288,27 +241,41 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             return false;
     };
 
-    JobWithPriority new_job = JobWithPriority(std::move(job),
-                    priority,
-                    metric_scheduled_jobs,
-                    /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
-                    propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
-                    /// capture_frame_pointers
-                    DB::Exception::enable_job_stack_trace,
-                    available_threads
-                    );
+    auto available_threads_decrement = std::make_unique<ScopedDecrement>(available_threads);
+    
+    std::unique_ptr<ThreadFromThreadPool> new_thread;
 
-    std::unique_ptr<ThreadFromThreadPool> new_thread; // = std::make_unique<ThreadFromThreadPool>(*this);
+    // Load the current capacity
+    size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+    int currently_available_threads = available_threads.load(std::memory_order_relaxed);
 
-    try
+    while (currently_available_threads <= 0 && capacity > 0)
     {
-        new_thread = maybeStartNewThread();
+        // Try to decrement remaining_pool_capacity atomically
+        if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1, std::memory_order_relaxed))
+        {
+            try
+            {
+                // Successfully decremented, attempt to create a new thread
+                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                break;  // Exit loop if thread creation succeeds
+            }
+            catch (...)
+            {
+                // Failed to create the thread, restore capacity
+                remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+                std::lock_guard lock(mutex); // needed to change first_exception.
+                return on_error("failed to start the thread");
+            }
+        }
+        else 
+        {
+            capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+            currently_available_threads = available_threads.load(std::memory_order_relaxed);
+        }
     }
-    catch (...)
-    {
-        std::lock_guard lock(mutex); // needed to change first_exception.
-        return on_error("failed to start the thread");
-    }
+
+    bool inject_fault = CannotAllocateThreadFaultInjector::injectFault();
 
     {
         Stopwatch watch;
@@ -317,7 +284,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
             watch.elapsedMicroseconds());
 
-        if (CannotAllocateThreadFaultInjector::injectFault())
+        if (inject_fault)
             return on_error("fault injected");
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
@@ -334,60 +301,56 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (shutdown)
             return on_error("shutdown");
 
+        bool adding_new_thread = new_thread && threads.size() < std::min(max_threads, 1 + scheduled_jobs + max_free_threads);
+        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_slot;
+
         /// We must not to allocate any memory after we emplaced a job in a queue.
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
-        if (new_thread)
+        if (adding_new_thread)
         {
             // we've got the new thread, it was started out of the locked section,
             // so in between the demand on thread may have been changed.
             //
             // Even if the demand can be lower already but if the pool can still take
             // new thread - let's add it since we already have it.
-
-            // LOG_DEBUG(&Poco::Logger::get("new_thread"),"remaining_pool_capacity: {}, available_threads: {}, threads: {}, scheduled_jobs: {}", remaining_pool_capacity, available_threads, threads.size(), scheduled_jobs);
-
-
-            if (threads.size() < max_threads)
+            try
             {
-                try
-                {
-                    threads.emplace_front(nullptr);
-                }
-                catch (...)
-                {
-                    /// Most likely this is a std::bad_alloc exception
-                    return on_error("cannot allocate thread slot");
-                }
+                threads.emplace_front(std::move(new_thread));
+                thread_slot = threads.begin();
             }
-            else
+            catch (...)
             {
-                // new thread can not be added to the pool, we just need to destroy that new thread,
-                // we don't need it.
-                new_thread = nullptr;
+                /// Most likely this is a std::bad_alloc exception
+                return on_error("cannot allocate thread slot");
             }
+        }
+        else
+        {
+            new_thread.reset();
         }
 
         try
         {
-            jobs.emplace(std::move(new_job));
+            jobs.emplace(std::move(job),
+                    priority,
+                    metric_scheduled_jobs,
+                    /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+                    propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                    /// capture_frame_pointers
+                    DB::Exception::enable_job_stack_trace,
+                    std::move(available_threads_decrement));
 
             ++scheduled_jobs;
 
-            if (new_thread)
-            {
-                auto thread_slot = threads.begin();
-                (*thread_slot) = std::move(new_thread);
+            if (adding_new_thread)
                 (*thread_slot)->start(thread_slot);
-            }
 
         }
         catch (...)
         {
-            if (new_thread)
-            {
+            if (adding_new_thread)
                 threads.pop_front();
-                new_thread = nullptr;
-            }
+
             return on_error("cannot start the job or thread");
         }
     }
@@ -411,22 +374,43 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
     {
         std::unique_ptr<ThreadFromThreadPool> new_thread;
 
-        try
+        while (true)
         {
-            remaining_pool_capacity.fetch_sub(1, std::memory_order_relaxed);
-            // LOG_DEBUG(&Poco::Logger::get("startNewThreadsNoLock"),"remaining_pool_capacity: {}", remaining_pool_capacity);
-            new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+            size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+
+            if (capacity == 0)
+                break;
+
+            if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1, std::memory_order_relaxed))
+            {
+                try
+                {
+                    // Successfully decremented, attempt to create a new thread
+                    new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                    break;  // Exit loop if thread creation succeeds
+                }
+                catch (...)
+                {
+                    // Failed to create the thread, restore capacity
+                    remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                }
+            }
+            else 
+            {
+                capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+            }
         }
-        catch (...)
-        {
-            remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-            // LOG_DEBUG(&Poco::Logger::get("startNewThreadsNoLock"),"exception remaining_pool_capacity: {}", remaining_pool_capacity);
+
+        if (!new_thread) 
             break; /// failed to start more threads
-        }
+
+        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_slot;
 
         try
         {
-            threads.emplace_front(nullptr);
+            threads.emplace_front(std::move(new_thread));
+            thread_slot = threads.begin();
         }
         catch (...)
         {
@@ -435,16 +419,13 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 
         try
         {
-            auto thread_slot = threads.begin();
-            (*thread_slot) = std::move(new_thread);
             (*thread_slot)->start(thread_slot);
         }
         catch (...)
-        {
+        {   
             threads.pop_front();
             break;
         }
-
     }
 }
 
@@ -567,7 +548,6 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
 
     parent_pool.available_threads.fetch_add(1, std::memory_order_relaxed);
-    // LOG_DEBUG(&Poco::Logger::get("ThreadFromThreadPool"),"available_threads: {}", parent_pool.available_threads);
 }
 
 
@@ -601,10 +581,7 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 {
     // the thread destructed, so the capacity grows
     parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
-    // LOG_DEBUG(&Poco::Logger::get("~ThreadFromThreadPool"),"available_threads: {}", parent_pool.available_threads);
     parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-    // LOG_DEBUG(&Poco::Logger::get("~ThreadFromThreadPool"),"remaining_pool_capacity: {}", parent_pool.remaining_pool_capacity);
-
 
     thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
 
