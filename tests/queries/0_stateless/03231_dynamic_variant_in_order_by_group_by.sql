@@ -28,13 +28,16 @@ insert into test select * from numbers(5);
 
 set allow_experimental_analyzer=1;
 
-set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
 
 select * from test order by d; -- {serverError ILLEGAL_COLUMN}
 select * from test order by tuple(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by array(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by map('str', d); -- {serverError ILLEGAL_COLUMN}
+
+set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_order_by=1;
 
 select * from test group by d; -- {serverError ILLEGAL_COLUMN}
 select * from test group by tuple(d); -- {serverError ILLEGAL_COLUMN}
@@ -54,17 +57,20 @@ select * from test group by d;
 select * from test group by tuple(d);
 select array(d) from test group by array(d);
 select map('str', d) from test group by map('str', d);
-select * from test group by grouping sets ((d), ('str'));
+select * from test group by grouping sets ((d), ('str')) order by all;
 
 set allow_experimental_analyzer=0;
 
-set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
 
 select * from test order by d; -- {serverError ILLEGAL_COLUMN}
 select * from test order by tuple(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by array(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by map('str', d); -- {serverError ILLEGAL_COLUMN}
+
+set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_order_by=1;
 
 select * from test group by d; -- {serverError ILLEGAL_COLUMN}
 select * from test group by tuple(d); -- {serverError ILLEGAL_COLUMN}
@@ -84,7 +90,7 @@ select * from test group by d;
 select * from test group by tuple(d);
 select array(d) from test group by array(d);
 select map('str', d) from test group by map('str', d);
-select * from test group by grouping sets ((d), ('str'));
+select * from test group by grouping sets ((d), ('str')) order by all;
 
 drop table test;
 
@@ -93,13 +99,16 @@ insert into test select * from numbers(5);
 
 set allow_experimental_analyzer=1;
 
-set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
 
 select * from test order by d; -- {serverError ILLEGAL_COLUMN}
 select * from test order by tuple(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by array(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by map('str', d); -- {serverError ILLEGAL_COLUMN}
+
+set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_order_by=1;
 
 select * from test group by d; -- {serverError ILLEGAL_COLUMN}
 select * from test group by tuple(d); -- {serverError ILLEGAL_COLUMN}
@@ -119,17 +128,20 @@ select * from test group by d;
 select * from test group by tuple(d);
 select array(d) from test group by array(d);
 select map('str', d) from test group by map('str', d);
-select * from test group by grouping sets ((d), ('str'));
+select * from test group by grouping sets ((d), ('str')) order by all;
 
 set allow_experimental_analyzer=0;
 
-set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
 
 select * from test order by d; -- {serverError ILLEGAL_COLUMN}
 select * from test order by tuple(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by array(d); -- {serverError ILLEGAL_COLUMN}
 select * from test order by map('str', d); -- {serverError ILLEGAL_COLUMN}
+
+set allow_suspicious_types_in_group_by=0;
+set allow_suspicious_types_in_order_by=1;
 
 select * from test group by d; -- {serverError ILLEGAL_COLUMN}
 select * from test group by tuple(d); -- {serverError ILLEGAL_COLUMN}
@@ -149,6 +161,6 @@ select * from test group by d;
 select * from test group by tuple(d);
 select array(d) from test group by array(d);
 select map('str', d) from test group by map('str', d);
-select * from test group by grouping sets ((d), ('str'));
+select * from test group by grouping sets ((d), ('str')) order by all;
 
 drop table test;
