@@ -19,7 +19,7 @@ CREATE USER ${user_a} DEFAULT ROLE ${role_b} SETTINGS custom_x=2;
 
 backup_name="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE system.users, TABLE system.roles TO ${backup_name} SETTINGS write_access_entities_dependents = true FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE system.users, TABLE system.roles TO ${backup_name} FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} FORMAT Null"
 
 do_check()
