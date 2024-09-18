@@ -5689,18 +5689,18 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
 
 Possible values:
 
-- 1 — Usage of `Variant` and `Dynamic` types is not restricted.
 - 0 — Usage of `Variant` and `Dynamic` types is restricted.
+- 1 — Usage of `Variant` and `Dynamic` types is not restricted.
 
 Default value: 0.
 
-## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
+## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
 
-Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 
 Possible values:
 
-- 1 — Usage of `Variant` and `Dynamic` types is not restricted.
 - 0 — Usage of `Variant` and `Dynamic` types is restricted.
+- 1 — Usage of `Variant` and `Dynamic` types is not restricted.
 
 Default value: 0.
