@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Logger.h>
 #include <Core/UUID.h>
 #include <unordered_map>
 
@@ -63,6 +64,7 @@ private:
     const BackupPtr backup;
     const RestoreAccessCreationMode creation_mode;
     const bool skip_unresolved_dependencies;
+    const LoggerPtr log;
 
     /// Whether loadFromBackup() finished.
     bool loaded = false;

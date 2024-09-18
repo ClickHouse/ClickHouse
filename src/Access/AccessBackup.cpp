@@ -200,6 +200,7 @@ AccessRestorerFromBackup::AccessRestorerFromBackup(
     : backup(backup_)
     , creation_mode(restore_settings_.create_access)
     , skip_unresolved_dependencies(restore_settings_.allow_unresolved_access_dependencies)
+    , log(getLogger("AccessRestorerFromBackup"))
 {
 }
 
@@ -378,6 +379,7 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
         if (entity_info.restore && (creation_mode == RestoreAccessCreationMode::kReplace))
         {
             entity_info.new_id = UUIDHelpers::generateV4();
+            LOG_TRACE(log, "{}: Generated new UUID {}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), *entity_info.new_id);
             continue;
         }
 
@@ -388,8 +390,11 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
                 throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Cannot restore {} because it already exists",
                                 AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
             }
+            bool was_going_to_restore = entity_info.restore;
             entity_info.new_id = *existing_id;
             entity_info.restore = false;
+            LOG_TRACE(log, "{}: Found with UUID {}{}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), *existing_id,
+                      (was_going_to_restore ? ", will not restore" : ""));
         }
         else
         {
@@ -399,7 +404,14 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
                                 AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
             }
             if (entity_info.restore)
+            {
                 entity_info.new_id = UUIDHelpers::generateV4();
+                LOG_TRACE(log, "{}: Generated new UUID {}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), *entity_info.new_id);
+            }
+            else
+            {
+                LOG_TRACE(log, "{}: Not found, ignoring", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
+            }
         }
     }
 
@@ -459,6 +471,8 @@ void restoreAccessEntitiesFromBackup(
     if (entities.empty())
         return; /// Nothing to restore.
 
+    auto log = getLogger("AccessRestorerFromBackup");
+
     bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
 
@@ -467,14 +481,20 @@ void restoreAccessEntitiesFromBackup(
 
     for (const auto & [id, entity] : entities)
     {
+        const String & name = entity->getName();
+        auto type = entity->getType();
+        LOG_TRACE(log, "{}: Adding with UUID {}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), id);
+
         UUID existing_id;
         if (destination_access_storage.insert(id, entity, replace_if_exists, throw_if_exists, &existing_id))
         {
+            LOG_TRACE(log, "{}: Added successfully", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
             restored_ids.emplace(id);
         }
         else
         {
             /// Couldn't insert `entity` because there is an existing entity with the same name.
+            LOG_TRACE(log, "{}: Not added because already exists with UUID {}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), existing_id);
             new_to_existing_ids[id] = existing_id;
         }
     }
@@ -494,6 +514,7 @@ void restoreAccessEntitiesFromBackup(
         {
             if (!entity->hasDependencies(new_ids))
                 return entity;
+            LOG_TRACE(log, "{}: Updating dependencies", entity->formatTypeWithName());
             auto res = entity->clone();
             res->replaceDependencies(new_to_existing_ids);
             return res;
