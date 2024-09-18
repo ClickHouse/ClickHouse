@@ -58,7 +58,7 @@ namespace
     {
         parquet::XxHasher hasher;
 
-        const auto * internal_column = assert_cast<const StringType *>(assert_cast<const ColumnNullable *>(data_column)->getNestedColumnPtr().get());
+        const auto * internal_column = assert_cast<const StringType *>(data_column);
 
         for (size_t i = 0u; i < internal_column->size(); i++)
         {
@@ -137,25 +137,6 @@ namespace
         }
 
         return match_all;
-    }
-
-    DataTypePtr getPrimitiveType(const DataTypePtr & data_type)
-    {
-        if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
-        {
-            if (!typeid_cast<const DataTypeArray *>(array_type->getNestedType().get()))
-                return getPrimitiveType(array_type->getNestedType());
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
-        }
-
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))
-            return getPrimitiveType(nullable_type->getNestedType());
-
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_type.get()))
-            return getPrimitiveType(low_cardinality_type->getDictionaryType());
-
-        return data_type;
     }
 
     bool isColumnSupported(const DataTypePtr clickhouse_type, const parquet::ColumnDescriptor * column_descriptor)
@@ -377,7 +358,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            const DataTypePtr actual_type = getPrimitiveType(data_types[rpn_element.key_column]);
+            const DataTypePtr actual_type = removeNullable(data_types[rpn_element.key_column]);
 
             if (!isColumnSupported(actual_type, parquet_rg_metadata->schema()->Column(parquet_column_index)))
             {
@@ -429,7 +410,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
                 auto parquet_column_index = parquet_indexes[0];
 
-                const DataTypePtr actual_type = getPrimitiveType(data_types[clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].clickhouse_index]);
+                const DataTypePtr actual_type = removeNullable(data_types[clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].clickhouse_index]);
 
                 if (!isColumnSupported(actual_type, parquet_rg_metadata->schema()->Column(parquet_column_index)))
                 {
@@ -442,7 +423,15 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                     continue;
                 }
 
-                columns.emplace_back(hash(set_column.get(), actual_type));
+                auto column = set_column;
+
+                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(set_column.get()))
+                {
+                    column = nullable_column->getNestedColumnPtr();
+                }
+
+                columns.emplace_back(hash(column.get(), actual_type));
+
                 key_columns.push_back(indexes_mapping[i].key_index);
             }
 
