@@ -1845,7 +1845,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     try
     {
         size_t file_size = getDataPartStorage().getFileSize(TXN_VERSION_METADATA_FILE_NAME);
-        auto buf = getDataPartStorage().readFile(TXN_VERSION_METADATA_FILE_NAME, getReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+        auto read_settings = getReadSettings().adjustBufferSize(file_size);
+        /// Avoid cannot allocated thread error. No need in threadpool read method here.
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
+        auto buf = getDataPartStorage().readFile(TXN_VERSION_METADATA_FILE_NAME, read_settings, file_size, std::nullopt);
 
         readStringUntilEOF(content, *buf);
         ReadBufferFromString str_buf{content};
