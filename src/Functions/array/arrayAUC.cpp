@@ -140,7 +140,7 @@ private:
         if (scale)
             return area / curr_tp / (size - curr_tp);
         else
-            return area; 
+            return area;
     }
 
     static void vector(
@@ -212,7 +212,7 @@ public:
         bool scale = true;
         if (arguments.size() == 3)
         {
-            scale = arguments[2].column->getBool(0);  // Assumes it's a scalar boolean column
+            scale = arguments[2].column->getBool(0); // Assumes it's a scalar boolean column
         }
 
         auto col_res = ColumnVector<Float64>::create();
