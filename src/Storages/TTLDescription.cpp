@@ -248,7 +248,9 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
                 result.where_expression_ast = where_expr_ast->clone();
-                where_expression = buildExpressionAndSets(where_expr_ast, columns.getAllPhysical(), context).expression;
+
+                ASTPtr ast = where_expr_ast->clone();
+                where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
