@@ -66,6 +66,7 @@ struct RolesOrUsersSet
     std::vector<UUID> findDependencies() const;
     bool hasDependencies(const std::unordered_set<UUID> & dependencies_ids) const;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
+    void removeDependencies(const std::unordered_set<UUID> & dependencies_ids);
 
     bool all = false;
     boost::container::flat_set<UUID> ids;

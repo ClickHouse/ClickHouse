@@ -62,4 +62,12 @@ void User::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new
     settings.replaceDependencies(old_to_new_ids);
 }
 
+void User::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    default_roles.removeDependencies(ids);
+    granted_roles.removeDependencies(ids);
+    grantees.removeDependencies(ids);
+    settings.removeDependencies(ids);
+}
+
 }

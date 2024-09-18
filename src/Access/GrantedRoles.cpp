@@ -231,4 +231,33 @@ void GrantedRoles::replaceDependencies(const std::unordered_map<UUID, UUID> & ol
     }
 }
 
+void GrantedRoles::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    bool found = false;
+
+    for (auto it = roles.begin(); it != roles.end();)
+    {
+        if (ids.contains(*it))
+        {
+            it = roles.erase(it);
+            found = true;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    if (found)
+    {
+        for (auto it = roles_with_admin_option.begin(); it != roles_with_admin_option.end();)
+        {
+            if (ids.contains(*it))
+                it = roles_with_admin_option.erase(it);
+            else
+                ++it;
+        }
+    }
+}
+
 }

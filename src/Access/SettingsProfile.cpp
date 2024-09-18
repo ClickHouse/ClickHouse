@@ -32,4 +32,10 @@ void SettingsProfile::replaceDependencies(const std::unordered_map<UUID, UUID> &
     to_roles.replaceDependencies(old_to_new_ids);
 }
 
+void SettingsProfile::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    elements.removeDependencies(ids);
+    to_roles.removeDependencies(ids);
+}
+
 }

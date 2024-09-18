@@ -73,4 +73,9 @@ void RowPolicy::replaceDependencies(const std::unordered_map<UUID, UUID> & old_t
     to_roles.replaceDependencies(old_to_new_ids);
 }
 
+void RowPolicy::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    to_roles.removeDependencies(ids);
+}
+
 }

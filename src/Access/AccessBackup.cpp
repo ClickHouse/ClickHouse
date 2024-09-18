@@ -417,11 +417,14 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
 
     /// Prepare map from old UUIDs to new UUIDs.
     std::unordered_map<UUID, UUID> old_to_new_ids;
+    std::unordered_set<UUID> unresolved_ids;
 
     for (const auto & [id, entity_info] : entity_infos)
     {
         if (entity_info.new_id)
             old_to_new_ids[id] = *entity_info.new_id;
+        else
+            unresolved_ids.insert(id);
     }
 
     /// Remap the UUIDs of dependencies in the access entities we're going to restore.
@@ -431,6 +434,7 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
         {
             auto new_entity = entity_info.entity->clone();
             new_entity->replaceDependencies(old_to_new_ids);
+            new_entity->removeDependencies(unresolved_ids);
             entity_info.entity = new_entity;
         }
 
