@@ -477,7 +477,7 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
     Block header;
 
     BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block header_)
-        : settings(std::move(settings_))
+        : settings(settings_)
         , query(std::move(query_))
         , client_info(std::move(client_info_))
         , header(std::move(header_))

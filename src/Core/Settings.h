@@ -102,6 +102,7 @@ struct Settings
 {
     Settings();
     Settings(const Settings & settings);
+    Settings(Settings && settings) noexcept;
     ~Settings();
 
     Settings & operator=(const Settings & other);

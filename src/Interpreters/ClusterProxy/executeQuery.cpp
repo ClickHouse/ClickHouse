@@ -87,7 +87,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     const DistributedSettings * distributed_settings)
 {
     ClientInfo new_client_info = context->getClientInfo();
-    Settings new_settings = settings;
+    Settings new_settings {settings};
     new_settings[Setting::queue_max_wait_ms] = Cluster::saturate(new_settings[Setting::queue_max_wait_ms], settings[Setting::max_execution_time]);
 
     /// In case of interserver mode we should reset initial_user for remote() function to use passed user from the query.

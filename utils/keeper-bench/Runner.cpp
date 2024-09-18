@@ -37,6 +37,11 @@ namespace CurrentMetrics
     extern const Metric LocalThreadScheduled;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsUInt64 max_block_size;
+}
+
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
@@ -564,7 +569,7 @@ struct ZooKeeperRequestFromLogReader
             *file_read_buf,
             header_block,
             context,
-            context->getSettingsRef().max_block_size,
+            context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
             1,
             std::nullopt,

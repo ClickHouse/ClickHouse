@@ -232,7 +232,7 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
 
 ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 {
-    Settings new_settings = settings;
+    Settings new_settings{settings};
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
