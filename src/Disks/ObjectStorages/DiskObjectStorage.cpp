@@ -462,14 +462,17 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 }
 
 template <class Settings>
-static inline Settings updateResourceLink(const Settings & settings, const String & resource_name)
+static inline Settings updateIOSchedulingSettings(const Settings & settings, const String & read_resource_name, const String & write_resource_name)
 {
-    if (resource_name.empty())
+    if (read_resource_name.empty() && write_resource_name.empty())
         return settings;
     if (auto query_context = CurrentThread::getQueryContext())
     {
         Settings result(settings);
-        result.resource_link = query_context->getWorkloadClassifier()->get(resource_name);
+        if (!read_resource_name.empty())
+            result.io_scheduling.read_resource_link = query_context->getWorkloadClassifier()->get(read_resource_name);
+        if (!write_resource_name.empty())
+            result.io_scheduling.write_resource_link = query_context->getWorkloadClassifier()->get(write_resource_name);
         return result;
     }
     return settings;
@@ -506,7 +509,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     return object_storage->readObjects(
         storage_objects,
-        updateResourceLink(settings, getReadResourceName()),
+        updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName()),
         read_hint,
         file_size);
 }
@@ -519,7 +522,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     LOG_TEST(log, "Write file: {}", path);
 
-    WriteSettings write_settings = updateResourceLink(settings, getWriteResourceName());
+    WriteSettings write_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
     return transaction->writeFile(path, buf_size, mode, write_settings);
 }

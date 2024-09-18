@@ -205,23 +205,15 @@ ReadBufferFromRados::readBigAt(char * to, size_t n, size_t range_begin, const st
 
 size_t ReadBufferFromRados::readImpl(char * to, size_t len, off_t begin) const
 {
-    ResourceGuard rlock(read_settings.resource_link, len);
+    ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, len);
     size_t bytes_read = 0;
-    try
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromRadosMicroseconds);
-        bytes_read = io_ctx->read(object_id, to, len, begin);
-        if (read_settings.remote_throttler && bytes_read)
-            read_settings.remote_throttler->add(
-                bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
-    }
-    catch (...)
-    {
-        read_settings.resource_link.accumulate(len); // We assume no resource was used in case of failure
-        throw;
-    }
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromRadosMicroseconds);
 
-    read_settings.resource_link.adjust(len, bytes_read);
+    bytes_read = io_ctx->read(object_id, to, len, begin);
+    if (read_settings.remote_throttler && bytes_read)
+        read_settings.remote_throttler->add(
+            bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+
     ProfileEvents::increment(ProfileEvents::ReadBufferFromRadosBytes, bytes_read);
     return bytes_read;
 }

@@ -42,31 +42,23 @@ WriteBufferFromRados::WriteBufferFromRados(
 
 size_t WriteBufferFromRados::writeImpl(const char * begin, size_t len)
 {
-    ResourceGuard rlock(write_settings.resource_link, len);
+    ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, len);
     size_t bytes_written = 0;
-    try
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WriteBufferFromRadosMicroseconds);
-        if (first_write)
-        {
-            bytes_written = io_ctx->writeFull(current_chunk_name, begin, len);
-            first_write = false;
-        }
-        else
-            bytes_written = io_ctx->append(current_chunk_name, begin, len);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WriteBufferFromRadosMicroseconds);
 
-        if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(len, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
-    }
-    catch (...)
+    if (first_write)
     {
-        write_settings.resource_link.accumulate(len); // We assume no resource was used in case of failure
-        throw;
+        bytes_written = io_ctx->writeFull(current_chunk_name, begin, len);
+        first_write = false;
     }
+    else
+        bytes_written = io_ctx->append(current_chunk_name, begin, len);
+
     rlock.unlock();
-
-    write_settings.resource_link.adjust(len, bytes_written);
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(len, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
     ProfileEvents::increment(ProfileEvents::WriteBufferFromRadosBytes, bytes_written);
+
     return bytes_written;
 }
 
