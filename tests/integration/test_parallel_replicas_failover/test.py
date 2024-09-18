@@ -1,5 +1,5 @@
 import pytest
-import uuid
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -25,15 +25,19 @@ def start_cluster():
 
 
 def create_tables(cluster, table_name, skip_last_replica):
+    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node2.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node3.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
     node1.query(
-        f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
+        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
     )
     node2.query(
-        f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r2') ORDER BY (key)"
+        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r2') ORDER BY (key)"
     )
     if not skip_last_replica:
         node3.query(
-            f"CREATE TABLE {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
+            f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
         )
 
     # populate data
@@ -63,7 +67,7 @@ def test_skip_replicas_without_table(start_cluster):
     for i in range(4):
         expected_result += f"{i}\t1000\n"
 
-    log_comment = uuid.uuid4()
+    log_comment = "5230b069-9574-407d-9b80-891b5a175f41"
     assert (
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
@@ -84,8 +88,6 @@ def test_skip_replicas_without_table(start_cluster):
         )
         == "1\t1\n"
     )
-    node1.query(f"DROP TABLE {table_name} SYNC")
-    node2.query(f"DROP TABLE {table_name} SYNC")
 
 
 def test_skip_unresponsive_replicas(start_cluster):
@@ -110,6 +112,3 @@ def test_skip_unresponsive_replicas(start_cluster):
         )
         == expected_result
     )
-    node1.query(f"DROP TABLE {table_name} SYNC")
-    node2.query(f"DROP TABLE {table_name} SYNC")
-    node3.query(f"DROP TABLE {table_name} SYNC")

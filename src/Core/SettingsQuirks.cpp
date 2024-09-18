@@ -100,7 +100,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         return current_value;
     };
 
-    UInt64 max_threads = get_current_value("max_threads").safeGet<UInt64>();
+    UInt64 max_threads = get_current_value("max_threads").get<UInt64>();
     UInt64 max_threads_max_value = 256 * getNumberOfPhysicalCPUCores();
     if (max_threads > max_threads_max_value)
     {
@@ -120,7 +120,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         "input_format_parquet_max_block_size"};
     for (auto const & setting : block_rows_settings)
     {
-        if (auto block_size = get_current_value(setting).safeGet<UInt64>();
+        if (auto block_size = get_current_value(setting).get<UInt64>();
             block_size > max_sane_block_rows_size)
         {
             if (log)
@@ -129,7 +129,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         }
     }
 
-    if (auto max_block_size = get_current_value("max_block_size").safeGet<UInt64>(); max_block_size == 0)
+    if (auto max_block_size = get_current_value("max_block_size").get<UInt64>(); max_block_size == 0)
     {
         if (log)
             LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);

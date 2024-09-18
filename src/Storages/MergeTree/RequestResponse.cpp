@@ -44,7 +44,9 @@ void ParallelReadRequest::serialize(WriteBuffer & out) const
 
 String ParallelReadRequest::describe() const
 {
-    String result = fmt::format("replica_num {}, min_num_of_marks {}, ", replica_num, min_number_of_marks);
+    String result;
+    result += fmt::format("replica_num: {} \n", replica_num);
+    result += fmt::format("min_num_of_marks: {} \n", min_number_of_marks);
     result += description.describe();
     return result;
 }
@@ -129,7 +131,10 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
 
 String InitialAllRangesAnnouncement::describe()
 {
-    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describe());
+    String result;
+    result += description.describe();
+    result += fmt::format("----------\nReceived from {} replica\n", replica_num);
+    return result;
 }
 
 InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)

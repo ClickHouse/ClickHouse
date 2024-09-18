@@ -17,7 +17,6 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>

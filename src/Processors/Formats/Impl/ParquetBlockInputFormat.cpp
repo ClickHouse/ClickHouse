@@ -286,9 +286,6 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
         if (!s)
             continue;
 
-        if (s->descr()->schema_node()->is_repeated())
-            continue;
-
         auto path = c->path_in_schema()->ToDotVector();
         if (path.size() != 1)
             continue; // compound types not supported
@@ -479,7 +476,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
 
-    auto adaptive_chunk_size = [&](int row_group_idx) -> size_t
+    auto adative_chunk_size = [&](int row_group_idx) -> size_t
     {
         size_t total_size = 0;
         auto row_group_meta = metadata->RowGroup(row_group_idx);
@@ -516,7 +513,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
-        auto rows = adaptive_chunk_size(row_group);
+        auto rows = adative_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
 }

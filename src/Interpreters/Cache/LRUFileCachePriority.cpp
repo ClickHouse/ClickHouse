@@ -323,7 +323,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     }
 }
 
-IFileCachePriority::CollectStatus LRUFileCachePriority::collectCandidatesForEviction(
+bool LRUFileCachePriority::collectCandidatesForEviction(
     size_t desired_size,
     size_t desired_elements_count,
     size_t max_candidates_to_evict,
@@ -336,24 +336,12 @@ IFileCachePriority::CollectStatus LRUFileCachePriority::collectCandidatesForEvic
         return canFit(0, 0, stat.total_stat.releasable_size, stat.total_stat.releasable_count,
                       lock, &desired_size, &desired_elements_count);
     };
-    auto status = CollectStatus::CANNOT_EVICT;
     auto stop_condition = [&]()
     {
-        if (desired_limits_satisfied())
-        {
-            status = CollectStatus::SUCCESS;
-            return true;
-        }
-        if (max_candidates_to_evict && res.size() >= max_candidates_to_evict)
-        {
-            status = CollectStatus::REACHED_MAX_CANDIDATES_LIMIT;
-            return true;
-        }
-        return false;
+        return desired_limits_satisfied() || (max_candidates_to_evict && res.size() >= max_candidates_to_evict);
     };
     iterateForEviction(res, stat, stop_condition, lock);
-    chassert(status != CollectStatus::SUCCESS || stop_condition());
-    return status;
+    return desired_limits_satisfied();
 }
 
 void LRUFileCachePriority::iterateForEviction(
@@ -362,9 +350,6 @@ void LRUFileCachePriority::iterateForEviction(
     StopConditionFunc stop_condition,
     const CachePriorityGuard::Lock & lock)
 {
-    if (stop_condition())
-        return;
-
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
     IterateFunc iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)

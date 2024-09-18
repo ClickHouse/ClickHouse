@@ -72,11 +72,10 @@ public:
     template <typename Column>
     void gather(Column & column_res);
 
-    MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
+    UInt64 getMergedRows() const { return merged_rows; }
+    UInt64 getMergedBytes() const { return merged_bytes; }
 
 private:
-    void updateStats(const IColumn & column);
-
     /// Cache required fields
     struct Source
     {
@@ -106,7 +105,6 @@ private:
     ssize_t next_required_source = -1;
     UInt64 merged_rows = 0;
     UInt64 merged_bytes = 0;
-    UInt64 merged_blocks = 0;
 };
 
 class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStream>
@@ -115,17 +113,19 @@ public:
     ColumnGathererTransform(
         const Block & header,
         size_t num_inputs,
-        std::unique_ptr<ReadBuffer> row_sources_buf_,
+        ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
         bool is_result_sparse_);
 
     String getName() const override { return "ColumnGathererTransform"; }
 
+    void work() override;
+
 protected:
     void onFinish() override;
+    UInt64 elapsed_ns = 0;
 
-    std::unique_ptr<ReadBuffer> row_sources_buf_holder; /// Keep ownership of row_sources_buf while it's in use by ColumnGathererStream.
     LoggerPtr log;
 };
 

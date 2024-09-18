@@ -13,13 +13,9 @@ class KeeperAsynchronousMetrics : public AsynchronousMetrics
 {
 public:
     KeeperAsynchronousMetrics(
-        ContextPtr context_,
-        unsigned update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
-        bool update_jemalloc_epoch_,
-        bool update_rss_);
-
+        ContextPtr context_, unsigned update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
     ~KeeperAsynchronousMetrics() override;
+
 private:
     ContextPtr context;
 

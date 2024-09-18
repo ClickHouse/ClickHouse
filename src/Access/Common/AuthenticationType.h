@@ -41,9 +41,6 @@ enum class AuthenticationType : uint8_t
     /// Authentication through HTTP protocol
     HTTP,
 
-    /// JSON Web Token
-    JWT,
-
     MAX,
 };
 

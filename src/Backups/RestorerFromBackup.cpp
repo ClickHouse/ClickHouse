@@ -23,9 +23,8 @@
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
-#include <Core/Settings.h>
-
 #include <boost/algorithm/string/join.hpp>
+
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
@@ -222,19 +221,10 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     if (restore_coordination)
     {
         restore_coordination->setStage(new_stage, message);
-
-        /// The initiator of a RESTORE ON CLUSTER query waits for other hosts to complete their work (see waitForStage(Stage::COMPLETED) in BackupsWorker::doRestore),
-        /// but other hosts shouldn't wait for each others' completion. (That's simply unnecessary and also
-        /// the initiator may start cleaning up (e.g. removing restore-coordination ZooKeeper nodes) once all other hosts are in Stage::COMPLETED.)
-        bool need_wait = (new_stage != Stage::COMPLETED);
-
-        if (need_wait)
-        {
-            if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-                restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-            else
-                restore_coordination->waitForStage(new_stage);
-        }
+        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+        else
+            restore_coordination->waitForStage(new_stage);
     }
 }
 
@@ -913,15 +903,11 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             table_info.database = DatabaseCatalog::instance().getDatabase(table_name.database);
         DatabasePtr database = table_info.database;
 
-        auto query_context = Context::createCopy(context);
-        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
-        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
-
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
             create_table_query,
-            query_context,
+            context,
             restore_coordination,
             std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
     }
