@@ -65,7 +65,7 @@ protected:
     const std::unique_ptr<AbstractFunction> function;
     Result result;
 
-    void markSecretArgument(size_t index, bool argument_is_named = false)
+    void markSecretArgument(size_t index, bool argument_is_named = false, bool is_uri = false)
     {
         if (index >= function->arguments->size())
             return;
@@ -73,6 +73,7 @@ protected:
         {
             result.start = index;
             result.are_named = argument_is_named;
+            result.is_uri = is_uri;
         }
         chassert(index >= result.start); /// We always check arguments consecutively
         result.count = index + 1 - result.start;
@@ -82,12 +83,16 @@ protected:
 
     void findOrdinaryFunctionSecretArguments()
     {
-        if ((function->name() == "mysql") || (function->name() == "postgresql") || (function->name() == "mongodb"))
+        if ((function->name() == "mysql") || (function->name() == "postgresql"))
         {
             /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
             /// postgresql('host:port', 'database', 'table', 'user', 'password', ...)
             /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
             findMySQLFunctionSecretArguments();
+        }
+        else if (function->name() == "mongodb")
+        {
+            findMongoDBSecretArguments();
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
@@ -377,14 +382,17 @@ protected:
             /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
             findExternalDistributedTableEngineSecretArguments();
         }
-        else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") ||
-                    (engine_name == "MaterializedPostgreSQL") || (engine_name == "MongoDB"))
+        else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") || (engine_name == "MaterializedPostgreSQL"))
         {
             /// MySQL('host:port', 'database', 'table', 'user', 'password', ...)
             /// PostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
             /// MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
             /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
             findMySQLFunctionSecretArguments();
+        }
+        else if (engine_name == "MongoDB")
+        {
+            findMongoDBSecretArguments();
         }
         else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg") || (engine_name == "S3Queue"))
@@ -515,7 +523,7 @@ protected:
     }
 
     /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
-    void findSecretNamedArgument(const std::string_view & key, size_t start = 0)
+    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0, bool is_uri = false)
     {
         for (size_t i = start; i < function->arguments->size(); ++i)
         {
@@ -532,8 +540,30 @@ protected:
                 continue;
 
             if (found_key == key)
-                markSecretArgument(i, /* argument_is_named= */ true);
+            {
+                markSecretArgument(i, /* argument_is_named= */ true, is_uri);
+                return true;
+            }
         }
+
+        return false;
+    }
+
+    void findMongoDBSecretArguments()
+    {
+        if (isNamedCollectionName(0))
+        {
+            /// MongoDB(named_collection, ..., password = 'password', ...)
+            if (!findSecretNamedArgument("password", 1, false))
+                /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+                    findSecretNamedArgument("uri", 1, true);
+        }
+        else if (function->arguments->size() == 2)
+            // MongoDB('mongodb://username:password@127.0.0.1:27017', 'collection')
+                markSecretArgument(0, false, true);
+        else
+            // MongoDB('127.0.0.1:27017', 'database', 'collection', 'user, 'password'...)
+                markSecretArgument(4, false, false);
     }
 };
 
