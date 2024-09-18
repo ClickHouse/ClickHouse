@@ -38,7 +38,6 @@ public:
 
     /// TODO: remove context somehow.
     void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
-    void setQueryParameters(const NameToNameMap & parameters);
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 

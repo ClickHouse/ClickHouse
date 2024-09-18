@@ -65,8 +65,8 @@ def test_ignore_obsolete_grant_on_database():
             "-c",
             f"""
         cat > /var/lib/clickhouse/access/{user_id}.sql << EOF
-ATTACH USER \`{user_id}\`;
-ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO \`{user_id}\`;
+ATTACH USER X;
+ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO X;
 EOF""",
         ]
     )
@@ -76,7 +76,4 @@ EOF""",
     )
     instance.start_clickhouse()
 
-    assert (
-        instance.query(f"SHOW GRANTS FOR `{user_id}`")
-        == f"GRANT SELECT ON mydb.* TO `{user_id}`\n"
-    )
+    assert instance.query("SHOW GRANTS FOR X") == "GRANT SELECT ON mydb.* TO X\n"

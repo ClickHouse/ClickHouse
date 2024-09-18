@@ -14,7 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
+
 
 namespace DB
 {
@@ -406,7 +406,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::syncObjects(const zkutil::ZooKeeperP
     LOG_DEBUG(log, "Syncing user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
-    auto lock = getLock();
+    getLock();
 
     /// Remove stale objects
     removeAllObjectsExcept(object_names);

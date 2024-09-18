@@ -5,7 +5,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
@@ -41,19 +40,12 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->readsInOrder())
         return false;
 
-    const auto & query_settings = reading->getContext()->getSettingsRef();
-
     // Currently projection don't support deduplication when moving parts between shards.
-    if (query_settings.allow_experimental_query_deduplication)
+    if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
         return false;
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
-    if (query_settings.aggregate_functions_null_for_empty)
-        return false;
-
-    /// Don't use projections if have mutations to apply
-    /// because we need to apply them on original data.
-    if (query_settings.apply_mutations_on_fly && reading->getMutationsSnapshot()->hasDataMutations())
+    if (reading->getContext()->getSettingsRef().aggregate_functions_null_for_empty)
         return false;
 
     return true;
@@ -72,12 +64,12 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
     return {};
 }
 
-void QueryDAG::appendExpression(const ActionsDAG & expression)
+void QueryDAG::appendExpression(const ActionsDAGPtr & expression)
 {
     if (dag)
-        dag->mergeInplace(expression.clone());
+        dag->mergeInplace(std::move(*expression->clone()));
     else
-        dag = expression.clone();
+        dag = expression->clone();
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
@@ -128,19 +120,22 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
         {
             if (prewhere_info->row_level_filter)
             {
-                appendExpression(*prewhere_info->row_level_filter);
+                appendExpression(prewhere_info->row_level_filter);
                 if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
                     filter_nodes.push_back(filter_expression);
                 else
                     return false;
             }
 
-            appendExpression(prewhere_info->prewhere_actions);
-            if (const auto * filter_expression
-                = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
-                filter_nodes.push_back(filter_expression);
-            else
-                return false;
+            if (prewhere_info->prewhere_actions)
+            {
+                appendExpression(prewhere_info->prewhere_actions);
+                if (const auto * filter_expression
+                    = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
+                    filter_nodes.push_back(filter_expression);
+                else
+                    return false;
+            }
         }
         return true;
     }
@@ -154,7 +149,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
     {
         const auto & actions = expression->getExpression();
-        if (actions.hasArrayJoin())
+        if (actions->hasArrayJoin())
             return false;
 
         appendExpression(actions);
@@ -164,7 +159,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * filter = typeid_cast<FilterStep *>(step))
     {
         const auto & actions = filter->getExpression();
-        if (actions.hasArrayJoin())
+        if (actions->hasArrayJoin())
             return false;
 
         appendExpression(actions);
@@ -218,19 +213,24 @@ bool analyzeProjectionCandidate(
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionsDAG * dag)
+    const ActionsDAGPtr & dag)
 {
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
-
+    std::vector<AlterConversionsPtr> alter_conversions;
     for (const auto & part_with_ranges : parts_with_ranges)
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken)
+        {
             projection_parts.push_back(it->second);
+        }
         else
+        {
             normal_parts.push_back(part_with_ranges.data_part);
+            alter_conversions.push_back(part_with_ranges.alter_conversions);
+        }
     }
 
     if (projection_parts.empty())
@@ -238,12 +238,10 @@ bool analyzeProjectionCandidate(
 
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
-    if (dag)
-        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(dag->clone());
+    projection_query_info.filter_actions_dag = dag;
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
-        reading.getMutationsSnapshot()->cloneEmpty(),
         required_column_names,
         candidate.projection->metadata,
         projection_query_info,
@@ -257,7 +255,7 @@ bool analyzeProjectionCandidate(
     if (!normal_parts.empty())
     {
         /// TODO: We can reuse existing analysis_result by filtering out projection parts
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
 
         if (normal_result_ptr->selected_marks != 0)
         {

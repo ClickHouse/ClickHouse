@@ -1,5 +1,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Backups/RestoreSettings.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -61,14 +63,14 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 }
 
 
-bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::lock_guard lock{mutex};
-    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, conflicting_id);
+    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
 }
 
 
-bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -84,15 +86,9 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (name_collision && !replace_if_exists)
     {
         if (throw_if_exists)
-        {
             throwNameCollisionCannotInsert(type, name);
-        }
         else
-        {
-            if (conflicting_id)
-                *conflicting_id = id_by_name;
             return false;
-        }
     }
 
     auto it_by_id = entries_by_id.find(id);
@@ -101,15 +97,9 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     {
         const auto & existing_entry = it_by_id->second;
         if (throw_if_exists)
-        {
             throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
-        }
         else
-        {
-            if (conflicting_id)
-                *conflicting_id = id;
             return false;
-        }
     }
 
     /// Remove collisions if necessary.
@@ -280,7 +270,28 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 
     /// Insert or update entities.
     for (const auto & [id, entity] : entities_without_conflicts)
-        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr);
+        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
+}
+
+
+void MemoryAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+{
+    if (!isRestoreAllowed())
+        throwRestoreNotAllowed();
+
+    auto entities = restorer.getAccessEntitiesToRestore();
+    if (entities.empty())
+        return;
+
+    auto create_access = restorer.getRestoreSettings().create_access;
+    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+
+    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
+    {
+        for (const auto & [id, entity] : my_entities)
+            insert(id, entity, replace_if_exists, throw_if_exists);
+    });
 }
 
 }

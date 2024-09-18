@@ -4,7 +4,6 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
-#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/multiIf.h>
 

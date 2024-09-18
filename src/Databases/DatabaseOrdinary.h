@@ -57,9 +57,6 @@ public:
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
-    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
-        ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
-
     Strings getAllTableNames(ContextPtr context) const override;
 
     void alterTable(
@@ -67,11 +64,7 @@ public:
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
-    Strings getNamesOfPermanentlyDetachedTables() const override
-    {
-        std::lock_guard lock(mutex);
-        return permanently_detached_tables;
-    }
+    Strings getNamesOfPermanentlyDetachedTables() const override { return permanently_detached_tables; }
 
 protected:
     virtual void commitAlterTable(
@@ -81,7 +74,7 @@ protected:
         const String & statement,
         ContextPtr query_context);
 
-    Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
+    Strings permanently_detached_tables;
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);

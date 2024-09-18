@@ -18,7 +18,8 @@ public:
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
 
 protected:
-    virtual void consume(Chunk & chunk) = 0;
+    virtual void consume(Chunk chunk) = 0;
+    virtual bool lastBlockIsDuplicate() const { return false; }
 
 private:
     std::vector<TableLockHolder> table_locks;
@@ -37,7 +38,7 @@ class NullSinkToStorage : public SinkToStorage
 public:
     using SinkToStorage::SinkToStorage;
     std::string getName() const override { return "NullSinkToStorage"; }
-    void consume(Chunk &) override {}
+    void consume(Chunk) override {}
 };
 
 using SinkPtr = std::shared_ptr<SinkToStorage>;

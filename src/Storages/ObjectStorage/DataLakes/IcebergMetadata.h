@@ -1,6 +1,6 @@
 #pragma once
 
-#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+#if USE_AWS_S3 && USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
@@ -82,10 +82,6 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return schema; }
 
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
-
-    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
-
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
@@ -108,8 +104,6 @@ private:
     Int32 current_schema_id;
     NamesAndTypesList schema;
     mutable Strings data_files;
-    std::unordered_map<String, String> column_name_to_physical_name;
-    DataLakePartitionColumns partition_columns;
     LoggerPtr log;
 };
 

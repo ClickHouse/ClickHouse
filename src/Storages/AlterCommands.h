@@ -237,9 +237,6 @@ public:
 
     /// Check if commands have any full-text index
     static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
-
-    /// Check if commands have any vector similarity index
-    static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

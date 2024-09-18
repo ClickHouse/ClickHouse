@@ -113,15 +113,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
-String formatASTStateAware(IAST & ast, IAST::FormatState & state)
-{
-    WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(buf, true, false);
-    ast.formatImpl(settings, state, IAST::FormatStateStacked());
-    return buf.str();
-}
-
-void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const
+void ColumnDescription::writeText(WriteBuffer & buf) const
 {
     /// NOTE: Serialization format is insane.
 
@@ -134,21 +126,20 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        writeEscapedString(formatASTStateAware(*default_desc.expression, state), buf);
+        writeEscapedString(queryToString(default_desc.expression), buf);
     }
 
-    if (!comment.empty() && include_comment)
+    if (!comment.empty())
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        auto ast = ASTLiteral(Field(comment));
-        writeEscapedString(formatASTStateAware(ast, state), buf);
+        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        writeEscapedString(formatASTStateAware(*codec, state), buf);
+        writeEscapedString(queryToString(codec), buf);
     }
 
     if (!settings.empty())
@@ -159,21 +150,21 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         ASTSetQuery ast;
         ast.is_standalone = false;
         ast.changes = settings;
-        writeEscapedString(formatASTStateAware(ast, state), buf);
+        writeEscapedString(queryToString(ast), buf);
         DB::writeText(")", buf);
     }
 
     if (!statistics.empty())
     {
         writeChar('\t', buf);
-        writeEscapedString(formatASTStateAware(*statistics.getAST(), state), buf);
+        writeEscapedString(queryToString(statistics.getAST()), buf);
     }
 
     if (ttl)
     {
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
-        writeEscapedString(formatASTStateAware(*ttl, state), buf);
+        writeEscapedString(queryToString(ttl), buf);
     }
 
     writeChar('\n', buf);
@@ -206,7 +197,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             }
 
             if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
+                comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
                 codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
@@ -218,7 +209,11 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
 
             if (col_ast->statistics_desc)
+            {
                 statistics = ColumnStatisticsDescription::fromColumnDeclaration(*col_ast, type);
+                /// every column has name `x` here, so we have to set the name manually.
+                statistics.column_name = name;
+            }
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
@@ -706,15 +701,15 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         auto jt = subcolumns.get<0>().find(column_name);
         if (jt != subcolumns.get<0>().end())
             return *jt;
+    }
 
-        /// Check for dynamic subcolumns.
-        auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-        it = columns.get<1>().find(ordinary_column_name);
-        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-        {
-            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-                return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
-        }
+    /// Check for dynamic subcolumns.
+    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+    it = columns.get<1>().find(ordinary_column_name);
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    {
+        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+            return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
     }
 
     return {};
@@ -900,17 +895,16 @@ void ColumnsDescription::resetColumnTTLs()
 }
 
 
-String ColumnsDescription::toString(bool include_comments) const
+String ColumnsDescription::toString() const
 {
     WriteBufferFromOwnString buf;
-    IAST::FormatState ast_format_state;
 
     writeCString("columns format version: 1\n", buf);
     DB::writeText(columns.size(), buf);
     writeCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
-        column.writeText(buf, ast_format_state, include_comments);
+        column.writeText(buf);
 
     return buf.str();
 }

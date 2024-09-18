@@ -3,7 +3,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 

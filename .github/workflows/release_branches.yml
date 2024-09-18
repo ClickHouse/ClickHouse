@@ -35,6 +35,10 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
           python3 -m unittest discover -s . -p 'test_*.py'
+          for dir in *_lambda/; do
+            echo "Testing $dir"
+            python3 -m unittest discover -s "$dir" -p 'test_*.py'
+          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -55,7 +59,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/docker_test_images.yml
+    uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckX86:
@@ -444,9 +448,8 @@ jobs:
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
-    if: ${{ !cancelled() }}
+    if: ${{ !failure() && !cancelled() }}
     needs:
-      - RunConfig
       - DockerServerImage
       - DockerKeeperImage
       - Builds_Report
@@ -482,15 +485,6 @@ jobs:
         with:
           clear-repository: true
       - name: Finish label
-        if: ${{ !failure() }}
         run: |
-          # update overall ci report
-          python3 ./tests/ci/finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
-      - name: Check Workflow results
-        if: ${{ !cancelled() }}
-        run: |
-          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
-          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          python3 ./tests/ci/ci_buddy.py --check-wf-status
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}

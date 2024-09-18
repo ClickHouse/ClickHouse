@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -163,7 +162,7 @@ public:
         return return_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr & column_haystack = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0].column : arguments[1].column;
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
@@ -236,8 +235,7 @@ public:
                 col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_vector && col_needle_const)
             Impl::vectorConstant(
                 col_haystack_vector->getChars(),
@@ -245,8 +243,7 @@ public:
                 col_needle_const->getValue<String>(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_vector_fixed && col_needle_vector)
             Impl::vectorFixedVector(
                 col_haystack_vector_fixed->getChars(),
@@ -255,16 +252,14 @@ public:
                 col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_vector_fixed && col_needle_const)
             Impl::vectorFixedConstant(
                 col_haystack_vector_fixed->getChars(),
                 col_haystack_vector_fixed->getN(),
                 col_needle_const->getValue<String>(),
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_const && col_needle_vector)
             Impl::constantVector(
                 col_haystack_const->getValue<String>(),
@@ -272,8 +267,7 @@ public:
                 col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

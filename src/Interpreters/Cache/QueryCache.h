@@ -88,11 +88,6 @@ public:
         /// SYSTEM.QUERY_CACHE.
         const String query_string;
 
-        /// A tag (namespace) for distinguish multiple entries of the same query.
-        /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
-        /// compute the tag from the query AST.
-        const String tag;
-
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             const String & current_database,
@@ -104,10 +99,7 @@ public:
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_,
-            const String & current_database,
-            const Settings & settings,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
@@ -211,7 +203,7 @@ public:
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
-    void clear(const std::optional<String> & tag);
+    void clear();
 
     size_t sizeInBytes() const;
     size_t count() const;

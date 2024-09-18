@@ -1,6 +1,5 @@
 #include <Interpreters/Session.h>
 
-#include <base/isSharedPtrUnique.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
@@ -10,7 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
@@ -132,7 +130,7 @@ public:
 
             LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
-            if (!isSharedPtrUnique(session))
+            if (!session.unique())
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
             return {session, false};
         }
@@ -158,7 +156,7 @@ public:
             return;
         }
 
-        if (!isSharedPtrUnique(it->second))
+        if (!it->second.unique())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot close session {} with refcount {}", session_id, it->second.use_count());
 
         sessions.erase(it);
@@ -304,30 +302,21 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
+            session_log->addLogOut(auth_id, user, getClientInfo());
         }
     }
 }
 
-std::unordered_set<AuthenticationType> Session::getAuthenticationTypes(const String & user_name) const
+AuthenticationType Session::getAuthenticationType(const String & user_name) const
 {
-    std::unordered_set<AuthenticationType> authentication_types;
-
-    const auto user_to_query = global_context->getAccessControl().read<User>(user_name);
-
-    for (const auto & authentication_method : user_to_query->authentication_methods)
-    {
-        authentication_types.insert(authentication_method.getType());
-    }
-
-    return authentication_types;
+    return global_context->getAccessControl().read<User>(user_name)->auth_data.getType();
 }
 
-std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name) const
+AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
 {
     try
     {
-        return getAuthenticationTypes(user_name);
+        return getAuthenticationType(user_name);
     }
     catch (const Exception & e)
     {
@@ -363,7 +352,6 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     {
         auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
         user_id = auth_result.user_id;
-        user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
@@ -708,8 +696,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      settings,
                                      access->getAccess(),
                                      getClientInfo(),
-                                     user,
-                                     user_authenticated_with);
+                                     user);
     }
 
     notified_session_log_about_login = true;

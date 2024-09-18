@@ -2,7 +2,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -208,32 +207,27 @@ private:
             /// Do not replace empty array and array of NULLs
             if (literal->value.getType() == Field::Types::Array)
             {
-                const Array & array = literal->value.safeGet<Array>();
+                const Array & array = literal->value.get<Array>();
                 auto not_null = std::find_if_not(array.begin(), array.end(), [](const auto & elem) { return elem.isNull(); });
                 if (not_null == array.end())
                     return true;
             }
             else if (literal->value.getType() == Field::Types::Map)
             {
-                const Map & map = literal->value.safeGet<Map>();
+                const Map & map = literal->value.get<Map>();
                 if (map.size() % 2)
                     return false;
             }
             else if (literal->value.getType() == Field::Types::Tuple)
             {
-                const Tuple & tuple = literal->value.safeGet<Tuple>();
+                const Tuple & tuple = literal->value.get<Tuple>();
 
                 for (const auto & value : tuple)
                     if (value.isNull())
                         return true;
             }
 
-            /// When generating placeholder names, ensure that we use names
-            /// requiring quotes to be valid identifiers. This prevents the
-            /// tuple() function from generating named tuples. Otherwise,
-            /// inserting named tuples with different names into another named
-            /// tuple will result in only default values being inserted.
-            String column_name = "-dummy-" + std::to_string(replaced_literals.size());
+            String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             setDataType(replaced_literals.back());
             ast = std::make_shared<ASTIdentifier>(column_name);

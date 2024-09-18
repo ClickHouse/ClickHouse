@@ -49,8 +49,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 
             expr_node.step = std::make_unique<ExpressionStep>(
                 expr_node.children.front()->step->getOutputStream(),
-                expression->getExpression().clone());
-            expr_node.step->setStepDescription(expression->getStepDescription());
+                expression->getExpression()->clone());
         }
 
         ///       - Expression - Something

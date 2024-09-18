@@ -1,3 +1,10 @@
+option(ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_LIBPQXX)
+    message(STATUS "Not using libpqxx")
+    return()
+endif()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpqxx")
 
 set (SRCS
