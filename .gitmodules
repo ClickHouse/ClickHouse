@@ -368,7 +368,8 @@
 	url = https://github.com/ClickHouse/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
-	url = https://github.com/ClickHouse/mongo-c-driver.git
+	url = https://github.com/allmazz/mongo-c-driver.git
+	branch = cherry-pick/initialization-freeze-fix
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
