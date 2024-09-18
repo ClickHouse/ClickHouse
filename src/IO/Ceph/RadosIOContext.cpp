@@ -8,6 +8,7 @@
 #include "Common/logger_useful.h"
 #include <Common/safe_cast.h>
 #include <Common/Exception.h>
+#include <Poco/Error.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ RadosIOContext::RadosIOContext(std::shared_ptr<librados::Rados> rados_, const St
 RadosIOContext::RadosIOContext(librados::IoCtx io_ctx_)
     : io_ctx(std::move(io_ctx_))
 {
-    if (!io_ctx_.is_valid())
+    if (!io_ctx.is_valid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIOContext: io_ctx is not valid");
     connected = true;
 }
@@ -45,7 +46,7 @@ void RadosIOContext::connect()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIOContext: rados cluster is not connected yet");
 
     if (auto ec = rados->ioctx_create(pool.c_str(), io_ctx); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot create io_ctx for pool `{}`. Error: {}", pool, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot create io_ctx for pool `{}`. Error: {}", pool, Poco::Error::getMessage(-ec));
 
     if (!ns.empty())
         io_ctx.set_namespace(ns);
@@ -73,7 +74,7 @@ size_t RadosIOContext::getMaxObjectSize() const
     assertConnected();
     String val;
     if (auto ec = rados->conf_get("osd_max_object_size", val); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get max object size. Error: {}", strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get max object size. Error: {}", Poco::Error::getMessage(-ec));
     if (val.empty())
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get max object size. Empty value");
     LOG_DEBUG(getLogger("RadosIOContext"), "Max object size: {}", val);
@@ -89,7 +90,7 @@ size_t RadosIOContext::read(const String & oid, char * data, size_t length, uint
     auto bytes_read = io_ctx.read(oid, bl, length, offset);
 
     if (bytes_read < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot read from object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_read));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot read from object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-bytes_read));
     if (bl.length() > length)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Error while reading object `{}:{}`: expect maximum {} bytes, get {} bytes", pool, oid, length, bl.length());
 
@@ -109,7 +110,7 @@ size_t RadosIOContext::writeFull(const String & oid, const char * data, size_t l
     ceph::bufferlist bl;
     bl.append(data, safe_cast<int>(length));
     if (auto ec = io_ctx.write_full(oid, bl); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
     return length;
 }
 
@@ -119,7 +120,7 @@ size_t RadosIOContext::write(const String & oid, const char * data, size_t lengt
     ceph::bufferlist bl;
     bl.append(data, safe_cast<int>(length));
     if (auto ec = io_ctx.write(oid, bl, length, offset); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
     return length;
 }
 
@@ -129,7 +130,7 @@ size_t RadosIOContext::append(const String & oid, const char * data, size_t leng
     ceph::bufferlist bl;
     bl.append(data, safe_cast<int>(length));
     if (auto ec = io_ctx.append(oid, bl, length); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot append to object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot append to object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
     return length;
 }
 
@@ -137,7 +138,7 @@ void RadosIOContext::stat(const String & oid, uint64_t * size, struct timespec *
 {
     assertConnected();
     if (auto ec = io_ctx.stat2(oid, size, mtime); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get object `{}:{}` stats. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get object `{}:{}` stats. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
 }
 
 bool RadosIOContext::exists(const String & oid)
@@ -150,7 +151,7 @@ void RadosIOContext::remove(const String & oid, bool if_exists)
 {
     assertConnected();
     if (auto ec = io_ctx.remove(oid); ec < 0 && (!if_exists || ec != -ENOENT))
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
 }
 
 void RadosIOContext::remove(const std::vector<String> & oids)
@@ -164,7 +165,7 @@ void RadosIOContext::remove(const std::vector<String> & oids)
         {
             for (auto & c : completions)
                 c->wait_for_complete(); /// No checking of return code, because we already have an error
-            throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+            throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
         }
         completions.emplace_back(std::move(completion));
     }
@@ -173,7 +174,7 @@ void RadosIOContext::remove(const std::vector<String> & oids)
     {
         if (auto ec = c->wait_for_complete(); ec < 0 && ec != -ENOENT)
             if (!exception)
-                exception.emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot remove objects. Error: {}", strerror(-ec)));
+                exception.emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot remove objects. Error: {}", Poco::Error::getMessage(-ec)));
     }
     if (exception)
         throw std::move(*exception);
@@ -183,7 +184,7 @@ void RadosIOContext::create(const String & oid, bool if_not_exists)
 {
     assertConnected();
     if (auto ec = io_ctx.create(oid, !if_not_exists); ec < 0 && (!if_not_exists || ec != -EEXIST))
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
 }
 
 GetRadosObjectAttributeResult RadosIOContext::tryGetAttribute(const String & oid, const String & attr, bool if_exists, std::optional<Exception> * exception)
@@ -201,7 +202,7 @@ GetRadosObjectAttributeResult RadosIOContext::tryGetAttribute(const String & oid
                 return GetRadosObjectAttributeResult{.object_exists = true, .value = {}}; /// Object exists, but attribute is not set
         }
         if (exception)
-            exception->emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot get attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, strerror(-ec)));
+            exception->emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot get attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, Poco::Error::getMessage(-ec)));
     }
     if (!bl.is_provided_buffer(res.data()))
     {
@@ -235,7 +236,7 @@ void RadosIOContext::setAttribute(const String & oid, const String & attr, const
     ceph::bufferlist bl;
     bl.append(value.c_str(), static_cast<UInt32>(value.length()));
     if (auto ec = io_ctx.setxattr(oid, attr.c_str(), bl); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot set attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot set attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, Poco::Error::getMessage(-ec));
 }
 
 void RadosIOContext::getAttributes(const String & oid, std::map<String, String> & attrs)
@@ -243,7 +244,7 @@ void RadosIOContext::getAttributes(const String & oid, std::map<String, String> 
     assertConnected();
     std::map<std::string, ceph::bufferlist> xattrs;
     if (auto ec = io_ctx.getxattrs(oid, xattrs); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get attributes for object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get attributes for object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
     for (auto & [key, value] : xattrs)
     {
         /// TODO: zero copy from bufferlist to string
@@ -262,7 +263,7 @@ void RadosIOContext::setAttributes(const String & oid, const std::map<String, St
         ops.setxattr(key.c_str(), bl);
     }
     if (auto ec = io_ctx.operate(oid, &ops); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot set attributes for object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot set attributes for object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec));
 }
 
 std::optional<ObjectMetadata> RadosIOContext::tryGetMetadata(const String & oid, std::optional<Exception> * exception)
@@ -278,7 +279,7 @@ std::optional<ObjectMetadata> RadosIOContext::tryGetMetadata(const String & oid,
     if (auto ec = io_ctx.operate(oid, &ops, nullptr); ec < 0)
     {
         if (exception)
-            exception->emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot get metadata for object `{}:{}`. Error: {}", pool, oid, strerror(-ec)));
+            exception->emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot get metadata for object `{}:{}`. Error: {}", pool, oid, Poco::Error::getMessage(-ec)));
         return {};
 
     }

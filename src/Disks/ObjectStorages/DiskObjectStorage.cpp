@@ -14,6 +14,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Error.h>
 #include <Interpreters/Context.h>
 
 
@@ -647,7 +648,7 @@ std::optional<UInt64> DiskObjectStorage::getTotalSpace() const
     {
         librados::cluster_stat_t stats;
         if (auto ec = client->cluster_stat(stats); ec < 0)
-            LOG_ERROR(log, "Failed to get rados cluster stats: {}", strerror(ec));
+            LOG_ERROR(log, "Failed to get rados cluster stats: {}", Poco::Error::getMessage(ec));
         else
             return stats.kb * 1024;
     }
@@ -662,7 +663,7 @@ std::optional<UInt64> DiskObjectStorage::getAvailableSpace() const
     {
         librados::cluster_stat_t stats;
         if (auto ec = client->cluster_stat(stats); ec < 0)
-            LOG_ERROR(log, "Failed to get rados cluster stats: {}", strerror(ec));
+            LOG_ERROR(log, "Failed to get rados cluster stats: {}", Poco::Error::getMessage(ec));
         else
             return stats.kb_avail * 1024;
     }

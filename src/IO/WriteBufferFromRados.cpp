@@ -127,7 +127,7 @@ WriteBufferFromRados::~WriteBufferFromRados()
             "WriteBufferFromRados was canceled."
             "The file might not be written to Rados. "
             "{}.",
-            getFileName());
+            object_id);
         return;
     }
 
@@ -139,12 +139,12 @@ WriteBufferFromRados::~WriteBufferFromRados()
             "WriteBufferFromRados is not finalized in destructor. "
             "The file might not be written to Rados. "
             "{}.",
-            getFileName());
+            object_id);
     }
 
     if (!all_chunks_finished)
     {
-        LOG_WARNING(log, "Multipart upload hasn't finished, will abort all chunks. {}", getFileName());
+        LOG_WARNING(log, "Multipart upload hasn't finished, will abort all chunks. {}", object_id);
         tryAbortWrittenChunks();
     }
 }

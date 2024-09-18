@@ -1,4 +1,13 @@
-option(ENABLE_CEPH "Enable Ceph" ${ENABLE_LIBRARIES})
+
+set (ENABLE_CEPH_DEFAULT 0)
+# darwin, riscv, musl, loongson: missing -lresolv
+if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT USE_MUSL AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_S390X))
+    set (ENABLE_CEPH_DEFAULT ${ENABLE_LIBRARIES})
+else()
+    message (WARNING "Ceph is only available on linux for amd64 and aarch64")
+endif()
+
+OPTION(ENABLE_CEPH "Enable Ceph" ${ENABLE_CEPH_DEFAULT})
 
 if (NOT ENABLE_CEPH)
     message(STATUS "Not using ceph")

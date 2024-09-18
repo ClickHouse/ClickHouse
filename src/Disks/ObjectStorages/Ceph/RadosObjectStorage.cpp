@@ -30,6 +30,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Poco/Error.h>
 
 namespace CurrentMetrics
 {
@@ -289,7 +290,7 @@ void RadosObjectStorage::applyNewSettings(
         for (const auto & [key, value] : modified_settings->global_options)
         {
             if (auto ec = new_rados->conf_set(key.c_str(), value.c_str()); ec < 0)
-                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, strerror(-ec));
+                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, Poco::Error::getMessage(-ec));
         }
         auto new_io_ctx = std::make_shared<RadosIOContext>(new_rados, endpoint.pool, endpoint.nspace);
         std::atomic_store(&rados, new_rados);
