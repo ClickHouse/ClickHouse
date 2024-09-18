@@ -1,3 +1,4 @@
+-- { echoOn }
 drop table if exists funnel_test;
 
 create table funnel_test (timestamp UInt32, event UInt32) engine=Memory;
@@ -92,7 +93,7 @@ insert into funnel_test_strict_increase values (0,1000),(1,1001),(1,1002),(1,100
 
 select 5 = windowFunnel(10000)(timestamp, event = 1000, event = 1001, event = 1002, event = 1003, event = 1004) from funnel_test_strict_increase;
 select 2 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1000, event = 1001, event = 1002, event = 1003, event = 1004) from funnel_test_strict_increase;
-select 3 = windowFunnel(10000)(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
+select 1 = windowFunnel(10000)(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 select 1 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 
 
