@@ -35,6 +35,7 @@ def get_postgres_conn(
     auto_commit=True,
     database_name="postgres_database",
     replication=False,
+    connect_timeout=None,
 ):
     if database == True:
         conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='mysecretpassword'"
@@ -46,7 +47,7 @@ def get_postgres_conn(
     if replication:
         conn_string += " replication='database'"
 
-    conn = psycopg2.connect(conn_string)
+    conn = psycopg2.connect(conn_string, connect_timeout=connect_timeout)
     if auto_commit:
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         conn.autocommit = True

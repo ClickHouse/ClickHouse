@@ -535,6 +535,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_postgres_ssl = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
         self.with_kerberos_kdc = False
@@ -1196,9 +1197,21 @@ class ClickHouseCluster:
 
         return self.base_mysql_cluster_cmd
 
-    def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
+    def setup_postgres_cmd(
+        self, instance, env_variables, docker_compose_yml_dir, ssl=False
+    ):
         self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres.yml")]
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir,
+                    (
+                        "docker_compose_postgres.yml"
+                        if not ssl
+                        else "docker_compose_postgres_ssl.yml"
+                    ),
+                ),
+            ]
         )
         env_variables["POSTGRES_PORT"] = str(self.postgres_port)
         env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
@@ -1212,7 +1225,14 @@ class ClickHouseCluster:
             "--project-name",
             self.project_name,
             "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
+            p.join(
+                docker_compose_yml_dir,
+                (
+                    "docker_compose_postgres.yml"
+                    if not ssl
+                    else "docker_compose_postgres_ssl.yml"
+                ),
+            ),
         ]
         return self.base_postgres_cmd
 
@@ -1704,6 +1724,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_postgres_ssl=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_hdfs=False,
@@ -1832,6 +1853,7 @@ class ClickHouseCluster:
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
             clickhouse_start_command=clickhouse_start_command,
+            with_postgres_ssl=with_postgres_ssl,
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
@@ -1912,6 +1934,13 @@ class ClickHouseCluster:
         if with_postgres and not self.with_postgres:
             cmds.append(
                 self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_postgres_ssl and not self.with_postgres_ssl:
+            cmds.append(
+                self.setup_postgres_cmd(
+                    instance, env_variables, docker_compose_yml_dir, ssl=True
+                )
             )
 
         if with_postgres_cluster and not self.with_postgres_cluster:
@@ -2132,6 +2161,23 @@ class ClickHouseCluster:
 
     def restart_service(self, service_name):
         run_and_check(self.base_cmd + ["restart", service_name])
+
+    def restart_container(self, container_name):
+        p = subprocess.Popen(
+            (
+                "docker",
+                "restart",
+                "--signal",
+                "9",
+                container_name
+            ),
+            stdout=subprocess.PIPE,
+        )
+        p.communicate()
+        return p.returncode == 0
+
+    def restart_postgress(self):
+        return self.restart_container(self.postgres_id)
 
     def get_instance_ip(self, instance_name):
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
@@ -2946,7 +2992,9 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
-            if self.with_postgres and self.base_postgres_cmd:
+            if (
+                self.with_postgres or self.with_postgres_ssl
+            ) and self.base_postgres_cmd:
                 logging.debug("Setup Postgres")
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
@@ -3450,6 +3498,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_postgres_ssl,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         main_config_name="config.xml",
         users_config_name="users.xml",
@@ -3518,6 +3567,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_postgres_ssl = with_postgres_ssl
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_kerberos_kdc = with_kerberos_kdc
