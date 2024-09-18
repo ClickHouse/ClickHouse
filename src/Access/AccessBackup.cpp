@@ -179,17 +179,16 @@ namespace
 }
 
 
-std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
+std::pair<String, BackupEntryPtr> makeBackupEntryForAccessEntities(
     const std::vector<std::pair<UUID, AccessEntityPtr>> & access_entities,
     const String & data_path_in_backup,
-    size_t counter,
     const AccessControl & access_control)
 {
     auto dependencies = readDependenciesNamesAndTypes(findDependencies(access_entities), access_control);
     AccessEntitiesInBackup ab;
     boost::range::copy(access_entities, std::inserter(ab.entities, ab.entities.end()));
     ab.dependencies = std::move(dependencies);
-    String filename = fmt::format("access{:02}.txt", counter + 1); /// access01.txt, access02.txt, ...
+    String filename = fmt::format("access-{}.txt", UUIDHelpers::generateV4());
     String file_path_in_backup = fs::path{data_path_in_backup} / filename;
     return {file_path_in_backup, ab.toBackupEntry()};
 }

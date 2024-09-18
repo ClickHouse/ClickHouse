@@ -607,10 +607,9 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
     if (entities.empty())
         return;
 
-    auto backup_entry_with_path = makeBackupEntryForAccess(
+    auto backup_entry_with_path = makeBackupEntryForAccessEntities(
         entities,
         data_path_in_backup,
-        backup_entries_collector.getAccessCounter(type),
         backup_entries_collector.getContext()->getAccessControl());
 
     if (isReplicated())

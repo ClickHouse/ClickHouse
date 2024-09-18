@@ -903,11 +903,4 @@ void BackupEntriesCollector::runPostTasks()
     LOG_TRACE(log, "All post tasks successfully executed");
 }
 
-size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
-{
-    std::lock_guard lock(mutex);
-    access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
-    return access_counters[static_cast<size_t>(type)]++;
-}
-
 }
