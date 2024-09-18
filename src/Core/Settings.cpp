@@ -1292,10 +1292,15 @@ bool Settings::operator==(const Settings & other) const
 }
 
 #define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE)           \
-    SettingField##TYPE & Settings::operator[](CLASS_NAME##TYPE t) const  \
+    const SettingField##TYPE & Settings::operator[](CLASS_NAME##TYPE t) const  \
+    {                                                                    \
+        return impl.get()->*t;                                           \
+    }                                                                    \
+    SettingField##TYPE & Settings::operator[](CLASS_NAME##TYPE t)        \
     {                                                                    \
         return impl.get()->*t;                                           \
     }
+
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 #undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
