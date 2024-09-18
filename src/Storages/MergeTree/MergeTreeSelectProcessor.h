@@ -44,8 +44,8 @@ public:
 private:
     MergeTreeAllRangesCallback all_callback;
     MergeTreeReadTaskCallback callback;
-    size_t number_of_current_replica;
-    size_t total_nodes_count;
+    const size_t number_of_current_replica;
+    const size_t total_nodes_count;
 };
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
