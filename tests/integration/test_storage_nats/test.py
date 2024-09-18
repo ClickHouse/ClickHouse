@@ -80,7 +80,6 @@ def nats_cluster():
     try:
         cluster.start()
         logging.debug("nats_id is {}".format(instance.cluster.nats_docker_id))
-        instance.query("CREATE DATABASE test")
 
         yield cluster
 
@@ -97,7 +96,7 @@ def nats_setup_teardown():
 
     yield  # run test
 
-    instance.query("DROP DATABASE test", ignore_error=True)
+    instance.query("DROP DATABASE test")
 
 
 # Tests
@@ -116,7 +115,7 @@ async def nats_produce_messages(cluster_inst, subject, messages=(), bytes=None):
         await nc.publish(subject, message.encode())
     if bytes is not None:
         await nc.publish(subject, bytes)
-    logging.debug("Finished publising to " + subject)
+    logging.debug("Finished publishing to " + subject)
 
     await nc.close()
     return messages

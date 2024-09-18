@@ -36,8 +36,8 @@ public:
 
             if (res == UV_EBUSY)
             {
-                LOG_DEBUG(log, "Closing pending handles");
-                uv_walk(loop_ptr.get(), onUVWalkClosingCallback, nullptr);
+                /// Do not close pending handles here, because nats-io library have own order of async functions call on disconnect: uvAsyncDetach->closeSchedulerCb->finalCloseCb
+                /// If we close handles here, then this assert fails: closeSchedulerCb->uv_close->assert(!uv__is_closing(handle));
 
                 /// Run the loop until there are no pending callbacks.
                 while ((res = uv_run(loop_ptr.get(), UV_RUN_ONCE)) != 0)
@@ -64,14 +64,6 @@ public:
 private:
     std::unique_ptr<uv_loop_t> loop_ptr;
     LoggerPtr log = getLogger("UVLoop");
-
-    static void onUVWalkClosingCallback(uv_handle_t * handle, void *)
-    {
-        if (!uv_is_closing(handle))
-            uv_close(handle, onUVCloseCallback);
-    }
-
-    static void onUVCloseCallback(uv_handle_t *) {}
 };
 
 }

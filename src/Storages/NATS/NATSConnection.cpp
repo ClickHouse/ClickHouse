@@ -9,7 +9,6 @@
 namespace DB
 {
 
-static const auto RETRIES_MAX = 20;
 static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 
 
@@ -137,10 +136,6 @@ void NATSConnectionManager::disconnectImpl()
         return;
 
     natsConnection_Close(connection);
-
-    size_t cnt_retries = 0;
-    while (!natsConnection_IsClosed(connection) && cnt_retries++ != RETRIES_MAX)
-        event_handler.iterateLoop();
 }
 
 void NATSConnectionManager::reconnectedCallback(natsConnection * nc, void * log)
