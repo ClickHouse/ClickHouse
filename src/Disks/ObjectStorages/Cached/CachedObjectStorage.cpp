@@ -34,16 +34,14 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return cache->createKeyForPath(path);
 }
 
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    return object_storage->generateObjectKeyForPath(path, key_prefix);
+    return object_storage->generateObjectKeyForPath(path);
 }
 
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
 {
-    return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
+    return object_storage->generateObjectKeyPrefixForDirectoryPath(path);
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -99,7 +97,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     /// Need to remove even if cache_on_write == false.
     removeCacheIfExists(object.remote_path);
 
-    if (cache_on_write && cache->isInitialized())
+    if (cache_on_write)
     {
         auto key = getCacheKey(object.remote_path);
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
@@ -122,8 +120,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    if (cache->isInitialized())
-        cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
+    cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)

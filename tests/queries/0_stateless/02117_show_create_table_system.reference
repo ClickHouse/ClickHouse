@@ -52,8 +52,6 @@ CREATE TABLE system.clusters
     `database_shard_name` String,
     `database_replica_name` String,
     `is_active` Nullable(UInt8),
-    `replication_lag` Nullable(UInt32),
-    `recovery_time` Nullable(UInt64),
     `name` String ALIAS cluster
 )
 ENGINE = SystemClusters
@@ -510,15 +508,9 @@ CREATE TABLE system.parts
     `rows_where_ttl_info.max` Array(DateTime),
     `projections` Array(String),
     `visible` UInt8,
-    `creation_tid` Tuple(
-        UInt64,
-        UInt64,
-        UUID),
+    `creation_tid` Tuple(UInt64, UInt64, UUID),
     `removal_tid_lock` UInt64,
-    `removal_tid` Tuple(
-        UInt64,
-        UInt64,
-        UUID),
+    `removal_tid` Tuple(UInt64, UInt64, UUID),
     `creation_csn` UInt64,
     `removal_csn` UInt64,
     `has_lightweight_delete` UInt8,
@@ -1143,8 +1135,8 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10)),
-    `auth_params` Array(String),
+    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10),
+    `auth_params` String,
     `host_ip` Array(String),
     `host_names` Array(String),
     `host_names_regexp` Array(String),

@@ -32,8 +32,7 @@ struct StemImpl
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        const String & language,
-        size_t input_rows_count)
+        const String & language)
     {
         sb_stemmer * stemmer = sb_stemmer_new(language.data(), "UTF_8");
 
@@ -46,7 +45,7 @@ struct StemImpl
         res_offsets.assign(offsets);
 
         UInt64 data_size = 0;
-        for (UInt64 i = 0; i < input_rows_count; ++i)
+        for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
             size_t original_size = offsets[i] - offsets[i - 1];
@@ -102,7 +101,7 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto & langcolumn = arguments[0].column;
         const auto & strcolumn = arguments[1].column;
@@ -120,7 +119,7 @@ public:
         String language = lang_col->getValue<String>();
 
         auto col_res = ColumnString::create();
-        StemImpl::vector(words_col->getChars(), words_col->getOffsets(), col_res->getChars(), col_res->getOffsets(), language, input_rows_count);
+        StemImpl::vector(words_col->getChars(), words_col->getOffsets(), col_res->getChars(), col_res->getOffsets(), language);
         return col_res;
     }
 };

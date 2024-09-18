@@ -55,7 +55,7 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
         }
     }
 
-    return argument->value.safeGet<NearestResultType>();
+    return argument->value.get<NearestResultType>();
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

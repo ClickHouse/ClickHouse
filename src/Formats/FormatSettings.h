@@ -35,7 +35,6 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
-    bool try_infer_variant = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
@@ -47,7 +46,6 @@ struct FormatSettings
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
-    bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat : uint8_t
@@ -207,7 +205,6 @@ struct FormatSettings
 
     struct JSON
     {
-        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
@@ -229,16 +226,14 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
-        bool allow_deprecated_object_type = false;
-        bool allow_json_type = false;
+        bool allow_object_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
-        bool empty_as_default = false;
-        bool type_json_skip_duplicated_paths = false;
+        bool case_insensitive_column_matching = false;
     } json{};
 
     struct
@@ -415,7 +410,6 @@ struct FormatSettings
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
-        double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
     /// For capnProto format we should determine how to

@@ -125,7 +125,7 @@ public:
             }
 
             String error;
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (const auto i : collections::range(0, input_rows_count))
             {
                 if (!col_json_const)
                 {
@@ -243,7 +243,7 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
+                    Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
@@ -314,7 +314,7 @@ private:
     static size_t calculateMaxSize(const ColumnString::Offsets & offsets)
     {
         size_t max_size = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (const auto i : collections::range(0, offsets.size()))
         {
             size_t size = offsets[i] - offsets[i - 1];
             max_size = std::max(max_size, size);
@@ -739,7 +739,7 @@ public:
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, /*allow_type_conversion=*/true, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);

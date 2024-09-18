@@ -116,8 +116,6 @@ namespace DB
     MR_MACROS(CURRENT_TRANSACTION, "CURRENT TRANSACTION") \
     MR_MACROS(CURRENTUSER, "CURRENTUSER") \
     MR_MACROS(D, "D") \
-    MR_MACROS(DATA, "DATA") \
-    MR_MACROS(DATA_INNER_UUID, "DATA INNER UUID") \
     MR_MACROS(DATABASE, "DATABASE") \
     MR_MACROS(DATABASES, "DATABASES") \
     MR_MACROS(DATE, "DATE") \
@@ -290,8 +288,6 @@ namespace DB
     MR_MACROS(MCS, "MCS") \
     MR_MACROS(MEMORY, "MEMORY") \
     MR_MACROS(MERGES, "MERGES") \
-    MR_MACROS(METRICS, "METRICS") \
-    MR_MACROS(METRICS_INNER_UUID, "METRICS INNER UUID") \
     MR_MACROS(MI, "MI") \
     MR_MACROS(MICROSECOND, "MICROSECOND") \
     MR_MACROS(MICROSECONDS, "MICROSECONDS") \
@@ -371,7 +367,6 @@ namespace DB
     MR_MACROS(POPULATE, "POPULATE") \
     MR_MACROS(PRECEDING, "PRECEDING") \
     MR_MACROS(PRECISION, "PRECISION") \
-    MR_MACROS(PREFIX, "PREFIX") \
     MR_MACROS(PREWHERE, "PREWHERE") \
     MR_MACROS(PRIMARY_KEY, "PRIMARY KEY") \
     MR_MACROS(PRIMARY, "PRIMARY") \
@@ -407,7 +402,6 @@ namespace DB
     MR_MACROS(REPLACE_PARTITION, "REPLACE PARTITION") \
     MR_MACROS(REPLACE, "REPLACE") \
     MR_MACROS(RESET_SETTING, "RESET SETTING") \
-    MR_MACROS(RESET_AUTHENTICATION_METHODS_TO_NEW, "RESET AUTHENTICATION METHODS TO NEW") \
     MR_MACROS(RESPECT_NULLS, "RESPECT NULLS") \
     MR_MACROS(RESTORE, "RESTORE") \
     MR_MACROS(RESTRICT, "RESTRICT") \
@@ -451,7 +445,6 @@ namespace DB
     MR_MACROS(SHOW, "SHOW") \
     MR_MACROS(SIGNED, "SIGNED") \
     MR_MACROS(SIMPLE, "SIMPLE") \
-    MR_MACROS(SKIP, "SKIP") \
     MR_MACROS(SOURCE, "SOURCE") \
     MR_MACROS(SPATIAL, "SPATIAL") \
     MR_MACROS(SQL_SECURITY, "SQL SECURITY") \
@@ -471,9 +464,6 @@ namespace DB
     MR_MACROS(TABLE_OVERRIDE, "TABLE OVERRIDE") \
     MR_MACROS(TABLE, "TABLE") \
     MR_MACROS(TABLES, "TABLES") \
-    MR_MACROS(TAG, "TAG") \
-    MR_MACROS(TAGS, "TAGS") \
-    MR_MACROS(TAGS_INNER_UUID, "TAGS INNER UUID") \
     MR_MACROS(TEMPORARY_TABLE, "TEMPORARY TABLE") \
     MR_MACROS(TEMPORARY, "TEMPORARY") \
     MR_MACROS(TEST, "TEST") \
@@ -645,32 +635,6 @@ protected:
     }
 };
 
-class ParserTokenSequence : public IParserBase
-{
-private:
-    std::vector<TokenType> token_types;
-public:
-    ParserTokenSequence(const std::vector<TokenType> & token_types_) : token_types(token_types_) {} /// NOLINT
-
-protected:
-    const char * getName() const override { return "token sequence"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
-    {
-        for (auto token_type : token_types)
-        {
-            if (pos->type != token_type)
-            {
-                expected.add(pos, getTokenName(token_type));
-                return false;
-            }
-
-            ++pos;
-        }
-
-        return true;
-    }
-};
 
 // Parser always returns true and do nothing.
 class ParserNothing : public IParserBase

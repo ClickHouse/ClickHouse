@@ -376,16 +376,11 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        const auto user_authentication_types = session->getAuthenticationTypesOrLogInFailure(user_name);
-
-        for (const auto user_authentication_type : user_authentication_types)
+        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
+        // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
+        if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::AuthenticationType::SHA256_PASSWORD)
         {
-            // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
-            // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
-            if (user_authentication_type == DB::AuthenticationType::SHA256_PASSWORD)
-            {
-                authPluginSSL();
-            }
+            authPluginSSL();
         }
 
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
@@ -478,7 +473,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
         /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
-        auto settings = query_context->getSettingsCopy();
+        auto settings = query_context->getSettings();
         settings.prefer_column_name_to_alias = true;
         query_context->setSettings(settings);
 

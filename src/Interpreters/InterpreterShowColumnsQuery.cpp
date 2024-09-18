@@ -68,7 +68,6 @@ WITH map(
         'Map',         'JSON',
         'Tuple',       'JSON',
         'Object',      'JSON',
-        'JSON',        'JSON',
         'String',      '{}',
         'FixedString', '{}') AS native_to_mysql_mapping,
         )",

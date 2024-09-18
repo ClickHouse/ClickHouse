@@ -1,7 +1,6 @@
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -11,8 +10,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
-StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
-    : IStatistics(description)
+StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type)
+    : IStatistics(stat_)
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
@@ -52,17 +51,16 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
-    DataTypePtr inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
+    data_type = removeNullable(data_type);
+    if (!data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
-    return std::make_shared<StatisticsUniq>(description, data_type);
+    return std::make_shared<StatisticsUniq>(stat, data_type);
 }
 
 }

@@ -20,7 +20,6 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -566,11 +565,11 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
     auto filter_expression = ExpressionAnalyzer(filter_function, syntax_result, getContext()).getActionsDAG(false);
-    auto filter_actions = std::make_shared<ExpressionActions>(std::move(filter_expression));
 
     builder.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<FilterTransform>(header, filter_actions, filter_function->getColumnName(), true);
+        return std::make_shared<FilterTransform>(
+            header, std::make_shared<ExpressionActions>(filter_expression), filter_function->getColumnName(), true);
     });
 
     /// Adding window column
@@ -595,7 +594,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         new_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
     auto actions = std::make_shared<ExpressionActions>(
-        std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -709,7 +708,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
             getContext(),
             getContext()->getSettingsRef().insert_null_as_default);
-        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
@@ -720,7 +719,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
-            std::move(convert_actions_dag),
+            convert_actions_dag,
             ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
@@ -806,7 +805,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     {
         auto column_window = std::make_shared<ASTColumnDeclaration>();
         column_window->name = window_id_name;
-        column_window->type = makeASTDataType("UInt32");
+        column_window->type = std::make_shared<ASTIdentifier>("UInt32");
         columns_list->children.push_back(column_window);
     }
 
@@ -1051,27 +1050,15 @@ void StorageWindowView::threadFuncFireProc()
     if (shutdown_called)
         return;
 
-    /// Acquiring the lock can take seconds (depends on how long it takes to push) so we keep a reference to remember
-    /// what's the starting point where we want to push from
-    UInt32 timestamp_start = now();
-
     std::lock_guard lock(fire_signal_mutex);
     /// TODO: consider using time_t instead (for every timestamp in this class)
     UInt32 timestamp_now = now();
-
-    LOG_TRACE(
-        log,
-        "Start: {}, now: {}, next fire signal: {}, max watermark: {}",
-        timestamp_start,
-        timestamp_now,
-        next_fire_signal,
-        max_watermark);
 
     while (next_fire_signal <= timestamp_now)
     {
         try
         {
-            if (max_watermark >= timestamp_start)
+            if (max_watermark >= timestamp_now)
                 fire(next_fire_signal);
         }
         catch (...)
@@ -1084,19 +1071,9 @@ void StorageWindowView::threadFuncFireProc()
         if (slide_kind > IntervalKind::Kind::Day)
             slide_interval *= 86400;
         next_fire_signal += slide_interval;
-
-        LOG_TRACE(
-            log,
-            "Start: {}, now: {}, next fire signal: {}, max watermark: {}, max fired watermark: {}, slide interval: {}",
-            timestamp_start,
-            timestamp_now,
-            next_fire_signal,
-            max_watermark,
-            max_fired_watermark,
-            slide_interval);
     }
 
-    if (max_watermark >= timestamp_start)
+    if (max_watermark >= timestamp_now)
         clean_cache_task->schedule();
 
     UInt64 next_fire_ms = static_cast<UInt64>(next_fire_signal) * 1000;
@@ -1162,7 +1139,7 @@ void StorageWindowView::read(
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(
                 target_header.getColumnsWithTypeAndName(), wv_header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting_actions));
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
             converting_step->setStepDescription("Convert Target table structure to WindowView structure");
             query_plan.addStep(std::move(converting_step));
         }
@@ -1211,7 +1188,6 @@ StorageWindowView::StorageWindowView(
     ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    const String & comment,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -1230,7 +1206,6 @@ StorageWindowView::StorageWindowView(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     /// If the target table is not set, use inner target table
@@ -1455,16 +1430,13 @@ void StorageWindowView::writeIntoWindowView(
     while (window_view.modifying_query)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    const size_t block_rows = block.rows();
-    if (!window_view.is_proctime && window_view.max_watermark == 0 && block_rows > 0)
+    if (!window_view.is_proctime && window_view.max_watermark == 0 && block.rows() > 0)
     {
         std::lock_guard lock(window_view.fire_signal_mutex);
         const auto & window_column = block.getByName(window_view.timestamp_column_name);
         const ColumnUInt32::Container & window_end_data = static_cast<const ColumnUInt32 &>(*window_column.column).getData();
         UInt32 first_record_timestamp = window_end_data[0];
         window_view.max_watermark = window_view.getWindowUpperBound(first_record_timestamp);
-
-        LOG_TRACE(window_view.log, "New max watermark: {}", window_view.max_watermark);
     }
 
     Pipe pipe(std::make_shared<SourceFromSingleChunk>(block));
@@ -1515,7 +1487,7 @@ void StorageWindowView::writeIntoWindowView(
         pipe.addSimpleTransform([&](const Block & header_)
         {
             return std::make_shared<FilterTransform>(
-                header_, std::make_shared<ExpressionActions>(std::move(filter_expression)),
+                header_, std::make_shared<ExpressionActions>(filter_expression),
                 filter_function->getColumnName(), true);
         });
     }
@@ -1654,7 +1626,7 @@ void StorageWindowView::writeIntoWindowView(
             output->getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
-            std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+            convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
         builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
@@ -1674,8 +1646,6 @@ void StorageWindowView::writeIntoWindowView(
 
     auto executor = builder.execute();
     executor->execute(builder.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
-
-    LOG_TRACE(window_view.log, "Wrote {} rows into inner table ({})", block_rows, inner_table->getStorageID().getFullTableName());
 }
 
 void StorageWindowView::startup()
@@ -1794,7 +1764,7 @@ void registerStorageWindowView(StorageFactory & factory)
                             "Experimental WINDOW VIEW feature "
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment, args.mode);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.mode);
     });
 }
 

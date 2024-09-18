@@ -103,15 +103,7 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
     WriteBufferFromOwnString buffer;
 
     for (size_t i = 0; i < description.size(); ++i)
-    {
-        if (i != 0)
-            buffer << ", ";
-
-        buffer << "(type: " << header_types[i]->getName()
-            << ", direction: " << description[i].direction
-            << ", nulls_direction: " << description[i].nulls_direction
-            << ")";
-    }
+        buffer << header_types[i]->getName() << ' ' << description[i].direction << ' ' << description[i].nulls_direction;
 
     return buffer.str();
 }

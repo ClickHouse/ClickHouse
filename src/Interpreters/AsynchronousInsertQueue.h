@@ -147,7 +147,6 @@ private:
             const String format;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
-            NameToNameMap query_parameters;
 
             Entry(
                 DataChunk && chunk_,
@@ -288,8 +287,10 @@ private:
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
+        const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
+        const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

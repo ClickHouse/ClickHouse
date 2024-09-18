@@ -182,11 +182,6 @@ public:
         chars.reserve_exact(n * size);
     }
 
-    size_t capacity() const override
-    {
-        return chars.capacity() / n;
-    }
-
     void shrinkToFit() override
     {
         chars.shrink_to_fit();

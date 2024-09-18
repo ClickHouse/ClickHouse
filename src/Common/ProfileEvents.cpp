@@ -86,20 +86,6 @@
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     \
-    M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.") \
-    M(GlobalThreadPoolShrinks, "Counts the total number of times the global thread pool has shrunk by removing threads. This occurs when the number of idle threads exceeds max_thread_pool_free_size, indicating adjustments in the global thread pool size in response to decreased thread utilization.") \
-    M(GlobalThreadPoolThreadCreationMicroseconds, "Total time spent waiting for new threads to start.") \
-    M(GlobalThreadPoolLockWaitMicroseconds, "Total time threads have spent waiting for locks in the global thread pool.") \
-    M(GlobalThreadPoolJobs, "Counts the number of jobs that have been pushed to the global thread pool.") \
-    M(GlobalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.") \
-    M(LocalThreadPoolExpansions, "Counts the total number of times threads have been borrowed from the global thread pool to expand local thread pools.") \
-    M(LocalThreadPoolShrinks, "Counts the total number of times threads have been returned to the global thread pool from local thread pools.") \
-    M(LocalThreadPoolThreadCreationMicroseconds, "Total time local thread pools have spent waiting to borrow a thread from the global pool.") \
-    M(LocalThreadPoolLockWaitMicroseconds, "Total time threads have spent waiting for locks in the local thread pools.") \
-    M(LocalThreadPoolJobs, "Counts the number of jobs that have been pushed to the local thread pools.") \
-    M(LocalThreadPoolBusyMicroseconds, "Total time threads have spent executing the actual work.") \
-    M(LocalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.") \
-    \
     M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler.") \
     M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.") \
     M(DiskS3PutRequestThrottlerCount, "Number of DiskS3 PUT, COPY, POST and LIST requests passed through throttler.") \
@@ -119,13 +105,6 @@
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.") \
     M(PartsWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly") \
     M(MutationsAppliedOnFlyInAllParts, "The sum of number of applied mutations on-fly for part among all read parts") \
-    \
-    M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.") \
-    M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.") \
-    M(SchedulerIOReadWaitMicroseconds, "Total time a query was waiting on resource requests for IO reads.") \
-    M(SchedulerIOWriteRequests, "Resource requests passed through scheduler for IO writes.") \
-    M(SchedulerIOWriteBytes, "Bytes passed through scheduler for IO writes.") \
-    M(SchedulerIOWriteWaitMicroseconds, "Total time a query was waiting on resource requests for IO writes.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
@@ -214,10 +193,8 @@
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
-    M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
-    M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.") \
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).") \
@@ -230,35 +207,8 @@
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
-    M(MergedColumns, "Number of columns merged during the horizontal stage of merges.") \
-    M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
-    M(MergeTotalMilliseconds, "Total time spent for background merges") \
-    M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges") \
-    M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges") \
-    M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges") \
-    M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges") \
-    M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges") \
-    M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges") \
-    M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges") \
-    \
-    M(MergingSortedMilliseconds, "Total time spent while merging sorted columns") \
-    M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns") \
-    M(CollapsingSortedMilliseconds, "Total time spent while collapsing sorted columns") \
-    M(ReplacingSortedMilliseconds, "Total time spent while replacing sorted columns") \
-    M(SummingSortedMilliseconds, "Total time spent while summing sorted columns") \
-    M(VersionedCollapsingSortedMilliseconds, "Total time spent while version collapsing sorted columns") \
-    M(GatheringColumnMilliseconds, "Total time spent while gathering columns for vertical merge") \
-    \
-    M(MutationTotalParts, "Number of total parts for which mutations tried to be applied") \
-    M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate") \
-    M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation") \
-    M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.") \
-    M(MutationTotalMilliseconds, "Total time spent for mutations.") \
-    M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.") \
-    M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created") \
-    M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created") \
-    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations.") \
+    M(MergesTimeMilliseconds, "Total time spent for background merges.")\
     \
     M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.") \
     M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.") \
@@ -273,6 +223,7 @@
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     M(MergeTreeDataProjectionWriterSortingBlocksMicroseconds, "Time spent sorting blocks (for projection it might be a key different from table's sorting key)") \
     M(MergeTreeDataProjectionWriterMergingBlocksMicroseconds, "Time spent merging blocks") \
+    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.") \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
@@ -376,7 +327,6 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash") \
     M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled") \
     M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash") \
-    M(ParallelReplicasReadMarks, "How many marks were read by the given replica") \
     \
     M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash") \
     M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts") \
@@ -507,7 +457,6 @@ The server successfully detected this situation and will download merged part fr
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
-    M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.") \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
     M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls") \
@@ -515,9 +464,8 @@ The server successfully detected this situation and will download merged part fr
     M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls") \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
-    M(DiskAzureDeleteObjects, "Number of Disk Azure blob storage API DeleteObject(s) calls.") \
+    M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.") \
-    M(DiskAzureCreateContainer, "Number of Disk Azure blob storage API CreateContainer calls.") \
     \
     M(ReadBufferFromAzureMicroseconds, "Time spent on reading from Azure.") \
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.") \
@@ -530,7 +478,6 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
-    M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data") \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time") \
@@ -829,9 +776,6 @@ The server successfully detected this situation and will download merged part fr
     M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
     M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
     M(GWPAsanFree, "Number of free operations done by GWPAsan") \
-    \
-    M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background") \
-    M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

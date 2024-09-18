@@ -118,7 +118,7 @@ void Settings::set(std::string_view name, const Field & value)
     {
         if (value.getType() != Field::Types::Which::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
-        applyCompatibilitySetting(value.safeGet<String>());
+        applyCompatibilitySetting(value.get<String>());
     }
     /// If we change setting that was changed by compatibility setting before
     /// we should remove it from settings_changed_by_compatibility_setting,
