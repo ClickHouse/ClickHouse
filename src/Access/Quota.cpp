@@ -47,4 +47,10 @@ void Quota::removeDependencies(const std::unordered_set<UUID> & ids)
     to_roles.removeDependencies(ids);
 }
 
+void Quota::clearAllExceptDependencies()
+{
+    all_limits.clear();
+    key_type = QuotaKeyType::NONE;
+}
+
 }

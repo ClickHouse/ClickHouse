@@ -86,4 +86,10 @@ void RowPolicy::removeDependencies(const std::unordered_set<UUID> & ids)
     to_roles.removeDependencies(ids);
 }
 
+void RowPolicy::clearAllExceptDependencies()
+{
+    for (auto & filter : filters)
+        filter = {};
+}
+
 }

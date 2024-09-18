@@ -613,16 +613,15 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
     if (!isBackupAllowed())
         throwBackupNotAllowed();
 
-    auto entities = readAllWithIDs(type);
-    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
-
-    if (entities.empty())
+    auto entities_ids = findAll(type);
+    if (entities_ids.empty())
         return;
 
     auto backup_entry_with_path = makeBackupEntryForAccessEntities(
-        entities,
-        data_path_in_backup,
-        backup_entries_collector.getContext()->getAccessControl());
+        entities_ids,
+        backup_entries_collector.getAllAccessEntities(),
+        backup_entries_collector.getBackupSettings().write_access_entities_dependents,
+        data_path_in_backup);
 
     if (isReplicated())
     {

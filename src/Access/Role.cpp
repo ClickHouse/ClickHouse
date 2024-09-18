@@ -47,4 +47,10 @@ void Role::removeDependencies(const std::unordered_set<UUID> & ids)
     settings.removeDependencies(ids);
 }
 
+void Role::clearAllExceptDependencies()
+{
+    access = {};
+    settings.removeSettingsKeepProfiles();
+}
+
 }

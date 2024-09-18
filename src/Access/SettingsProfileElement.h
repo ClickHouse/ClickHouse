@@ -68,6 +68,8 @@ public:
     void copyDependenciesFrom(const SettingsProfileElements & src, const std::unordered_set<UUID> & ids);
     void removeDependencies(const std::unordered_set<UUID> & ids);
 
+    void removeSettingsKeepProfiles();
+
     void merge(const SettingsProfileElements & other);
 
     Settings toSettings() const;

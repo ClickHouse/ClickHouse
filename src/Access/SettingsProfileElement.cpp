@@ -211,6 +211,15 @@ void SettingsProfileElements::removeDependencies(const std::unordered_set<UUID> 
 }
 
 
+void SettingsProfileElements::removeSettingsKeepProfiles()
+{
+    for (auto & element : *this)
+        element.setting_name.clear();
+
+    std::erase_if(*this, [&](const SettingsProfileElement & element) { return element.setting_name.empty() && !element.parent_profile; });
+}
+
+
 void SettingsProfileElements::merge(const SettingsProfileElements & other)
 {
     insert(end(), other.begin(), other.end());

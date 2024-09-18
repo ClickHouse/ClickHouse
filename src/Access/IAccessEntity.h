@@ -54,6 +54,7 @@ struct IAccessEntity
     virtual void replaceDependencies(const std::unordered_map<UUID, UUID> & /* old_to_new_ids */) {}
     virtual void copyDependenciesFrom(const IAccessEntity & /* src */, const std::unordered_set<UUID> & /* ids */) {}
     virtual void removeDependencies(const std::unordered_set<UUID> & /* ids */) {}
+    virtual void clearAllExceptDependencies() {}
 
     /// Whether this access entity should be written to a backup.
     virtual bool isBackupAllowed() const { return false; }

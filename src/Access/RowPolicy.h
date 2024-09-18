@@ -54,6 +54,7 @@ struct RowPolicy : public IAccessEntity
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
     void copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids) override;
     void removeDependencies(const std::unordered_set<UUID> & ids) override;
+    void clearAllExceptDependencies() override;
 
     bool isBackupAllowed() const override { return true; }
 

@@ -21,6 +21,8 @@ class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
+struct IAccessEntity;
+using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -47,6 +49,9 @@ public:
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
     const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
+
+    /// Returns all access entities which can be put into a backup.
+    std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
@@ -172,6 +177,8 @@ private:
     std::unordered_map<QualifiedTableName, TableInfo> table_infos;
     std::vector<std::pair<String, String>> previous_databases_metadata;
     std::vector<std::pair<QualifiedTableName, String>> previous_tables_metadata;
+
+    std::optional<std::unordered_map<UUID, AccessEntityPtr>> all_access_entities;
 
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;

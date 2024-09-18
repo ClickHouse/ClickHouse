@@ -47,4 +47,9 @@ void SettingsProfile::removeDependencies(const std::unordered_set<UUID> & ids)
     to_roles.removeDependencies(ids);
 }
 
+void SettingsProfile::clearAllExceptDependencies()
+{
+    elements.removeSettingsKeepProfiles();
+}
+
 }

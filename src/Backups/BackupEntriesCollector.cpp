@@ -1,4 +1,5 @@
 #include <Access/Common/AccessEntityType.h>
+#include <Access/AccessControl.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -901,6 +902,22 @@ void BackupEntriesCollector::runPostTasks()
     }
 
     LOG_TRACE(log, "All post tasks successfully executed");
+}
+
+std::unordered_map<UUID, AccessEntityPtr> BackupEntriesCollector::getAllAccessEntities()
+{
+    std::lock_guard lock(mutex);
+    if (!all_access_entities)
+    {
+        all_access_entities.emplace();
+        auto entities_with_ids = context->getAccessControl().readAllWithIDs();
+        for (const auto & [id, entity] : entities_with_ids)
+        {
+            if (entity->isBackupAllowed())
+                all_access_entities->emplace(id, entity);
+        }
+    }
+    return *all_access_entities;
 }
 
 }

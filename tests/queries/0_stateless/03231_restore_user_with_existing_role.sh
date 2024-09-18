@@ -19,7 +19,7 @@ CREATE USER ${user_a} DEFAULT ROLE ${role_b} SETTINGS custom_x=2;
 
 backup_name="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE system.users, TABLE system.roles TO ${backup_name} FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE system.users, TABLE system.roles TO ${backup_name} SETTINGS write_access_entities_dependents = true FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} FORMAT Null"
 
 do_check()
@@ -81,16 +81,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'role_b', count() FROM system.roles WHERE n
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.users FROM ${backup_name} FORMAT Null"
 do_check
 
-# TODO: Cannot restore system.users, then system.roles correctly. The result after the second RESTORE ALL is the following:
-# CREATE USER user_a IDENTIFIED WITH no_password DEFAULT ROLE NONE SETTINGS custom_x = 2; CREATE ROLE role_b SETTINGS custom_x = 1
-# because there is no `role_b` at the time when `user_a` is restored,
-# and no information about the default role and the grant at the time when `role_b` is restored.
-#
-# echo "Everything dropped, restore system.users, then system.roles"
-# ${CLICKHOUSE_CLIENT} --query "DROP USER ${user_a}"
-# ${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
-# ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.users FROM ${backup_name} SETTINGS allow_unresolved_access_dependencies=true FORMAT Null"
-# ${CLICKHOUSE_CLIENT} --query "SELECT 'user_a', count() FROM system.users WHERE name = '${user_a}'"
-# ${CLICKHOUSE_CLIENT} --query "SELECT 'role_b', count() FROM system.roles WHERE name = '${role_b}'"
-# ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.roles FROM ${backup_name} SETTINGS update_access_entities_dependents=true FORMAT Null"
-# do_check
+echo "Everything dropped, restore system.users, then system.roles"
+${CLICKHOUSE_CLIENT} --query "DROP USER ${user_a}"
+${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.users FROM ${backup_name} SETTINGS allow_unresolved_access_dependencies=true FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "SELECT 'user_a', count() FROM system.users WHERE name = '${user_a}'"
+${CLICKHOUSE_CLIENT} --query "SELECT 'role_b', count() FROM system.roles WHERE name = '${role_b}'"
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.roles FROM ${backup_name} SETTINGS update_access_entities_dependents=true FORMAT Null"
+do_check

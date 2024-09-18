@@ -23,9 +23,10 @@ enum class RestoreAccessCreationMode : uint8_t;
 
 /// Makes a backup entry for of a set of access entities.
 std::pair<String, BackupEntryPtr> makeBackupEntryForAccessEntities(
-    const std::vector<std::pair<UUID, AccessEntityPtr>> & access_entities,
-    const String & data_path_in_backup,
-    const AccessControl & access_control);
+    const std::vector<UUID> & entities_ids,
+    const std::unordered_map<UUID, AccessEntityPtr> & all_entities,
+    bool write_dependents,
+    const String & data_path_in_backup);
 
 struct AccessEntitiesToRestore
 {
