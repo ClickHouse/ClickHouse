@@ -139,8 +139,8 @@ private:
 
         if (scale)
             return area / curr_tp / (size - curr_tp);
-        else
-            return area;
+
+        return area;
     }
 
     static void vector(
