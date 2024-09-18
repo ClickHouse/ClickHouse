@@ -78,7 +78,9 @@ void ORCOutputStream::write(const void* buf, size_t length)
 }
 
 ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_)
+    : IOutputFormat(header_, out_)
+    , format_settings{format_settings_}
+    , output_stream(out_)
 {
     for (const auto & type : header_.getDataTypes())
         data_types.push_back(recursiveRemoveLowCardinality(type));
@@ -565,6 +567,7 @@ void ORCBlockOutputFormat::prepareWriter()
     schema = orc::createStructType();
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
     options.setRowIndexStride(format_settings.orc.output_row_index_stride);
+    options.setDictionaryKeySizeThreshold(format_settings.orc.output_dictionary_key_size_threshold);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
         schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));

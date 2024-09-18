@@ -522,6 +522,7 @@ public:
     struct FailedMultiDelta
     {
         std::vector<Coordination::Error> error_codes;
+        Coordination::Error global_error{Coordination::Error::ZOK};
     };
 
     // Denotes end of a subrequest in multi request
@@ -612,13 +613,15 @@ public:
 
         struct PathCmp
         {
-            using is_transparent = std::true_type;
-
             auto operator()(const std::string_view a,
                             const std::string_view b) const
             {
-                return a.size() < b.size() || (a.size() == b.size() && a < b);
+                size_t level_a = std::count(a.begin(), a.end(), '/');
+                size_t level_b = std::count(b.begin(), b.end(), '/');
+                return level_a < level_b || (level_a == level_b && a < b);
             }
+
+            using is_transparent = void; // required to make find() work with different type than key_type
         };
 
         mutable std::map<std::string, UncommittedNode, PathCmp> nodes;

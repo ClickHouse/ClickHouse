@@ -491,6 +491,14 @@ Type: Double
 
 Default: 0.9
 
+## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
+
+The maximum number of threads to use for building vector indexes. 0 means all cores.
+
+Type: UInt64
+
+Default: 16
+
 ## cgroups_memory_usage_observer_wait_time
 
 Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
@@ -3142,3 +3150,15 @@ Default value: "default"
 
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
+
+The maximum number of authentication methods a user can be created with or altered to.
+Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
+Non authentication create/alter queries will succeed.
+
+Type: UInt64
+
+Default value: 100
+
+Zero means unlimited
