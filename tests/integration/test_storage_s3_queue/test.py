@@ -535,7 +535,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path},
+        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3},
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]
