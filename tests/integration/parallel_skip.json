@@ -104,7 +104,6 @@
   "test_storage_kafka/test_1.py::test_kafka_duplicates_when_commit_failed",
   "test_storage_kafka/test_1.py::test_commits_of_unprocessed_messages_on_drop",
   "test_storage_kafka/test_1.py::test_kafka_produce_consume",
-  "test_storage_kafka/test_1.py::test_system_kafka_consumers_rebalance",
   "test_storage_kafka/test_1.py::test_kafka_materialized_view",
   "test_storage_kafka/test_1.py::test_kafka_materialized_view_with_subquery",
   "test_storage_kafka/test_1.py::test_kafka_lot_of_partitions_partial_commit_of_bulk",
@@ -148,8 +147,6 @@
   "test_storage_kafka/test_3.py::test_kafka_tsv_with_delimiter",
   "test_storage_kafka/test_3.py::test_kafka_csv_with_delimiter",
   "test_storage_kafka/test_3.py::test_format_with_prefix_and_suffix",
-  "test_storage_kafka/test_4.py::test_kafka_formats",
-  "test_storage_kafka/test_4.py::test_kafka_rebalance",
   "test_storage_kafka/test_4.py::test_kafka_formats_with_broken_message",
   "test_storage_kafka/test_4.py::test_kafka_flush_by_time",
   "test_storage_kafka/test_4.py::test_system_kafka_consumers_rebalance",
@@ -164,6 +161,9 @@
   "test_storage_kafka/test_4.py::test_kafka_settings_predefined_macros",
   "test_storage_kafka/test_4.py::test_kafka_issue4116",
   "test_storage_kafka/test_4.py::test_kafka_issue14202",
+  "test_storage_kafka/test_5.py::test_kafka_formats",
+  "test_storage_kafka/test_5.py::test_kafka_rebalance",
+
 
   "test_storage_kafka/test_produce_http_interface.py::test_kafka_produce_http_interface_row_based_format",
 
