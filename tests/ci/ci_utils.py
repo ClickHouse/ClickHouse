@@ -1,11 +1,10 @@
-import json
 import logging
 import os
+import subprocess
+import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
-
-import requests
+from typing import Any, Dict, Iterator, List, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +22,14 @@ def cd(path: Union[Path, str]) -> Iterator[None]:
         yield
     finally:
         os.chdir(oldpwd)
+
+
+def is_hex(s):
+    try:
+        int(s, 16)
+        return True
+    except ValueError:
+        return False
 
 
 def kill_ci_runner(message: str) -> None:
