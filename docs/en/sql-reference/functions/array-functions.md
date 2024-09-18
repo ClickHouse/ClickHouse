@@ -2116,6 +2116,41 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
+## arrayAUC
+
+Calculate unscaled AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>), i.e. without dividing it by total true positives and total false positives.
+
+**Syntax**
+
+``` sql
+arrayAUCUnscaled(arr_scores, arr_labels)
+```
+
+**Arguments**
+
+- `arr_scores` — scores prediction model gives.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+
+**Returned value**
+
+Returns unscaled AUC value with type Float64.
+
+**Example**
+
+Query:
+
+``` sql
+select arrayAUCUnscaled([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+```
+
+Result:
+
+``` text
+┌─arrayAUCUnscaled([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                                                   3.0 │
+└───────────────────────────────────────────────────────┘
+```
+
 ## arrayMap(func, arr1, ...)
 
 Returns an array obtained from the original arrays by application of `func(arr1[i], ..., arrN[i])` for each element. Arrays `arr1` ... `arrN` must have the same number of elements.

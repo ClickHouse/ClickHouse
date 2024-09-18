@@ -19,6 +19,7 @@
 "Array"
 "arrayAll"
 "arrayAUC"
+"arrayAUCUnscaled"
 "arrayCompact"
 "arrayConcat"
 "arrayCount"

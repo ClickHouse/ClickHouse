@@ -1153,6 +1153,7 @@ argMin
 argmax
 argmin
 arrayAUC
+arrayAUCUnscaled
 arrayAll
 arrayAvg
 arrayCompact
