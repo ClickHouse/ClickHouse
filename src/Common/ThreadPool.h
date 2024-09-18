@@ -186,8 +186,6 @@ private:
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
-    std::unique_ptr<ThreadFromThreadPool> maybeStartNewThread();
-
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
