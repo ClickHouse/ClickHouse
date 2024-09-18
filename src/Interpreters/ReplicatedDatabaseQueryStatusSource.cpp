@@ -21,7 +21,7 @@ ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
 {
 }
 
-ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus(const String & host_id)
+ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]] const String & host_id)
 {
     /// Replicated database retries in case of error, it should not write error status.
 #ifdef DEBUG_OR_SANITIZER_BUILD
