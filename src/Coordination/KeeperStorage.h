@@ -6,6 +6,7 @@
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
+#include "Common/StringHashForHeterogeneousLookup.h"
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
@@ -314,13 +315,36 @@ public:
     };
 
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
+    struct WatchInfo
+    {
+        std::string_view path;
+        bool is_list_watch;
+
+        bool operator==(const WatchInfo &) const = default;
+    };
+
+    struct WatchInfoHash
+    {
+        auto operator()(WatchInfo info) const
+        {
+            SipHash hash;
+            hash.update(info.path);
+            hash.update(info.is_list_watch);
+            return hash.get64();
+        }
+    };
+
+    using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<WatchInfo, WatchInfoHash>>;
     using SessionIDs = std::unordered_set<int64_t>;
 
     /// Just vector of SHA1 from user:password
     using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-    using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
+    using Watches = std::unordered_map<
+        String /* path, relative of root_path */,
+        SessionIDs,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     // Applying ZooKeeper request to storage consists of two steps:
     //  - preprocessing which, instead of applying the changes directly to storage,
