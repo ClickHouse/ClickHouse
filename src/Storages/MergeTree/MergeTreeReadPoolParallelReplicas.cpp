@@ -90,6 +90,10 @@ extern const Event ParallelReplicasReadMarks;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+}
 
 namespace ErrorCodes
 {
@@ -125,7 +129,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     , min_marks_per_task(getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos))
     , mark_segment_size(chooseSegmentSize(
           log,
-          context_->getSettingsRef().parallel_replicas_mark_segment_size,
+          context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
           min_marks_per_task,
           pool_settings.threads,
           pool_settings.sum_marks,

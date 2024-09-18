@@ -42,6 +42,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool analyze_index_with_space_filling_curves;
+}
 
 namespace ErrorCodes
 {
@@ -818,7 +822,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
+    if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
     if (!filter_dag)

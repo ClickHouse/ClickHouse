@@ -31,6 +31,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_download_buffer_size;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool use_cache_for_count_from_files;
+}
 
 namespace ErrorCodes
 {
@@ -109,9 +115,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     std::function<void(FileProgress)> file_progress_callback)
 {
     if (distributed_processing)
-        return std::make_shared<ReadTaskIterator>(
-            local_context->getReadTaskCallback(),
-            local_context->getSettingsRef().max_threads);
+        return std::make_shared<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
 
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -238,7 +242,7 @@ Chunk StorageObjectStorageSource::generate()
             return chunk;
         }
 
-        if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
+        if (reader.getInputFormat() && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -332,10 +336,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
-    std::optional<size_t> num_rows_from_cache = need_only_count
-        && context_->getSettingsRef().use_cache_for_count_from_files
-        ? try_get_num_rows_from_cache()
-        : std::nullopt;
+    std::optional<size_t> num_rows_from_cache
+        = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
     {
@@ -426,7 +428,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
 
-    const bool object_too_small = object_size <= 2 * context_->getSettingsRef().max_download_buffer_size;
+    const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
     /// User's object may change, don't cache it.

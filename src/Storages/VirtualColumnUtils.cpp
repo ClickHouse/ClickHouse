@@ -55,6 +55,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
+}
 
 namespace ErrorCodes
 {
@@ -158,7 +162,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     {
         if (storage_columns.has(name))
         {
-            if (!context->getSettingsRef().use_hive_partitioning)
+            if (!context->getSettingsRef()[Setting::use_hive_partitioning])
                 return;
 
             if (storage_columns.size() == 1)
@@ -178,7 +182,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
     add_virtual("_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
-    if (context->getSettingsRef().use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
         auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
@@ -256,7 +260,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
     std::unordered_map<std::string, std::string> hive_map;
-    if (context->getSettingsRef().use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
 
     for (const auto & virtual_column : requested_virtual_columns)
