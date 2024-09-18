@@ -514,7 +514,7 @@ void restoreAccessEntitiesFromBackup(
 
         /// If new entities restored from backup have dependencies on other entities from backup which were not restored because they existed,
         /// then we should correct those dependencies.
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             if (!entity->hasDependencies(new_ids))
                 return entity;
