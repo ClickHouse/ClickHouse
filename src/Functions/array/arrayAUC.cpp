@@ -171,9 +171,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const size_t number_of_arguments = arguments.size();
+        size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -182,20 +182,19 @@ public:
 
         for (size_t i = 0; i < 2; ++i)
         {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The two first arguments for function {} must be an array.", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The two first arguments for function {} must be of type Array.", getName());
 
             const auto & nested_type = array_type->getNestedType();
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}",
-                                getName(), nested_type->getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}", getName(), nested_type->getName());
         }
 
         if (number_of_arguments == 3)
         {
-            if (!isBool(arguments[2]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be a bool.", getName());
+            if (!isBool(arguments[2].type) || arguments[2].column.get() == nullptr || !isColumnConst(*arguments[2].column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool.", getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -203,7 +202,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const size_t number_of_arguments = arguments.size();
+        size_t number_of_arguments = arguments.size();
 
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
@@ -223,10 +222,8 @@ public:
 
         /// Handle third argument for scale (if passed, otherwise default to true)
         bool scale = true;
-        if (number_of_arguments == 3)
-        {
-            scale = arguments[2].column->getBool(0); /// Assumes it's a scalar boolean column
-        }
+        if (number_of_arguments == 3 && input_rows_count > 0)
+            scale = arguments[2].column->getBool(0);
 
         auto col_res = ColumnVector<Float64>::create();
 
