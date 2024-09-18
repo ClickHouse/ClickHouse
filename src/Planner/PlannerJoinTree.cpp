@@ -893,31 +893,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    // (1) find read step
-                    QueryPlan::Node * node = query_plan.getRootNode();
-                    ReadFromMergeTree * reading = nullptr;
-                    while (node)
-                    {
-                        reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
-                        if (reading)
-                            break;
-
-                        QueryPlan::Node * prev_node = node;
-                        if (!node->children.empty())
-                        {
-                            chassert(node->children.size() == 1);
-                            node = node->children.at(0);
-                        }
-                        else
-                        {
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Step is expected to be ReadFromMergeTree but it's {}",
-                                prev_node->step->getName());
-                        }
-                    }
-
-                    chassert(reading);
                     if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
@@ -940,21 +915,50 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (query_context->canUseParallelReplicasOnInitiator())
+                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context))
                     {
+                        // (1) find read step
+                        QueryPlan::Node * node = query_plan.getRootNode();
+                        ReadFromMergeTree * reading = nullptr;
+                        while (node)
+                        {
+                            reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
+                            if (reading)
+                                break;
+
+                            QueryPlan::Node * prev_node = node;
+                            if (!node->children.empty())
+                            {
+                                chassert(node->children.size() == 1);
+                                node = node->children.at(0);
+                            }
+                            else
+                            {
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Step is expected to be ReadFromMergeTree but it's {}",
+                                    prev_node->step->getName());
+                            }
+                        }
+
+                        chassert(reading);
+
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                         if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
                         {
                             auto result_ptr = reading->selectRangesToRead();
-
                             UInt64 rows_to_read = result_ptr->selected_rows;
+
+                            reading->setAnalyzedResult(std::move(result_ptr));
+
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
                                 rows_to_read = table_expression_query_info.trivial_limit;
 
                             if (max_block_size_limited && (max_block_size_limited < rows_to_read))
                                 rows_to_read = max_block_size_limited;
 
-                            const size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
+                            const size_t number_of_replicas_to_use
+                                = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
                             LOG_TRACE(
                                 getLogger("Planner"),
                                 "Estimated {} rows to read. It is enough work for {} parallel replicas",
@@ -980,6 +984,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         {
                             from_stage = QueryProcessingStage::WithMergeableState;
                             QueryPlan query_plan_parallel_replicas;
+                            QueryPlanStepPtr reading_step = std::move(node->step);
                             ClusterProxy::executeQueryWithParallelReplicas(
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),
@@ -987,8 +992,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 table_expression_query_info.query_tree,
                                 table_expression_query_info.planner_context,
                                 query_context,
-                                table_expression_query_info.storage_limits);
+                                table_expression_query_info.storage_limits,
+                                std::move(reading_step));
                             query_plan = std::move(query_plan_parallel_replicas);
+                        }
+                        else
+                        {
+                            QueryPlan query_plan_no_parallel_replicas;
+                            storage->read(
+                                query_plan_no_parallel_replicas,
+                                columns_names,
+                                storage_snapshot,
+                                table_expression_query_info,
+                                query_context,
+                                from_stage,
+                                max_block_size,
+                                max_streams);
+                            query_plan = std::move(query_plan_no_parallel_replicas);
                         }
                     }
                 }
@@ -1654,11 +1674,12 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     PlannerActionsVisitor actions_visitor(planner_context);
     std::unordered_set<std::string> array_join_expressions_output_nodes;
 
-    NameSet array_join_column_names;
+    Names array_join_column_names;
+    array_join_column_names.reserve(array_join_node.getJoinExpressions().getNodes().size());
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
     {
         const auto & array_join_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(array_join_expression);
-        array_join_column_names.insert(array_join_column_identifier);
+        array_join_column_names.push_back(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
         auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
@@ -1707,8 +1728,13 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     drop_unused_columns_before_array_join_transform_step->setStepDescription("DROP unused columns before ARRAY JOIN");
     plan.addStep(std::move(drop_unused_columns_before_array_join_transform_step));
 
-    auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_column_names, array_join_node.isLeft(), planner_context->getQueryContext());
-    auto array_join_step = std::make_unique<ArrayJoinStep>(plan.getCurrentDataStream(), std::move(array_join_action));
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto array_join_step = std::make_unique<ArrayJoinStep>(
+        plan.getCurrentDataStream(),
+        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
+        settings.enable_unaligned_array_join,
+        settings.max_block_size);
+
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
 

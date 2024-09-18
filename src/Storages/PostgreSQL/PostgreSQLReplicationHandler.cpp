@@ -348,11 +348,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
             try
             {
-                auto [postgres_table_schema, postgres_table_name] = getSchemaAndTableName(table_name);
-                auto table_structure = fetchPostgreSQLTableStructure(tx, postgres_table_name, postgres_table_schema, true, true, true);
-                if (!table_structure.physical_columns)
+                auto table_structure = fetchTableStructure(tx, table_name);
+                if (!table_structure->physical_columns)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns");
-                auto storage_info = StorageInfo(materialized_storage->getNested(), table_structure.physical_columns->attributes);
+                auto storage_info = StorageInfo(materialized_storage->getNested(), table_structure->physical_columns->attributes);
                 nested_storages.emplace(table_name, std::move(storage_info));
             }
             catch (Exception & e)
@@ -399,9 +398,7 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
     postgres::Connection connection(connection_info);
     pqxx::nontransaction tx(connection.getRef());
 
-    auto [postgres_table_schema, postgres_table_name] = getSchemaAndTableName(table_name);
-    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, postgres_table_name, postgres_table_schema, true, true, true));
-
+    auto table_structure = fetchTableStructure(tx, table_name);
     auto table_override = tryGetTableOverride(current_database_name, table_name);
     return storage->getCreateNestedTableQuery(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
 }
@@ -415,16 +412,35 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
     tx->exec(query_str);
 
-    auto table_structure = fetchTableStructure(*tx, table_name);
+    PostgreSQLTableStructurePtr table_structure;
+    try
+    {
+        table_structure = fetchTableStructure(*tx, table_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        table_structure = std::make_unique<PostgreSQLTableStructure>();
+    }
     if (!table_structure->physical_columns)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
 
     auto table_attributes = table_structure->physical_columns->attributes;
+    auto columns = getTableAllowedColumns(table_name);
 
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
     auto quoted_name = doubleQuoteWithSchema(table_name);
-    query_str = fmt::format("SELECT * FROM ONLY {}", quoted_name);
+    if (columns.empty())
+        query_str = fmt::format("SELECT * FROM ONLY {}", quoted_name);
+    else
+    {
+        /// We should not use columns list from getTableAllowedColumns because it may have broken columns order
+        Strings allowed_columns;
+        for (const auto & column : table_structure->physical_columns->columns)
+            allowed_columns.push_back(column.name);
+        query_str = fmt::format("SELECT {} FROM ONLY {}", boost::algorithm::join(allowed_columns, ","), quoted_name);
+    }
 
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
@@ -700,6 +716,37 @@ void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 }
 
 
+/// Allowed columns for table from materialized_postgresql_tables_list setting
+Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string & table_name) const
+{
+    Strings result;
+    if (tables_list.empty())
+        return result;
+
+    size_t table_pos = tables_list.find(table_name);
+    if (table_pos == std::string::npos)
+    {
+        return result;
+    }
+
+    if (table_pos + table_name.length() + 1 > tables_list.length())
+    {
+        return result;
+    }
+    String column_list = tables_list.substr(table_pos + table_name.length() + 1);
+    column_list.erase(std::remove(column_list.begin(), column_list.end(), '"'), column_list.end());
+    boost::trim(column_list);
+    if (column_list.empty() || column_list[0] != '(')
+        return result;
+
+    size_t end_bracket_pos = column_list.find(')');
+    column_list = column_list.substr(1, end_bracket_pos - 1);
+    splitInto<','>(result, column_list);
+
+    return result;
+}
+
+
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
     try
@@ -749,11 +796,27 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     Strings expected_tables;
     if (!tables_list.empty())
     {
-         splitInto<','>(expected_tables, tables_list);
-         if (expected_tables.empty())
-             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse tables list: {}", tables_list);
-         for (auto & table_name : expected_tables)
-             boost::trim(table_name);
+        /// Removing columns `table(col1, col2)` from tables_list
+        String cleared_tables_list = tables_list;
+        while (true)
+        {
+            size_t start_bracket_pos = cleared_tables_list.find('(');
+            size_t end_bracket_pos = cleared_tables_list.find(')');
+            if (start_bracket_pos == std::string::npos || end_bracket_pos == std::string::npos)
+            {
+                break;
+            }
+            cleared_tables_list = cleared_tables_list.substr(0, start_bracket_pos) + cleared_tables_list.substr(end_bracket_pos + 1);
+        }
+
+        splitInto<','>(expected_tables, cleared_tables_list);
+        if (expected_tables.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse tables list: {}", tables_list);
+
+        for (auto & table_name : expected_tables)
+        {
+            boost::trim(table_name);
+        }
     }
 
     /// Try to fetch tables list from publication if there is not tables list.
@@ -864,18 +927,50 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     /// `schema1.table1, schema2.table2, ...` -> `"schema1"."table1", "schema2"."table2", ...`
     /// or
     /// `table1, table2, ...` + setting `schema` -> `"schema"."table1", "schema"."table2", ...`
+    /// or
+    /// `table1, table2(id,name), ...` + setting `schema` -> `"schema"."table1", "schema"."table2"("id","name"), ...`
     if (!tables_list.empty())
     {
-        Strings tables_names;
-        splitInto<','>(tables_names, tables_list);
-        if (tables_names.empty())
+        Strings parts;
+        splitInto<','>(parts, tables_list);
+        if (parts.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list of tables");
 
+        bool is_column = false;
         WriteBufferFromOwnString buf;
-        for (auto & table_name : tables_names)
+        for (auto & part : parts)
         {
-            boost::trim(table_name);
-            buf << doubleQuoteWithSchema(table_name);
+            boost::trim(part);
+
+            size_t bracket_pos = part.find('(');
+            if (bracket_pos != std::string::npos)
+            {
+                is_column = true;
+                std::string table_name = part.substr(0, bracket_pos);
+                boost::trim(table_name);
+                buf << doubleQuoteWithSchema(table_name);
+
+                part = part.substr(bracket_pos + 1);
+                boost::trim(part);
+                buf << '(';
+                buf << doubleQuoteString(part);
+            }
+            else if (part.back() == ')')
+            {
+                is_column = false;
+                part = part.substr(0, part.size() - 1);
+                boost::trim(part);
+                buf << doubleQuoteString(part);
+                buf << ')';
+            }
+            else if (is_column)
+            {
+                buf << doubleQuoteString(part);
+            }
+            else
+            {
+                buf << doubleQuoteWithSchema(part);
+            }
             buf << ",";
         }
         tables_list = buf.str();
@@ -902,23 +997,28 @@ std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::
 }
 
 
+template<typename T>
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
-        pqxx::ReplicationTransaction & tx, const std::string & table_name) const
+        T & tx, const std::string & table_name) const
 {
     PostgreSQLTableStructure structure;
-    try
-    {
-        auto [schema, table] = getSchemaAndTableName(table_name);
-        structure = fetchPostgreSQLTableStructure(tx, table, schema, true, true, true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    auto [schema, table] = getSchemaAndTableName(table_name);
+    structure = fetchPostgreSQLTableStructure(tx, table, schema, true, true, true, getTableAllowedColumns(table_name));
 
     return std::make_unique<PostgreSQLTableStructure>(std::move(structure));
 }
 
+template
+PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
+        pqxx::ReadTransaction & tx, const std::string & table_name) const;
+
+template
+PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
+        pqxx::ReplicationTransaction & tx, const std::string & table_name) const;
+
+template
+PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
+        pqxx::nontransaction & tx, const std::string & table_name) const;
 
 void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
 {
