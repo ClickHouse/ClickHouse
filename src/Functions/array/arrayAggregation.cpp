@@ -360,7 +360,7 @@ struct ArrayAggregateImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        if (!mapped->isNumeric() && (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min))
+        if (!mapped->isNumeric() && !isNumber(array.getDataPtr()->getDataType()) && (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min))
         {
             MutableColumnPtr res;
             const auto & column = array.getDataPtr();
