@@ -68,5 +68,7 @@ def test_mark_segment_size_communicated_correctly(start_cluster):
         )
 
         nodes[0].query("SYSTEM FLUSH LOGS")
-        log_line = nodes[0].grep_in_log(f"{query_id}.*Reading state is fully initialized")
+        log_line = nodes[0].grep_in_log(
+            f"{query_id}.*Reading state is fully initialized"
+        )
         assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
