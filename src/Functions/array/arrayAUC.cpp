@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -164,11 +165,21 @@ private:
 
 public:
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        const size_t number_of_arguments = arguments.size();
+
+        if (number_of_arguments < 2 || number_of_arguments > 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                            getName(), number_of_arguments);
+
         for (size_t i = 0; i < 2; ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
@@ -181,7 +192,7 @@ public:
                                 getName(), nested_type->getName());
         }
 
-        if (arguments.size() == 3)
+        if (number_of_arguments == 3)
         {
             if (!isBool(arguments[2]))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument must be a boolean (scale)");
@@ -192,6 +203,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        const size_t number_of_arguments = arguments.size();
+        
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
 
@@ -210,7 +223,7 @@ public:
 
         // Handle third argument for scale (if passed, otherwise default to true)
         bool scale = true;
-        if (arguments.size() == 3)
+        if (number_of_arguments == 3)
         {
             scale = arguments[2].column->getBool(0); // Assumes it's a scalar boolean column
         }
