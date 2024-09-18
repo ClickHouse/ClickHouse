@@ -1347,25 +1347,6 @@ void ZooKeeper::remove(
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
 
-void ZooKeeper::removeRecursive(
-    const String &path,
-    uint32_t remove_nodes_limit,
-    RemoveRecursiveCallback callback)
-{
-    if (!isFeatureEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE))
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, "RemoveRecursive request type cannot be used because it's not supported by the server");
-
-    ZooKeeperRemoveRecursiveRequest request;
-    request.path = path;
-    request.remove_nodes_limit = remove_nodes_limit;
-
-    RequestInfo request_info;
-    request_info.request = std::make_shared<ZooKeeperRemoveRecursiveRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
-
-    pushRequest(std::move(request_info));
-    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
-}
 
 void ZooKeeper::exists(
     const String & path,

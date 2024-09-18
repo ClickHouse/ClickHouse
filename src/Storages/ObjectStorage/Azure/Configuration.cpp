@@ -151,7 +151,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
+            "Storage AzureBlobStorage requires 3 to {} arguments. All supported signatures:\n{}",
             getMaxNumberOfArguments(with_structure),
             getSignatures(with_structure));
     }
@@ -213,7 +213,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             if (with_structure)
             {
                 format = fourth_arg;
-                compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+                compression_method = checkAn/dGetLiteralArgument<String>(engine_args[4], "compression");
                 structure = checkAndGetLiteralArgument<String>(engine_args[5], "structure");
             }
             else

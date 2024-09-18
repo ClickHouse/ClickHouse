@@ -979,47 +979,18 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
     return removed_as_expected;
 }
 
-void ZooKeeper::removeRecursive(const std::string & path, uint32_t remove_nodes_limit)
+void ZooKeeper::removeRecursive(const std::string & path)
 {
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-    {
-        removeChildrenRecursive(path);
-        remove(path);
-        return;
-    }
-
-    check(tryRemoveRecursive(path, remove_nodes_limit), path);
+    removeChildrenRecursive(path);
+    remove(path);
 }
 
-Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit)
+void ZooKeeper::tryRemoveRecursive(const std::string & path)
 {
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-    {
-        tryRemoveChildrenRecursive(path);
-        return tryRemove(path);
-    }
-
-    auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::RemoveRecursiveResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->removeRecursive(path, remove_nodes_limit, std::move(callback));
-
-    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-    {
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::RemoveRecursive, path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future.get();
-        return response.error;
-    }
+    tryRemoveChildrenRecursive(path);
+    tryRemove(path);
 }
+
 
 namespace
 {
@@ -1599,7 +1570,7 @@ size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::
 
 
 KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, size_t failed_op_index_, const Coordination::Requests & requests_, const Coordination::Responses & responses_)
-        : KeeperException(exception_code, "Transaction failed ({}): Op #{}, path", exception_code, failed_op_index_),
+        : KeeperException(exception_code, "Transaction failed: Op #{}, path", failed_op_index_),
           requests(requests_), responses(responses_), failed_op_index(failed_op_index_)
 {
     addMessage(getPathForFirstFailedOp());
@@ -1645,14 +1616,6 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
     auto request = std::make_shared<Coordination::RemoveRequest>();
     request->path = path;
     request->version = version;
-    return request;
-}
-
-Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit)
-{
-    auto request = std::make_shared<Coordination::RemoveRecursiveRequest>();
-    request->path = path;
-    request->remove_nodes_limit = remove_nodes_limit;
     return request;
 }
 

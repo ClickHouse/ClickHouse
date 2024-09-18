@@ -163,7 +163,7 @@ class CI:
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
-            timeout=14400,
+            timeout=10800,
         ),
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -400,10 +400,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], pr_only=True
         ),
         JobNames.INTEGRATION_TEST_ASAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
-            release_only=True,
-            num_batches=4,
-            timeout=10800,
+            required_builds=[BuildNames.PACKAGE_ASAN], release_only=True, num_batches=4
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
@@ -429,7 +426,6 @@ class CI:
             pr_only=True,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
-            timeout=4 * 3600,  # to be able to process many updated tests
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -473,7 +469,7 @@ class CI:
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
-            timeout=3 * 3600,
+            timeout=3600,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),
@@ -542,10 +538,7 @@ class CI:
         JobNames.FAST_TEST: JobConfig(
             pr_only=True,
             digest=DigestConfig(
-                include_paths=[
-                    "./tests/queries/0_stateless/",
-                    "./tests/docker_scripts/",
-                ],
+                include_paths=["./tests/queries/0_stateless/"],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),

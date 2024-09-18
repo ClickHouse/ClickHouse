@@ -184,20 +184,14 @@ void DynamicResourceManager::updateConfiguration(const Poco::Util::AbstractConfi
 
     // Resource update leads to loss of runtime data of nodes and may lead to temporary violation of constraints (e.g. limits)
     // Try to minimise this by reusing "equal" resources (initialized with the same configuration).
-    std::vector<State::ResourcePtr> resources_to_attach;
     for (auto & [name, new_resource] : new_state->resources)
     {
         if (auto iter = state->resources.find(name); iter != state->resources.end()) // Resource update
         {
             State::ResourcePtr old_resource = iter->second;
             if (old_resource->equals(*new_resource))
-            {
                 new_resource = old_resource; // Rewrite with older version to avoid loss of runtime data
-                continue;
-            }
         }
-        // It is new or updated resource
-        resources_to_attach.emplace_back(new_resource);
     }
 
     // Commit new state
@@ -205,14 +199,17 @@ void DynamicResourceManager::updateConfiguration(const Poco::Util::AbstractConfi
     state = new_state;
 
     // Attach new and updated resources to the scheduler
-    for (auto & resource : resources_to_attach)
+    for (auto & [name, resource] : new_state->resources)
     {
         const SchedulerNodePtr & root = resource->nodes.find("/")->second.ptr;
-        resource->attached_to = &scheduler;
-        scheduler.event_queue->enqueue([this, root]
+        if (root->parent == nullptr)
         {
-            scheduler.attachChild(root);
-        });
+            resource->attached_to = &scheduler;
+            scheduler.event_queue->enqueue([this, root]
+            {
+                scheduler.attachChild(root);
+            });
+        }
     }
 
     // NOTE: after mutex unlock `state` became available for Classifier(s) and must be immutable

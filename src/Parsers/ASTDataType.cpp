@@ -40,22 +40,12 @@ void ASTDataType::formatImpl(const FormatSettings & settings, FormatState & stat
     {
         settings.ostr << '(' << (settings.hilite ? hilite_none : "");
 
-        if (!settings.one_line && settings.print_pretty_type_names && name == "Tuple")
+        for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
-            ++frame.indent;
-            std::string indent_str = settings.one_line ? "" : "\n" + std::string(4 * frame.indent, ' ');
-            for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
-            {
-                if (i != 0)
-                    settings.ostr << ',';
-                settings.ostr << indent_str;
-                arguments->children[i]->formatImpl(settings, state, frame);
-            }
-        }
-        else
-        {
-            frame.expression_list_prepend_whitespace = false;
-            arguments->formatImpl(settings, state, frame);
+            if (i != 0)
+                settings.ostr << ", ";
+
+            arguments->children[i]->formatImpl(settings, state, frame);
         }
 
         settings.ostr << (settings.hilite ? hilite_function : "") << ')';

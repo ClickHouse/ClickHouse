@@ -248,23 +248,6 @@ struct RemoveResponse : virtual Response
 {
 };
 
-struct RemoveRecursiveRequest : virtual Request
-{
-    String path;
-
-    /// strict limit for number of deleted nodes
-    uint32_t remove_nodes_limit = 1;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
-};
-
-struct RemoveRecursiveResponse : virtual Response
-{
-};
-
 struct ExistsRequest : virtual Request
 {
     String path;
@@ -447,7 +430,6 @@ struct ErrorResponse : virtual Response
 
 using CreateCallback = std::function<void(const CreateResponse &)>;
 using RemoveCallback = std::function<void(const RemoveResponse &)>;
-using RemoveRecursiveCallback = std::function<void(const RemoveRecursiveResponse &)>;
 using ExistsCallback = std::function<void(const ExistsResponse &)>;
 using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
@@ -604,11 +586,6 @@ public:
         const String & path,
         int32_t version,
         RemoveCallback callback) = 0;
-
-    virtual void removeRecursive(
-        const String & path,
-        uint32_t remove_nodes_limit,
-        RemoveRecursiveCallback callback) = 0;
 
     virtual void exists(
         const String & path,

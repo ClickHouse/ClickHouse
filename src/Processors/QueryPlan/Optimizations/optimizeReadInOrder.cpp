@@ -18,7 +18,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -256,7 +255,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 
 /// Add more functions to fixed columns.
 /// Functions result is fixed if all arguments are fixed or constants.
-void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
+void enreachFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
     struct Frame
     {
@@ -301,20 +300,20 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
                     {
                         if (frame.node->function_base->isDeterministicInScopeOfQuery())
                         {
-                            //std::cerr << "*** enrichFixedColumns check " << frame.node->result_name << std::endl;
+                            //std::cerr << "*** enreachFixedColumns check " << frame.node->result_name << std::endl;
                             bool all_args_fixed_or_const = true;
                             for (const auto * child : frame.node->children)
                             {
                                 if (!child->column && !fixed_columns.contains(child))
                                 {
-                                    //std::cerr << "*** enrichFixedColumns fail " << child->result_name <<  ' ' << static_cast<const void *>(child) << std::endl;
+                                    //std::cerr << "*** enreachFixedColumns fail " << child->result_name <<  ' ' << static_cast<const void *>(child) << std::endl;
                                     all_args_fixed_or_const = false;
                                 }
                             }
 
                             if (all_args_fixed_or_const)
                             {
-                                //std::cerr << "*** enrichFixedColumns add " << frame.node->result_name << ' ' << static_cast<const void *>(frame.node) << std::endl;
+                                //std::cerr << "*** enreachFixedColumns add " << frame.node->result_name << ' ' << static_cast<const void *>(frame.node) << std::endl;
                                 fixed_columns.insert(frame.node);
                             }
                         }
@@ -358,7 +357,7 @@ InputOrderInfoPtr buildInputOrderInfo(
             }
         }
 
-        enrichFixedColumns(sorting_key_dag, fixed_key_columns);
+        enreachFixedColumns(sorting_key_dag, fixed_key_columns);
     }
 
     /// This is a result direction we will read from MergeTree
@@ -531,7 +530,7 @@ AggregationInputOrder buildInputOrderInfo(
             }
         }
 
-        enrichFixedColumns(sorting_key_dag, fixed_key_columns);
+        enreachFixedColumns(sorting_key_dag, fixed_key_columns);
 
         for (const auto * output : dag->getOutputs())
         {
@@ -805,7 +804,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     buildSortingDAG(node, dag, fixed_columns, limit);
 
     if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+        enreachFixedColumns(*dag, fixed_columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -859,7 +858,7 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
     buildSortingDAG(node, dag, fixed_columns, limit);
 
     if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+        enreachFixedColumns(*dag, fixed_columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -900,18 +899,6 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
     return {};
 }
 
-static bool readingFromParallelReplicas(const QueryPlan::Node * node)
-{
-    IQueryPlanStep * step = node->step.get();
-    while (!node->children.empty())
-    {
-        step = node->children.front()->step.get();
-        node = node->children.front();
-    }
-
-    return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step);
-}
-
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
@@ -936,16 +923,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         std::vector<InputOrderInfoPtr> infos;
         infos.reserve(node.children.size());
-
-        for (const auto * child : union_node->children)
-        {
-            /// in case of parallel replicas
-            /// avoid applying read-in-order optimization for local replica
-            /// since it will lead to different parallel replicas modes
-            /// between local and remote nodes
-            if (readingFromParallelReplicas(child))
-                return;
-        }
 
         for (auto * child : union_node->children)
         {

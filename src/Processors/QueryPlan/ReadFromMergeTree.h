@@ -110,7 +110,7 @@ public:
 
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
+        std::vector<AlterConversionsPtr> alter_conversions_,
         Names all_column_names_,
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
@@ -121,16 +121,7 @@ public:
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading_,
-        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
-        std::optional<size_t> number_of_current_replica_ = std::nullopt);
-
-    std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
-        AnalysisResultPtr analyzed_result_ptr_,
-        MergeTreeAllRangesCallback all_ranges_callback_,
-        MergeTreeReadTaskCallback read_task_callback_,
-        size_t replica_number);
+        bool enable_parallel_reading);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -152,11 +143,6 @@ public:
 
     struct Indexes
     {
-        explicit Indexes(KeyCondition key_condition_)
-            : key_condition(std::move(key_condition_))
-            , use_skip_indexes(false)
-        {}
-
         KeyCondition key_condition;
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
@@ -168,7 +154,7 @@ public:
 
     static AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+        std::vector<AlterConversionsPtr> alter_conversions,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -180,7 +166,8 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges);
 
-    AnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts, bool find_exact_ranges = false) const;
+    AnalysisResultPtr selectRangesToRead(
+        MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges = false) const;
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -201,7 +188,7 @@ public:
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
-    MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
+    const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
@@ -222,7 +209,7 @@ private:
     MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    std::vector<AlterConversionsPtr> alter_conversions_for_parts;
 
     Names all_column_names;
 
@@ -282,7 +269,6 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
-    std::optional<size_t> number_of_current_replica;
 };
 
 }

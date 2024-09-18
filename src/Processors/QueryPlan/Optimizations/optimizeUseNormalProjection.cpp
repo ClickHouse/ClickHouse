@@ -199,7 +199,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     auto projection_reading = reader.readFromParts(
         /*parts=*/ {},
-        reading->getMutationsSnapshot()->cloneEmpty(),
+        /*alter_conversions=*/ {},
         required_columns,
         proj_snapshot,
         query_info_copy,

@@ -201,11 +201,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(
-        size_t size_to_reserve,
-        size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason,
-        FileCacheReserveStat * reserve_stat = nullptr);
+    bool reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);

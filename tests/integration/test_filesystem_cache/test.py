@@ -1,7 +1,6 @@
 import logging
 import time
 import os
-import random
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -32,6 +31,14 @@ def cluster():
             ],
         )
         cluster.add_instance(
+            "node_no_filesystem_caches_path",
+            main_configs=[
+                "config.d/storage_conf.xml",
+                "config.d/remove_filesystem_caches_path.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
             "node_force_read_through_cache_on_merge",
             main_configs=[
                 "config.d/storage_conf.xml",
@@ -52,51 +59,6 @@ def cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(scope="function")
-def non_shared_cluster():
-    """
-    For tests that cannot run in parallel against the same node/cluster (see test_custom_cached_disk, which relies on
-    changing server settings at runtime)
-    """
-    try:
-        # Randomize the cluster name
-        cluster = ClickHouseCluster(f"{__file__}_non_shared_{random.randint(0, 10**7)}")
-        cluster.add_instance(
-            "node_no_filesystem_caches_path",
-            main_configs=[
-                "config.d/storage_conf.xml",
-                "config.d/remove_filesystem_caches_path.xml",
-            ],
-            stay_alive=True,
-        )
-
-        logging.info("Starting test-exclusive cluster...")
-        cluster.start()
-        logging.info("Cluster started")
-
-        yield cluster
-    finally:
-        cluster.shutdown()
-
-
-def wait_for_cache_initialized(node, cache_path, max_attempts=50):
-    initialized = False
-    attempts = 0
-    while not initialized:
-        query_result = node.query(
-            "SELECT path FROM system.filesystem_cache_settings WHERE is_initialized"
-        )
-        initialized = cache_path in query_result
-
-        if initialized:
-            break
-
-        time.sleep(0.1)
-        attempts += 1
-        if attempts >= max_attempts:
-            raise "Stopped waiting for cache to be initialized"
-
-
 @pytest.mark.parametrize("node_name", ["node"])
 def test_parallel_cache_loading_on_startup(cluster, node_name):
     node = cluster.instances[node_name]
@@ -109,21 +71,14 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         ORDER BY value
         SETTINGS disk = disk(
             type = cache,
-            name = 'parallel_loading_test',
-            path = 'parallel_loading_test',
+            path = 'paralel_loading_test',
             disk = 'hdd_blob',
             max_file_segment_size = '1Ki',
             boundary_alignment = '1Ki',
             max_size = '1Gi',
             max_elements = 10000000,
             load_metadata_threads = 30);
-        """
-    )
 
-    wait_for_cache_initialized(node, "parallel_loading_test")
-
-    node.query(
-        """
         SYSTEM DROP FILESYSTEM CACHE;
         INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
         SELECT * FROM test FORMAT Null;
@@ -148,7 +103,6 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     )
 
     node.restart_clickhouse()
-    wait_for_cache_initialized(node, "parallel_loading_test")
 
     # < because of additional files loaded into cache on server startup.
     assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache"))
@@ -177,7 +131,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
     node = cluster.instances[node_name]
     cache_path = "cache1"
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE;")
     for table in ["test", "test2"]:
         node.query(
             f"""
@@ -188,20 +142,14 @@ def test_caches_with_the_same_configuration(cluster, node_name):
             ORDER BY value
             SETTINGS disk = disk(
                 type = cache,
-                name = '{table}',
+                name = {table},
                 path = '{cache_path}',
                 disk = 'hdd_blob',
                 max_file_segment_size = '1Ki',
                 boundary_alignment = '1Ki',
                 cache_on_write_operations=1,
                 max_size = '1Mi');
-            """
-        )
 
-        wait_for_cache_initialized(node, cache_path)
-
-        node.query(
-            f"""
             SET enable_filesystem_cache_on_write_operations=1;
             INSERT INTO {table} SELECT * FROM generateRandom('a Int32, b String')
             LIMIT 1000;
@@ -247,8 +195,9 @@ def test_caches_with_the_same_configuration(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node_caches_with_same_path"])
 def test_caches_with_the_same_configuration_2(cluster, node_name):
     node = cluster.instances[node_name]
+    cache_path = "cache1"
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE;")
     for table in ["cache1", "cache2"]:
         node.query(
             f"""
@@ -258,13 +207,7 @@ def test_caches_with_the_same_configuration_2(cluster, node_name):
             Engine=MergeTree()
             ORDER BY value
             SETTINGS disk = '{table}';
-            """
-        )
 
-        wait_for_cache_initialized(node, "cache1")
-
-        node.query(
-            f"""
             SET enable_filesystem_cache_on_write_operations=1;
             INSERT INTO {table} SELECT * FROM generateRandom('a Int32, b String')
             LIMIT 1000;
@@ -284,8 +227,8 @@ def test_caches_with_the_same_configuration_2(cluster, node_name):
     )
 
 
-def test_custom_cached_disk(non_shared_cluster):
-    node = non_shared_cluster.instances["node_no_filesystem_caches_path"]
+def test_custom_cached_disk(cluster):
+    node = cluster.instances["node_no_filesystem_caches_path"]
 
     assert "Cannot create cached custom disk without" in node.query_and_get_error(
         f"""
@@ -434,7 +377,6 @@ def test_force_filesystem_cache_on_merges(cluster):
             ORDER BY value
             SETTINGS disk = disk(
                 type = cache,
-                name = 'force_cache_on_merges',
                 path = 'force_cache_on_merges',
                 disk = 'hdd_blob',
                 max_file_segment_size = '1Ki',
@@ -443,13 +385,7 @@ def test_force_filesystem_cache_on_merges(cluster):
                 max_size = '10Gi',
                 max_elements = 10000000,
                 load_metadata_threads = 30);
-            """
-        )
 
-        wait_for_cache_initialized(node, "force_cache_on_merges")
-
-        node.query(
-            """
             SYSTEM DROP FILESYSTEM CACHE;
             INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
             INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
@@ -505,13 +441,7 @@ SETTINGS disk = disk(type = cache,
             path = "test_system_sync_filesystem_cache",
             delayed_cleanup_interval_ms = 10000000, disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
-    """
-    )
 
-    wait_for_cache_initialized(node, "test_system_sync_filesystem_cache")
-
-    node.query(
-        """
 INSERT INTO test SELECT 1, 'test';
     """
     )
@@ -595,13 +525,7 @@ SETTINGS disk = disk(type = cache,
             keep_free_space_elements_ratio = {elements_ratio},
             disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
-    """
-    )
 
-    wait_for_cache_initialized(node, "test_keep_up_size_ratio")
-
-    node.query(
-        """
 INSERT INTO test SELECT randomString(200);
     """
     )
