@@ -1724,7 +1724,7 @@ struct KeeperStorageRemoveRecursiveRequestProcessor final : public KeeperStorage
             const auto * remove_delta = std::get_if<typename Storage::RemoveNodeDelta>(&it->operation);
             if (remove_delta)
             {
-                auto new_responses = processWatchesImpl(it->path, watches, list_watches, Coordination::Event::DELETED);
+                auto new_responses = processWatchesImpl(getDecodedKey<Storage::use_rocksdb>(it->path), watches, list_watches, Coordination::Event::DELETED);
                 responses.insert(responses.end(), std::make_move_iterator(new_responses.begin()), std::make_move_iterator(new_responses.end()));
             }
         }
@@ -1801,7 +1801,7 @@ private:
                 auto actual_node_ptr = storage.uncommitted_state.getActualNodeView(path, node);
                 chassert(actual_node_ptr != nullptr); /// explicitly check that node is not deleted
 
-                if (actual_node_ptr->numChildren() > 0 && !storage.checkACL(path, Coordination::ACL::Delete, session_id, /*is_local=*/false))
+                if (actual_node_ptr->numChildren() > 0 && !storage.checkACL(getDecodedKey<Storage::use_rocksdb>(path), Coordination::ACL::Delete, session_id, /*is_local=*/false))
                     return CollectStatus::NoAuth;
 
                 if (auto status = visitRocksDBNode(steps, getDecodedKey<Storage::use_rocksdb>(path), level); status != CollectStatus::Ok)
@@ -1889,6 +1889,18 @@ private:
             return CollectStatus::Ok;
         }
 
+        template<bool use_rocksdb>
+        struct IsParentChecker
+        {
+            bool operator()(StringRef str, StringRef prefix)
+            {
+                if constexpr(use_rocksdb)
+                    return str.size >= prefix.size && memcmp(str.data, prefix.data, prefix.size) == 0;
+                else
+                    return parentNodePath(str) == StringRef(prefix.data, prefix.size-1);
+            }
+        };
+
         CollectStatus visitRootAndUncommitted(std::deque<Step> & steps, StringRef root_path, const SNode & root_node, uint32_t level)
         {
             const auto & nodes = storage.uncommitted_state.nodes;
@@ -1900,12 +1912,8 @@ private:
                 encoded_root_path = root_path.toString() + "/";
             /// nodes are sorted by paths with level locality
             auto it = nodes.upper_bound(encoded_root_path);
-
-            auto start_with = [](StringRef str, StringRef prefix)
-            {
-                return str.size >= prefix.size && memcmp(str.data, prefix.data, prefix.size) == 0;
-            };
-            for (; it != nodes.end() && start_with(it->first, encoded_root_path); ++it)
+            IsParentChecker<Storage::use_rocksdb> is_parent_checker;
+            for (; it != nodes.end() && is_parent_checker(it->first, encoded_root_path); ++it)
             {
                 const auto actual_child_node_ptr = it->second.node.get();
 
