@@ -1,18 +1,6 @@
 /* src/include/pg_config.h.  Generated from pg_config.h.in by configure.  */
 /* src/include/pg_config.h.in.  Generated from configure.in by autoheader.  */
 
-/* Define to the type of arg 1 of 'accept' */
-#define ACCEPT_TYPE_ARG1 int
-
-/* Define to the type of arg 2 of 'accept' */
-#define ACCEPT_TYPE_ARG2 struct sockaddr *
-
-/* Define to the type of arg 3 of 'accept' */
-#define ACCEPT_TYPE_ARG3 size_t
-
-/* Define to the return type of 'accept' */
-#define ACCEPT_TYPE_RETURN int
-
 /* Define if building universal (internal helper macro) */
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
@@ -48,6 +36,9 @@
 
 /* Define to the default TCP port number as a string constant. */
 #define DEF_PGPORT_STR "5432"
+
+/* Define to the file name extension of dynamically-loadable modules. */
+#define DLSUFFIX ".so"
 
 /* Define to build with GSSAPI support. (--with-gssapi) */
 //#define ENABLE_GSS 0
@@ -121,6 +112,9 @@
 /* Define to 1 if you have the declaration of `snprintf', and to 0 if you
    don't. */
 #define HAVE_DECL_SNPRINTF 1
+
+/* Define to 1 if you have the declaration of `sigwait', and to 0 if you don't. */
+#define HAVE_DECL_SIGWAIT 1
 
 /* Define to 1 if you have the declaration of `strlcat', and to 0 if you
    don't. */
@@ -257,6 +251,9 @@
 /* Define to 1 if you have the `inet_aton' function. */
 #define HAVE_INET_ATON 1
 
+/* Define to 1 if you have the `inet_pton' function. */
+#define HAVE_INET_PTON 1
+
 /* Define to 1 if the system has the type `int64'. */
 /* #undef HAVE_INT64 */
 
@@ -323,6 +320,9 @@
 /* Define to 1 if you have the `z' library (-lz). */
 #define HAVE_LIBZ 1
 
+/* Define to 1 if you have the `zstd' library (-lzstd). */
+/* #undef HAVE_LIBZSTD */
+
 /* Define to 1 if constants of type 'long long int' should have the suffix LL.
    */
 #define HAVE_LL_CONSTANTS 1
@@ -378,6 +378,9 @@
 /* Define to 1 if you have the <poll.h> header file. */
 #define HAVE_POLL_H 1
 
+/* Define to 1 if you have a POSIX-conforming sigwait declaration. */
+/* #undef HAVE_POSIX_DECL_SIGWAIT */
+
 /* Define to 1 if you have the `posix_fadvise' function. */
 #define HAVE_POSIX_FADVISE 1
 
@@ -408,9 +411,6 @@
 /* Define to 1 if you have the <pwd.h> header file. */
 #define HAVE_PWD_H 1
 
-/* Define to 1 if you have the `random' function. */
-#define HAVE_RANDOM 1
-
 /* Define to 1 if you have the <readline.h> header file. */
 /* #undef HAVE_READLINE_H */
 
@@ -426,10 +426,6 @@
 /* Define to 1 if you have the `rint' function. */
 #define HAVE_RINT 1
 
-/* Define to 1 if you have the global variable
-   'rl_completion_append_character'. */
-/* #undef HAVE_RL_COMPLETION_APPEND_CHARACTER */
-
 /* Define to 1 if you have the `rl_completion_matches' function. */
 #define HAVE_RL_COMPLETION_MATCHES 1
 
@@ -438,6 +434,9 @@
 
 /* Define to 1 if you have the `rl_reset_screen_size' function. */
 /* #undef HAVE_RL_RESET_SCREEN_SIZE */
+
+/* Define to 1 if you have the `rl_variable_bind' function. */
+#define HAVE_RL_VARIABLE_BIND 1
 
 /* Define to 1 if you have the <security/pam_appl.h> header file. */
 #define HAVE_SECURITY_PAM_APPL_H 1
@@ -450,6 +449,9 @@
 
 /* Define to 1 if you have the `shm_open' function. */
 #define HAVE_SHM_OPEN 1
+
+/* Define to 1 if the system has the type `socklen_t'. */
+#define HAVE_SOCKLEN_T 1
 
 /* Define to 1 if you have the `sigprocmask' function. */
 #define HAVE_SIGPROCMASK 1
@@ -465,9 +467,6 @@
 
 /* Define to 1 if you have spinlocks. */
 #define HAVE_SPINLOCKS 1
-
-/* Define to 1 if you have the `srandom' function. */
-#define HAVE_SRANDOM 1
 
 /* Define to 1 if you have the `SSL_CTX_set_num_tickets' function. */
 /* #define HAVE_SSL_CTX_SET_NUM_TICKETS */
@@ -884,6 +883,9 @@
 
 /* Define to select Win32-style shared memory. */
 /* #undef USE_WIN32_SHARED_MEMORY */
+
+/* Define to 1 to build with ZSTD support. (--with-zstd) */
+/* #undef USE_ZSTD */
 
 /* Define to 1 if `wcstombs_l' requires <xlocale.h>. */
 /* #undef WCSTOMBS_L_IN_XLOCALE */
