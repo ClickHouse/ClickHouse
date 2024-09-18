@@ -76,7 +76,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         config.keys(prefix, all_keys);
         for (const auto & key : all_keys)
         {
-            if (key == "role_mapping" || key.starts_with("role_mapping["))
+            if (key == "role_mapping" || key.find("role_mapping[") == 0)
                 parseLDAPRoleSearchParams(role_search_params_cfg.emplace_back(), config, prefix_str + key);
         }
     }
@@ -94,7 +94,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     role_change_subscription = access_control.subscribeForChanges<Role>(
         [this] (const UUID & id, const AccessEntityPtr & entity)
         {
-            this->processRoleChange(id, entity);
+            return this->processRoleChange(id, entity);
         }
     );
 }
@@ -200,7 +200,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
 void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const
 {
     const auto external_roles_hash = boost::hash<LDAPClient::SearchResultsList>{}(external_roles);
-    assignRolesNoLock(user, external_roles, external_roles_hash);
+    return assignRolesNoLock(user, external_roles, external_roles_hash);
 }
 
 
@@ -468,8 +468,8 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         // User does not exist, so we create one, and will add it if authentication is successful.
         new_user = std::make_shared<User>();
         new_user->setName(credentials.getUserName());
-        new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
-        new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+        new_user->auth_data = AuthenticationData(AuthenticationType::LDAP);
+        new_user->auth_data.setLDAPServerName(ldap_server_name);
         user = new_user;
     }
 
@@ -504,7 +504,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     }
 
     if (id)
-        return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::LDAP) };
+        return AuthResult{ .user_id = *id };
     return std::nullopt;
 }
 

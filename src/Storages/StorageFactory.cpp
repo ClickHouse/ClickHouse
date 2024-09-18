@@ -3,8 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Core/Settings.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
 
@@ -203,7 +202,7 @@ StoragePtr StorageFactory::get(
     }
 
     if (query.comment)
-        comment = query.comment->as<ASTLiteral &>().value.safeGet<String>();
+        comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{
@@ -251,15 +250,6 @@ AccessType StorageFactory::getSourceAccessType(const String & table_engine) cons
     if (it == storages.end())
         return AccessType::NONE;
     return it->second.features.source_access_type;
-}
-
-
-const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const String & storage_name) const
-{
-    auto it = storages.find(storage_name);
-    if (it == storages.end())
-        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
-    return it->second.features;
 }
 
 }

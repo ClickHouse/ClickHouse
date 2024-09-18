@@ -63,7 +63,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    enum class FileStatus : uint8_t
+    enum class FileStatus
     {
         OPEN, /// First time open file after table start up.
         NO_CHANGE,
@@ -177,7 +177,7 @@ private:
     };
     std::shared_ptr<TaskContext> task;
 
-    std::unique_ptr<FileLogDirectoryWatcher> directory_watch;
+    std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
 
     void loadFiles();
 

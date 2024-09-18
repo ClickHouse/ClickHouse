@@ -13,7 +13,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
@@ -273,8 +273,6 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             address.default_database,
             address.user,
             address.password,
-            address.proto_send_chunked,
-            address.proto_recv_chunked,
             address.quota_key,
             address.cluster,
             address.cluster_secret,
@@ -285,7 +283,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
-    const auto & settings = storage.getContext()->getSettingsRef();
+    const auto settings = storage.getContext()->getSettings();
     return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -557,7 +555,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         {
             if (!fs::exists(file_path))
             {
-                LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);
+                LOG_WARNING(log, "File {} does not exists, likely due to current_batch.txt processing", file_path);
                 continue;
             }
 

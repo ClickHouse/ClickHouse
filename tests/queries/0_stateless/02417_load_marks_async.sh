@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test;"
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -n -q "
 CREATE TABLE test
 (
 n0 UInt64,

@@ -146,6 +146,8 @@ const char * errorMessage(Error code)
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
         case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
     }
+
+    UNREACHABLE();
 }
 
 bool isHardwareError(Error zk_return_code)
@@ -171,7 +173,6 @@ bool isUserError(Error zk_return_code)
 
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
-void RemoveRecursiveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void ExistsRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }

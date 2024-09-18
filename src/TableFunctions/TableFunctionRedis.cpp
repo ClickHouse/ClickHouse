@@ -15,6 +15,7 @@
 
 #include <Storages/StorageRedis.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB

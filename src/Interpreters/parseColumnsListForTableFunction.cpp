@@ -1,9 +1,7 @@
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -22,19 +20,6 @@ extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 extern const int ILLEGAL_COLUMN;
 
 }
-
-DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings& settings)
-        : allow_suspicious_low_cardinality_types(settings.allow_suspicious_low_cardinality_types)
-        , allow_experimental_object_type(settings.allow_experimental_object_type)
-        , allow_suspicious_fixed_string_types(settings.allow_suspicious_fixed_string_types)
-        , allow_experimental_variant_type(settings.allow_experimental_variant_type)
-        , allow_suspicious_variant_types(settings.allow_suspicious_variant_types)
-        , validate_nested_types(settings.validate_experimental_and_suspicious_types_inside_nested_types)
-        , allow_experimental_dynamic_type(settings.allow_experimental_dynamic_type)
-        , allow_experimental_json_type(settings.allow_experimental_json_type)
-{
-}
-
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
@@ -55,7 +40,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 
         if (!settings.allow_experimental_object_type)
         {
-            if (data_type.hasDynamicSubcolumnsDeprecated())
+            if (data_type.hasDynamicSubcolumns())
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -101,10 +86,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 {
                     for (size_t j = i + 1; j < variants.size(); ++j)
                     {
-                        /// Don't consider bool as similar to something (like number).
-                        if (isBool(variants[i]) || isBool(variants[j]))
-                            continue;
-
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
                         {
                             throw Exception(
@@ -120,31 +101,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         }
                     }
                 }
-            }
-        }
-
-        if (!settings.allow_experimental_dynamic_type)
-        {
-            if (isDynamic(data_type))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because experimental Dynamic type is not allowed. "
-                    "Set setting allow_experimental_dynamic_type = 1 in order to allow it",
-                    data_type.getName());
-            }
-        }
-
-        if (!settings.allow_experimental_json_type)
-        {
-            const auto * object_type = typeid_cast<const DataTypeObject *>(&data_type);
-            if (object_type && object_type->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because experimental JSON type is not allowed. "
-                    "Set setting allow_experimental_json_type = 1 in order to allow it",
-                    data_type.getName());
             }
         }
     };
@@ -165,7 +121,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     if (!columns_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false, false);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
         validateDataType(type, validation_settings);
@@ -193,7 +149,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
-        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
+        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false, false);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
             validateDataType(type, validation_settings);

@@ -96,7 +96,7 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::finishAndWait() noexcept
+    void ParallelFormattingOutputFormat::finishAndWait()
     {
         emergency_stop = true;
 

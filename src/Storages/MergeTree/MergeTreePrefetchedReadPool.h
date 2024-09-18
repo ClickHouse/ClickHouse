@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
 #include <IO/AsyncReadCounters.h>
 #include <boost/heap/priority_queue.hpp>
@@ -14,12 +13,11 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
-class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase
+class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase, private WithContext
 {
 public:
     MergeTreePrefetchedReadPool(
         RangesInDataParts && parts_,
-        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -53,18 +51,18 @@ private:
     class PrefetchedReaders
     {
     public:
-        PrefetchedReaders(
-            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
+        PrefetchedReaders() = default;
+        PrefetchedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
 
         void wait();
         MergeTreeReadTask::Readers get();
         bool valid() const { return is_valid; }
+        ~PrefetchedReaders();
 
     private:
         bool is_valid = false;
         MergeTreeReadTask::Readers readers;
-
-        ThreadPoolCallbackRunnerLocal<void> prefetch_runner;
+        std::vector<std::future<void>> prefetch_futures;
     };
 
     struct ThreadTask
@@ -110,7 +108,7 @@ private:
 
     void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);
-    std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
+    std::future<void> createPrefetchedFuture(IMergeTreeReader * reader, Priority priority);
 
     MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
