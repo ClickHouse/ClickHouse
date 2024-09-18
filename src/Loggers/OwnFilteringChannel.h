@@ -49,6 +49,13 @@ public:
             pChannel->setProperty(name, value);
     }
 
+    std::string getProperty(const std::string& name) const override
+    {
+        if (pChannel)
+            return pChannel->getProperty(name);
+        return "";
+    }
+
 private:
     bool regexpFilteredOut(std::string text) const;
 
