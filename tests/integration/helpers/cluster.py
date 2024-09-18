@@ -2164,13 +2164,7 @@ class ClickHouseCluster:
 
     def restart_container(self, container_name):
         p = subprocess.Popen(
-            (
-                "docker",
-                "restart",
-                "--signal",
-                "9",
-                container_name
-            ),
+            ("docker", "restart", "--signal", "9", container_name),
             stdout=subprocess.PIPE,
         )
         p.communicate()
