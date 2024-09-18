@@ -126,6 +126,8 @@ private:
     static ColumnPtr
     executeGenericConst(const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder<mode> & builder);
 
+    static ColumnPtr removeNullableIfNeeded(const ColumnPtr & column, const DataTypePtr & expect_type);
+
     template <typename IndexType>
     static ColumnPtr executeGeneric(
         const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder<mode> & builder);
@@ -144,6 +146,7 @@ private:
         const DataTypePtr & result_type,
         ArrayImpl::NullMapBuilder<mode> & builder,
         size_t input_rows_count) const;
+
 
     /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
@@ -1394,6 +1397,22 @@ ColumnPtr FunctionArrayElement<mode>::executeGenericConst(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::removeNullableIfNeeded(const ColumnPtr & column, const DataTypePtr & expect_type)
+{
+    const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get());
+    if (nullable_column && expect_type->isNullable())
+    {
+        /// It happens when input argument is Array(Tuple(T1, T2, ...)) or Array(Map(K, V)) in function ArrayElementOrNull.
+        /// e.g. arrayElementOrNull(Array(Tuple(T1, T2))) would be transformed into Tuple(ArrayElementOrNull(T1), ArrayElementOrNull(T2))
+        /// The former return type Tuple(T1, T2) because Tuple can't be wrapped into Nullable. But the latter return type Tuple(Nullable(T1), Nullable(T2)), which is different.
+        /// To keep return type consistency, we need to unwrap the Nullable column returned by ArrayElementOrNull(T1) and ArrayElementOrNull(T2)
+        return nullable_column->getNestedColumnPtr();
+    }
+    else
+        return column;
+}
+
+template <ArrayElementExceptionMode mode>
 template <typename IndexType>
 ColumnPtr FunctionArrayElement<mode>::executeGeneric(
     const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder<mode> & builder)
@@ -1556,7 +1575,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
         auto col = executeImpl(temporary_results, type, input_rows_count);
-        result_key_column = std::move(col);
+        result_key_column = removeNullableIfNeeded(col, key_type);
     }
 
     /// Calculate the function for the values of the map
@@ -1570,7 +1589,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
         auto col = executeImpl(temporary_results, type, input_rows_count);
-        result_value_column = std::move(col);
+        result_value_column = removeNullableIfNeeded(col, value_type);
     }
 
     const auto & data_keys = typeid_cast<const ColumnArray &>(*result_key_column).getDataPtr();
@@ -1625,7 +1644,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
         auto col = executeImpl(temporary_results, type, input_rows_count);
-        result_tuple_columns[i] = std::move(col);
+        result_tuple_columns[i] = removeNullableIfNeeded(col, tuple_types[i]);
     }
 
     return ColumnTuple::create(result_tuple_columns);
