@@ -1,5 +1,6 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionFactory.h>
+#include "Columns/ColumnNullable.h"
 #include <bit>
 
 
@@ -19,7 +20,7 @@ struct BitHammingDistanceImpl
     static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
+    static NO_SANITIZE_UNDEFINED Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         /// Note: it's unspecified if signed integers should be promoted with sign-extension or with zero-fill.
         /// This behavior can change in the future.
@@ -39,7 +40,15 @@ struct BitHammingDistanceImpl
             return res;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported data type combination in function 'bitHammingDistance'");
+        {
+            if (!m)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported data type combination in function 'bitHammingDistance'");
+            else
+            {
+                *m = 1;
+                return Result();
+            }
+        }
     }
 
 #if USE_EMBEDDED_COMPILER

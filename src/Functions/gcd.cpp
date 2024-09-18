@@ -3,6 +3,7 @@
 #include <Functions/GCDLCMImpl.h>
 
 #include <boost/integer/common_factor.hpp>
+#include "Columns/ColumnNullable.h"
 
 
 namespace DB
@@ -18,7 +19,7 @@ struct GCDImpl : public GCDLCMImpl<A, B, GCDImpl<A, B>, NameGCD>
 {
     using ResultType = typename GCDLCMImpl<A, B, GCDImpl, NameGCD>::ResultType;
 
-    static ResultType applyImpl(A a, B b)
+    static ResultType applyImpl(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         using Int = typename NumberTraits::ToInteger<ResultType>::Type;
         return boost::integer::gcd(Int(a), Int(b)); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)

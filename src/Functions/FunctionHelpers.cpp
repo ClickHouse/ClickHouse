@@ -6,6 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -205,7 +206,7 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
     return {nested_columns, offsets->data()};
 }
 
-ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * res_null_map)
 {
     ColumnPtr result_null_map_column;
 
@@ -218,6 +219,19 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();
+    }
+
+    if (res_null_map)
+    {
+        if (!result_null_map_column)
+            result_null_map_column = ColumnUInt8::create(input_rows_count);
+
+        MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
+        NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+        for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+            result_null_map[i] |= (*res_null_map)[i];
+
+        result_null_map_column = std::move(mutable_result_null_map_column);
     }
 
     for (const auto & elem : args)

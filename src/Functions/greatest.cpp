@@ -2,6 +2,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/LeastGreatestGeneric.h>
+#include "Columns/ColumnNullable.h"
 
 
 namespace DB
@@ -15,7 +16,7 @@ struct GreatestBaseImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         return static_cast<Result>(a) > static_cast<Result>(b) ?
                static_cast<Result>(a) : static_cast<Result>(b);
@@ -46,7 +47,7 @@ struct GreatestSpecialImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::greaterOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);

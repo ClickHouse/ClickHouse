@@ -2,10 +2,13 @@
 
 #include <cmath>
 #include <type_traits>
+#include "Common/Elf.h"
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
+#include "Columns/ColumnNullable.h"
+#include "base/defines.h"
 #include "config.h"
 
 
@@ -104,6 +107,22 @@ struct DivideIntegralImpl
         }
     }
 
+    // Setting to NULL instead of throwing exception if division by zero or other error if m is not NULL
+    template <typename Result = ResultType>
+    static Result apply(A a, B b, NullMap::value_type * m)
+    {
+        assert(m);
+        try
+        {
+            return static_cast<Result>(apply(a, b));
+        }
+        catch (const std::exception&)
+        {
+            *m = 1;
+            return Result();
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
 #endif
@@ -120,7 +139,7 @@ struct ModuloImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {
@@ -131,13 +150,38 @@ struct ModuloImpl
         {
             if constexpr (std::is_floating_point_v<A>)
                 if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
-                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
+                {
+                    if (!m)
+                        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
+                    else
+                    {
+                        *m = 1;
+                        return Result();
+                    }
+                }
 
             if constexpr (std::is_floating_point_v<B>)
                 if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
-                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
+                {
+                    if (!m)
+                        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
+                    else
+                    {
+                        *m = 1;
+                        return Result();
+                    }
+                }
 
-            throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
+            if (unlikely(divisionLeadsToFPE(IntegerAType(a), IntegerBType(b))))
+            {
+                if (!m)
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
+                else
+                {
+                    *m = 1;
+                    return Result();
+                }
+            }
 
             if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
             {
@@ -175,7 +219,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
         if constexpr (is_signed_v<A>)
@@ -187,13 +231,22 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
                 else
                 {
                     if (b == std::numeric_limits<B>::lowest())
-                        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+                    {
+                        if (!m)
+                            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+                        else
+                        {
+                            *m = 1;
+                            return Result();
+                        }
+                    }
                     res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
                 }
             }
         }
         return static_cast<ResultType>(res);
     }
+
 };
 
 }

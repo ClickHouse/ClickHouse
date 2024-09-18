@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <base/hex.h>
+#include "Columns/ColumnNullable.h"
 
 namespace DB
 {
@@ -22,12 +23,20 @@ struct BitShiftRightImpl
     static const constexpr bool allow_string_integer = true;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else if (b < 0 || static_cast<UInt256>(b) > 8 * sizeof(A))
+        {
+            if (!m)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
+            else
+            {
+                *m = 1;
+                return Result();
+            }
+        }
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
         else

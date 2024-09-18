@@ -13,7 +13,7 @@ struct DivideIntegralOrZeroImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         if (unlikely(divisionLeadsToFPE(a, b)))
             return 0;

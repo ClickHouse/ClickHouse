@@ -254,8 +254,9 @@ struct BinaryOperation
     static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr, NullMap * res_nullmap = nullptr)
     {
+
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
@@ -268,28 +269,39 @@ struct BinaryOperation
         {
             if (right_nullmap)
             {
+                assert(res_nullmap);
                 for (size_t i = 0; i < size; ++i)
                     if ((*right_nullmap)[i])
                         c[i] = ResultType();
                     else
-                        apply<op_case>(a, b, c, i);
+                        apply<op_case, true>(a, b, c, i, &((*res_nullmap)[i]));
             }
             else
                 for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
+                    apply<op_case, false>(a, b, c, i);
         }
     }
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
 private:
-    template <OpCase op_case>
-    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    template <OpCase op_case, bool nullable>
+    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i, NullMap::value_type * m = nullptr)
     {
-        if constexpr (op_case == OpCase::Vector)
-            c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        if constexpr (nullable)
+        {
+            if constexpr (op_case == OpCase::Vector)
+                c[i] = Op::template apply<ResultType>(a[i], b[i], m);
+            else
+                c[i] = Op::template apply<ResultType>(*a, b[i], m);
+        }
         else
-            c[i] = Op::template apply<ResultType>(*a, b[i]);
+        {
+            if constexpr (op_case == OpCase::Vector)
+                c[i] = Op::template apply<ResultType>(a[i], b[i]);
+            else
+                c[i] = Op::template apply<ResultType>(*a, b[i]);
+        }
     }
 };
 
@@ -2035,13 +2047,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 
     template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap) const
+    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * res_nullmap [[maybe_unused]]) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
         using DecimalResultType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::DecimalResultDataType;
-
         if constexpr (std::is_same_v<ResultDataType, InvalidType>)
             return nullptr;
         else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
@@ -2148,7 +2159,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         col_right->getData().data(),
                         vec_res.data(),
                         vec_res.size(),
-                        right_nullmap);
+                        right_nullmap,
+                        res_nullmap);
                 }
                 else if (col_left_const && col_right)
                 {
@@ -2159,14 +2171,15 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         col_right->getData().data(),
                         vec_res.data(),
                         vec_res.size(),
-                        right_nullmap);
+                        right_nullmap,
+                        res_nullmap);
                 }
                 else if (col_left && col_right_const)
                 {
                     const T1 value = col_right_const->template getValue<T1>();
 
                     OpImpl::template process<OpCase::RightConstant>(
-                        col_left->getData().data(), &value, vec_res.data(), vec_res.size(), right_nullmap);
+                        col_left->getData().data(), &value, vec_res.data(), vec_res.size(), right_nullmap, res_nullmap);
                 }
                 else
                     return nullptr;
@@ -2223,7 +2236,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr) const
+    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr, NullMap * res_nullmap [[maybe_unused]] = nullptr) const
     {
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
@@ -2238,9 +2251,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
+            NullMap res_null_map;
+            res_null_map.resize_fill(nullable_column->getNullMapData().size(), 0);
             const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
-            return wrapInNullable(res, arguments, result_type, input_rows_count);
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap, &res_null_map);
+            return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
         }
 
         /// Special case - one or both arguments are IPv4
@@ -2318,7 +2333,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     return (res = executeStringInteger<ColumnString>(arguments, left, right)) != nullptr;
             }
             else
-                return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
+                return (res = executeNumeric(arguments, left, right, right_nullmap, res_nullmap)) != nullptr;
         });
 
         if (isArray(result_type))

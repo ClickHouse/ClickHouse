@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
+#include "Columns/ColumnNullable.h"
 #include "divide/divide.h"
 
 
@@ -26,7 +27,7 @@ struct DivideIntegralByConstantImpl
     static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap, NullMap * res_nullmap)
     {
         if constexpr (op_case == OpCase::RightConstant)
         {
@@ -39,15 +40,16 @@ struct DivideIntegralByConstantImpl
         {
             if (right_nullmap)
             {
+                assert(res_nullmap);
                 for (size_t i = 0; i < size; ++i)
                     if ((*right_nullmap)[i])
                         c[i] = ResultType();
                     else
-                        apply<op_case>(a, b, c, i);
+                        apply<op_case, true>(a, b, c, i, &((*res_nullmap)[i]));
             }
             else
                 for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
+                    apply<op_case, false>(a, b, c, i);
         }
     }
 
@@ -79,13 +81,23 @@ struct DivideIntegralByConstantImpl
     }
 
 private:
-    template <OpCase op_case>
-    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    template <OpCase op_case, bool nullable>
+    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i, NullMap::value_type * m = nullptr)
     {
-        if constexpr (op_case == OpCase::Vector)
-            c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        if constexpr (nullable)
+        {
+            if constexpr (op_case == OpCase::Vector)
+                c[i] = Op::template apply<ResultType>(a[i], b[i], m);
+            else
+                c[i] = Op::template apply<ResultType>(*a, b[i], m);
+        }
         else
-            c[i] = Op::template apply<ResultType>(*a, b[i]);
+        {
+            if constexpr (op_case == OpCase::Vector)
+                c[i] = Op::template apply<ResultType>(a[i], b[i]);
+            else
+                c[i] = Op::template apply<ResultType>(*a, b[i]);
+        }
     }
 };
 

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include "Columns/ColumnNullable.h"
 
 
 namespace DB
@@ -15,7 +16,7 @@ struct ModuloOrZeroImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {

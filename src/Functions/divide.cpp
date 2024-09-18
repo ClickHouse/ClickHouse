@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include "Columns/ColumnNullable.h"
 
 namespace DB
 {
@@ -16,7 +17,7 @@ struct DivideFloatingImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         return static_cast<Result>(a) / b;
     }

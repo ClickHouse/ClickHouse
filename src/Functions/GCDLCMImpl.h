@@ -6,6 +6,7 @@
 #include <limits>
 #include <type_traits>
 
+#include "Columns/ColumnNullable.h"
 #include "config.h"
 
 
@@ -47,6 +48,20 @@ struct GCDLCMImpl
         }
 
         return Impl::applyImpl(a, b);
+    }
+
+    template <typename Result = ResultType>
+    static Result apply(A a, B b, NullMap::value_type *m)
+    {
+        try
+        {
+            return apply(a, b);
+        }
+        catch (const std::exception&)
+        {
+            *m = 1;
+            return Result();
+        }
     }
 
 #if USE_EMBEDDED_COMPILER

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include "Columns/ColumnNullable.h"
 
 namespace DB
 {
@@ -20,7 +21,7 @@ struct BitRotateRightImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bit rotate is not implemented for big integers");
