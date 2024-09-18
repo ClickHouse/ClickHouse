@@ -372,16 +372,21 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
     split->setLevel("syslog", syslog_level);
 
-    // Global logging level (it can be overridden for specific loggers).
-    logger.setLevel(max_log_level);
-
-    // Set level to all already created loggers
-    std::vector<std::string> names;
-
     std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
     std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
 
+    // Global logging level (it can be overridden for specific loggers).
+    logger.setLevel(max_log_level);
+    if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.getChannel()))
+        regexp_channel->setRegexpPatterns(global_pos_pattern, global_neg_pattern);
+    else
+        throw DB::Exception(DB::ErrorCodes::TYPE_MISMATCH, "Couldn't convert to OwnFilteringChannel.");
+
+    // Set level to all already created loggers
+    std::vector<std::string> names;
     logger.root().names(names);
+
+    // Set all to global in case logger.levels are not specified
     for (const auto & name : names)
     {
         logger.root().get(name).setLevel(max_log_level);
