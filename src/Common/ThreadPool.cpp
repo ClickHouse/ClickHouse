@@ -142,14 +142,8 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
 {
-    // can go to zero, meaning that max_threads threads were already started
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
-
-    // if positive - it means that threre are more threads than jobs (and some are doing nothing)
-    // if zero - means that every thread have some job
-    // if negative - it means that we have more jobs than threads
     available_threads.store(0, std::memory_order_relaxed);
-
 }
 
 template <typename Thread>
@@ -233,6 +227,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             return false;
     };
 
+    // Decrement available_threads, scoped to the job lifecycle.
+    // This ensures that available_threads decreases when a new job starts
+    // and automatically increments when the job completes or goes out of scope.
     auto available_threads_decrement = std::make_unique<ScopedDecrement>(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
@@ -241,16 +238,15 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int currently_available_threads = available_threads.load(std::memory_order_relaxed);
 
+    // Try to create a new thread if all existing threads are busy and there is capacity.
     while (currently_available_threads <= 0 && capacity > 0)
     {
-        // Try to decrement remaining_pool_capacity atomically
         if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1, std::memory_order_relaxed))
         {
             try
             {
-                // Successfully decremented, attempt to create a new thread
                 new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                break;  // Exit loop if thread creation succeeds
+                break; // Exit the loop once a thread is successfully created.
             }
             catch (...)
             {
