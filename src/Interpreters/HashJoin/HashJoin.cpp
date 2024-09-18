@@ -692,11 +692,11 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
     for (auto & stored_block : data->blocks)
     {
+        doDebugAsserts();
+
         size_t old_size = stored_block.allocatedBytes();
         stored_block = stored_block.shrinkToFit();
         size_t new_size = stored_block.allocatedBytes();
-
-        doDebugAsserts();
 
         if (old_size >= new_size)
         {
