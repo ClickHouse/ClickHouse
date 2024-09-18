@@ -200,7 +200,6 @@ void MultiplexedConnections::sendQuery(
 }
 
 
-
 void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
     std::lock_guard lock(cancel_mutex);
