@@ -204,7 +204,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const size_t number_of_arguments = arguments.size();
-        
+
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
 
