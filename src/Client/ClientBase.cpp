@@ -1044,9 +1044,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             try {
                 connection->sendQuery(
                     connection_parameters.timeouts,
-                    QueryToSend{.text = query, .stage = query_processing_stage},
+                    query,
                     query_parameters,
                     client_context->getCurrentQueryId(),
+                    query_processing_stage,
                     &client_context->getSettingsRef(),
                     &client_context->getClientInfo(),
                     true,
@@ -1501,9 +1502,10 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     connection->sendQuery(
         connection_parameters.timeouts,
-        QueryToSend{.text = query, .stage = query_processing_stage},
+        query,
         query_parameters,
         client_context->getCurrentQueryId(),
+        query_processing_stage,
         &client_context->getSettingsRef(),
         &client_context->getClientInfo(),
         true,

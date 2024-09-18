@@ -64,13 +64,6 @@ using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
 class QueryPlan;
 
-struct QueryToSend
-{
-    std::string text;
-    UInt64 stage;
-    std::shared_ptr<QueryPlan> plan{};
-};
-
 class IServerConnection : boost::noncopyable
 {
 public:
@@ -103,13 +96,16 @@ public:
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const QueryToSend & query,
+        const String & query,
         const NameToNameMap & query_parameters,
         const String & query_id_,
+        UInt64 stage,
         const Settings * settings,
         const ClientInfo * client_info,
         bool with_pending_data,
         std::function<void(const Progress &)> process_progress_callback) = 0;
+
+    virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
     virtual void sendCancel() = 0;
 

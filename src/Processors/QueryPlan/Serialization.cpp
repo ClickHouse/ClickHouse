@@ -148,7 +148,7 @@ static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out)
     }
 }
 
-QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in)
+QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
 {
     UInt64 num_sets;
     readVarUInt(num_sets, in);
@@ -201,7 +201,7 @@ QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & regi
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
-            auto plan_for_set = QueryPlan::deserialize(in);
+            auto plan_for_set = QueryPlan::deserialize(in, context);
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},
@@ -278,7 +278,7 @@ void QueryPlan::serialize(WriteBuffer & out) const
     serializeSets(registry, out);
 }
 
-QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
 {
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
@@ -330,7 +330,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in)
         for (const auto & child : frame.children)
             input_streams.push_back(child->step->getOutputStream());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, input_streams, &output_stream, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_streams, &output_stream, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputStream())
@@ -349,7 +349,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in)
         stack.pop();
     }
 
-    return deserializeSets(std::move(plan), sets_registry, in);
+    return deserializeSets(std::move(plan), sets_registry, in, context);
 }
 
 static std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)

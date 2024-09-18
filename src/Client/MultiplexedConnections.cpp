@@ -90,6 +90,21 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
     }
 }
 
+void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendQueryPlan(query_plan);
+    }
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -114,8 +129,9 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
 
 void MultiplexedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
-    const QueryToSend & query,
+    const String & query,
     const String & query_id,
+    UInt64 stage,
     ClientInfo & client_info,
     bool with_pending_data)
 {
@@ -170,18 +186,20 @@ void MultiplexedConnections::sendQuery(
                 modified_settings.parallel_replica_offset = i;
 
             replica_states[i].connection->sendQuery(
-                timeouts, query, /* query_parameters */ {}, query_id, &modified_settings, &client_info, with_pending_data, {});
+                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
         }
     }
     else
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(
-            timeouts, query, /* query_parameters */ {}, query_id, &modified_settings, &client_info, with_pending_data, {});
+            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
     }
 
     sent_query = true;
 }
+
+
 
 void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {

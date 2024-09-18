@@ -32,10 +32,13 @@ public:
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const QueryToSend & query,
+        const String & query,
         const String & query_id,
+        UInt64 stage,
         ClientInfo & client_info,
         bool with_pending_data) override;
+
+    void sendQueryPlan(const QueryPlan & query_plan) override;
 
     void sendReadTaskResponse(const String &) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;

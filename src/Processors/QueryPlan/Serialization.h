@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -19,6 +20,7 @@ struct IQueryPlanStep::Deserialization
 {
     ReadBuffer & in;
     DeserializedSetsRegistry & registry;
+    const ContextPtr & context;
 
     const DataStreams & input_streams;
     const DataStream * output_stream;

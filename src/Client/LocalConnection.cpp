@@ -88,9 +88,10 @@ void LocalConnection::sendProfileEvents()
 
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
-    const QueryToSend & query,
+    const String & query,
     const NameToNameMap & query_parameters,
     const String & query_id,
+    UInt64 stage,
     const Settings *,
     const ClientInfo * client_info,
     bool,
@@ -126,9 +127,9 @@ void LocalConnection::sendQuery(
     state.emplace();
 
     state->query_id = query_id;
-    state->query = query.text;
+    state->query = query;
     state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
-    state->stage = QueryProcessingStage::Enum(query.stage);
+    state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
 
@@ -279,6 +280,11 @@ void LocalConnection::sendQuery(
         state->io.onException();
         state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
     }
+}
+
+void LocalConnection::sendQueryPlan(const QueryPlan &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::sendData(const Block & block, const String &, bool)

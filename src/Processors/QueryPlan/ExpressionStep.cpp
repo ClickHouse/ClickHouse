@@ -104,7 +104,7 @@ void ExpressionStep::serialize(Serialization & ctx) const
 
 std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ctx)
 {
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     if (ctx.input_streams.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 

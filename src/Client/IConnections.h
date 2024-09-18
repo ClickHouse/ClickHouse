@@ -19,10 +19,13 @@ public:
     /// Send request to replicas.
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const QueryToSend & query,
+        const String & query,
         const String & query_id,
+        UInt64 stage,
         ClientInfo & client_info,
         bool with_pending_data) = 0;
+
+    virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
     virtual void sendReadTaskResponse(const String &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;

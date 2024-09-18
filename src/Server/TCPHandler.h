@@ -266,6 +266,7 @@ private:
     void receiveAddendum();
     bool receivePacket();
     void receiveQuery();
+    void receiveQueryPlan();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();

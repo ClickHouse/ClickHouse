@@ -749,9 +749,10 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
-    const QueryToSend & query,
+    const String & query,
     const NameToNameMap & query_parameters,
     const String & query_id_,
+    UInt64 stage,
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
@@ -759,7 +760,7 @@ void Connection::sendQuery(
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
-    span.addAttribute("clickhouse.query", query.text);
+    span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
 
     ClientInfo new_client_info;
@@ -845,7 +846,7 @@ void Connection::sendQuery(
             if (nonce.has_value())
                 data += std::to_string(nonce.value());
             data += cluster_secret;
-            data += query.text;
+            data += query;
             data += query_id;
             data += client_info->initial_user;
             /// TODO: add source/target host/ip-address
@@ -861,13 +862,10 @@ void Connection::sendQuery(
             writeStringBinary("", *out);
     }
 
-    writeVarUInt(query.stage, *out);
+    writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
 
-    writeStringBinary(query.text, *out);
-
-    if (query.plan)
-        query.plan->serialize(*out);
+    writeStringBinary(query, *out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
@@ -896,6 +894,12 @@ void Connection::sendQuery(
     }
 }
 
+
+void Connection::sendQueryPlan(const QueryPlan & query_plan)
+{
+    writeVarUInt(Protocol::Client::QueryPlan, *out);
+    query_plan.serialize(*out);
+}
 
 void Connection::sendCancel()
 {

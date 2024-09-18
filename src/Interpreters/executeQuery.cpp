@@ -112,6 +112,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -1533,14 +1534,14 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Load external tables if they were provided
         context->initializeExternalTablesIfSet();
-
+        if (!query_plan)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected query plan packet for QueryPlan stage");
 
         /// reset Input callbacks if query is not INSERT SELECT
         context->resetInputCallbacks();
 
         StreamLocalLimits limits;
         std::shared_ptr<const EnabledQuota> quota;
-        //std::unique_ptr<IInterpreter> interpreter;
 
         auto logger = getLogger("executeQuery");
 
@@ -1732,7 +1733,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
-    if (query_plan)
+    if (stage == QueryProcessingStage::QueryPlan)
         std::tie(ast, res) = executeQueryImpl(context, flags, query, query_plan);
     else
         std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);

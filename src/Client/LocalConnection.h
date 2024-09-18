@@ -107,13 +107,16 @@ public:
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const QueryToSend & query,
+        const String & query,
         const NameToNameMap & query_parameters,
         const String & query_id/* = "" */,
+        UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
         std::function<void(const Progress &)> process_progress_callback) override;
+
+    void sendQueryPlan(const QueryPlan &) override;
 
     void sendCancel() override;
 

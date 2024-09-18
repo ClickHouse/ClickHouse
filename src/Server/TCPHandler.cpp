@@ -1743,13 +1743,15 @@ bool TCPHandler::receivePacket()
             receiveQuery();
             return true;
 
-        case Protocol::Client::Data:
         case Protocol::Client::Scalar:
-            if (state.skipping_data)
-                return receiveUnexpectedData(false);
-            if (state.empty())
-                receiveUnexpectedData(true);
-            return receiveData(packet_type == Protocol::Client::Scalar);
+            return receiveData(/*scalar=*/ true);
+
+        case Protocol::Client::QueryPlan:
+            receiveQueryPlan();
+            return true;
+
+        case Protocol::Client::Data:
+            return receiveData(/*scalar=*/ false);
 
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
@@ -1899,9 +1901,6 @@ void TCPHandler::receiveQuery()
     last_block_in.compression = state.compression;
 
     readStringBinary(state.query, *in);
-
-    if (state.stage == QueryProcessingStage::QueryPlan)
-        state.plan_and_sets = std::make_shared<QueryPlanAndSets>(QueryPlan::deserialize(*in));
 
     Settings passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
@@ -2078,8 +2077,26 @@ void TCPHandler::receiveUnexpectedQuery()
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }
 
+void TCPHandler::receiveQueryPlan()
+{
+    bool unexpected_packet = state.empty() || state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !query_context || state.read_all_data;
+    auto context = unexpected_packet ? Context::getGlobalContextInstance() : query_context;
+
+    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+
+    if (unexpected_packet)
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
+
+    state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
+}
+
 bool TCPHandler::receiveData(bool scalar)
 {
+    if (state.skipping_data)
+        return receiveUnexpectedData(false);
+    if (state.empty())
+        return receiveUnexpectedData(true);
+
     initBlockInput();
 
     /// The name of the temporary table for writing data, default to empty string

@@ -61,7 +61,7 @@ public:
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
 
     static void resolveReadFromTable(QueryPlan & plan, const ContextPtr & context);
     static QueryPlan resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context);

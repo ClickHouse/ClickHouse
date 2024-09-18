@@ -202,7 +202,7 @@ std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & 
     {
         readStringBinary(filter_column_name, ctx.in);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     }
 
     return std::make_unique<TotalsHavingStep>(

@@ -183,12 +183,14 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
-                QueryToSend{.text = queryToString(query_to_send), .stage = processed_stage},
+                queryToString(query_to_send),
                 getOutputStream().header,
                 new_context,
                 /*throttler=*/nullptr,
                 scalars,
                 Tables(),
+                processed_stage,
+                nullptr,
                 extension);
 
             remote_query_executor->setLogger(log);

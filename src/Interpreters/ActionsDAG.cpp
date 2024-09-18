@@ -3382,7 +3382,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         writeVarUInt(node_to_id.at(output), out);
 }
 
-ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry)
+ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context)
 {
     size_t nodes_size;
     readVarUInt(nodes_size, in);
@@ -3480,7 +3480,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             {
                 ExecutableFunctionCapture::Capture capture;
                 deserializeCapture(capture, in);
-                auto capture_dag = ActionsDAG::deserialize(in, registry);
+                auto capture_dag = ActionsDAG::deserialize(in, registry, context);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ActionsDAG>(std::move(capture_dag)),
@@ -3493,7 +3493,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             }
             else
             {
-                auto function = FunctionFactory::instance().get(function_name, Context::getGlobalContextInstance());
+                auto function = FunctionFactory::instance().get(function_name, context);
 
                 node.function_base = function->build(arguments);
                 node.function = node.function_base->prepare(arguments);
