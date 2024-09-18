@@ -85,7 +85,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         /// In this case we return Nullable of this type (because Dynamic can contain NULLs).
         if (!isDynamic(result_type))
         {
-            /// If return types are not the same, they must be convertable to each other (like FixedString/String).
+            /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
             {
                 try
@@ -182,7 +182,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
                 nested_result_type = makeNullable(nested_result_type);
             }
 
-            /// If return types are not the same, they must be convertable to each other (like FixedString/String).
+            /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!result_type->equals(*nested_result_type))
             {
                 try
@@ -303,7 +303,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     const auto & offsets = variant_column.getOffsets();
     auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(dynamic_column.getSharedVariantDiscriminator());
     const auto & shared_variant = dynamic_column.getSharedVariant();
-    /// Remember created serializations for variants in shared varaint to avoid recreating it every time.
+    /// Remember created serializations for variants in shared variant to avoid recreating it every time.
     std::unordered_map<String, SerializationPtr> shared_variants_serializations;
     FormatSettings format_settings;
     for (size_t i = 0; i != local_discriminators.size(); ++i)
@@ -397,7 +397,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         /// In this case we return Nullable of this type (because Dynamic can contain NULLs).
         else if (!isDynamic(result_type))
         {
-            /// If return types are not the same, they must be convertable to each other (like FixedString/String).
+            /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
             {
                 try
