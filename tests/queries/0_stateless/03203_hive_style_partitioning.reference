@@ -1,4 +1,14 @@
 TESTING THE FILE HIVE PARTITIONING
+ last	Elizabeth
+Frank	Elizabeth
+Moreno	Elizabeth
+Guzman	Elizabeth
+Stephens	Elizabeth
+Franklin	Elizabeth
+Gibson	Elizabeth
+Greer	Elizabeth
+Delgado	Elizabeth
+Cross	Elizabeth
 first	 last	Elizabeth
 Jorge	Frank	Elizabeth
 Hunter	Moreno	Elizabeth
@@ -9,56 +19,36 @@ Stanley	Gibson	Elizabeth
 Eugenia	Greer	Elizabeth
 Jeffery	Delgado	Elizabeth
 Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
-Eva	Schmidt	Elizabeth	Schmidt
-Samuel	Schmidt	Elizabeth	Schmidt
-Eva	Schmidt	Elizabeth
-Samuel	Schmidt	Elizabeth
-Elizabeth	Gordon	Elizabeth	Gordon
-Elizabeth	Gordon	Elizabeth
-Elizabeth	Gordon	Elizabeth	Gordon
-Elizabeth	Gordon	Elizabeth
-first	 last	Elizabeth
-Jorge	Frank	Elizabeth
-Hunter	Moreno	Elizabeth
-Esther	Guzman	Elizabeth
-Dennis	Stephens	Elizabeth
-Nettie	Franklin	Elizabeth
-Stanley	Gibson	Elizabeth
-Eugenia	Greer	Elizabeth
-Jeffery	Delgado	Elizabeth
-Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
+ last	Elizabeth
+Frank	Elizabeth
+Moreno	Elizabeth
+Guzman	Elizabeth
+Stephens	Elizabeth
+Franklin	Elizabeth
+Gibson	Elizabeth
+Greer	Elizabeth
+Delgado	Elizabeth
+Cross	Elizabeth
 42	2020-01-01
 [1,2,3]	42.42
 Array(Int64)	LowCardinality(Float64)
 101
 2070
-4081
 2070
-2070
+b
 1
 1
 TESTING THE URL PARTITIONING
-first	 last	Elizabeth
-Jorge	Frank	Elizabeth
-Hunter	Moreno	Elizabeth
-Esther	Guzman	Elizabeth
-Dennis	Stephens	Elizabeth
-Nettie	Franklin	Elizabeth
-Stanley	Gibson	Elizabeth
-Eugenia	Greer	Elizabeth
-Jeffery	Delgado	Elizabeth
-Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
-Eva	Schmidt	Elizabeth	Schmidt
-Samuel	Schmidt	Elizabeth	Schmidt
-Eva	Schmidt	Elizabeth
-Samuel	Schmidt	Elizabeth
-Elizabeth	Gordon	Elizabeth	Gordon
-Elizabeth	Gordon	Elizabeth
-Elizabeth	Gordon	Elizabeth	Gordon
-Elizabeth	Gordon	Elizabeth
+ last	Elizabeth
+Frank	Elizabeth
+Moreno	Elizabeth
+Guzman	Elizabeth
+Stephens	Elizabeth
+Franklin	Elizabeth
+Gibson	Elizabeth
+Greer	Elizabeth
+Delgado	Elizabeth
+Cross	Elizabeth
 first	 last	Elizabeth
 Jorge	Frank	Elizabeth
 Hunter	Moreno	Elizabeth
@@ -71,6 +61,16 @@ Jeffery	Delgado	Elizabeth
 Clara	Cross	Elizabeth
 1
 TESTING THE S3 PARTITIONING
+ last	Elizabeth
+Frank	Elizabeth
+Moreno	Elizabeth
+Guzman	Elizabeth
+Stephens	Elizabeth
+Franklin	Elizabeth
+Gibson	Elizabeth
+Greer	Elizabeth
+Delgado	Elizabeth
+Cross	Elizabeth
 first	 last	Elizabeth
 Jorge	Frank	Elizabeth
 Hunter	Moreno	Elizabeth
@@ -81,40 +81,35 @@ Stanley	Gibson	Elizabeth
 Eugenia	Greer	Elizabeth
 Jeffery	Delgado	Elizabeth
 Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
-Eva	Schmidt	Elizabeth	Schmidt
-Samuel	Schmidt	Elizabeth	Schmidt
-Eva	Schmidt	Elizabeth
-Samuel	Schmidt	Elizabeth
-Elizabeth	Gordon	Elizabeth	Gordon
-Elizabeth	Gordon	Elizabeth
-Elizabeth	Gordon	Elizabeth	Gordon
-Elizabeth	Gordon	Elizabeth
-first	 last	Elizabeth
-Jorge	Frank	Elizabeth
-Hunter	Moreno	Elizabeth
-Esther	Guzman	Elizabeth
-Dennis	Stephens	Elizabeth
-Nettie	Franklin	Elizabeth
-Stanley	Gibson	Elizabeth
-Eugenia	Greer	Elizabeth
-Jeffery	Delgado	Elizabeth
-Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
+ last	Elizabeth
+Frank	Elizabeth
+Moreno	Elizabeth
+Guzman	Elizabeth
+Stephens	Elizabeth
+Franklin	Elizabeth
+Gibson	Elizabeth
+Greer	Elizabeth
+Delgado	Elizabeth
+Cross	Elizabeth
 OK
 TESTING THE S3CLUSTER PARTITIONING
-first	 last	Elizabeth
-Jorge	Frank	Elizabeth
-Hunter	Moreno	Elizabeth
-Esther	Guzman	Elizabeth
-Dennis	Stephens	Elizabeth
-Nettie	Franklin	Elizabeth
-Stanley	Gibson	Elizabeth
-Eugenia	Greer	Elizabeth
-Jeffery	Delgado	Elizabeth
-Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
-Eva	Schmidt	Elizabeth	Schmidt
-Samuel	Schmidt	Elizabeth	Schmidt
-Eva	Schmidt	Elizabeth
-Samuel	Schmidt	Elizabeth
+ last	Elizabeth
+Frank	Elizabeth
+Moreno	Elizabeth
+Guzman	Elizabeth
+Stephens	Elizabeth
+Franklin	Elizabeth
+Gibson	Elizabeth
+Greer	Elizabeth
+Delgado	Elizabeth
+Cross	Elizabeth
+ last	Elizabeth
+Frank	Elizabeth
+Moreno	Elizabeth
+Guzman	Elizabeth
+Stephens	Elizabeth
+Franklin	Elizabeth
+Gibson	Elizabeth
+Greer	Elizabeth
+Delgado	Elizabeth
+Cross	Elizabeth

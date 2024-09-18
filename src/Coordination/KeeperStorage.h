@@ -522,6 +522,7 @@ public:
     struct FailedMultiDelta
     {
         std::vector<Coordination::Error> error_codes;
+        Coordination::Error global_error{Coordination::Error::ZOK};
     };
 
     // Denotes end of a subrequest in multi request
@@ -566,6 +567,7 @@ public:
         void rollback(int64_t rollback_zxid);
 
         std::shared_ptr<Node> getNode(StringRef path) const;
+        const Node * getActualNodeView(StringRef path, const Node & storage_node) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
         void applyDelta(const Delta & delta);
@@ -609,7 +611,20 @@ public:
             using is_transparent = void; // required to make find() work with different type than key_type
         };
 
-        mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
+        struct PathCmp
+        {
+            auto operator()(const std::string_view a,
+                            const std::string_view b) const
+            {
+                size_t level_a = std::count(a.begin(), a.end(), '/');
+                size_t level_b = std::count(b.begin(), b.end(), '/');
+                return level_a < level_b || (level_a == level_b && a < b);
+            }
+
+            using is_transparent = void; // required to make find() work with different type than key_type
+        };
+
+        mutable std::map<std::string, UncommittedNode, PathCmp> nodes;
         std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
         std::list<Delta> deltas;
