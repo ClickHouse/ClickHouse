@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/summap
-sidebar_position: 141
+sidebar_position: 198
 ---
 
 # sumMap

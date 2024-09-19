@@ -23,7 +23,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
         return 0;
 
     const auto & table_join = join->getJoin()->getTableJoin();
-    if (table_join.strictness() == JoinStrictness::Asof)
+
+    /// Any JOIN issue https://github.com/ClickHouse/ClickHouse/issues/66447
+    /// Anti JOIN issue https://github.com/ClickHouse/ClickHouse/issues/67156
+    if (table_join.strictness() != JoinStrictness::All)
         return 0;
 
     /// TODO: Support join_use_nulls
@@ -45,10 +48,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     bool right_stream_safe = true;
 
     if (check_left_stream)
-        left_stream_safe = filter_dag->isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, left_stream_input_header);
+        left_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, left_stream_input_header);
 
     if (check_right_stream)
-        right_stream_safe = filter_dag->isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, right_stream_input_header);
+        right_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, right_stream_input_header);
 
     if (!left_stream_safe || !right_stream_safe)
         return 0;

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/groupbitmapxor
-sidebar_position: 131
+sidebar_position: 151
 title: groupBitmapXor
 ---
 

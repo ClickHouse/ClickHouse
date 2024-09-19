@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 
@@ -14,6 +15,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool force_grouping_standard_compatibility;
+    extern const SettingsBool group_by_use_nulls;
+}
 
 namespace ErrorCodes
 {
@@ -71,41 +77,38 @@ public:
         FunctionOverloadResolverPtr grouping_function_resolver;
         bool add_grouping_set_column = false;
 
-        bool force_grouping_standard_compatibility = getSettings().force_grouping_standard_compatibility;
+        bool force_grouping_standard_compatibility = getSettings()[Setting::force_grouping_standard_compatibility];
         size_t aggregation_keys_size = aggregation_key_to_index.size();
 
         switch (group_by_kind)
         {
             case GroupByKind::ORDINARY:
             {
-                auto grouping_ordinary_function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes,
-                    force_grouping_standard_compatibility);
+                auto grouping_ordinary_function
+                    = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
                 break;
             }
             case GroupByKind::ROLLUP:
             {
-                auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes,
-                    aggregation_keys_size,
-                    force_grouping_standard_compatibility);
+                auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(
+                    arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_rollup_function));
                 add_grouping_set_column = true;
                 break;
             }
             case GroupByKind::CUBE:
             {
-                auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes,
-                    aggregation_keys_size,
-                    force_grouping_standard_compatibility);
+                auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(
+                    arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_cube_function));
                 add_grouping_set_column = true;
                 break;
             }
             case GroupByKind::GROUPING_SETS:
             {
-                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes,
-                    grouping_sets_keys_indexes,
-                    force_grouping_standard_compatibility);
+                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(
+                    arguments_indexes, grouping_sets_keys_indexes, force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
                 add_grouping_set_column = true;
                 break;
@@ -146,7 +149,8 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     if (query_node_typed.hasGroupBy())
     {
         /// It is expected by execution layer that if there are only 1 grouping set it will be removed
-        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1 && !context->getSettingsRef().group_by_use_nulls)
+        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1
+            && !context->getSettingsRef()[Setting::group_by_use_nulls])
         {
             auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
             auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();

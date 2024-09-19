@@ -3,6 +3,8 @@
 #include <Backups/BackupStatus.h>
 #include <Common/ProfileEvents.h>
 
+#include <exception>
+
 namespace DB
 {
 

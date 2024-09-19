@@ -73,13 +73,10 @@ void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <typename T>
-void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
     auto s = data.size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -91,6 +88,8 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
         ++begin;
         ++hash_data;
     }
+
+    return hash;
 }
 
 template <typename T>
@@ -503,7 +502,11 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
 }
 
 template <typename T>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 

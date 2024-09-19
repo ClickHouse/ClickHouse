@@ -1,6 +1,7 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -8,10 +9,15 @@ namespace ProfileEvents
     extern const Event DistributedConnectionUsable;
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
+    extern const Event DistributedConnectionFailTry;
 }
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+}
 
 namespace ErrorCodes
 {
@@ -31,12 +37,12 @@ ConnectionEstablisher::ConnectionEstablisher(
 {
 }
 
-void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::string & fail_message)
+void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::string & fail_message, bool force_connected)
 {
     try
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
-        result.entry = pool->get(*timeouts, settings, /* force_connected = */ false);
+        result.entry = pool->get(*timeouts, settings, force_connected);
         AsyncCallbackSetter async_setter(&*result.entry, std::move(async_callback));
 
         UInt64 server_revision = 0;
@@ -76,7 +82,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
         }
 
-        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
         if (!max_allowed_delay)
         {
             result.is_up_to_date = true;
@@ -97,6 +103,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     }
     catch (const Exception & e)
     {
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
+
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
             && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
             throw;

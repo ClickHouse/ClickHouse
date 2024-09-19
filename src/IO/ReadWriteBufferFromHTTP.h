@@ -90,6 +90,9 @@ private:
     std::unique_ptr<ReadBuffer> impl;
 
     std::vector<Poco::Net::HTTPCookie> cookies;
+
+    std::map<String, String> response_headers;
+
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;
 
@@ -118,7 +121,7 @@ private:
 
     std::unique_ptr<ReadBuffer> initialize();
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     bool supportsReadAt() override;
 
@@ -187,6 +190,8 @@ public:
 
     HTTPFileInfo getFileInfo();
     static HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
+
+    Map getResponseHeaders() const;
 };
 
 using ReadWriteBufferFromHTTPPtr = std::unique_ptr<ReadWriteBufferFromHTTP>;

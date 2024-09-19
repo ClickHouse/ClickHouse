@@ -23,8 +23,9 @@
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
-#include <boost/algorithm/string/join.hpp>
+#include <Core/Settings.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
@@ -35,6 +36,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
 namespace ErrorCodes
 {
     extern const int BACKUP_ENTRY_NOT_FOUND;
@@ -221,10 +227,19 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     if (restore_coordination)
     {
         restore_coordination->setStage(new_stage, message);
-        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-        else
-            restore_coordination->waitForStage(new_stage);
+
+        /// The initiator of a RESTORE ON CLUSTER query waits for other hosts to complete their work (see waitForStage(Stage::COMPLETED) in BackupsWorker::doRestore),
+        /// but other hosts shouldn't wait for each others' completion. (That's simply unnecessary and also
+        /// the initiator may start cleaning up (e.g. removing restore-coordination ZooKeeper nodes) once all other hosts are in Stage::COMPLETED.)
+        bool need_wait = (new_stage != Stage::COMPLETED);
+
+        if (need_wait)
+        {
+            if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+                restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+            else
+                restore_coordination->waitForStage(new_stage);
+        }
     }
 }
 
@@ -438,7 +453,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     String create_table_query_str = serializeAST(*create_table_query);
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query);
+    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
     std::lock_guard lock{mutex};
@@ -903,11 +918,15 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             table_info.database = DatabaseCatalog::instance().getDatabase(table_name.database);
         DatabasePtr database = table_info.database;
 
+        auto query_context = Context::createCopy(context);
+        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
+        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
             create_table_query,
-            context,
+            query_context,
             restore_coordination,
             std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
     }
@@ -935,7 +954,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 
         StoragePtr storage = database->getTable(resolved_id.table_name, context);
         table_info.storage = storage;
-        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         if (!restore_settings.allow_different_table_def && !table_info.is_predefined_table)
         {

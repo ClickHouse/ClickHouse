@@ -13,7 +13,7 @@ using FunctionCos = FunctionMathUnary<UnaryFunctionVectorized<CosName, cos>>;
 
 REGISTER_FUNCTION(Cos)
 {
-    factory.registerFunction<FunctionCos>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCos>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

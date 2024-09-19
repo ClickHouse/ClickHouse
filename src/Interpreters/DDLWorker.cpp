@@ -25,6 +25,7 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/isLocalAddress.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <base/sleep.h>
@@ -51,6 +52,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool implicit_transaction;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+}
 
 namespace ErrorCodes
 {
@@ -114,7 +121,7 @@ DDLWorker::DDLWorker(
             context->setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context->getSettingsRef().readonly)
+    if (context->getSettingsRef()[Setting::readonly])
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
@@ -482,9 +489,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         auto query_context = task.makeQueryContext(context, zookeeper);
 
         chassert(!query_context->getCurrentTransaction());
-        if (query_context->getSettingsRef().implicit_transaction)
+        if (query_context->getSettingsRef()[Setting::implicit_transaction])
         {
-            if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+            if (query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot begin an implicit transaction inside distributed DDL query");
             query_context->setSetting("implicit_transaction", Field{0});
         }

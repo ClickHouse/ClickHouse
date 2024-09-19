@@ -72,6 +72,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info(Keyword::HTTP);
             return info;
         }
+        case AuthenticationType::JWT:
+        {
+            static const auto info = make_info(Keyword::JWT);
+            return info;
+        }
         case AuthenticationType::MAX:
             break;
     }

@@ -54,6 +54,8 @@ private:
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
+    void cancelImpl() noexcept override;
+
     String getVerboseLogDetails() const;
     String getShortLogDetails() const;
 
@@ -62,7 +64,6 @@ private:
     void reallocateFirstBuffer();
     void detachBuffer();
     void allocateBuffer();
-    void allocateFirstBuffer();
     void setFakeBufferWhenPreFinalized();
 
     S3::UploadPartRequest getUploadRequest(size_t part_number, PartData & data);
@@ -71,7 +72,7 @@ private:
     void createMultipartUpload();
     void completeMultipartUpload();
     void abortMultipartUpload();
-    void tryToAbortMultipartUpload();
+    void tryToAbortMultipartUpload() noexcept;
 
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);

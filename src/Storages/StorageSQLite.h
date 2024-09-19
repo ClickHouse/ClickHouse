@@ -27,6 +27,7 @@ public:
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_);
 
     std::string getName() const override { return "SQLite"; }

@@ -67,11 +67,11 @@ public:
             const IColumn * column = arguments[arg_num].column.get();
 
             if (arg_num == 0)
-                for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-                    vec_res[row_num] = column->byteSizeAt(row_num);
+                for (size_t row = 0; row < input_rows_count; ++row)
+                    vec_res[row] = column->byteSizeAt(row);
             else
-                for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-                    vec_res[row_num] += column->byteSizeAt(row_num);
+                for (size_t row = 0; row < input_rows_count; ++row)
+                    vec_res[row] += column->byteSizeAt(row);
         }
 
         return result_col;

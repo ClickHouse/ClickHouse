@@ -62,38 +62,38 @@ void registerDataTypeString(DataTypeFactory & factory)
 
     /// These synonims are added for compatibility.
 
-    factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NCHAR", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("CHARACTER", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NVARCHAR", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("VARCHAR2", "String", DataTypeFactory::CaseInsensitive); /// Oracle
-    factory.registerAlias("TEXT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("TINYTEXT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("MEDIUMTEXT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("LONGTEXT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BLOB", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("CLOB", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("TINYBLOB", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("MEDIUMBLOB", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("LONGBLOB", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BYTEA", "String", DataTypeFactory::CaseInsensitive); /// PostgreSQL
+    factory.registerAlias("CHAR", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NCHAR", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("CHARACTER", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("VARCHAR", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NVARCHAR", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("VARCHAR2", "String", DataTypeFactory::Case::Insensitive); /// Oracle
+    factory.registerAlias("TEXT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("TINYTEXT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("MEDIUMTEXT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("LONGTEXT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BLOB", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("CLOB", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("TINYBLOB", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("MEDIUMBLOB", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("LONGBLOB", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BYTEA", "String", DataTypeFactory::Case::Insensitive); /// PostgreSQL
 
-    factory.registerAlias("CHARACTER LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("CHARACTER VARYING", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("CHAR LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("CHAR VARYING", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NATIONAL CHAR", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NATIONAL CHARACTER", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NATIONAL CHARACTER LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NATIONAL CHARACTER VARYING", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NATIONAL CHAR VARYING", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NCHAR VARYING", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NCHAR LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BINARY LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("VARBINARY", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("GEOMETRY", "String", DataTypeFactory::CaseInsensitive); //mysql
+    factory.registerAlias("CHARACTER LARGE OBJECT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("CHARACTER VARYING", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("CHAR LARGE OBJECT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("CHAR VARYING", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NATIONAL CHAR", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NATIONAL CHARACTER", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NATIONAL CHARACTER LARGE OBJECT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NATIONAL CHARACTER VARYING", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NATIONAL CHAR VARYING", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NCHAR VARYING", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("NCHAR LARGE OBJECT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BINARY LARGE OBJECT", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("VARBINARY", "String", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("GEOMETRY", "String", DataTypeFactory::Case::Insensitive); //mysql
 
 }
 }

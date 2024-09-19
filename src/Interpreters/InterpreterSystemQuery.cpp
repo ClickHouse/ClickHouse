@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -91,6 +92,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSeconds receive_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -368,9 +374,12 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
+        {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache();
+            getContext()->clearQueryCache(query.query_cache_tag);
             break;
+        }
+
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
@@ -662,13 +671,20 @@ BlockIO InterpreterSystemQuery::execute()
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
         case Type::REFRESH_VIEW:
-            getRefreshTask()->run();
+            for (const auto & task : getRefreshTasks())
+                task->run();
+            break;
+        case Type::WAIT_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->wait();
             break;
         case Type::CANCEL_VIEW:
-            getRefreshTask()->cancel();
+            for (const auto & task : getRefreshTasks())
+                task->cancel();
             break;
         case Type::TEST_VIEW:
-            getRefreshTask()->setFakeTime(query.fake_time_for_view);
+            for (const auto & task : getRefreshTasks())
+                task->setFakeTime(query.fake_time_for_view);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -709,14 +725,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-
-            auto logs = getContext()->getSystemLogs();
-            std::vector<std::function<void()>> commands;
-            commands.reserve(logs.size());
-            for (auto * system_log : logs)
-                commands.emplace_back([system_log] { system_log->flush(true); });
-
-            executeCommandsAndThrowIfError(commands);
+            auto system_logs = getContext()->getSystemLogs();
+            system_logs.flush(true);
             break;
         }
         case Type::STOP_LISTEN:
@@ -865,7 +875,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+        auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         create_ast = database->getCreateTableQuery(replica.table_name, getContext());
 
         database->detachTable(system_context, replica.table_name);
@@ -1130,7 +1140,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
-        auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
+        auto sync_timeout = getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
 
         std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, replicas))
@@ -1208,7 +1218,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
-        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds()))
         {
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
@@ -1247,15 +1257,15 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
 }
 
-RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
+RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
     ctx->checkAccess(AccessType::SYSTEM_VIEWS);
-    auto task = ctx->getRefreshSet().getTask(table_id);
-    if (!task)
+    auto tasks = ctx->getRefreshSet().findTasks(table_id);
+    if (tasks.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
-    return task;
+    return tasks;
 }
 
 
@@ -1411,6 +1421,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::REFRESH_VIEW:
+        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
         case Type::STOP_VIEW:

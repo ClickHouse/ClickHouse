@@ -5,12 +5,18 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_time_filter_with_preimage;
+}
 
 namespace ErrorCodes
 {
@@ -56,7 +62,7 @@ public:
             {"greaterOrEquals", "lessOrEquals"},
         };
 
-        if (!getSettings().optimize_time_filter_with_preimage)
+        if (!getSettings()[Setting::optimize_time_filter_with_preimage])
             return;
 
         const auto * function = node->as<FunctionNode>();
@@ -141,13 +147,13 @@ private:
         const auto & column_type = column_node_typed.getColumnType().get();
         if (isDateOrDate32(column_type))
         {
-            start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
-            end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
+            start_date_or_date_time = date_lut.dateToString(range.first.safeGet<DateLUTImpl::Time>());
+            end_date_or_date_time = date_lut.dateToString(range.second.safeGet<DateLUTImpl::Time>());
         }
         else if (isDateTime(column_type) || isDateTime64(column_type))
         {
-            start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
-            end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
+            start_date_or_date_time = date_lut.timeToString(range.first.safeGet<DateLUTImpl::Time>());
+            end_date_or_date_time = date_lut.timeToString(range.second.safeGet<DateLUTImpl::Time>());
         }
         else [[unlikely]]
             return {};

@@ -8,11 +8,19 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
+    extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
+}
 
 namespace ErrorCodes
 {
@@ -26,10 +34,143 @@ static constexpr std::array boolean_functions{
     "like"sv,     "notLike"sv,     "ilike"sv,  "notILike"sv,        "empty"sv,        "notEmpty"sv,        "not"sv,    "and"sv,
     "or"sv};
 
-static bool isBooleanFunction(const String & func_name)
+
+bool isBooleanFunction(const String & func_name)
 {
     return std::any_of(
         boolean_functions.begin(), boolean_functions.end(), [&](const auto boolean_func) { return func_name == boolean_func; });
+}
+
+bool isNodeFunction(const QueryTreeNodePtr & node, const String & func_name)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+        return function_node->getFunctionName() == func_name;
+    return false;
+}
+
+QueryTreeNodePtr getFunctionArgument(const QueryTreeNodePtr & node, size_t idx)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        const auto & args = function_node->getArguments().getNodes();
+        if (idx < args.size())
+            return args[idx];
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected '{}' to be a function with at least {} arguments", node->formatASTForErrorMessage(), idx + 1);
+}
+
+QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
+{
+    for (const auto & node : nodes)
+    {
+        const auto * function_node = node->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "equals" &&
+            function_node->getArguments().getNodes().size() == 2)
+        {
+            return node;
+        }
+    }
+    return nullptr;
+}
+
+/// Checks if the node is combination of isNull and notEquals functions of two the same arguments:
+/// [ (a <> b AND) ] (a IS NULL) AND (b IS NULL)
+bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
+{
+    QueryTreeNodePtrWithHashSet all_arguments;
+    QueryTreeNodePtrWithHashSet is_null_arguments;
+
+    for (const auto & node : nodes)
+    {
+        const auto * func_node = node->as<FunctionNode>();
+        if (!func_node)
+            return false;
+
+        const auto & arguments = func_node->getArguments().getNodes();
+        if (func_node->getFunctionName() == "isNull" && arguments.size() == 1)
+        {
+            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+            is_null_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+        }
+
+        else if (func_node->getFunctionName() == "notEquals" && arguments.size() == 2)
+        {
+            if (arguments[0]->isEqual(*arguments[1]))
+                return false;
+            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[1]));
+        }
+        else
+            return false;
+
+        if (all_arguments.size() > 2)
+            return false;
+    }
+
+    if (all_arguments.size() != 2 || is_null_arguments.size() != 2)
+        return false;
+
+    lhs = all_arguments.begin()->node;
+    rhs = std::next(all_arguments.begin())->node;
+    return true;
+}
+
+bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
+{
+    const auto * constant_node = node->as<ConstantNode>();
+    if (!constant_node || !constant_node->getResultType()->equals(DataTypeUInt8()))
+        return false;
+
+    UInt64 constant_value;
+    return (constant_node->getValue().tryGet<UInt64>(constant_value) && constant_value == expected_value);
+}
+
+/// Returns true if expression consists of only conjunctions of functions with the specified name or true constants
+bool isOnlyConjunctionOfFunctions(
+    const QueryTreeNodePtr & node,
+    const String & func_name,
+    const QueryTreeNodePtrWithHashSet & allowed_arguments)
+{
+    if (isBooleanConstant(node, true))
+        return true;
+
+    const auto * node_function = node->as<FunctionNode>();
+    if (!node_function)
+        return false;
+
+    if (node_function->getFunctionName() == func_name
+        && allowed_arguments.contains(node_function->getArgumentsNode()))
+        return true;
+
+    if (node_function->getFunctionName() == "and")
+    {
+        for (const auto & and_argument : node_function->getArguments().getNodes())
+        {
+            if (!isOnlyConjunctionOfFunctions(and_argument, func_name, allowed_arguments))
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+/// We can rewrite to a <=> b only if we are joining on a and b,
+/// because the function is not yet implemented for other cases.
+bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const JoinNode & join_node)
+{
+    const auto & argument_nodes = node_function.getArguments().getNodes();
+    if (argument_nodes.size() != 2)
+        return false;
+
+    auto first_src = getExpressionSource(argument_nodes[0]);
+    auto second_src = getExpressionSource(argument_nodes[1]);
+    if (!first_src || !second_src)
+        return false;
+
+    const auto & lhs_join = *join_node.getLeftTableExpression();
+    const auto & rhs_join = *join_node.getRightTableExpression();
+    return (first_src->isEqual(lhs_join) && second_src->isEqual(rhs_join)) ||
+           (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
 
 /// Visitor that optimizes logical expressions _only_ in JOIN ON section
@@ -47,15 +188,16 @@ public:
     {
         auto * function_node = node->as<FunctionNode>();
 
-        if (!function_node)
-            return;
+        QueryTreeNodePtr new_node = nullptr;
+        if (function_node && function_node->getFunctionName() == "or")
+            new_node = tryOptimizeJoinOnNulls(function_node->getArguments().getNodes(), getContext());
+        else
+            new_node = tryOptimizeJoinOnNulls({node}, getContext());
 
-        if (function_node->getFunctionName() == "or")
+        if (new_node)
         {
-            bool is_argument_type_changed = tryOptimizeIsNotDistinctOrIsNull(node, getContext());
-            if (is_argument_type_changed)
-                need_rerun_resolve = true;
-            return;
+            need_rerun_resolve |= !new_node->getResultType()->equals(*node->getResultType());
+            node = new_node;
         }
     }
 
@@ -72,15 +214,11 @@ private:
     const JoinNode * join_node;
     bool need_rerun_resolve = false;
 
-    /// Returns true if type of some operand is changed and parent function needs to be re-resolved
-    bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
+    /// Returns optimized node or nullptr if nothing have been changed
+    QueryTreeNodePtr tryOptimizeJoinOnNulls(const QueryTreeNodes & nodes, const ContextPtr & context)
     {
-        auto & function_node = node->as<FunctionNode &>();
-        chassert(function_node.getFunctionName() == "or");
-
-
         QueryTreeNodes or_operands;
-        or_operands.reserve(function_node.getArguments().getNodes().size());
+        or_operands.reserve(nodes.size());
 
         /// Indices of `equals` or `isNotDistinctFrom` functions in the vector above
         std::vector<size_t> equals_functions_indices;
@@ -93,47 +231,76 @@ private:
           *     b => [(a IS NULL AND b IS NULL)]
           *     c => [(a IS NULL AND c IS NULL)]
           * }
-          * Then for each a <=> b we can find all operands that contains both a IS NULL and b IS NULL
+          * Then for each equality a = b we can check if we have operand (a IS NULL AND b IS NULL)
           */
         QueryTreeNodePtrWithHashMap<std::vector<size_t>> is_null_argument_to_indices;
 
-        for (const auto & argument : function_node.getArguments())
-        {
-            or_operands.push_back(argument);
+        bool is_anything_changed = false;
 
-            auto * argument_function = argument->as<FunctionNode>();
+        for (const auto & node : nodes)
+        {
+            if (isBooleanConstant(node, false))
+            {
+                /// Remove false constants from OR
+                is_anything_changed = true;
+                continue;
+            }
+
+            or_operands.push_back(node);
+            auto * argument_function = node->as<FunctionNode>();
             if (!argument_function)
                 continue;
 
             const auto & func_name = argument_function->getFunctionName();
             if (func_name == "equals" || func_name == "isNotDistinctFrom")
             {
-                const auto & argument_nodes = argument_function->getArguments().getNodes();
-                if (argument_nodes.size() != 2)
-                    continue;
-                /// We can rewrite to a <=> b only if we are joining on a and b,
-                /// because the function is not yet implemented for other cases.
-                auto first_src = getExpressionSource(argument_nodes[0]);
-                auto second_src = getExpressionSource(argument_nodes[1]);
-                if (!first_src || !second_src)
-                    continue;
-                const auto & lhs_join = *join_node->getLeftTableExpression();
-                const auto & rhs_join = *join_node->getRightTableExpression();
-                bool arguments_from_both_sides = (first_src->isEqual(lhs_join) && second_src->isEqual(rhs_join)) ||
-                                                 (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
-                if (!arguments_from_both_sides)
-                    continue;
-                equals_functions_indices.push_back(or_operands.size() - 1);
+                if (isTwoArgumentsFromDifferentSides(*argument_function, *join_node))
+                    equals_functions_indices.push_back(or_operands.size() - 1);
             }
             else if (func_name == "and")
             {
-                for (const auto & and_argument : argument_function->getArguments().getNodes())
+                const auto & and_arguments = argument_function->getArguments().getNodes();
+
+                QueryTreeNodePtr is_null_lhs_arg;
+                QueryTreeNodePtr is_null_rhs_arg;
+                if (matchIsNullOfTwoArgs(and_arguments, is_null_lhs_arg, is_null_rhs_arg))
                 {
-                    auto * and_argument_function = and_argument->as<FunctionNode>();
-                    if (and_argument_function && and_argument_function->getFunctionName() == "isNull")
+                    is_null_argument_to_indices[is_null_lhs_arg].push_back(or_operands.size() - 1);
+                    is_null_argument_to_indices[is_null_rhs_arg].push_back(or_operands.size() - 1);
+                    continue;
+                }
+
+                /// Expression `a = b AND (a IS NOT NULL) AND true AND (b IS NOT NULL)` we can be replaced with `a = b`
+                /// Even though this expression are not equivalent (first is NULL on NULLs, while second is FALSE),
+                /// it is still correct since for JOIN ON condition NULL is treated as FALSE
+                if (const auto & equals_function = findEqualsFunction(and_arguments))
+                {
+                    const auto & equals_arguments = equals_function->as<FunctionNode>()->getArguments().getNodes();
+                    /// Expected isNotNull arguments
+                    QueryTreeNodePtrWithHashSet allowed_arguments;
+                    allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[0]})));
+                    allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[1]})));
+
+                    bool can_be_optimized = true;
+                    for (const auto & and_argument : and_arguments)
                     {
-                        const auto & is_null_argument = and_argument_function->getArguments().getNodes()[0];
-                        is_null_argument_to_indices[is_null_argument].push_back(or_operands.size() - 1);
+                        if (and_argument.get() == equals_function.get())
+                            continue;
+
+                        if (isOnlyConjunctionOfFunctions(and_argument, "isNotNull", allowed_arguments))
+                            continue;
+
+                        can_be_optimized = false;
+                        break;
+                    }
+
+                    if (can_be_optimized)
+                    {
+                        is_anything_changed = true;
+                        or_operands.pop_back();
+                        or_operands.push_back(equals_function);
+                        if (isTwoArgumentsFromDifferentSides(equals_function->as<FunctionNode &>(), *join_node))
+                            equals_functions_indices.push_back(or_operands.size() - 1);
                     }
                 }
             }
@@ -144,9 +311,9 @@ private:
 
         for (size_t equals_function_idx : equals_functions_indices)
         {
-            auto * equals_function = or_operands[equals_function_idx]->as<FunctionNode>();
+            const auto * equals_function = or_operands[equals_function_idx]->as<FunctionNode>();
 
-            /// For a <=> b we are looking for expressions containing both `a IS NULL` and `b IS NULL` combined with AND
+            /// For a = b we are looking for all expressions `a IS NULL AND b IS NULL`
             const auto & argument_nodes = equals_function->getArguments().getNodes();
             const auto & lhs_is_null_parents = is_null_argument_to_indices[argument_nodes[0]];
             const auto & rhs_is_null_parents = is_null_argument_to_indices[argument_nodes[1]];
@@ -161,60 +328,40 @@ private:
 
             for (size_t to_optimize_idx : operands_to_optimize)
             {
-                /// We are looking for operand `a IS NULL AND b IS NULL AND ...`
-                auto * operand_to_optimize = or_operands[to_optimize_idx]->as<FunctionNode>();
-
-                /// Remove `a IS NULL` and `b IS NULL` arguments from AND
-                QueryTreeNodes new_arguments;
-                for (const auto & and_argument : operand_to_optimize->getArguments().getNodes())
-                {
-                    bool to_eliminate = false;
-
-                    const auto * and_argument_function = and_argument->as<FunctionNode>();
-                    if (and_argument_function && and_argument_function->getFunctionName() == "isNull")
-                    {
-                        const auto & is_null_argument = and_argument_function->getArguments().getNodes()[0];
-                        to_eliminate = (is_null_argument->isEqual(*argument_nodes[0]) || is_null_argument->isEqual(*argument_nodes[1]));
-                    }
-
-                    if (to_eliminate)
-                        arguments_to_reresolve.insert(to_optimize_idx);
-                    else
-                        new_arguments.emplace_back(and_argument);
-                }
-                /// If less than two arguments left, we will remove or replace the whole AND below
-                operand_to_optimize->getArguments().getNodes() = std::move(new_arguments);
+                /// Remove `a IS NULL AND b IS NULL`
+                or_operands[to_optimize_idx] = nullptr;
+                is_anything_changed = true;
             }
         }
 
-        if (arguments_to_reresolve.empty())
+        if (arguments_to_reresolve.empty() && !is_anything_changed)
             /// Nothing have been changed
-            return false;
+            return nullptr;
 
         auto and_function_resolver = FunctionFactory::instance().get("and", context);
         auto strict_equals_function_resolver = FunctionFactory::instance().get("isNotDistinctFrom", context);
 
-        bool need_reresolve = false;
         QueryTreeNodes new_or_operands;
         for (size_t i = 0; i < or_operands.size(); ++i)
         {
             if (arguments_to_reresolve.contains(i))
             {
-                auto * function = or_operands[i]->as<FunctionNode>();
+                const auto * function = or_operands[i]->as<FunctionNode>();
                 if (function->getFunctionName() == "equals")
                 {
                     /// We should replace `a = b` with `a <=> b` because we removed checks for IS NULL
-                    need_reresolve |= function->getResultType()->isNullable();
-                    function->resolveAsFunction(strict_equals_function_resolver);
-                    new_or_operands.emplace_back(std::move(or_operands[i]));
+                    auto new_function = or_operands[i]->clone();
+                    new_function->as<FunctionNode>()->resolveAsFunction(strict_equals_function_resolver);
+                    new_or_operands.emplace_back(std::move(new_function));
                 }
                 else if (function->getFunctionName() == "and")
                 {
                     const auto & and_arguments = function->getArguments().getNodes();
                     if (and_arguments.size() > 1)
                     {
-                        function->resolveAsFunction(and_function_resolver);
-                        new_or_operands.emplace_back(std::move(or_operands[i]));
+                        auto new_function = or_operands[i]->clone();
+                        new_function->as<FunctionNode>()->resolveAsFunction(and_function_resolver);
+                        new_or_operands.emplace_back(std::move(new_function));
                     }
                     else if (and_arguments.size() == 1)
                     {
@@ -223,25 +370,26 @@ private:
                     }
                 }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function name: '{}'", function->getFunctionName());
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function '{}'", function->getFunctionName());
             }
-            else
+            else if (or_operands[i])
             {
                 new_or_operands.emplace_back(std::move(or_operands[i]));
             }
         }
 
+        if (new_or_operands.empty())
+            return nullptr;
+
         if (new_or_operands.size() == 1)
-        {
-            node = std::move(new_or_operands[0]);
-            return need_reresolve;
-        }
+            return new_or_operands[0];
 
         /// Rebuild OR function
         auto or_function_resolver = FunctionFactory::instance().get("or", context);
-        function_node.getArguments().getNodes() = std::move(new_or_operands);
-        function_node.resolveAsFunction(or_function_resolver);
-        return need_reresolve;
+        auto function_node = std::make_shared<FunctionNode>("or");
+        function_node->getArguments().getNodes() = std::move(new_or_operands);
+        function_node->resolveAsFunction(or_function_resolver);
+        return function_node;
     }
 };
 
@@ -388,7 +536,8 @@ private:
         for (auto & [expression, not_equals_functions] : node_to_not_equals_functions)
         {
             const auto & settings = getSettings();
-            if (not_equals_functions.size() < settings.optimize_min_inequality_conjunction_chain_length && !expression.node->getResultType()->lowCardinality())
+            if (not_equals_functions.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
+                && !expression.node->getResultType()->lowCardinality())
             {
                 std::move(not_equals_functions.begin(), not_equals_functions.end(), std::back_inserter(and_operands));
                 continue;
@@ -510,7 +659,8 @@ private:
         for (auto & [expression, equals_functions] : node_to_equals_functions)
         {
             const auto & settings = getSettings();
-            if (equals_functions.size() < settings.optimize_min_equality_disjunction_chain_length && !expression.node->getResultType()->lowCardinality())
+            if (equals_functions.size() < settings[Setting::optimize_min_equality_disjunction_chain_length]
+                && !expression.node->getResultType()->lowCardinality())
             {
                 std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
                 continue;
@@ -519,6 +669,7 @@ private:
             bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
+            DataTypes tuple_element_types;
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
@@ -531,16 +682,18 @@ private:
                 if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
                 {
                     args.push_back(rhs_literal->getValue());
+                    tuple_element_types.push_back(rhs_literal->getResultType());
                 }
                 else
                 {
                     const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
                     assert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
+                    tuple_element_types.push_back(lhs_literal->getResultType());
                 }
             }
 
-            auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
+            auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
             auto in_function = std::make_shared<FunctionNode>("in");
 

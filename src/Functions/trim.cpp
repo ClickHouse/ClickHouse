@@ -43,10 +43,10 @@ public:
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
-        size_t size = offsets.size();
-        res_offsets.resize_exact(size);
+        res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(data.size());
 
         size_t prev_offset = 0;
@@ -55,7 +55,7 @@ public:
         const UInt8 * start;
         size_t length;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             execute(reinterpret_cast<const UInt8 *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
 
@@ -69,7 +69,7 @@ public:
         }
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Functions trimLeft, trimRight and trimBoth cannot work with FixedString argument");
     }

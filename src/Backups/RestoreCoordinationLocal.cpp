@@ -1,4 +1,5 @@
 #include <Backups/RestoreCoordinationLocal.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Common/logger_useful.h>
 
@@ -67,7 +68,7 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
         auto it = create_query_uuids.find(query_str);
         if (it != create_query_uuids.end())
         {
-            create_query.setUUID(it->second);
+            it->second.copyToQuery(create_query);
             return true;
         }
         return false;
@@ -79,7 +80,8 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
             return;
     }
 
-    auto new_uuids = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true);
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
+    new_uuids.copyToQuery(create_query);
 
     {
         std::lock_guard lock{mutex};
