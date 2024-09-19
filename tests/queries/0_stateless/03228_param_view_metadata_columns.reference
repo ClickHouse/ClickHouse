@@ -6,3 +6,4 @@ CAST(dummy, \'Int\')	Int32
 CAST(dummy, \'String\')	String					
 0
 55
+45

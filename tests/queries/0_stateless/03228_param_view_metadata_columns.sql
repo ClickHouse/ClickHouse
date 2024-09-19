@@ -17,3 +17,6 @@ describe (SELECT * FROM p3(t = 'Int64') union all SELECT * FROM p3(t = 'UInt64')
 SELECT * FROM p3(t = 'String');
 
 select arrayReduce('sum', (select groupArray(number) from paramview(top=10)));
+
+create view test_pv as select number from numbers({limit:UInt64});
+with (select sum(number) from test_pv(limit=10)) as sm select sm;
