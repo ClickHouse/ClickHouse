@@ -10,6 +10,7 @@ namespace Setting
 {
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
+    extern const SettingsUInt64 merge_tree_min_read_task_size;
 }
 
 namespace ErrorCodes
@@ -62,7 +63,8 @@ static size_t calculateMinMarksPerTask(
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     const Settings & settings)
 {
-    size_t min_marks_per_task = pool_settings.min_marks_for_concurrent_read;
+    size_t min_marks_per_task
+        = std::max<size_t>(settings[Setting::merge_tree_min_read_task_size], pool_settings.min_marks_for_concurrent_read);
     const size_t part_marks_count = part.getMarksCount();
     if (part_marks_count && part.data_part->isStoredOnRemoteDisk())
     {
@@ -82,7 +84,7 @@ static size_t calculateMinMarksPerTask(
             = std::min<size_t>(pool_settings.sum_marks / pool_settings.threads / 2, min_bytes_per_task / avg_mark_bytes);
         if (heuristic_min_marks > min_marks_per_task)
         {
-            LOG_TEST(
+            LOG_TRACE(
                 &Poco::Logger::get("MergeTreeReadPoolBase"),
                 "Increasing min_marks_per_task from {} to {} based on columns size heuristic",
                 min_marks_per_task,
@@ -91,7 +93,7 @@ static size_t calculateMinMarksPerTask(
         }
     }
 
-    LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
+    LOG_TRACE(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
     return min_marks_per_task;
 }
 
