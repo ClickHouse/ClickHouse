@@ -4184,35 +4184,16 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             chassert(!storage_init);
             part->was_removed_as_broken = true;
             prefix = "broken";
+            broken_part = part;
         }
         else
         {
             prefix = "covered-by-broken";
         }
 
-        const bool copy_instead_of_hardlink = part->isPartCopyInsteadOfHardlink();
-        try
-        {
-            part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, copy_instead_of_hardlink);
-        }
-        catch (const S3Exception & ex)
-        {
-            // We have to check code NO_SUCH_KEY and RESOURCE_NOT_FOUND as well.
-            if (S3::isNotFoundError(ex.getS3ErrorCode()) && copy_instead_of_hardlink)
-            {
-                LOG_WARNING(
-                    log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part.");
-                part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, false);
-                cancel_fetch_for_broken = true;
-                LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
-            }
-            else
-            {
-                throw;
-            }
-        }
-        if (part_info_equal_broken)
-            broken_part = part;
+        if (MakeClonePartInDetachedResult::NoFetchPart == makeClonePartInDetached(part, prefix))
+            cancel_fetch_for_broken = true;
+
         detached_parts.push_back(part->name);
     }
     LOG_WARNING(log, "Detached {} parts covered by broken part {}: {}", detached_parts.size(), part_name, fmt::join(detached_parts, ", "));
@@ -4287,17 +4268,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
         if (cancel_fetch_for_broken)
         {
-            Coordination::Responses results;
-            auto rc = zookeeper->tryMulti(ops, results, /* check_session_valid */ true);
-
-            if (rc == Coordination::Error::ZBADVERSION)
-            {
-                LOG_TRACE(log, "Version conflict, will retry.");
-                continue;
-            }
-
-            zkutil::KeeperMultiException::check(rc, ops, results);
-
             outdate_broken_part();
             LOG_TRACE(log, "Cancel fetch for broken part {}", part_name);
             return;
@@ -4335,6 +4305,32 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     }
 }
 
+auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & part, const String & prefix) -> MakeClonePartInDetachedResult
+{
+    MakeClonePartInDetachedResult result = MakeClonePartInDetachedResult::FetchPart;
+    const bool copy_instead_of_hardlink = part->isReplicatedZeroCopy();
+    try
+    {
+        part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, copy_instead_of_hardlink);
+    }
+    catch (const S3Exception & ex)
+    {
+        // We have to check code NO_SUCH_KEY and RESOURCE_NOT_FOUND as well.
+        if (S3::isNotFoundError(ex.getS3ErrorCode()) && copy_instead_of_hardlink)
+        {
+            LOG_WARNING(
+                log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part.");
+            part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, false);
+            LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
+            result = MakeClonePartInDetachedResult::NoFetchPart;
+        }
+        else
+        {
+            throw;
+        }
+    }
+    return result;
+}
 
 void StorageReplicatedMergeTree::startBeingLeader()
 {

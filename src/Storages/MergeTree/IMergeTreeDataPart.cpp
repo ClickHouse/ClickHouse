@@ -2042,7 +2042,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
     const StorageMetadataPtr & metadata_snapshot,
     const DiskTransactionPtr & disk_transaction) const
 {
-    return makeCloneInDetached(prefix, metadata_snapshot, disk_transaction, isPartCopyInsteadOfHardlink());
+    return makeCloneInDetached(prefix, metadata_snapshot, disk_transaction, isReplicatedZeroCopy());
 }
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
@@ -2078,7 +2078,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
             params);
 }
 
-bool IMergeTreeDataPart::isPartCopyInsteadOfHardlink() const
+bool IMergeTreeDataPart::isReplicatedZeroCopy() const
 {
     return isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage.getSettings()->allow_remote_fs_zero_copy_replication;
 }
