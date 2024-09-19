@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Common/parseAddress.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/RemoteHostFilter.h>
 #include <IO/Operators.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBPocoLegacySource.h>

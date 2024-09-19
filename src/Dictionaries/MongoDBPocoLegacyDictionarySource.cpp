@@ -2,6 +2,7 @@
 
 #include "DictionarySourceFactory.h"
 #if USE_MONGODB
+#include <Common/RemoteHostFilter.h>
 #include "MongoDBPocoLegacyDictionarySource.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"

@@ -3,6 +3,8 @@
 #include "config.h"
 
 #if USE_MONGODB
+#include <Common/RemoteHostFilter.h>
+
 #include <Analyzer/JoinNode.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>

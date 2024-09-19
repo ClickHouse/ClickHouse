@@ -42,6 +42,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool mongodb_throw_on_unsupported_query;
+}
+
 using BSONCXXHelper::fieldAsBSONValue;
 using BSONCXXHelper::fieldAsOID;
 
@@ -279,9 +285,9 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     LOG_DEBUG(log, "MongoDB projection has built: '{}'", bsoncxx::to_json(projection));
     options.projection(projection.extract());
 
-    bool throw_on_error = context->getSettingsRef().mongodb_throw_on_unsupported_query;
+    bool throw_on_error = context->getSettingsRef()[Setting::mongodb_throw_on_unsupported_query];
 
-    if (!context->getSettingsRef().allow_experimental_analyzer)
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'allow_experimental_analyzer = 0' setting");
