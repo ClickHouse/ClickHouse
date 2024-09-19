@@ -12,7 +12,7 @@ class IDataLakeMetadata : boost::noncopyable
 {
 public:
     virtual ~IDataLakeMetadata() = default;
-    virtual DataFileInfos getDataFileInfos() const = 0;
+    virtual DataFileInfos getDataFileInfos(const ActionsDAG * filter_dag) const = 0;
     virtual NamesAndTypesList getTableSchema() const = 0;
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
     virtual const DataLakePartitionColumns & getPartitionColumns() const = 0;

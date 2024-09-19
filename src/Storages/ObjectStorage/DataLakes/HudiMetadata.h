@@ -23,7 +23,7 @@ public:
         ConfigurationPtr configuration_,
         ContextPtr context_);
 
-    DataFileInfos getDataFileInfos() const override;
+    DataFileInfos getDataFileInfos(const ActionsDAG *) const override;
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 

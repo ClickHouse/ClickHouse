@@ -71,15 +71,35 @@ class IcebergSchemaProcessor
 {
     using Node = ActionsDAG::Node;
 
-    struct SimpleTypeRepresentation;
+    struct SimpleTypeRepresentation
     {
-        optional<String> name;
+        std::optional<String> name;
         bool required;
         String type;
 
-        bool operator<=>(const SimpleTypeRepresentation & other) const
+        // static std::strong_ordering operator<=>(const optional<String> & that, const optional<String> & other) const
+        // {
+        //     if (that.has_value() && other.has_value())
+        //     {
+        //         return that.value() <=> other.value();
+        //     }
+        //     else
+        //     {
+        //         if (other.has_value())
+        //         {
+        //             return -1;
+        //         }
+        //         else if (that.has_value())
+        //         {
+        //             return 1;
+        //         }
+        //         return 0;
+        //     }
+        // }
+
+        bool operator!=(const SimpleTypeRepresentation & other) const
         {
-            return std::tie(name, required, type) <=> std::tie(other.name, other.required, other.type);
+            return std::tie(name, required, type) != std::tie(other.name, other.required, other.type);
         }
     };
 
@@ -87,21 +107,23 @@ public:
     void addIcebergTableSchema(Poco::JSON::Object::Ptr ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
-    std::optional<NameAndType> getSimpleNameAndTypeByVersion(Int32 field_id, std::optional<Int32> schema_id);
+    std::optional<NameAndTypePair> getSimpleNameAndTypeByVersion(Int32 field_id, std::optional<Int32> schema_id = std::nullopt);
 
 private:
     std::map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
-    std::map<std::vector<std::pair<Int32, std::optional<SimpleTypeRepresentation>>>> simple_type_by_field_id;
+    std::map<Int32, std::vector<std::pair<Int32, std::optional<SimpleTypeRepresentation>>>> simple_type_by_field_id;
     std::map<Int32, Int32> parents;
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
-    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, Int32 parent_id);
+    DataTypePtr
+    getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, const String & id_key, bool required, Int32 parent_id);
     DataTypePtr getSimpleType(const String & type_name);
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
         [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema);
+    void refresh_parent_info(Int32 parent_id, Int32 current_id);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
 
@@ -170,36 +192,36 @@ class IcebergMetadata : public IDataLakeMetadata, private WithContext
 public:
     enum class PartitionTransform
     {
-        Identity,
         Year,
         Month,
         Day,
         Hour,
+        Identity,
         Unsupported
     };
 
-    static PartitionTransform getTransform(const String & trasform_name)
+    static PartitionTransform getTransform(const String & transform_name)
     {
-        if (transform_name == "identity")
-        {
-            return PartitionTransform::Identity;
-        }
-        else if (transform_name == "year")
+        if (transform_name == "year")
         {
             return PartitionTransform::Year;
         }
-        else if (transform_name == "month")
-        {
-            return PartitionTransform::Month;
-        }
-        else if (transform_name == "day")
-        {
-            return PartitionTransform::Day;
-        }
-        else if (transform_name == "hour")
-        {
-            return PartitionTransform::Hour;
-        }
+        // else if (transform_name == "month")
+        // {
+        //     return PartitionTransform::Month;
+        // }
+        // else if (transform_name == "day")
+        // {
+        //     return PartitionTransform::Day;
+        // }
+        // else if (transform_name == "hour")
+        // {
+        //     return PartitionTransform::Hour;
+        // }
+        // else if (transform_name == "identity")
+        // {
+        //     return PartitionTransform::Identity;
+        // }
         else
         {
             return PartitionTransform::Unsupported;
@@ -229,7 +251,7 @@ public:
 
     const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
 
-    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
+    const DataLakePartitionColumns & getPartitionColumns() const override { return fake_partition_columns; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {
@@ -253,10 +275,10 @@ private:
     const Int32 current_schema_id;
     mutable DataFileInfos data_file_infos;
     std::unordered_map<String, String> column_name_to_physical_name;
-    DataLakePartitionColumns partition_columns;
     mutable IcebergSchemaProcessor schema_processor;
     NamesAndTypesList schema;
     LoggerPtr log;
+    const DataLakePartitionColumns fake_partition_columns{};
 };
 
 }

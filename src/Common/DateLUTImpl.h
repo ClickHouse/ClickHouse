@@ -1171,6 +1171,15 @@ public:
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
+    LUTIndex LUTIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const
+    {
+        Int16 year = 1970 + months / 12;
+        UInt8 month = months % 12 + 1;
+        return makeLUTIndex(year, month, 1);
+    }
+
+    LUTIndex LUTIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const { return makeLUTIndex(years + 1970, 1, 1); }
+
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {

@@ -69,7 +69,7 @@ public:
         else if (isDateTime64(from_type))
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
-            const TransformDateTime64<Transform> `(scale);
+            const TransformDateTime64<Transform> transformer(scale);
             return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
         else

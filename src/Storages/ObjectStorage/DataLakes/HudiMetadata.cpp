@@ -96,7 +96,7 @@ HudiMetadata::HudiMetadata(
 {
 }
 
-DataFileInfos HudiMetadata::getDataFileInfos() const
+DataFileInfos HudiMetadata::getDataFileInfos(const ActionsDAG *) const
 {
     if (data_files.empty())
     {

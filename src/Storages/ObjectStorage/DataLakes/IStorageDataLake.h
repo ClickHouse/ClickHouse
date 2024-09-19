@@ -58,7 +58,7 @@ public:
         try
         {
             datalake_metadata = DataLakeMetadata::create(object_storage, base_configuration, context);
-            configuration->setPaths(datalake_metadata->getDataFileInfos());
+            configuration->setPaths(datalake_metadata->getDataFileInfos(nullptr));
             if (use_schema_from_metadata)
                 schema_from_metadata = datalake_metadata->getTableSchema();
         }
@@ -136,7 +136,7 @@ public:
         }
 
         auto updated_configuration = base_configuration->clone();
-        updated_configuration->setPaths(current_metadata->getDataFileInfos());
+        updated_configuration->setPaths(current_metadata->getDataFileInfos(nullptr));
         updated_configuration->setPartitionColumns(current_metadata->getPartitionColumns());
 
         Storage::configuration = updated_configuration;
