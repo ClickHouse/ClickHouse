@@ -60,6 +60,8 @@ namespace Setting
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
+    extern const SettingsUInt64 min_free_disk_bytes_to_throw_insert;
+    extern const SettingsDouble min_free_disk_ratio_to_throw_insert;
 }
 
 namespace ErrorCodes
@@ -564,11 +566,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
 
-    UInt64 min_bytes = global_settings.min_free_disk_bytes_to_throw_insert;
+    UInt64 min_bytes = global_settings[Setting::min_free_disk_bytes_to_throw_insert];
     if (data_settings->min_free_disk_bytes_to_throw_insert.changed)
         min_bytes = data_settings->min_free_disk_bytes_to_throw_insert;
 
-    Float64 min_ratio = global_settings.min_free_disk_ratio_to_throw_insert;
+    Float64 min_ratio = global_settings[Setting::min_free_disk_ratio_to_throw_insert];
     if (data_settings->min_free_disk_ratio_to_throw_insert.changed)
         min_ratio = data_settings->min_free_disk_ratio_to_throw_insert;
 
