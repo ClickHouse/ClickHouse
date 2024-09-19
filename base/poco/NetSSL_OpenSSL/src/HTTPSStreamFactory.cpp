@@ -124,7 +124,7 @@ std::istream* HTTPSStreamFactory::open(const URI& uri)
 				(POCO_VERSION >> 8) & 0xFF));
 			req.set("Accept", "*/*");
 
-			pSession->sendRequest(req);
+			pSession->sendRequest(req, nullptr, nullptr);
 			std::istream& rs = pSession->receiveResponse(res);
 			bool moved = (res.getStatus() == HTTPResponse::HTTP_MOVED_PERMANENTLY || 
 			              res.getStatus() == HTTPResponse::HTTP_FOUND || 

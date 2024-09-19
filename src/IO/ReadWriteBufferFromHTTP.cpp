@@ -268,7 +268,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
-    auto & stream_out = session->sendRequest(request);
+    auto & stream_out = session->sendRequest(request, nullptr, nullptr);
     if (out_stream_callback)
         out_stream_callback(stream_out);
 

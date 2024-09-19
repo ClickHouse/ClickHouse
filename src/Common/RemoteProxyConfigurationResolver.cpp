@@ -21,7 +21,7 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
     auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
 
-    session->sendRequest(request);
+    session->sendRequest(request, nullptr, nullptr);
 
     Poco::Net::HTTPResponse response;
     auto & response_body_stream = session->receiveResponse(response);

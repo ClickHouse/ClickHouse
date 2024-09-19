@@ -7,6 +7,7 @@
 
 #if USE_AWS_S3
 
+#include <Common/LatencyBuckets.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/ProxyConfiguration.h>
@@ -155,6 +156,16 @@ private:
         EnumSize,
     };
 
+    enum class S3LatencyType : uint8_t
+    {
+        FirstByteAttempt1,
+        FirstByteAttempt2,
+        FirstByteAttemptN,
+        Connect,
+
+        EnumSize,
+    };
+
     enum class S3MetricKind : uint8_t
     {
         Read,
@@ -174,6 +185,7 @@ private:
 protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
+    void addLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, LatencyBuckets::Count amount = 1) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;
