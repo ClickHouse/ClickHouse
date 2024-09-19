@@ -3,12 +3,15 @@
 import json
 import logging
 import os
+from base64 import b64decode
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from env_helper import ROOT_DIR, DOCKER_TAG
-from get_robot_token import get_parameter_from_ssm
+import boto3
+
 from ci_utils import Shell
+from env_helper import DOCKER_TAG, ROOT_DIR
+from get_robot_token import get_parameter_from_ssm
 
 IMAGES_FILE_PATH = Path("docker/images.json")
 
@@ -25,6 +28,22 @@ def docker_login(relogin: bool = True) -> None:
             stdin_str=get_parameter_from_ssm("dockerhub_robot_password"),
             encoding="utf-8",
         )
+
+
+def ecr_login() -> str:
+    "Returns the proxy endpoint"
+    ecr = boto3.client("ecr", region_name="us-east-1")
+    auth_data = ecr.get_authorization_token()["authorizationData"][0]
+    token = b64decode(auth_data["authorizationToken"]).decode("utf-8")
+    username, password = token.split(":", 1)
+    host = str(auth_data["proxyEndpoint"]).removeprefix("https://")
+    Shell.check(
+        f"docker login --username '{username}' --password-stdin '{host}'",
+        strict=True,
+        stdin_str=password,
+        encoding="utf-8",
+    )
+    return host
 
 
 class DockerImage:
