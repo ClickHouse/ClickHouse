@@ -1473,8 +1473,8 @@ StoragePtr create(const StorageFactory::Arguments & args)
             "zk_root_path: path in the Keeper where the values will be stored (required)\n"
             "keys_limit: number of keys allowed to be stored, 0 is no limit (default: 0)");
 
-    const auto zk_root_path_node = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
-    auto zk_root_path = checkAndGetLiteralArgument<std::string>(zk_root_path_node, "zk_root_path");
+    engine_args[0] = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
+    auto zk_root_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "zk_root_path");
 
     UInt64 keys_limit = 0;
     if (engine_args.size() > 1)
