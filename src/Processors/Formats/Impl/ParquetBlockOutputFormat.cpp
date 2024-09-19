@@ -145,11 +145,10 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     /// Because the real SquashingTransform is only used for INSERT, not for SELECT ... INTO OUTFILE.
     /// The latter doesn't even have a pipeline where a transform could be inserted, so it's more
     /// convenient to do the squashing here. It's also parallelized here.
-
     if (chunk.getNumRows() != 0)
     {
         staging_rows += chunk.getNumRows();
-        staging_bytes += chunk.bytes();
+        staging_bytes += chunk.allocatedBytes();
         staging_chunks.push_back(std::move(chunk));
     }
 
@@ -180,7 +179,9 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
                 columns[i]->insertRangeFrom(*concatenated.getColumns()[i], offset, count);
 
             Chunks piece;
-            piece.emplace_back(std::move(columns), count, concatenated.getChunkInfo());
+            piece.emplace_back(std::move(columns), count);
+            piece.back().setChunkInfos(concatenated.getChunkInfos());
+
             writeRowGroup(std::move(piece));
         }
     }
@@ -269,7 +270,7 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     staging_bytes = 0;
 }
 
-void ParquetBlockOutputFormat::onCancel()
+void ParquetBlockOutputFormat::onCancel() noexcept
 {
     is_stopped = true;
 }
@@ -282,11 +283,15 @@ void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
         writeUsingArrow(std::move(chunks));
     else
     {
-        Chunk concatenated = std::move(chunks[0]);
-        for (size_t i = 1; i < chunks.size(); ++i)
-            concatenated.append(chunks[i]);
-        chunks.clear();
-
+        Chunk concatenated;
+        while (!chunks.empty())
+        {
+            if (concatenated.empty())
+                concatenated.swap(chunks.back());
+            else
+                concatenated.append(chunks.back());
+            chunks.pop_back();
+        }
         writeRowGroupInOneThread(std::move(concatenated));
     }
 }
@@ -318,6 +323,9 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
         builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
+        // write page index is disable at default.
+        if (format_settings.parquet.write_page_index)
+            builder.enable_write_page_index();
 
         parquet::ArrowWriterProperties::Builder writer_props_builder;
         if (format_settings.parquet.output_compliant_nested_types)
@@ -327,7 +335,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
 
         auto result = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
-            arrow::default_memory_pool(),
+            ArrowMemoryPool::instance(),
             sink,
             builder.build(),
             writer_props_builder.build());

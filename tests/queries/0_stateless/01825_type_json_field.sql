@@ -4,7 +4,7 @@ SET allow_experimental_object_type = 1;
 
 DROP TABLE IF EXISTS t_json_field;
 
-CREATE TABLE t_json_field (id UInt32, data JSON)
+CREATE TABLE t_json_field (id UInt32, data Object('json'))
 ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_json_field VALUES (1, (10, 'a')::Tuple(a UInt32, s String));
@@ -22,7 +22,7 @@ INSERT INTO t_json_field VALUES (4, map('a', 30, 'b', 400)), (5, map('s', 'qqq',
 SELECT id, data.a, data.s, data.b, data.t FROM t_json_field ORDER BY id;
 SELECT DISTINCT toTypeName(data) FROM t_json_field;
 
-INSERT INTO t_json_field VALUES (6, map(1, 2, 3, 4)); -- { clientError 53 }
-INSERT INTO t_json_field VALUES (6, (1, 2, 3)); -- { clientError 53 }
+INSERT INTO t_json_field VALUES (6, map(1, 2, 3, 4)); -- { clientError TYPE_MISMATCH }
+INSERT INTO t_json_field VALUES (6, (1, 2, 3)); -- { clientError TYPE_MISMATCH }
 
 DROP TABLE t_json_field;

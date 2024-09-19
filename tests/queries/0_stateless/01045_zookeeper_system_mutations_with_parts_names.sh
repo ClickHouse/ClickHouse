@@ -25,7 +25,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE table_for_mutations(k UInt32, v1 UInt
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES table_for_mutations"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO table_for_mutations select number, number from numbers(100000)"
+${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select 1 --query="INSERT INTO table_for_mutations select number, number from numbers(100000)"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT sum(v1) FROM table_for_mutations"
 
@@ -53,7 +53,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE replicated_table_for_mutations(k UInt
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES replicated_table_for_mutations"
 
 # test relays on part ids, which are non-deterministic with keeper fault injections, so disable it
-${CLICKHOUSE_CLIENT} --insert_keeper_fault_injection_probability=0 --query="INSERT INTO replicated_table_for_mutations select number, number from numbers(100000)"
+${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select 1 --insert_keeper_fault_injection_probability=0 --query="INSERT INTO replicated_table_for_mutations select number, number from numbers(100000)"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT sum(v1) FROM replicated_table_for_mutations"
 

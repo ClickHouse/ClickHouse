@@ -31,7 +31,8 @@ public:
 
     void load(IServerConnection & connection,
               const ConnectionTimeouts & timeouts,
-              Int32 suggestion_limit);
+              Int32 suggestion_limit,
+              const ClientInfo & client_info);
 
     /// Older server versions cannot execute the query loading suggestions.
     static constexpr int MIN_SERVER_REVISION = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
@@ -39,7 +40,7 @@ public:
     int getLastError() const { return last_error.load(); }
 
 private:
-    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query);
+    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
 
     void fillWordsFromBlock(const Block & block);
 

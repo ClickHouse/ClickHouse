@@ -228,6 +228,11 @@ public:
         return prefix_size + nested_func->sizeOfData();
     }
 
+    size_t alignOfData() const override
+    {
+        return std::max(alignof(Data), nested_func->alignOfData());
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) Data;

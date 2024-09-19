@@ -141,6 +141,8 @@ public:
                 if (thread_group)
                     CurrentThread::attachToGroupIfDetached(thread_group);
 
+                setThreadName("SystemReplicas");
+
                 try
                 {
                     ReplicatedTableStatus status;
@@ -283,14 +285,26 @@ private:
     const bool with_zk_fields;
     const size_t max_block_size;
     std::shared_ptr<StorageSystemReplicasImpl> impl;
-    const ActionsDAG::Node * predicate = nullptr;
+    ExpressionActionsPtr virtual_columns_filter;
 };
 
 void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        Block block_to_filter
+        {
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
+        };
+
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        if (dag)
+            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
 }
 
 void StorageSystemReplicas::read(
@@ -427,7 +441,8 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+        if (virtual_columns_filter)
+            VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
 
         if (!filtered_block.rows())
         {

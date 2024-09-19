@@ -155,7 +155,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * array_type = typeid_cast<const DataTypeArray *>(from_type);
@@ -165,21 +165,21 @@ public:
 
         WhichDataType which(nested_type);
         if (which.isUInt8())
-            return executeBitmapData<UInt8>(argument_types, arguments);
+            return executeBitmapData<UInt8>(argument_types, arguments, input_rows_count);
         else if (which.isUInt16())
-            return executeBitmapData<UInt16>(argument_types, arguments);
+            return executeBitmapData<UInt16>(argument_types, arguments, input_rows_count);
         else if (which.isUInt32())
-            return executeBitmapData<UInt32>(argument_types, arguments);
+            return executeBitmapData<UInt32>(argument_types, arguments, input_rows_count);
         else if (which.isUInt64())
-            return executeBitmapData<UInt64>(argument_types, arguments);
+            return executeBitmapData<UInt64>(argument_types, arguments, input_rows_count);
         else if (which.isInt8())
-            return executeBitmapData<Int8>(argument_types, arguments);
+            return executeBitmapData<Int8>(argument_types, arguments, input_rows_count);
         else if (which.isInt16())
-            return executeBitmapData<Int16>(argument_types, arguments);
+            return executeBitmapData<Int16>(argument_types, arguments, input_rows_count);
         else if (which.isInt32())
-            return executeBitmapData<Int32>(argument_types, arguments);
+            return executeBitmapData<Int32>(argument_types, arguments, input_rows_count);
         else if (which.isInt64())
-            return executeBitmapData<Int64>(argument_types, arguments);
+            return executeBitmapData<Int64>(argument_types, arguments, input_rows_count);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
                 from_type->getName(), getName());
@@ -187,14 +187,14 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         // input data
         const ColumnArray * array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
         const ColumnPtr & mapped = array->getDataPtr();
         const ColumnArray::Offsets & offsets = array->getOffsets();
-        const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(&*mapped);
-        const typename ColumnVector<T>::Container & input_data = column->getData();
+        const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*mapped);
+        const typename ColumnVector<T>::Container & input_data = column.getData();
 
         // output data
         Array params_row;
@@ -203,10 +203,10 @@ private:
         AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
             AggregateFunctionGroupBitmapData<T>::name(), action, argument_types, params_row, properties);
         auto col_to = ColumnAggregateFunction::create(bitmap_function);
-        col_to->reserve(offsets.size());
+        col_to->reserve(input_rows_count);
 
         size_t pos = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             col_to->insertDefault();
             AggregateFunctionGroupBitmapData<T> & bitmap_data

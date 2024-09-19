@@ -253,9 +253,9 @@ private:
             else
             {
                 Y scaled;
-                bool has_overfllow = common::mulOverflow<Y>(y, levels_num, scaled);
+                bool has_overflow = common::mulOverflow<Y>(y, levels_num, scaled);
 
-                if (has_overfllow)
+                if (has_overflow)
                     y = y / (y_max / levels_num) + 1;
                 else
                     y = scaled / y_max + 1;

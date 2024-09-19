@@ -240,7 +240,7 @@ void inline getTokens(String format, std::vector<String> & res)
         pos = str.find_first_not_of("abcdefghijklmnopqrstuvwxyzQWERTYUIOPASDFGHJKLZXCVBNM");
     }
     // Cover the last (or only) token
-    if (str.length() > 0)
+    if (!str.empty())
     {
         token = str;
         res.insert(res.begin(), token);

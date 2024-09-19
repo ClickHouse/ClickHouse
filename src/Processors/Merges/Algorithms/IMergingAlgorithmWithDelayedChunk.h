@@ -34,9 +34,9 @@ protected:
         return !lhs.hasEqualSortColumnsWith(rhs);
     }
 
-private:
     Block header;
 
+private:
     /// Inputs currently being merged.
     Inputs current_inputs;
     SortCursorImpls cursors;

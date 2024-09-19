@@ -160,7 +160,7 @@ KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
     result.expression_list_ast = std::make_shared<ASTExpressionList>();
-    result.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(), ExpressionActionsSettings{});
+    result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
 }
 

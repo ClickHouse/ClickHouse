@@ -10,6 +10,7 @@ extern const int NOT_IMPLEMENTED;
 
 namespace
 {
+
 template <typename T>
 requires std::is_integral_v<T>
 T byteSwap(T x)
@@ -100,7 +101,7 @@ One use-case of this function is reversing IPv4s:
                 {"64-bit", "SELECT byteSwap(123294967295)", "18439412204227788800"},
             },
             .categories{"Mathematical", "Arithmetic"}},
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 }
 
 }

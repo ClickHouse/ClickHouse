@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-DATA_FILE=$CLICKHOUSE_TMP/test_02103_null.data
+DATA_FILE=${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_null.data
 
 # Wrapper for clickhouse-client to always output in JSONEachRow format, that
 # way format settings will not affect output.

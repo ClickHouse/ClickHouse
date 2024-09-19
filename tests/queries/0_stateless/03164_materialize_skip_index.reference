@@ -1,0 +1,52 @@
+20
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.t_skip_index_insert)
+        Indexes:
+          Skip
+            Name: idx_a
+            Description: minmax GRANULARITY 1
+            Parts: 2/2
+            Granules: 50/50
+          Skip
+            Name: idx_b
+            Description: set GRANULARITY 1
+            Parts: 2/2
+            Granules: 50/50
+20
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.t_skip_index_insert)
+        Indexes:
+          Skip
+            Name: idx_a
+            Description: minmax GRANULARITY 1
+            Parts: 1/1
+            Granules: 6/50
+          Skip
+            Name: idx_b
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 6/6
+20
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.t_skip_index_insert)
+        Indexes:
+          Skip
+            Name: idx_a
+            Description: minmax GRANULARITY 1
+            Parts: 1/2
+            Granules: 6/50
+          Skip
+            Name: idx_b
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 6/6
+4	0

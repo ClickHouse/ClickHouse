@@ -34,8 +34,6 @@ Int64 IntervalKind::toAvgNanoseconds() const
         default:
             return toAvgSeconds() * NANOSECONDS_PER_SECOND;
     }
-
-    UNREACHABLE();
 }
 
 Int32 IntervalKind::toAvgSeconds() const
@@ -54,7 +52,6 @@ Int32 IntervalKind::toAvgSeconds() const
         case IntervalKind::Kind::Quarter: return 7889238; /// Exactly 1/4 of a year.
         case IntervalKind::Kind::Year: return 31556952;   /// The average length of a Gregorian year is equal to 365.2425 days
     }
-    UNREACHABLE();
 }
 
 Float64 IntervalKind::toSeconds() const
@@ -80,7 +77,6 @@ Float64 IntervalKind::toSeconds() const
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not possible to get precise number of seconds in non-precise interval");
     }
-    UNREACHABLE();
 }
 
 bool IntervalKind::isFixedLength() const
@@ -99,7 +95,6 @@ bool IntervalKind::isFixedLength() const
         case IntervalKind::Kind::Quarter:
         case IntervalKind::Kind::Year: return false;
     }
-    UNREACHABLE();
 }
 
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
@@ -141,7 +136,6 @@ const char * IntervalKind::toKeyword() const
         case IntervalKind::Kind::Quarter: return "QUARTER";
         case IntervalKind::Kind::Year: return "YEAR";
     }
-    UNREACHABLE();
 }
 
 
@@ -161,7 +155,6 @@ const char * IntervalKind::toLowercasedKeyword() const
         case IntervalKind::Kind::Quarter: return "quarter";
         case IntervalKind::Kind::Year: return "year";
     }
-    UNREACHABLE();
 }
 
 
@@ -192,7 +185,6 @@ const char * IntervalKind::toDateDiffUnit() const
         case IntervalKind::Kind::Year:
             return "year";
     }
-    UNREACHABLE();
 }
 
 
@@ -223,7 +215,6 @@ const char * IntervalKind::toNameOfFunctionToIntervalDataType() const
         case IntervalKind::Kind::Year:
             return "toIntervalYear";
     }
-    UNREACHABLE();
 }
 
 
@@ -257,7 +248,6 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
         case IntervalKind::Kind::Year:
             return "toYear";
     }
-    UNREACHABLE();
 }
 
 

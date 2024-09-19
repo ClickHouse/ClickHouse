@@ -145,7 +145,7 @@ uint64_t KeeperLogStore::last_durable_index()
 void KeeperLogStore::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server)
 {
     std::lock_guard lock(changelog_lock);
-    return changelog.setRaftServer(raft_server);
+    changelog.setRaftServer(raft_server);
 }
 
 void KeeperLogStore::getKeeperLogInfo(KeeperLogInfo & log_info) const

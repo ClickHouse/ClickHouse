@@ -16,4 +16,7 @@
     <query>SELECT keys.key, value1 FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null;</query>
     <query>SELECT keys.key, value1 FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null SETTINGS
         allow_experimental_analyzer=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dict</drop_query>
 </test>

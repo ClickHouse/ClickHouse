@@ -63,7 +63,8 @@ public:
 
     ~WriteBufferFromVector() override
     {
-        finalize();
+        if (!canceled)
+            finalize();
     }
 
 private:
@@ -71,7 +72,7 @@ private:
     {
         vector.resize(
             ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
-                + sizeof(ValueType) - 1)  /// Align up.
+                + sizeof(ValueType) - 1)  /// Align up. /// NOLINT
             / sizeof(ValueType));
 
         /// Prevent further writes.

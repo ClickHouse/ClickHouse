@@ -54,8 +54,6 @@ String toString(TargetArch arch)
         case TargetArch::AMXTILE: return "amxtile";
         case TargetArch::AMXINT8: return "amxint8";
     }
-
-    UNREACHABLE();
 }
 
 }

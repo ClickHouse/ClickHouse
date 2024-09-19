@@ -36,39 +36,46 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     if (format_settings.pretty.output_format_pretty_row_numbers)
         writeString(String(row_number_width, ' '), out);
     /// Names
-    for (size_t i = 0; i < num_columns; ++i)
+    auto write_names = [&](const bool is_footer) -> void
     {
-        if (i != 0)
-            writeCString("   ", out);
-        else
-            writeChar(' ', out);
-
-        const ColumnWithTypeAndName & col = header.getByPosition(i);
-
-        if (col.type->shouldAlignRightInPrettyFormats())
+        for (size_t i = 0; i < num_columns; ++i)
         {
-            for (ssize_t k = 0; k < std::max(0z, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
+            if (i != 0)
+                writeCString("   ", out);
+            else
                 writeChar(' ', out);
 
-            if (color)
-                writeCString("\033[1m", out);
-            writeString(col.name, out);
-            if (color)
-                writeCString("\033[0m", out);
-        }
-        else
-        {
-            if (color)
-                writeCString("\033[1m", out);
-            writeString(col.name, out);
-            if (color)
-                writeCString("\033[0m", out);
+            const ColumnWithTypeAndName & col = header.getByPosition(i);
 
-            for (ssize_t k = 0; k < std::max(0z, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
-                writeChar(' ', out);
+            if (col.type->shouldAlignRightInPrettyFormats())
+            {
+                for (ssize_t k = 0; k < std::max(0z, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
+                    writeChar(' ', out);
+
+                if (color)
+                    writeCString("\033[1m", out);
+                writeString(col.name, out);
+                if (color)
+                    writeCString("\033[0m", out);
+            }
+            else
+            {
+                if (color)
+                    writeCString("\033[1m", out);
+                writeString(col.name, out);
+                if (color)
+                    writeCString("\033[0m", out);
+
+                for (ssize_t k = 0; k < std::max(0z, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
+                    writeChar(' ', out);
+            }
         }
-    }
-    writeCString("\n\n", out);
+        if (!is_footer)
+            writeCString("\n\n", out);
+        else
+            writeCString("\n", out);
+    };
+    write_names(false);
 
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
@@ -95,11 +102,19 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             writeValueWithPadding(
                 *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
-
         writeReadableNumberTip(chunk);
         writeChar('\n', out);
     }
 
+    /// Write blank line between last row and footer
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+        writeCString("\n", out);
+    /// Write left blank
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_row_numbers && format_settings.pretty.output_format_pretty_display_footer_column_names)
+        writeString(String(row_number_width, ' '), out);
+    /// Write footer
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+        write_names(true);
     total_rows += num_rows;
 }
 

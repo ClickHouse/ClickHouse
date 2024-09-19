@@ -65,6 +65,9 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
     if (has("load_metadata_threads"))
         load_metadata_threads = get_uint("load_metadata_threads");
 
+    if (has("load_metadata_asynchronously"))
+        load_metadata_asynchronously = get_uint("load_metadata_asynchronously");
+
     if (boundary_alignment > max_file_segment_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `boundary_alignment` cannot exceed `max_file_segment_size`");
 
@@ -79,6 +82,15 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
 
     if (has("write_cache_per_user_id_directory"))
         slru_size_ratio = get_uint("write_cache_per_user_id_directory");
+
+    if (has("keep_free_space_size_ratio"))
+        keep_free_space_size_ratio = get_double("keep_free_space_size_ratio");
+
+    if (has("keep_free_space_elements_ratio"))
+        keep_free_space_elements_ratio = get_double("keep_free_space_elements_ratio");
+
+    if (has("keep_free_space_remove_batch"))
+        keep_free_space_elements_ratio = get_uint("keep_free_space_remove_batch");
 }
 
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

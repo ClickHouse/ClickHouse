@@ -1,5 +1,7 @@
 #include <Analyzer/FunctionNode.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -58,12 +60,20 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 
         ColumnWithTypeAndName argument_column;
 
+        auto * constant = argument->as<ConstantNode>();
         if (isNameOfInFunction(function_name) && i == 1)
+        {
             argument_column.type = std::make_shared<DataTypeSet>();
+            if (constant)
+            {
+                /// Created but not filled for the analysis during function resolution.
+                FutureSetPtr empty_set;
+                argument_column.column = ColumnConst::create(ColumnSet::create(1, empty_set), 1);
+            }
+        }
         else
             argument_column.type = argument->getResultType();
 
-        auto * constant = argument->as<ConstantNode>();
         if (constant && !isNotCreatable(argument_column.type))
             argument_column.column = constant->getColumn();
 
@@ -232,7 +242,8 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// Avoid cast for `IN tuple(...)` expression.
     /// Tuples could be quite big, and adding a type may significantly increase query size.
     /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
-    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 &&  argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT)
+    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
+        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
         new_options.add_cast_for_constants = false;
 
     const auto & parameters = getParameters();

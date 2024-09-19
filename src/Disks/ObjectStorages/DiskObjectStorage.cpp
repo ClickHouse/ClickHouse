@@ -133,6 +133,14 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
+void DiskObjectStorage::truncateFile(const String & path, size_t size)
+{
+    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    auto transaction = createObjectStorageTransaction();
+    transaction->truncateFile(path, size);
+    transaction->commit();
+}
+
 void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
@@ -453,14 +461,17 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 }
 
 template <class Settings>
-static inline Settings updateResourceLink(const Settings & settings, const String & resource_name)
+static inline Settings updateIOSchedulingSettings(const Settings & settings, const String & read_resource_name, const String & write_resource_name)
 {
-    if (resource_name.empty())
+    if (read_resource_name.empty() && write_resource_name.empty())
         return settings;
     if (auto query_context = CurrentThread::getQueryContext())
     {
         Settings result(settings);
-        result.resource_link = query_context->getWorkloadClassifier()->get(resource_name);
+        if (!read_resource_name.empty())
+            result.io_scheduling.read_resource_link = query_context->getWorkloadClassifier()->get(read_resource_name);
+        if (!write_resource_name.empty())
+            result.io_scheduling.write_resource_link = query_context->getWorkloadClassifier()->get(write_resource_name);
         return result;
     }
     return settings;
@@ -492,7 +503,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     return object_storage->readObjects(
         storage_objects,
-        updateResourceLink(settings, getReadResourceName()),
+        updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName()),
         read_hint,
         file_size);
 }
@@ -505,7 +516,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     LOG_TEST(log, "Write file: {}", path);
 
-    WriteSettings write_settings = updateResourceLink(settings, getWriteResourceName());
+    WriteSettings write_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
     return transaction->writeFile(path, buf_size, mode, write_settings);
 }
@@ -536,7 +547,7 @@ void DiskObjectStorage::applyNewSettings(
 {
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
     const auto config_prefix = "storage_configuration.disks." + name;
-    object_storage->applyNewSettings(config, config_prefix, context_);
+    object_storage->applyNewSettings(config, config_prefix, context_, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
 
     {
         std::unique_lock lock(resource_mutex);
@@ -574,6 +585,17 @@ UInt64 DiskObjectStorage::getRevision() const
     return metadata_helper->getRevision();
 }
 
+#if USE_AWS_S3
+std::shared_ptr<const S3::Client> DiskObjectStorage::getS3StorageClient() const
+{
+    return object_storage->getS3StorageClient();
+}
+
+std::shared_ptr<const S3::Client> DiskObjectStorage::tryGetS3StorageClient() const
+{
+    return object_storage->tryGetS3StorageClient();
+}
+#endif
 
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {

@@ -50,7 +50,7 @@ public:
         clock_type = clock_type_;
     }
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     void setProgressCallback(ContextPtr context);
 

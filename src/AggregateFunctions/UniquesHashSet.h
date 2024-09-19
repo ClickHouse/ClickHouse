@@ -105,14 +105,14 @@ private:
         }
     }
 
-    inline size_t buf_size() const           { return 1ULL << size_degree; } /// NOLINT
-    inline size_t max_fill() const           { return 1ULL << (size_degree - 1); } /// NOLINT
-    inline size_t mask() const               { return buf_size() - 1; }
+    size_t buf_size() const           { return 1ULL << size_degree; } /// NOLINT
+    size_t max_fill() const           { return 1ULL << (size_degree - 1); } /// NOLINT
+    size_t mask() const               { return buf_size() - 1; }
 
-    inline size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+    size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
     /// The value is divided by 2 ^ skip_degree
-    inline bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
+    bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
     HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
 

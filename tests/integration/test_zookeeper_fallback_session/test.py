@@ -84,10 +84,28 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
             )
 
     # at this point network partitioning has been reverted.
-    # the nodes should switch to zoo1 automatically because of `in_order` load-balancing.
+    # the nodes should switch to zoo1 because of `in_order` load-balancing.
     # otherwise they would connect to a random replica
+
+    # but there's no reason to reconnect because current session works
+    # and there's no "optimal" node with `in_order` load-balancing
+    # so we need to break the current session
+
     for node in [node1, node2, node3]:
-        assert_uses_zk_node(node, "zoo1")
+        assert_uses_zk_node(node, "zoo3")
+
+    with PartitionManager() as pm:
+        for node in started_cluster.instances.values():
+            pm._add_rule(
+                {
+                    "source": node.ip_address,
+                    "destination": cluster.get_instance_ip("zoo3"),
+                    "action": "REJECT --reject-with tcp-reset",
+                }
+            )
+
+        for node in [node1, node2, node3]:
+            assert_uses_zk_node(node, "zoo1")
 
     node1.query_with_retry("INSERT INTO simple VALUES ({0}, {0})".format(2))
     for node in [node2, node3]:

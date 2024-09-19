@@ -537,7 +537,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path);
+            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, std::nullopt /* key_prefix */);
             auto object_to = StoredObject(object_key.serialize());
 
             object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
@@ -556,6 +556,54 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
+    }
+};
+
+struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOperation
+{
+    std::string path;
+    size_t size;
+
+    TruncateFileOperationOutcomePtr truncate_outcome;
+
+    TruncateFileObjectStorageOperation(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        const std::string & path_,
+        size_t size_)
+        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , path(path_)
+        , size(size_)
+    {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("TruncateFileObjectStorageOperation (path: {}, size: {})", path, size);
+    }
+
+    void execute(MetadataTransactionPtr tx) override
+    {
+        if (metadata_storage.exists(path))
+        {
+            if (!metadata_storage.isFile(path))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not a file", path);
+
+            truncate_outcome = tx->truncateFile(path, size);
+        }
+    }
+
+    void undo() override
+    {
+
+    }
+
+    void finalize() override
+    {
+        if (!truncate_outcome)
+            return;
+
+        if (!truncate_outcome->objects_to_remove.empty())
+            object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
     }
 };
 
@@ -596,6 +644,13 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         {
             tx->moveFile(from_path, to_path);
         }));
+}
+
+void DiskObjectStorageTransaction::truncateFile(const String & path, size_t size)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<TruncateFileObjectStorageOperation>(object_storage, metadata_storage, path, size)
+    );
 }
 
 void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, const std::string & to_path)
@@ -683,7 +738,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-    auto object_key = object_storage.generateObjectKeyForPath(path);
+    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
     if (metadata_helper)
@@ -780,7 +835,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
-    auto object_key = object_storage.generateObjectKeyForPath(path);
+    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
     if (metadata_helper)
@@ -819,7 +874,9 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
     if (mode == WriteMode::Rewrite)
     {
-        if (!object_storage.isWriteOnce() && metadata_storage.exists(path))
+        /// Otherwise we will produce lost blobs which nobody points to
+        /// WriteOnce storages are not affected by the issue
+        if (!object_storage.isPlain() && metadata_storage.exists(path))
             object_storage.removeObjectsIfExist(metadata_storage.getStorageObjects(path));
 
         metadata_transaction->createMetadataFile(path, std::move(object_key), object_size);

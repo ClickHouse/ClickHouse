@@ -85,7 +85,7 @@ struct ASTTableJoin : public IAST
 /// Specification of ARRAY JOIN.
 struct ASTArrayJoin : public IAST
 {
-    enum class Kind
+    enum class Kind : uint8_t
     {
         Inner,   /// If array is empty, row will not present (default).
         Left,    /// If array is empty, leave row with default values instead of array elements.

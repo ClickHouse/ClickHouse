@@ -1,18 +1,26 @@
+#include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_error_prone_window_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int DEPRECATED_FUNCTION;
 }
 
 namespace
@@ -31,7 +39,18 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNeighbor>(); }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
+            throw Exception(
+                ErrorCodes::DEPRECATED_FUNCTION,
+                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
+                name);
+
+        return std::make_shared<FunctionNeighbor>();
+    }
 
     /// Get the name of the function.
     String getName() const override { return name; }

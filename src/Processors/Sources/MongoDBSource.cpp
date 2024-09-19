@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <Poco/MongoDB/Array.h>
+#include <Poco/MongoDB/Binary.h>
 #include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
@@ -17,6 +18,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include "base/types.h"
 #include <base/range.h>
 #include <Poco/URI.h>
 
@@ -45,7 +47,27 @@ namespace
     using ValueType = ExternalResultDescription::ValueType;
     using ObjectId = Poco::MongoDB::ObjectId;
     using MongoArray = Poco::MongoDB::Array;
+    using MongoUUID = Poco::MongoDB::Binary::Ptr;
 
+
+    UUID parsePocoUUID(const Poco::UUID & src)
+    {
+        UUID uuid;
+
+        std::array<Poco::UInt8, 6> src_node = src.getNode();
+        UInt64 node = 0;
+        node |= UInt64(src_node[0]) << 40;
+        node |= UInt64(src_node[1]) << 32;
+        node |= UInt64(src_node[2]) << 24;
+        node |= UInt64(src_node[3]) << 16;
+        node |= UInt64(src_node[4]) << 8;
+        node |= src_node[5];
+
+        UUIDHelpers::getHighBytes(uuid) = UInt64(src.getTimeLow()) << 32 | UInt32(src.getTimeMid() << 16 | src.getTimeHiAndVersion());
+        UUIDHelpers::getLowBytes(uuid) = UInt64(src.getClockSeq()) << 48 | node;
+
+        return uuid;
+    }
 
     template <typename T>
     Field getNumber(const Poco::MongoDB::Element & value, const std::string & name)
@@ -149,12 +171,20 @@ namespace
         else if (which.isUUID())
             parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
             {
-                if (value.type() != Poco::MongoDB::ElementTraits<String>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String (UUID), got type id = {} for column {}",
+                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
+                {
+                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
+                    return parse<UUID>(string);
+                }
+                else if (value.type() == Poco::MongoDB::ElementTraits<MongoUUID>::TypeId)
+                {
+                    const Poco::UUID & poco_uuid = static_cast<const Poco::MongoDB::ConcreteElement<MongoUUID> &>(value).value()->uuid();
+                    return parsePocoUUID(poco_uuid);
+                }
+                else
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String/UUID, got type id = {} for column {}",
                                         toString(value.type()), name);
 
-                String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                return parse<UUID>(string);
             };
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type conversion to {} is not supported", nested->getName());
@@ -286,8 +316,14 @@ namespace
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
                     assert_cast<ColumnUUID &>(column).getData().push_back(parse<UUID>(string));
                 }
+                else if (value.type() == Poco::MongoDB::ElementTraits<MongoUUID>::TypeId)
+                {
+                    const Poco::UUID & poco_uuid = static_cast<const Poco::MongoDB::ConcreteElement<MongoUUID> &>(value).value()->uuid();
+                    UUID uuid = parsePocoUUID(poco_uuid);
+                    assert_cast<ColumnUUID &>(column).getData().push_back(uuid);
+                }
                 else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String (UUID), got type id = {} for column {}",
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String/UUID, got type id = {} for column {}",
                                         toString(value.type()), name);
                 break;
             }

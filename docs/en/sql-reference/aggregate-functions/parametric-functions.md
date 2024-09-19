@@ -82,9 +82,11 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, …)
+## sequenceMatch
 
 Checks whether the sequence contains an event chain that matches the pattern.
+
+**Syntax**
 
 ``` sql
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
@@ -102,7 +104,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
 
 **Returned values**
 
@@ -111,8 +113,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 Type: `UInt8`.
 
-<a name="sequence-function-pattern-syntax"></a>
-**Pattern syntax**
+#### Pattern syntax
 
 - `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
@@ -170,15 +171,17 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 **See Also**
 
-- [sequenceCount](#function-sequencecount)
+- [sequenceCount](#sequencecount)
 
-## sequenceCount(pattern)(time, cond1, cond2, …)
+## sequenceCount
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
 :::note
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
+
+**Syntax**
 
 ``` sql
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
@@ -192,7 +195,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
 
 **Returned values**
 
@@ -229,7 +232,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 **See Also**
 
-- [sequenceMatch](#function-sequencematch)
+- [sequenceMatch](#sequencematch)
 
 ## windowFunnel
 
