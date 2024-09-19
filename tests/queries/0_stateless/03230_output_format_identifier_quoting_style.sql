@@ -10,8 +10,8 @@ DROP TABLE IF EXISTS uk_price_paid;
 
 CREATE TABLE uk_price_paid
 (
-    Table String,   -- column name is a keyword `table`
-    Engine String,  -- column name is a keyword `ENGINE`
+    Table String,
+    Engine String,
     price UInt32,
     date Date,
     postcode1 LowCardinality(String),
@@ -50,8 +50,8 @@ ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, date);
 
 CREATE TABLE prices_by_year_dest (
-    Table String,   -- column name is a keyword `table`
-    Engine String,  -- column name is a keyword `ENGINE`
+    Table String,
+    Engine String,
     price UInt32,
     date Date,
     addr1 String,
