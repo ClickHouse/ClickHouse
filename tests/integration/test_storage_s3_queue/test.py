@@ -1900,6 +1900,9 @@ def test_replicated(started_cluster):
     files_path = f"{table_name}_data"
     files_to_generate = 1000
 
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
     node1.query(
         "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
     )
