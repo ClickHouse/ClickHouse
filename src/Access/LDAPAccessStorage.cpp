@@ -128,7 +128,7 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
     {
         if (it != granted_role_names.end()) // Removed a granted role.
         {
-            const auto old_role_name = it->second;
+            const auto & old_role_name = it->second;
             applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
         }
     }
@@ -191,8 +191,8 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
     }
     else
     {
-        granted_role_names.erase(role_id);
         granted_role_ids.erase(role_name);
+        granted_role_names.erase(role_id);
     }
 }
 
