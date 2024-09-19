@@ -85,7 +85,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"parallel_replicas_local_plan", false, false, "Use local plan for local replica in a query with parallel replicas"},
             {"join_to_sort_minimum_perkey_rows", 0, 40, "The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys"},
             {"join_to_sort_maximum_table_rows", 0, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join"},
-            {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"}
+            {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"},
+            {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
         }
     },
     {"24.8",
@@ -101,7 +102,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"query_cache_tag", "", "", "New setting for labeling query cache settings."},
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
-            {"mongodb_throw_on_unsupported_query", 1, 1, "New setting."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
             {"allow_experimental_json_type", false, false, "Add new experimental JSON type"},
             {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
