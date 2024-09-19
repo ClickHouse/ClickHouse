@@ -40,9 +40,13 @@ template <typename Thread>
 class ThreadPoolImpl
 {
 public:
+    // used as 'unlimited' thread pool size
+    // on linux you can not have more threads even if the RAM is unlimited
+    // see https://docs.kernel.org/admin-guide/sysctl/kernel.html#threads-max
+    static constexpr int MAX_THEORETICAL_THREAD_COUNT 0x3fffffff; // ~1 billion
+
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
-
 
     // Subclass that encapsulates the thread and has the ability to remove itself from the pool.
     class ThreadFromThreadPool
@@ -172,7 +176,8 @@ private:
     // Decrements with every new thread started, increments when it finishes.
     // If positive, then more threads can be started.
     // When it comes to zero, it means that max_threads threads have already been started.
-    std::atomic<size_t> remaining_pool_capacity;
+    // it can be below zero when the threadpool is shutting down
+    std::atomic<int> remaining_pool_capacity;
 
     // Increments every time a new thread joins the thread pool or a job finishes.
     // Decrements every time a task is scheduled.

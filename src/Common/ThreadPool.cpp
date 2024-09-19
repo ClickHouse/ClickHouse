@@ -289,18 +289,50 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (shutdown)
             return on_error("shutdown");
 
-        bool adding_new_thread = new_thread && threads.size() < std::min(max_threads, 1 + scheduled_jobs + max_free_threads);
+        /// We must not allocate memory or perform operations that could throw exceptions after adding a job to the queue,
+        /// because if an exception occurs, it may leave the job in the queue without notifying any threads.
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_slot;
 
-        /// We must not to allocate any memory after we emplaced a job in a queue.
-        /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
+        /// The decision to start a new thread is made outside the locked section.
+        /// However, thread load and demand can change dynamically, and decisions based on
+        /// atomic variables outside the critical section might become outdated by the time we acquire the lock.
+        /// This can lead to two possible scenarios:
+        ///
+        ///  1) Relatively common: A new thread was started outside the lock, but by the time we acquire the lock,
+        ///     demand for threads has decreased (e.g., other threads have finished their jobs and are now idle).
+        ///     In this case, even though there are now enough threads, we still attempt to add the new thread
+        ///     to the pool, provided it does not exceed the `max_threads` or `max_free_threads` limits. Keeping
+        ///     an extra thread in the pool may help accommodate a sudden increase in demand without the need
+        ///     to wait for thread creation.
+        ///
+        ///  2) Very unlikely (but possible): Outside the lock, it appeared there were enough threads
+        ///     to handle the workload. However, after acquiring the lock, it turns out the new thread
+        ///     is needed (possibly because one of the existing threads was removed or became unavailable).
+        ///     In this case, we create the thread inside the critical section, even though this may introduce
+        ///     a small delay.
+
+        /// Check if we can add the thread created outside the critical section to the pool.
+        bool adding_new_thread = new_thread && threads.size() < std::min(max_threads, 1 /* current job */ + scheduled_jobs + max_free_threads);
+
+        // If we didn't create a new thread initially but realize we actually need one (unlikely scenario).
+        if (unlikely(!adding_new_thread && threads.size() < std::min(max_threads, scheduled_jobs + 1)))
+        {
+            try
+            {
+                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                remaining_pool_capacity.fetch_sub(1, std::memory_order_relaxed);
+            }
+            catch (...)
+            {
+                // If thread creation fails, restore the pool capacity and return an error.
+                remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+                return on_error("failed to start the thread");
+            }
+            adding_new_thread = true;
+        }
+
         if (adding_new_thread)
         {
-            // we've got the new thread, it was started out of the locked section,
-            // so in between the demand on thread may have been changed.
-            //
-            // Even if the demand can be lower already but if the pool can still take
-            // new thread - let's add it since we already have it.
             try
             {
                 threads.emplace_front(std::move(new_thread));
@@ -308,11 +340,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             }
             catch (...)
             {
-                /// Most likely this is a std::bad_alloc exception
+                // If thread creation fails, restore the pool capacity and return an error.
                 return on_error("cannot allocate thread slot");
             }
         }
-        else
+        else // we have a thread but there is not space for that in the pool.
         {
             new_thread.reset();
         }
@@ -474,17 +506,24 @@ void ThreadPoolImpl<Thread>::finalize()
     {
         std::lock_guard lock(mutex);
         shutdown = true;
-        /// We don't want threads to remove themselves from `threads` anymore, otherwise `thread.join()` will go wrong below in this function.
+
+        /// scheduleImpl doesn't check for shutdown outside the critical section,
+        /// so we set remaining_pool_capacity to a large negative value
+        /// (e.g., -MAX_THEORETICAL_THREAD_COUNT) to signal that no new threads are needed.
+        /// This effectively prevents any new threads from being started during shutdown.
+        remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
+
+        /// Disable thread self-removal from `threads`. Otherwise, if threads remove themselves,
+        /// the thread.join() operation will fail later in this function.
         threads_remove_themselves = false;
     }
 
-    /// Wake up threads so they can finish themselves.
+    /// Notify all threads to wake them up, so they can complete their work and exit gracefully.
     new_job_or_shutdown.notify_all();
 
-    /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
-
+    /// Clear the thread list. This triggers the destruction of ThreadFromThreadPool objects,
+    /// and in their destructors, the threads will be joined automatically.
     threads.clear();
-    // destructors of the ThreadFromThreadPool will join them
 }
 
 template <typename Thread>
@@ -627,7 +666,12 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     if (!parent_pool.first_exception)
                         parent_pool.first_exception = exception_from_job;
                     if (parent_pool.shutdown_on_exception)
+                    {
                         parent_pool.shutdown = true;
+
+                        // Prevent new thread creation, as explained in finalize.
+                        parent_pool.remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
+                    }
                     exception_from_job = {};
                 }
 
@@ -638,15 +682,19 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
-            parent_pool.new_job_or_shutdown.wait(lock, [&] {
-                return !parent_pool.jobs.empty() || parent_pool.shutdown || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
+            parent_pool.new_job_or_shutdown.wait(lock, [&parent_pool] {
+                return !parent_pool.jobs.empty()
+                    || parent_pool.shutdown
+                    || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
             });
+
 
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 // We enter here if:
                 //  - either this thread is not needed anymore due to max_free_threads excess;
                 //  - or shutdown happened AND all jobs are already handled.
+
                 if (parent_pool.threads_remove_themselves)
                     removeSelfFromPoolNoPoolLock(); // Detach and remove itself from the pool
 
