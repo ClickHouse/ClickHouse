@@ -1489,8 +1489,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         size_t size = buf.read(s_pos, remaining_date_size);
         if (size != remaining_date_size)
         {
+            s_pos[size] = 0;
+
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
             else
                 return false;
         }
@@ -1520,8 +1522,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 
             if (size != time_broken_down_length)
             {
+                s_pos[size] = 0;
+
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", std::string_view(s, size));
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
                 else
                     return false;
             }

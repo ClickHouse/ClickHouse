@@ -156,7 +156,7 @@ public:
     const Node * tryFindInOutputs(const std::string & name) const;
 
     /// Same, but for the list of names.
-    NodeRawConstPtrs findInOutputs(const Names & names) const;
+    NodeRawConstPtrs findInOutpus(const Names & names) const;
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
@@ -340,7 +340,7 @@ public:
     SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
+    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Outputs of initial actions must contain column_name.
@@ -436,7 +436,7 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
-    /// Get a list of nodes. For every node, check if it can be computed using allowed subset of inputs.
+    /// Get a list of nodes. For every node, check if it can be compused using allowed subset of inputs.
     /// Returns only those nodes from the list which can be computed.
     static NodeRawConstPtrs filterNodesByAllowedInputs(
         NodeRawConstPtrs nodes,

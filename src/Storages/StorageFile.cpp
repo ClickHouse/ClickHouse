@@ -126,7 +126,6 @@ void listFilesWithRegexpMatchingImpl(
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
             fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
-            absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
         }
         catch (const std::exception &) // NOLINT
@@ -1141,13 +1140,13 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, context_);
+        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns);
     }
 }
 

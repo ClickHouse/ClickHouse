@@ -49,6 +49,5 @@ def test_skip_all_replicas(
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
                 "skip_unavailable_shards": skip_unavailable_shards,
-                "parallel_replicas_local_plan": 0,
             },
         )

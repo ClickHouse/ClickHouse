@@ -982,10 +982,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,

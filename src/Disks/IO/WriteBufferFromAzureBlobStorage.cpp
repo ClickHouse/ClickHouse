@@ -59,7 +59,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     const WriteSettings & write_settings_,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
-    : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
+    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
@@ -101,13 +101,15 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
     {
         try
         {
-            ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, cost); // Note that zero-cost requests are ignored
+            ResourceGuard rlock(write_settings.resource_link, cost); // Note that zero-cost requests are ignored
             func();
-            rlock.unlock(cost);
             break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
+            if (cost)
+                write_settings.resource_link.accumulate(cost); // Accumulate resource for later use, because we have failed to consume it
+
             if (i == num_tries - 1 || !isRetryableAzureException(e))
                 throw;
 
@@ -115,6 +117,8 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
         }
         catch (...)
         {
+            if (cost)
+                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
             throw;
         }
     }
@@ -244,21 +248,11 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
-    /// First buffer was already allocated in BufferWithOwnMemory constructor with buffer size provided in constructor.
-    /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
-    if (buffer_allocation_policy->getBufferNumber() == 1)
-    {
-        /// Reduce memory size if initial size was larger then desired size from buffer_allocation_policy.
-        /// Usually it doesn't happen but we have it in unit tests.
-        if (memory.size() > buffer_allocation_policy->getBufferSize())
-        {
-            memory.resize(buffer_allocation_policy->getBufferSize());
-            WriteBuffer::set(memory.data(), memory.size());
-        }
-        return;
-    }
-
     auto size = buffer_allocation_policy->getBufferSize();
+
+    if (buffer_allocation_policy->getBufferNumber() == 1)
+        size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
+
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }

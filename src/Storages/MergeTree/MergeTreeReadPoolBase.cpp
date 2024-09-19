@@ -4,6 +4,9 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
+#include <cmath>
+
+
 namespace DB
 {
 
@@ -14,7 +17,6 @@ namespace ErrorCodes
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
-    MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -23,9 +25,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const Names & column_names_,
     const PoolSettings & pool_settings_,
     const ContextPtr & context_)
-    : WithContext(context_)
-    , parts_ranges(std::move(parts_))
-    , mutations_snapshot(std::move(mutations_snapshot_))
+    : parts_ranges(std::move(parts_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -85,7 +85,6 @@ static size_t calculateMinMarksPerTask(
             min_marks_per_task = heuristic_min_marks;
         }
     }
-
     LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
     return min_marks_per_task;
 }
@@ -120,9 +119,9 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         }
 
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
-        read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, storage_snapshot->metadata, getContext());
+        read_task_info.alter_conversions = part_with_ranges.alter_conversions;
 
-        LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
+        LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, part_with_ranges.alter_conversions);
 
         read_task_info.task_columns = getReadTaskColumns(
             part_info,

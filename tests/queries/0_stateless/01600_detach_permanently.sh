@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: It's a bit demanding
+# Tags: no-parallel
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -10,9 +9,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 ## tests with real clickhouse restart would be a bit to heavy,
-## to ensure the table will not reappear back clickhouse-local is enough.
+## to ensure the table will not reappear back clickhose-local is enough.
 
-WORKING_FOLDER_01600="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+WORKING_FOLDER_01600="${CLICKHOUSE_TMP}/01600_detach_permanently"
 rm -rf "${WORKING_FOLDER_01600}"
 mkdir -p "${WORKING_FOLDER_01600}"
 

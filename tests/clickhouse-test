@@ -30,7 +30,6 @@ import subprocess
 import sys
 import traceback
 import urllib.parse
-import io
 
 # for crc32
 import zlib
@@ -40,9 +39,6 @@ from errno import ESRCH
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
-from contextlib import redirect_stdout
-from ast import literal_eval as make_tuple
-
 
 try:
     import termcolor  # type: ignore
@@ -835,9 +831,7 @@ class SettingsRandomizer:
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
-        "filesystem_cache_segments_batch_size": lambda: random.choice(
-            [0, 1, 2, 3, 5, 10, 50, 100]
-        ),
+        "filesystem_cache_segments_batch_size": lambda: random.choice([0, 3, 10, 50]),
         "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
             0, 1
         ),
@@ -918,7 +912,6 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
-        "parallel_replicas_local_plan": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1151,24 +1144,9 @@ class TestCase:
 
         return description + "\n"
 
-    def apply_random_settings_limits(self, random_settings):
-        for setting in random_settings:
-            if setting in self.random_settings_limits:
-                min_value = self.random_settings_limits[setting][0]
-                if min_value and random_settings[setting] < min_value:
-                    random_settings[setting] = min_value
-                max_value = self.random_settings_limits[setting][1]
-                if max_value and random_settings[setting] > max_value:
-                    random_settings[setting] = max_value
-
     def __init__(self, suite, case: str, args, is_concurrent: bool):
         self.case: str = case  # case file name
         self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
-        self.random_settings_limits = (
-            suite.all_random_settings_limits[case]
-            if case in suite.all_random_settings_limits
-            else {}
-        )
 
         for tag in os.getenv("GLOBAL_TAGS", "").split(","):
             self.tags.add(tag.strip())
@@ -1210,13 +1188,11 @@ class TestCase:
 
         if self.randomize_settings:
             self.random_settings = SettingsRandomizer.get_random_settings(args)
-            self.apply_random_settings_limits(self.random_settings)
 
         if self.randomize_merge_tree_settings:
             self.merge_tree_random_settings = (
                 MergeTreeSettingsRandomizer.get_random_settings(args)
             )
-            self.apply_random_settings_limits(self.merge_tree_random_settings)
 
         self.base_url_params = (
             os.environ["CLICKHOUSE_URL_PARAMS"]
@@ -1348,13 +1324,9 @@ class TestCase:
         return None
 
     def process_result_impl(self, proc, total_time: float):
-        kill_output = ""
         if proc:
             if proc.returncode is None:
-                f = io.StringIO()
-                with redirect_stdout(f):
-                    kill_process_group(os.getpgid(proc.pid))
-                kill_output = f.getvalue()
+                kill_process_group(os.getpgid(proc.pid))
 
         description = ""
 
@@ -1370,7 +1342,7 @@ class TestCase:
             with open(self.stdout_file, "rb") as stdfd:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
-        stderr = kill_output
+        stderr = ""
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
@@ -1640,19 +1612,6 @@ class TestCase:
         if args.client_log:
             log_opt = " --client_logs_file=" + args.client_log + " "
             client_options += log_opt
-
-            for env_name in [
-                "TSAN_OPTIONS",
-                "ASAN_OPTIONS",
-                "MSAN_OPTIONS",
-                "UBSAN_OPTIONS",
-            ]:
-                current_options = os.environ.get(env_name, None)
-                if current_options is None:
-                    os.environ[env_name] = f"log_path={args.client_log}"
-                elif "log_path=" not in current_options:
-                    os.environ[env_name] += f":log_path={args.client_log}"
-
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 os.environ["CLICKHOUSE_CLIENT_OPT"]
                 if "CLICKHOUSE_CLIENT_OPT" in os.environ
@@ -2003,9 +1962,7 @@ class TestSuite:
         return test_name
 
     @staticmethod
-    def read_test_tags_and_random_settings_limits(
-        suite_dir: str, all_tests: List[str]
-    ) -> (Dict[str, Set[str]], Dict[str, Dict[str, Tuple[int, int]]]):
+    def read_test_tags(suite_dir: str, all_tests: List[str]) -> Dict[str, Set[str]]:
         def get_comment_sign(filename):
             if filename.endswith(".sql") or filename.endswith(".sql.j2"):
                 return "--"
@@ -2030,58 +1987,27 @@ class TestSuite:
             tags = {tag.strip() for tag in tags}
             return tags
 
-        def parse_random_settings_limits_from_line(
-            line, comment_sign
-        ) -> Dict[str, Tuple[int, int]]:
-            if not line.startswith(comment_sign):
-                return {}
-            random_settings_limits_str = line[len(comment_sign) :].lstrip()
-            random_settings_limits_prefix = "Random settings limits:"
-            if not random_settings_limits_str.startswith(random_settings_limits_prefix):
-                return {}
-            random_settings_limits_str = random_settings_limits_str[
-                len(random_settings_limits_prefix) :
-            ]
-            # limits are specified in a form 'setting1=(min, max); setting2=(min,max); ...'
-            random_settings_limits = {}
-            for setting_and_limit in random_settings_limits_str.split(";"):
-                setting_and_limit = setting_and_limit.split("=")
-                random_settings_limits[setting_and_limit[0].strip()] = make_tuple(
-                    setting_and_limit[1]
-                )
-            return random_settings_limits
+        def is_shebang(line: str) -> bool:
+            return line.startswith("#!")
 
-        def find_tag_line(lines, comment_sign):
-            for line in lines:
-                if line.startswith(comment_sign) and line[
-                    len(comment_sign) :
-                ].lstrip().startswith("Tags:"):
+        def find_tag_line(file):
+            for line in file:
+                line = line.strip()
+                if line and not is_shebang(line):
                     return line
             return ""
 
-        def find_random_settings_limits_line(lines, comment_sign):
-            for line in lines:
-                if line.startswith(comment_sign) and line[
-                    len(comment_sign) :
-                ].lstrip().startswith("Random settings limits:"):
-                    return line
-            return ""
-
-        def load_tags_and_random_settings_limits_from_file(filepath):
+        def load_tags_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
             need_query_params = False
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    lines = file.readlines()
-                    tag_line = find_tag_line(lines, comment_sign)
-                    random_settings_limits_line = find_random_settings_limits_line(
-                        lines, comment_sign
-                    )
+                    tag_line = find_tag_line(file)
                 except UnicodeDecodeError:
-                    return [], {}
+                    return []
                 try:
                     if filepath.endswith(".sql"):
-                        for line in lines:
+                        for line in file:
                             if "{CLICKHOUSE_DATABASE" in line:
                                 need_query_params = True
                 except UnicodeDecodeError:
@@ -2089,31 +2015,18 @@ class TestSuite:
             parsed_tags = parse_tags_from_line(tag_line, comment_sign)
             if need_query_params:
                 parsed_tags.add("need-query-parameters")
-            random_settings_limits = parse_random_settings_limits_from_line(
-                random_settings_limits_line, comment_sign
-            )
-            return parsed_tags, random_settings_limits
+            return parsed_tags
 
         all_tags = {}
-        all_random_settings_limits = {}
         start_time = datetime.now()
         for test_name in all_tests:
-            (
-                tags,
-                random_settings_limits,
-            ) = load_tags_and_random_settings_limits_from_file(
-                os.path.join(suite_dir, test_name)
-            )  # noqa: ignore E203
+            tags = load_tags_from_file(os.path.join(suite_dir, test_name))
             if tags:
                 all_tags[test_name] = tags
-            if random_settings_limits:
-                all_random_settings_limits[test_name] = random_settings_limits
         elapsed = (datetime.now() - start_time).total_seconds()
         if elapsed > 1:
-            print(
-                f"Tags and random settings limits for suite {suite_dir} read in {elapsed:.2f} seconds"
-            )
-        return all_tags, all_random_settings_limits
+            print(f"Tags for suite {suite_dir} read in {elapsed:.2f} seconds")
+        return all_tags
 
     def __init__(self, args, suite_path: str, suite_tmp_path: str, suite: str):
         self.args = args
@@ -2143,16 +2056,10 @@ class TestSuite:
         self.all_tests: List[str] = self.get_tests_list(
             self.tests_in_suite_key_func, filter_func
         )
+        self.all_tags: Dict[str, Set[str]] = self.read_test_tags(
+            self.suite_path, self.all_tests
+        )
 
-        all_tags_and_random_settings_limits = (
-            self.read_test_tags_and_random_settings_limits(
-                self.suite_path, self.all_tests
-            )
-        )
-        self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
-        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
-            all_tags_and_random_settings_limits[1]
-        )
         self.sequential_tests = []
         self.parallel_tests = []
         for test_name in self.all_tests:
@@ -2664,12 +2571,12 @@ def do_run_tests(jobs, test_suite: TestSuite):
             try:
                 clickhouse_execute(
                     args,
-                    query="SELECT 1 /*hung check*/",
-                    max_http_retries=20,
-                    timeout=10,
+                    query="SELECT 1 /*hang up check*/",
+                    max_http_retries=5,
+                    timeout=20,
                 )
             except Exception:
-                print("Hung check failed")
+                print("Hang up check failed")
                 server_died.set()
 
             if server_died.is_set():
@@ -3124,15 +3031,13 @@ def main(args):
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
     if args.client_log:
-        for log_file in [args.client_log, *glob.glob(f"{args.client_log}.*")]:
-            if not os.path.exists(log_file):
-                continue
-            with open(log_file, "rb") as stream:
+        if os.path.exists(args.client_log):
+            with open(args.client_log, "rb") as stream:
                 content = stream.read().decode()
                 if len(content):
-                    print(f"Has fatal logs from client in '{log_file}':\n")
+                    print("Has fatal logs from client:\n")
                     print(content)
-            os.remove(log_file)
+            os.remove(args.client_log)
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
@@ -3591,7 +3496,7 @@ if __name__ == "__main__":
             f"Cannot access the specified directory with queries ({args.queries})",
             file=sys.stderr,
         )
-        assert False, "No --queries provided"
+        sys.exit(1)
 
     CAPTURE_CLIENT_STACKTRACE = args.capture_client_stacktrace
 

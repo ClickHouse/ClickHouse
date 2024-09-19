@@ -290,14 +290,8 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
             binlog_client,
             std::move(materialize_mode_settings));
     };
-
-    DatabaseFactory::EngineFeatures features{
-        .supports_arguments = true,
-        .supports_settings = true,
-        .supports_table_overrides = true,
-    };
-    factory.registerDatabase("MaterializeMySQL", create_fn, features);
-    factory.registerDatabase("MaterializedMySQL", create_fn, features);
+    factory.registerDatabase("MaterializeMySQL", create_fn);
+    factory.registerDatabase("MaterializedMySQL", create_fn);
 }
 
 }

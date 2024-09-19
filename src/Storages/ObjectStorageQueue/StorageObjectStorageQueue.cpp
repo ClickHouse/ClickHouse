@@ -62,7 +62,7 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void validateSettings(
+    void checkAndAdjustSettings(
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
     {
@@ -85,10 +85,7 @@ namespace
         }
     }
 
-    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(
-        const ObjectStoragePtr & storage,
-        const ContextPtr & context,
-        const ObjectStorageQueueSettings & table_settings)
+    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(const ObjectStoragePtr & storage, const ContextPtr & context, const ObjectStorageQueueSettings & table_settings)
     {
         const auto & settings = context->getSettingsRef();
         switch (storage->getType())
@@ -108,6 +105,7 @@ namespace
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
+
     }
 }
 
@@ -144,7 +142,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    validateSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
+    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -163,16 +161,21 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
-
-    auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, log);
-
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
-
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
-
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
+
+    /// Get metadata manager from ObjectStorageQueueMetadataFactory,
+    /// it will increase the ref count for the metadata object.
+    /// The ref count is decreased when StorageObjectStorageQueue::drop() method is called.
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, *queue_settings);
+    try
+    {
+        files_metadata->initialize(configuration_, storage_metadata);
+    }
+    catch (...)
+    {
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
+        throw;
+    }
 }
 
 void StorageObjectStorageQueue::startup()

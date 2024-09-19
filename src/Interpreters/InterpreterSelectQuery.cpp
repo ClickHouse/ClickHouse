@@ -86,7 +86,6 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Aggregator.h>
-#include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -1677,11 +1676,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (expressions.array_join)
             {
                 QueryPlanStepPtr array_join_step
-                    = std::make_unique<ArrayJoinStep>(
-                        query_plan.getCurrentDataStream(),
-                        *expressions.array_join,
-                        settings.enable_unaligned_array_join,
-                        settings.max_block_size);
+                    = std::make_unique<ArrayJoinStep>(query_plan.getCurrentDataStream(), expressions.array_join);
 
                 array_join_step->setStepDescription("ARRAY JOIN");
                 query_plan.addStep(std::move(array_join_step));

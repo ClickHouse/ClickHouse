@@ -145,13 +145,8 @@ add_contrib (isa-l-cmake isa-l)
 add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arrow, libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
-
-option(ENABLE_LIBPQXX "Enable PostgreSQL" ${ENABLE_LIBRARIES})
-if (ENABLE_LIBPQXX)
-    add_contrib (postgres-cmake postgres)
-    add_contrib (libpqxx-cmake libpqxx)
-endif()
-
+add_contrib (libpqxx-cmake libpqxx)
+add_contrib (libpq-cmake libpq)
 add_contrib (rocksdb-cmake rocksdb) # requires: jemalloc, snappy, zlib, lz4, zstd, liburing
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
@@ -214,8 +209,9 @@ endif()
 option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
+    add_contrib (robin-map-cmake robin-map)
     add_contrib (SimSIMD-cmake SimSIMD)
-    add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
+    add_contrib (usearch-cmake usearch) # requires: FP16, robin-map, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
 endif ()

@@ -238,7 +238,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 
     if (iter == http_header_entries.end())
     {
-        http_header_entries.emplace_back(user_agent, fmt::format("ClickHouse/{}{}", VERSION_STRING, VERSION_OFFICIAL));
+        http_header_entries.emplace_back(user_agent, fmt::format("ClickHouse/{}", VERSION_STRING));
     }
 
     if (!delay_initialization && use_external_buffer)
@@ -443,7 +443,6 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     }
 
     response.getCookies(cookies);
-    response.getHeaders(response_headers);
     content_encoding = response.get("Content-Encoding", "");
 
     // Remember file size. It'll be used to report eof in next nextImpl() call.
@@ -679,19 +678,6 @@ std::string ReadWriteBufferFromHTTP::getResponseCookie(const std::string & name,
         if (cookie.getName() == name)
             return cookie.getValue();
     return def;
-}
-
-Map ReadWriteBufferFromHTTP::getResponseHeaders() const
-{
-    Map map;
-    for (const auto & header : response_headers)
-    {
-        Tuple elem;
-        elem.emplace_back(header.first);
-        elem.emplace_back(header.second);
-        map.emplace_back(elem);
-    }
-    return map;
 }
 
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
