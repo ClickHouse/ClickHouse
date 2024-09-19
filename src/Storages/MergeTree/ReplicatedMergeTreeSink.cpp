@@ -1037,7 +1037,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             return CommitRetryContext::DUPLICATED_PART;
         }
 
-        transaction.rollback(); // Not in working set (data_parts)
+        transaction.rollback();
 
         if (!Coordination::isUserError(multi_code))
             throw Exception(
