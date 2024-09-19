@@ -1,6 +1,14 @@
 #include <Storages/Kafka/StorageKafkaUtils.h>
 
 
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -10,13 +18,6 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -46,6 +47,11 @@ extern const Event KafkaConsumerErrors;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_kafka_offsets_storage_in_keeper;
+    extern const SettingsBool kafka_disable_num_consumers_limit;
+}
 
 using namespace std::chrono_literals;
 
@@ -164,7 +170,7 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
         auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
-        if (!args.getLocalContext()->getSettingsRef().kafka_disable_num_consumers_limit && num_consumers > max_consumers)
+        if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -217,7 +223,7 @@ void registerStorageKafka(StorageFactory & factory)
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
 
-        if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_offsets_storage_in_keeper && !args.query.attach)
+        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "

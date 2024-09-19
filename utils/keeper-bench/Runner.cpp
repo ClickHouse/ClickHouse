@@ -10,6 +10,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Disks/DiskLocal.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadBuffer.h>
@@ -34,6 +35,11 @@ namespace CurrentMetrics
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
     extern const Metric LocalThreadScheduled;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes
@@ -563,7 +569,7 @@ struct ZooKeeperRequestFromLogReader
             *file_read_buf,
             header_block,
             context,
-            context->getSettingsRef().max_block_size,
+            context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
             1,
             std::nullopt,
