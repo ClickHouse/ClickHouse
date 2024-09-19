@@ -152,6 +152,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
+    format_settings.json.empty_as_default = settings.input_format_json_empty_as_default;
     format_settings.json.type_json_skip_duplicated_paths = settings.type_json_skip_duplicated_paths;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
@@ -243,6 +244,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.orc.output_compression_method = settings.output_format_orc_compression_method;
     format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
+    format_settings.orc.output_dictionary_key_size_threshold = settings.output_format_orc_dictionary_key_size_threshold;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
     format_settings.orc.reader_time_zone_name = settings.input_format_orc_reader_time_zone_name;
@@ -257,7 +259,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_bytes_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
-    format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
+    format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable.valueOr(2);
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
     format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
@@ -283,6 +285,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
+    format_settings.try_infer_variant = settings.input_format_try_infer_variants;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

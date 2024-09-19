@@ -131,7 +131,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     else
     {
         ConfigurationPtr copy_configuration = configuration->clone();
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
@@ -142,7 +142,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns);
+            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, local_context);
             copy_configuration->setPaths(keys);
         }
 
@@ -208,7 +208,7 @@ Chunk StorageObjectStorageSource::generate()
                   .filename = &filename,
                   .last_modified = object_info->metadata->last_modified,
                   .etag = &(object_info->metadata->etag)
-                }, getContext(), read_from_format_info.columns_description);
+                }, getContext());
 
             const auto & partition_columns = configuration->getPartitionColumns();
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
@@ -280,7 +280,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const std::shared_ptr<IIterator> & file_iterator,
     const ConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
-    const ReadFromFormatInfo & read_from_format_info,
+    ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<const KeyCondition> & key_condition_,
     const ContextPtr & context_,
@@ -417,10 +417,7 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
 }
 
 std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
-    const ObjectInfo & object_info,
-    const ObjectStoragePtr & object_storage,
-    const ContextPtr & context_,
-    const LoggerPtr & log)
+    const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
 {
     const auto & object_size = object_info.metadata->size_bytes;
 
@@ -492,6 +489,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , virtual_columns(virtual_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
     , read_keys(read_keys_)
+    , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
     if (configuration->isNamespaceWithGlobs())
@@ -513,7 +511,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs == "/**";
-        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -588,7 +586,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 for (const auto & object_info : new_batch)
                     paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
-                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns);
+                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns, local_context);
 
                 LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
             }

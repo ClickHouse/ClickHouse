@@ -2564,8 +2564,8 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
     if (node.getNullsAction() != NullsAction::EMPTY)
         throw Exception(
             ErrorCodes::SYNTAX_ERROR,
-            "Function with name '{}' cannot use {} NULLS",
-            node.getFunctionName(),
+            "Function with name {} cannot use {} NULLS",
+            backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
 }
@@ -3228,16 +3228,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name '{}' does not exist. In scope {}{}",
-                function_name,
+                "Function with name {} does not exist. In scope {}{}",
+                backQuote(function_name),
                 scope.scope_node->formatASTForErrorMessage(),
                 getHintsErrorMessageSuffix(hints));
         }
 
         if (!function_lambda_arguments_indexes.empty())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Aggregate function '{}' does not support lambda arguments",
-                function_name);
+                "Aggregate function {} does not support lambda arguments",
+                backQuote(function_name));
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
@@ -3679,10 +3679,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                 auto hints = IdentifierResolver::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
 
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier '{}' in scope {}{}",
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
-                    unresolved_identifier.getFullName(),
+                    backQuote(unresolved_identifier.getFullName()),
                     scope.scope_node->formatASTForErrorMessage(),
                     getHintsErrorMessageSuffix(hints));
             }
@@ -4379,7 +4379,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
         if (storage_snapshot->storage.supportsSubcolumns())
+        {
             get_column_options.withSubcolumns();
+            table_expression_data.supports_subcolumns = true;
+        }
 
         auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
         table_expression_data.column_names_and_types = NamesAndTypes(column_names_and_types.begin(), column_names_and_types.end());

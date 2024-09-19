@@ -2,6 +2,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -13,7 +15,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/HashTable/HashSet.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -36,11 +37,18 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    explicit FunctionMap(bool use_variant_as_common_type_) : use_variant_as_common_type(use_variant_as_common_type_) {}
+    explicit FunctionMap(ContextPtr context_)
+        : context(context_)
+        , use_variant_as_common_type(
+              context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+        , function_array(FunctionFactory::instance().get("array", context))
+        , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
+    {
+    }
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionMap>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+        return std::make_shared<FunctionMap>(context);
     }
 
     String getName() const override
@@ -101,62 +109,38 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_elements = arguments.size();
-
         if (num_elements == 0)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        ColumnsWithTypeAndName key_args;
+        ColumnsWithTypeAndName value_args;
+        for (size_t i = 0; i < num_elements; i += 2)
+        {
+            key_args.emplace_back(arguments[i]);
+            value_args.emplace_back(arguments[i+1]);
+        }
 
         const auto & result_type_map = static_cast<const DataTypeMap &>(*result_type);
         const DataTypePtr & key_type = result_type_map.getKeyType();
         const DataTypePtr & value_type = result_type_map.getValueType();
+        const DataTypePtr & key_array_type = std::make_shared<DataTypeArray>(key_type);
+        const DataTypePtr & value_array_type = std::make_shared<DataTypeArray>(value_type);
 
-        Columns columns_holder(num_elements);
-        ColumnRawPtrs column_ptrs(num_elements);
+        /// key_array = array(args[0], args[2]...)
+        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count);
+        /// value_array = array(args[1], args[3]...)
+        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count);
 
-        for (size_t i = 0; i < num_elements; ++i)
-        {
-            const auto & arg = arguments[i];
-            const auto to_type = i % 2 == 0 ? key_type : value_type;
-
-            ColumnPtr preprocessed_column = castColumn(arg, to_type);
-            preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
-
-            columns_holder[i] = std::move(preprocessed_column);
-            column_ptrs[i] = columns_holder[i].get();
-        }
-
-        /// Create and fill the result map.
-
-        MutableColumnPtr keys_data = key_type->createColumn();
-        MutableColumnPtr values_data = value_type->createColumn();
-        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
-
-        size_t total_elements = input_rows_count * num_elements / 2;
-        keys_data->reserve(total_elements);
-        values_data->reserve(total_elements);
-        offsets->reserve(input_rows_count);
-
-        IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            for (size_t j = 0; j < num_elements; j += 2)
-            {
-                keys_data->insertFrom(*column_ptrs[j], i);
-                values_data->insertFrom(*column_ptrs[j + 1], i);
-            }
-
-            current_offset += num_elements / 2;
-            offsets->insert(current_offset);
-        }
-
-        auto nested_column = ColumnArray::create(
-            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
-            std::move(offsets));
-
-        return ColumnMap::create(nested_column);
+        /// result = mapFromArrays(key_array, value_array)
+        ColumnsWithTypeAndName map_args{{key_array, key_array_type, ""}, {value_array, value_array_type, ""}};
+        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count);
     }
 
 private:
+    ContextPtr context;
     bool use_variant_as_common_type = false;
+    FunctionOverloadResolverPtr function_array;
+    FunctionOverloadResolverPtr function_map_from_arrays;
 };
 
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps
@@ -173,6 +157,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
