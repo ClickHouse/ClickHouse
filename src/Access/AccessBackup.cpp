@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -175,9 +176,46 @@ namespace
         return res;
     }
 
-    std::unordered_map<UUID, UUID> resolveDependencies(const std::unordered_map<UUID, std::pair<String, AccessEntityType>> & dependencies, const AccessControl & access_control, bool allow_unresolved_dependencies)
+    /// Checks if new entities (which we're going to restore) already exist,
+    /// and either skips them or throws an exception depending on the restore settings.
+    void checkExistingEntities(std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
+                               std::unordered_map<UUID, UUID> & old_to_new_id,
+                               const AccessControl & access_control,
+                               RestoreAccessCreationMode creation_mode)
     {
-        std::unordered_map<UUID, UUID> old_to_new_ids;
+        if (creation_mode == RestoreAccessCreationMode::kReplace)
+            return;
+
+        auto should_skip = [&](const std::pair<UUID, AccessEntityPtr> & id_and_entity)
+        {
+            const auto & id = id_and_entity.first;
+            const auto & entity = *id_and_entity.second;
+            auto existing_id = access_control.find(entity.getType(), entity.getName());
+            if (!existing_id)
+            {
+                return false;
+            }
+            else if (creation_mode == RestoreAccessCreationMode::kCreateIfNotExists)
+            {
+                old_to_new_id[id] = *existing_id;
+                return true;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Cannot restore {} because it already exists", entity.formatTypeWithName());
+            }
+        };
+
+        std::erase_if(entities, should_skip);
+    }
+
+    /// If new entities (which we're going to restore) depend on other entities which are not going to be restored or not present in the backup
+    /// then we should try to replace those dependencies with already existing entities.
+    void resolveDependencies(const std::unordered_map<UUID, std::pair<String, AccessEntityType>> & dependencies,
+                             std::unordered_map<UUID, UUID> & old_to_new_ids,
+                             const AccessControl & access_control,
+                             bool allow_unresolved_dependencies)
+    {
         for (const auto & [id, name_and_type] : dependencies)
         {
             std::optional<UUID> new_id;
@@ -188,9 +226,9 @@ namespace
             if (new_id)
                 old_to_new_ids.emplace(id, *new_id);
         }
-        return old_to_new_ids;
     }
 
+    /// Generates random IDs for the new entities.
     void generateRandomIDs(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, std::unordered_map<UUID, UUID> & old_to_new_ids)
     {
         Poco::UUIDGenerator generator;
@@ -203,27 +241,12 @@ namespace
         }
     }
 
-    void replaceDependencies(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const std::unordered_map<UUID, UUID> & old_to_new_ids)
+    /// Updates dependencies of the new entities using a specified map.
+    void replaceDependencies(std::vector<std::pair<UUID, AccessEntityPtr>> & entities,
+                             const std::unordered_map<UUID, UUID> & old_to_new_ids)
     {
         for (auto & entity : entities | boost::adaptors::map_values)
-        {
-            bool need_replace = false;
-            for (const auto & dependency : entity->findDependencies())
-            {
-                if (old_to_new_ids.contains(dependency))
-                {
-                    need_replace = true;
-                    break;
-                }
-            }
-
-            if (!need_replace)
-                continue;
-
-            auto new_entity = entity->clone();
-            new_entity->replaceDependencies(old_to_new_ids);
-            entity = new_entity;
-        }
+            IAccessEntity::replaceDependencies(entity, old_to_new_ids);
     }
 
     AccessRightsElements getRequiredAccessToRestore(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities)
@@ -314,7 +337,9 @@ std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
 
 AccessRestorerFromBackup::AccessRestorerFromBackup(
     const BackupPtr & backup_, const RestoreSettings & restore_settings_)
-    : backup(backup_), allow_unresolved_access_dependencies(restore_settings_.allow_unresolved_access_dependencies)
+    : backup(backup_)
+    , creation_mode(restore_settings_.create_access)
+    , allow_unresolved_dependencies(restore_settings_.allow_unresolved_access_dependencies)
 {
 }
 
@@ -362,7 +387,9 @@ std::vector<std::pair<UUID, AccessEntityPtr>> AccessRestorerFromBackup::getAcces
 {
     auto new_entities = entities;
 
-    auto old_to_new_ids = resolveDependencies(dependencies, access_control, allow_unresolved_access_dependencies);
+    std::unordered_map<UUID, UUID> old_to_new_ids;
+    checkExistingEntities(new_entities, old_to_new_ids, access_control, creation_mode);
+    resolveDependencies(dependencies, old_to_new_ids, access_control, allow_unresolved_dependencies);
     generateRandomIDs(new_entities, old_to_new_ids);
     replaceDependencies(new_entities, old_to_new_ids);
 

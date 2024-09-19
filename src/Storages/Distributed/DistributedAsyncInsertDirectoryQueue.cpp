@@ -48,6 +48,15 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsSeconds distributed_replica_error_half_life;
+    extern const SettingsUInt64 distributed_replica_error_cap;
+    extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+}
 
 namespace ErrorCodes
 {
@@ -114,8 +123,8 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , should_batch_inserts(storage.getDistributedSettingsRef().background_insert_batch)
     , split_batch_on_failure(storage.getDistributedSettingsRef().background_insert_split_batch_on_failure)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
-    , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
+    , min_batched_block_size_rows(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_rows])
+    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes])
     , current_batch_file_path(path + "current_batch.txt")
     , pending_files(std::numeric_limits<size_t>::max())
     , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
@@ -286,10 +295,11 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
     const auto & settings = storage.getContext()->getSettingsRef();
-    return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+    return std::make_shared<ConnectionPoolWithFailover>(
+        std::move(pools),
+        settings[Setting::load_balancing],
+        settings[Setting::distributed_replica_error_half_life].totalSeconds(),
+        settings[Setting::distributed_replica_error_cap]);
 }
 
 bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
@@ -415,7 +425,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
         auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
+        auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
@@ -467,7 +477,7 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
     Block header;
 
     BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block header_)
-        : settings(std::move(settings_))
+        : settings(settings_)
         , query(std::move(query_))
         , client_info(std::move(client_info_))
         , header(std::move(header_))

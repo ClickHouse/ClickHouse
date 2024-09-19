@@ -14,9 +14,12 @@ from typing import Any, Dict, List, Optional
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
+from ci_buddy import CIBuddy
+from ci_cache import CiCache
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GH, Utils, Envs
+from ci_settings import CiSettings
+from ci_utils import GH, Envs, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -30,19 +33,12 @@ from commit_status_helper import (
     RerunHelper,
     format_description,
     get_commit,
+    get_commit_filtered_statuses,
     post_commit_status,
     set_status_comment,
-    get_commit_filtered_statuses,
 )
 from digest_helper import DockerDigester
-from env_helper import (
-    IS_CI,
-    GITHUB_JOB_API_URL,
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_ID,
-    REPO_COPY,
-    TEMP_PATH,
-)
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_ID, IS_CI, REPO_COPY, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
@@ -50,22 +46,20 @@ from github_helper import GitHub
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAIL,
+    GITHUB_JOB_API_URL,
+    JOB_FINISHED_TEST_NAME,
+    JOB_STARTED_TEST_NAME,
+    OK,
     PENDING,
     SUCCESS,
     BuildResult,
     JobReport,
     TestResult,
-    OK,
-    JOB_STARTED_TEST_NAME,
-    JOB_FINISHED_TEST_NAME,
-    FAIL,
 )
 from s3_helper import S3Helper
-from tee_popen import TeePopen
-from ci_cache import CiCache
-from ci_settings import CiSettings
-from ci_buddy import CIBuddy
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines

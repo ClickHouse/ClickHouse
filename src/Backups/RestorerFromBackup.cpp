@@ -36,6 +36,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
 namespace ErrorCodes
 {
     extern const int BACKUP_ENTRY_NOT_FOUND;
@@ -949,7 +954,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 
         StoragePtr storage = database->getTable(resolved_id.table_name, context);
         table_info.storage = storage;
-        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         if (!restore_settings.allow_different_table_def && !table_info.is_predefined_table)
         {
