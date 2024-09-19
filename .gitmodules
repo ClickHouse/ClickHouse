@@ -214,7 +214,8 @@
 	url = https://github.com/google/libprotobuf-mutator
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
-	url = https://github.com/ClickHouse/sysroot.git
+	url = https://github.com/allmazz/sysroot.git
+	branch = add-libresolv
 [submodule "contrib/nlp-data"]
 	path = contrib/nlp-data
 	url = https://github.com/ClickHouse/nlp-data
