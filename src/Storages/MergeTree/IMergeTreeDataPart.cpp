@@ -2048,8 +2048,19 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
     part_is_probably_removed_from_disk = true;
 }
 
-DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/,
-                                                           const DiskTransactionPtr & disk_transaction) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
+    const String & prefix,
+    const StorageMetadataPtr & metadata_snapshot,
+    const DiskTransactionPtr & disk_transaction) const
+{
+    return makeCloneInDetached(prefix, metadata_snapshot, disk_transaction, isPartCopyInsteadOfHardlink());
+}
+
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
+    const String & prefix,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const DiskTransactionPtr & disk_transaction,
+    const bool copy_instead_of_hardlink) const
 {
     /// Avoid unneeded duplicates of broken parts if we try to detach the same broken part multiple times.
     /// Otherwise it may pollute detached/ with dirs with _tryN suffix and we will fail to remove broken part after 10 attempts.
@@ -2063,45 +2074,23 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     auto storage_settings = storage.getSettings();
     IDataPartStorage::ClonePartParams params
     {
-        .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
+        .copy_instead_of_hardlink = copy_instead_of_hardlink,
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
 
-    const auto freeze = [&]()
-    {
-        return getDataPartStorage().freeze(
+    return getDataPartStorage().freeze(
             storage.relative_data_path,
             *maybe_path_in_detached,
             Context::getGlobalContextInstance()->getReadSettings(),
             Context::getGlobalContextInstance()->getWriteSettings(),
             /* save_metadata_callback= */ {},
             params);
-    };
+}
 
-    try
-    {
-        return freeze();
-    }
-    catch (const S3Exception & ex)
-    {
-        // We have to check code NO_SUCH_KEY and RESOURCE_NOT_FOUND as well.
-        if (S3::isNotFoundError(ex.getS3ErrorCode()) && params.copy_instead_of_hardlink)
-        {
-            params.copy_instead_of_hardlink = false;
-            LOG_WARNING(
-                log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part.");
-            auto result = freeze();
-
-            LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
-            return result;
-        }
-        throw;
-    }
-    catch (...)
-    {
-        throw;
-    }
+bool IMergeTreeDataPart::isPartCopyInsteadOfHardlink() const
+{
+    return isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage.getSettings()->allow_remote_fs_zero_copy_replication;
 }
 
 MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(

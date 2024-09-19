@@ -78,9 +78,11 @@
 
 #include <Planner/Utils.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/S3/getObjectInfo.h>
+#include <IO/S3Common.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -4169,24 +4171,44 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
-        if (broken_part_info == part->info)
+        String prefix;
+
+        const bool part_info_equal_broken = broken_part_info == part->info;
+        if (part_info_equal_broken)
         {
             chassert(!broken_part);
             chassert(!storage_init);
             part->was_removed_as_broken = true;
-            part->makeCloneInDetached("broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
-            broken_part = part;
-
-            if (part->isStoredOnRemoteDiskWithZeroCopySupport() && part->storage.supportsReplication()
-                && part->storage.getSettings()->allow_remote_fs_zero_copy_replication)
-            {
-                cancel_fetch_for_broken = true;
-            }
+            prefix = "broken";
         }
         else
         {
-            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
+            prefix = "covered-by-broken";
         }
+
+        const bool copy_instead_of_hardlink = part->isPartCopyInsteadOfHardlink();
+        try
+        {
+            part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, copy_instead_of_hardlink);
+        }
+        catch (const S3Exception & ex)
+        {
+            // We have to check code NO_SUCH_KEY and RESOURCE_NOT_FOUND as well.
+            if (S3::isNotFoundError(ex.getS3ErrorCode()) && copy_instead_of_hardlink)
+            {
+                LOG_WARNING(
+                    log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part.");
+                part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, false);
+                cancel_fetch_for_broken = true;
+                LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
+            }
+            else
+            {
+                throw;
+            }
+        }
+        if (part_info_equal_broken)
+            broken_part = part;
         detached_parts.push_back(part->name);
     }
     LOG_WARNING(log, "Detached {} parts covered by broken part {}: {}", detached_parts.size(), part_name, fmt::join(detached_parts, ", "));
