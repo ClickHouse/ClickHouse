@@ -3,11 +3,12 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Chunk.h>
 #include <Poco/Logger.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
-#include <Processors/Chunk.h>
 
 #include <future>
 #include <shared_mutex>
@@ -288,10 +289,8 @@ private:
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
-        const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
-        const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

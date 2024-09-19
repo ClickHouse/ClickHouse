@@ -25,5 +25,12 @@ SELECT sqidEncode(toNullable(materialize(1)), toLowCardinality(materialize(2)));
 SELECT '-- invalid sqid';
 SELECT sqidDecode('invalid sqid');
 
+SELECT '-- bug 69450';
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab SELECT * FROM generateRandom() LIMIT 1000000;
+SELECT sqidDecode(id) FROM tab FORMAT Null;
+DROP TABLE tab;
+
 SELECT '-- alias';
 SELECT sqid(1, 2);

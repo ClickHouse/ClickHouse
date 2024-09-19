@@ -64,6 +64,7 @@ function configure()
         randomize_config_boolean_value multi_read keeper_port
         randomize_config_boolean_value check_not_exists keeper_port
         randomize_config_boolean_value create_if_not_exists keeper_port
+        randomize_config_boolean_value remove_recursive keeper_port
     fi
 
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
