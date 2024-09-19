@@ -646,11 +646,11 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
 
             continue;
         }
-        else if (command.isCommentAlter())
+        if (command.isCommentAlter())
             continue;
-        else if (command.type == AlterCommand::MODIFY_QUERY)
+        if (command.type == AlterCommand::MODIFY_QUERY)
             continue;
-        else if (command.type == AlterCommand::MODIFY_REFRESH && refresher)
+        if (command.type == AlterCommand::MODIFY_REFRESH && refresher)
         {
             refresher->checkAlterIsPossible(*command.refresh->as<ASTRefreshStrategy>());
             continue;

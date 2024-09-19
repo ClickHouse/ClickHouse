@@ -39,13 +39,9 @@ DiskWithPath & ICommand::getDiskWithPath(DisksClient & client, const CommandLine
 {
     auto disk_name = getValueFromCommandLineOptionsWithOptional<String>(options, name);
     if (disk_name.has_value())
-    {
         return client.getDiskWithPath(disk_name.value());
-    }
-    else
-    {
-        return client.getCurrentDiskWithPath();
-    }
+
+    return client.getCurrentDiskWithPath();
 }
 
 }

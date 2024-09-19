@@ -942,9 +942,8 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
                 if (move_ttl.destination_type == DataDestinationType::DISK)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                                     "No such disk {} for given storage policy", backQuote(move_ttl.destination_name));
-                else
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                                    "No such volume {} for given storage policy", backQuote(move_ttl.destination_name));
+                throw Exception(
+                    ErrorCodes::BAD_TTL_EXPRESSION, "No such volume {} for given storage policy", backQuote(move_ttl.destination_name));
             }
         }
     }
@@ -1089,28 +1088,35 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`is_deleted` ({}) column for storage {} is empty", is_deleted_column, storage);
         }
-        else
+
+        if (version_column.empty() && !is_optional)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Version column ({}) for storage {} is empty while is_deleted ({}) is not.",
+                version_column,
+                storage,
+                is_deleted_column);
+
+        bool miss_is_deleted_column = true;
+        for (const auto & column : columns)
         {
-            if (version_column.empty() && !is_optional)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Version column ({}) for storage {} is empty while is_deleted ({}) is not.",
-                                version_column, storage, is_deleted_column);
-
-            bool miss_is_deleted_column = true;
-            for (const auto & column : columns)
+            if (column.name == is_deleted_column)
             {
-                if (column.name == is_deleted_column)
-                {
-                    if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
-                        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
-                                        is_deleted_column, storage, column.type->getName());
-                    miss_is_deleted_column = false;
-                    break;
-                }
+                if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
+                    throw Exception(
+                        ErrorCodes::BAD_TYPE_OF_FIELD,
+                        "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
+                        is_deleted_column,
+                        storage,
+                        column.type->getName());
+                miss_is_deleted_column = false;
+                break;
             }
-
-            if (miss_is_deleted_column)
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
         }
+
+        if (miss_is_deleted_column)
+            throw Exception(
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
     };
 
 
@@ -1306,11 +1312,13 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 current = prev->second.get();
                 continue;
             }
-            else if (!prev_info.isDisjoint(info))
+            if (!prev_info.isDisjoint(info))
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
-                    name, prev->second->name);
+                    name,
+                    prev->second->name);
             }
         }
 
@@ -1323,11 +1331,13 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 current = it->second.get();
                 continue;
             }
-            else if (!next_info.isDisjoint(info))
+            if (!next_info.isDisjoint(info))
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects next part {}.  It is a bug or a result of manual intervention in the server or ZooKeeper data",
-                    name, it->second->name);
+                    name,
+                    it->second->name);
             }
         }
 
@@ -1626,8 +1636,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             res.part->is_duplicate = true;
             return res;
         }
-        else
-            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists but with different checksums", res.part->name);
+        throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists but with different checksums", res.part->name);
     }
 
     if (to_state == DataPartState::Active)
@@ -2419,14 +2428,27 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                         LOG_INFO(LogFrequencyLimiter(log.load(), 10), "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
                         continue;
                     }
-                    else if (!disk->exists(it->path()))
+                    if (!disk->exists(it->path()))
                     {
                         /// We should recheck that the dir exists, otherwise we can get "No such file or directory"
                         /// due to a race condition with "Renaming temporary part" (temporary part holder could be already released, so the check above is not enough)
-                        LOG_WARNING(log, "Temporary directory {} suddenly disappeared while iterating, assuming it was concurrently renamed to persistent", it->path());
+                        LOG_WARNING(
+                            log,
+                            "Temporary directory {} suddenly disappeared while iterating, assuming it was concurrently renamed to "
+                            "persistent",
+                            it->path());
                         continue;
                     }
-                    else
+
+                    LOG_WARNING(log, "Removing temporary directory {}", full_path);
+
+                    /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
+                    /// is executed as a callback.
+                    ///
+                    /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
+                    /// or not. So we are not doing it
+                    bool keep_shared = false;
+                    if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication && supportsReplication())
                     {
                         LOG_WARNING(log, "Removing temporary directory {}", full_path);
 
@@ -2445,6 +2467,9 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                         disk->removeSharedRecursive(it->path(), keep_shared, {});
                         ++cleared_count;
                     }
+
+                    disk->removeSharedRecursive(it->path(), keep_shared, {});
+                    ++cleared_count;
                 }
             }
             catch (const fs::filesystem_error & e)
@@ -3425,15 +3450,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 /// No other checks required
                 continue;
             }
-            else if (command.type == AlterCommand::DROP_COLUMN)
+            if (command.type == AlterCommand::DROP_COLUMN)
             {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP version {} column", backQuoteIfNeed(command.column_name));
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP version {} column",
+                    backQuoteIfNeed(command.column_name));
             }
-            else if (command.type == AlterCommand::RENAME_COLUMN)
+            if (command.type == AlterCommand::RENAME_COLUMN)
             {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER RENAME version {} column",
+                    backQuoteIfNeed(command.column_name));
             }
         }
         else if (command.column_name == merging_params.is_deleted_column)
@@ -5210,8 +5239,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     {
         if (moving_part)
             throw Exception(ErrorCodes::UNKNOWN_DISK, "Part '{}' is already on disk '{}'", partition_id, disk->getName());
-        else
-            throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on disk '{}'", partition_id, disk->getName());
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on disk '{}'", partition_id, disk->getName());
     }
 
     if (parts_mover.moves_blocker.isCancelled())
@@ -5232,22 +5260,25 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     {
         return;
     }
-    else
+
+    auto moves_outcome = moves_future.get();
+    switch (moves_outcome)
     {
-        auto moves_outcome = moves_future.get();
-        switch (moves_outcome)
-        {
-            case MovePartsOutcome::MovesAreCancelled:
-                throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
-            case MovePartsOutcome::NothingToMove:
-                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
-            case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
-                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
-            case MovePartsOutcome::CannotScheduleMove:
-                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot schedule move, no free threads, try to wait until all in-progress move finish or increase <background_move_pool_size>");
-            case MovePartsOutcome::PartsMoved:
-                break;
-        }
+        case MovePartsOutcome::MovesAreCancelled:
+            throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
+        case MovePartsOutcome::NothingToMove:
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
+        case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
+            throw Exception(
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED,
+                "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
+        case MovePartsOutcome::CannotScheduleMove:
+            throw Exception(
+                ErrorCodes::CANNOT_SCHEDULE_TASK,
+                "Cannot schedule move, no free threads, try to wait until all in-progress move finish or increase "
+                "<background_move_pool_size>");
+        case MovePartsOutcome::PartsMoved:
+            break;
     }
 }
 
@@ -5295,8 +5326,8 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     {
         if (moving_part)
             throw Exception(ErrorCodes::UNKNOWN_DISK, "Part '{}' is already on volume '{}'", partition_id, volume->getName());
-        else
-            throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on volume '{}'", partition_id, volume->getName());
+        throw Exception(
+            ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on volume '{}'", partition_id, volume->getName());
     }
 
     if (parts_mover.moves_blocker.isCancelled())
@@ -5317,22 +5348,25 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     {
         return;
     }
-    else
+
+    auto moves_outcome = moves_future.get();
+    switch (moves_outcome)
     {
-        auto moves_outcome = moves_future.get();
-        switch (moves_outcome)
-        {
-            case MovePartsOutcome::MovesAreCancelled:
-                throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
-            case MovePartsOutcome::NothingToMove:
-                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
-            case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
-                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
-            case MovePartsOutcome::CannotScheduleMove:
-                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot schedule move, no free threads, try to wait until all in-progress move finish or increase <background_move_pool_size>");
-            case MovePartsOutcome::PartsMoved:
-                break;
-        }
+        case MovePartsOutcome::MovesAreCancelled:
+            throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
+        case MovePartsOutcome::NothingToMove:
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
+        case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
+            throw Exception(
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED,
+                "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
+        case MovePartsOutcome::CannotScheduleMove:
+            throw Exception(
+                ErrorCodes::CANNOT_SCHEDULE_TASK,
+                "Cannot schedule move, no free threads, try to wait until all in-progress move finish or increase "
+                "<background_move_pool_size>");
+        case MovePartsOutcome::PartsMoved:
+            break;
     }
 }
 
@@ -6613,21 +6647,19 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
             {
                 return reservation;
             }
-            else
-            {
-                if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
-                    LOG_WARNING(
-                        log,
-                        "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
-                        move_ttl_entry->destination_name,
-                        log.loadName());
-                else if (move_ttl_entry->destination_type == DataDestinationType::DISK)
-                    LOG_WARNING(
-                        log,
-                        "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
-                        move_ttl_entry->destination_name,
-                        log.loadName());
-            }
+
+            if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
+                LOG_WARNING(
+                    log,
+                    "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
+                    move_ttl_entry->destination_name,
+                    log.loadName());
+            else if (move_ttl_entry->destination_type == DataDestinationType::DISK)
+                LOG_WARNING(
+                    log,
+                    "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
+                    move_ttl_entry->destination_name,
+                    log.loadName());
         }
     }
 
@@ -6657,10 +6689,9 @@ SpacePtr MergeTreeData::getDestinationForMoveTTL(const TTLDescription & move_ttl
     auto policy = getStoragePolicy();
     if (move_ttl.destination_type == DataDestinationType::VOLUME)
         return policy->tryGetVolumeByName(move_ttl.destination_name);
-    else if (move_ttl.destination_type == DataDestinationType::DISK)
+    if (move_ttl.destination_type == DataDestinationType::DISK)
         return policy->tryGetDiskByName(move_ttl.destination_name);
-    else
-        return {};
+    return {};
 }
 
 bool MergeTreeData::shouldPerformTTLMoveOnInsert(const SpacePtr & move_destination) const
@@ -7705,8 +7736,7 @@ MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & parti
     {
         if (prefixed)
             return startsWith(partition_id, id);
-        else
-            return id == partition_id;
+        return id == partition_id;
     };
 }
 
@@ -8157,13 +8187,15 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                             parts_mover.swapClonedPart(cloned_part);
                             break;
                         }
-                        else if (wait_for_move_if_zero_copy)
+                        if (wait_for_move_if_zero_copy)
                         {
-                            LOG_DEBUG(log, "Other replica is working on move of {}, will wait until lock disappear", moving_part.part->name);
+                            LOG_DEBUG(
+                                log, "Other replica is working on move of {}, will wait until lock disappear", moving_part.part->name);
                             /// Wait and checks not only for timeout but also for shutdown and so on.
                             while (!waitZeroCopyLockToDisappear(*lock, 3000))
                             {
-                                LOG_DEBUG(log, "Waiting until some replica will move {} and zero copy lock disappear", moving_part.part->name);
+                                LOG_DEBUG(
+                                    log, "Waiting until some replica will move {} and zero copy lock disappear", moving_part.part->name);
                             }
                         }
                         else

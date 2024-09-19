@@ -163,26 +163,25 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
         return AccessType::SYSTEM_MERGES;
-    else if (action_type == ActionLocks::PartsFetch)
+    if (action_type == ActionLocks::PartsFetch)
         return AccessType::SYSTEM_FETCHES;
-    else if (action_type == ActionLocks::PartsSend)
+    if (action_type == ActionLocks::PartsSend)
         return AccessType::SYSTEM_REPLICATED_SENDS;
-    else if (action_type == ActionLocks::ReplicationQueue)
+    if (action_type == ActionLocks::ReplicationQueue)
         return AccessType::SYSTEM_REPLICATION_QUEUES;
-    else if (action_type == ActionLocks::DistributedSend)
+    if (action_type == ActionLocks::DistributedSend)
         return AccessType::SYSTEM_DISTRIBUTED_SENDS;
-    else if (action_type == ActionLocks::PartsTTLMerge)
+    if (action_type == ActionLocks::PartsTTLMerge)
         return AccessType::SYSTEM_TTL_MERGES;
-    else if (action_type == ActionLocks::PartsMove)
+    if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
-    else if (action_type == ActionLocks::PullReplicationLog)
+    if (action_type == ActionLocks::PullReplicationLog)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
-    else if (action_type == ActionLocks::Cleanup)
+    if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
-    else if (action_type == ActionLocks::ViewRefresh)
+    if (action_type == ActionLocks::ViewRefresh)
         return AccessType::SYSTEM_VIEWS;
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";

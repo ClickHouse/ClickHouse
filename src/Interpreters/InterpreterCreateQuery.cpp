@@ -188,8 +188,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (create.if_not_exists)
             return {};
-        else
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
+        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw;
@@ -268,7 +267,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.attach && create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "UUID must be specified for ATTACH. "
                             "If you want to attach existing database, use just ATTACH DATABASE {};", create.getDatabase());
-        else if (create.uuid == UUIDHelpers::Nil)
+        if (create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
 
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
@@ -1369,17 +1368,23 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "It's not allowed to explicitly specify UUIDs for tables in Replicated databases, "
                                                        "see database_replicated_allow_explicit_uuid");
         }
-        else if (getContext()->getSettingsRef()[Setting::database_replicated_allow_explicit_uuid] == 1)
+        if (getContext()->getSettingsRef()[Setting::database_replicated_allow_explicit_uuid] == 1)
         {
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "It's not recommended to explicitly specify UUIDs for tables in Replicated databases");
+            LOG_WARNING(
+                &Poco::Logger::get("InterpreterCreateQuery"),
+                "It's not recommended to explicitly specify UUIDs for tables in Replicated databases");
         }
         else if (getContext()->getSettingsRef()[Setting::database_replicated_allow_explicit_uuid] == 2)
         {
             UUID old_uuid = create.uuid;
             create.uuid = UUIDHelpers::Nil;
             create.generateRandomUUIDs();
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Replaced a user-provided UUID ({}) with a random one ({}) "
-                                                                   "to make sure it's unique", old_uuid, create.uuid);
+            LOG_WARNING(
+                &Poco::Logger::get("InterpreterCreateQuery"),
+                "Replaced a user-provided UUID ({}) with a random one ({}) "
+                "to make sure it's unique",
+                old_uuid,
+                create.uuid);
         }
     }
 
@@ -1745,7 +1750,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// TODO Check structure of table
         if (create.if_not_exists)
             return false;
-        else if (create.replace_view)
+        if (create.replace_view)
         {
             /// when executing CREATE OR REPLACE VIEW, drop current existing view
             auto drop_ast = std::make_shared<ASTDropQuery>();
@@ -1763,11 +1768,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         else
         {
             if (database->getTable(create.getTable(), getContext())->isDictionary())
-                throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
-                                "Dictionary {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
-            else
-                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                                "Table {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+                throw Exception(
+                    ErrorCodes::DICTIONARY_ALREADY_EXISTS,
+                    "Dictionary {}.{} already exists",
+                    backQuoteIfNeed(create.getDatabase()),
+                    backQuoteIfNeed(create.getTable()));
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists",
+                backQuoteIfNeed(create.getDatabase()),
+                backQuoteIfNeed(create.getTable()));
         }
     }
     else if (!create.attach)
@@ -2223,8 +2233,7 @@ BlockIO InterpreterCreateQuery::execute()
     /// CREATE|ATTACH DATABASE
     if (is_create_database)
         return createDatabase(create);
-    else
-        return createTable(create);
+    return createTable(create);
 }
 
 

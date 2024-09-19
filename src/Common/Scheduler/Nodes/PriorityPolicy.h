@@ -96,8 +96,7 @@ public:
     {
         if (auto iter = children.find(child_name); iter != children.end())
             return iter->second.get();
-        else
-            return nullptr;
+        return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
