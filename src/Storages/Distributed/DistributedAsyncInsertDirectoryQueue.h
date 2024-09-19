@@ -104,6 +104,7 @@ private:
     void processFile(std::string & file_path, const SettingsChanges & settings_changes);
     void processFilesWithBatching(const SettingsChanges & settings_changes);
 
+    void markAsRemove(const std::string & file_path);
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
 
@@ -154,6 +155,8 @@ private:
 
     CurrentMetrics::Increment metric_pending_bytes;
     CurrentMetrics::Increment metric_pending_files;
+    CurrentMetrics::Increment metric_remove_bytes;
+    CurrentMetrics::Increment metric_remove_files;
     CurrentMetrics::Increment metric_broken_bytes;
     CurrentMetrics::Increment metric_broken_files;
 };

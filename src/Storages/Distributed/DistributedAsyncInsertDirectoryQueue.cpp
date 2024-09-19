@@ -35,8 +35,10 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
     extern const Metric DistributedFilesToInsert;
     extern const Metric BrokenDistributedFilesToInsert;
+    extern const Metric ReomveDistributedFilesToInsert;
     extern const Metric DistributedBytesToInsert;
     extern const Metric BrokenDistributedBytesToInsert;
+    extern const Metric ReomveDistributedBytesToInsert;
 }
 
 namespace ProfileEvents
@@ -128,6 +130,8 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
     , metric_broken_bytes(CurrentMetrics::BrokenDistributedBytesToInsert, 0)
     , metric_broken_files(CurrentMetrics::BrokenDistributedFilesToInsert, 0)
+    , metric_remove_bytes(CurrentMetrics::RemoveDistributedBytesToInsert, 0)
+    , metric_remove_files(CurrentMetrics::RemoveDistributedFilesToInsert, 0)
 {
     fs::create_directory(broken_path);
 
@@ -465,7 +469,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             {
                 files_retry.erase(file_path);
                 /// file might grow without a limit, need delete.
-                markAsSend(file_path);
+                markAsRemove(file_path);
                 LOG_TRACE(log, "Finished retry {}, success delete {}", max_retries, file_path);
             } else
             {
@@ -637,7 +641,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
                     {
                         files_retry.erase(file_path);
                         /// file might grow without a limit, need delete.
-                        markAsSend(file_path);
+                        markAsRemove(file_path);
                         LOG_TRACE(log, "Finished retry {}, success delete {}", max_retries, file_path);
                     } else
                     {
@@ -697,6 +701,21 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         if (fs::exists(current_batch_file_path))
             fs::remove(current_batch_file_path);
     }
+}
+
+void DistributedAsyncInsertDirectoryQueue::markAsRemove(const std::string & file_path)
+{
+    size_t file_size = fs::file_size(file_path);
+
+    {
+        std::lock_guard status_lock(status_mutex);
+        metric_remove_files.sub();
+        metric_remove_bytes.sub(file_size);
+        --status.files_count;
+        status.bytes_count -= file_size;
+    }
+
+    fs::remove(file_path);
 }
 
 void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file_path)
