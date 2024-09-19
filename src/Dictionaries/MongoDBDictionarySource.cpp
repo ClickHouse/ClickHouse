@@ -1,8 +1,9 @@
 #include "MongoDBDictionarySource.h"
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/StorageMongoDBSocketFactory.h>
+#include <Common/RemoteHostFilter.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include <Storages/StorageMongoDBSocketFactory.h>
-#include <Storages/NamedCollectionsHelpers.h>
 
 namespace DB
 {

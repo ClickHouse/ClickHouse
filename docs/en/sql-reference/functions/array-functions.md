@@ -2035,6 +2035,7 @@ Query:
 SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
+
 Result:
 
 ``` text
@@ -2043,6 +2044,43 @@ Result:
 └──────────────────────────────────────┘
 ```
 
+## arrayZipUnaligned
+
+Combines multiple arrays into a single array, allowing for unaligned arrays. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
+
+**Syntax**
+
+``` sql
+arrayZipUnaligned(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- Array with elements from the source arrays grouped into [tuples](../data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [Array](../data-types/array.md). If the arrays have different sizes, the shorter arrays will be padded with `null` values.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
+```
+
+Result:
+
+``` text
+┌─arrayZipUnaligned(['a'], [1, 2, 3])─┐
+│ [('a',1),(NULL,2),(NULL,3)]         │
+└─────────────────────────────────────┘
+```
+
+
 ## arrayAUC
 
 Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>).
@@ -2050,13 +2088,14 @@ Calculate AUC (Area Under the Curve, which is a concept in machine learning, see
 **Syntax**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels)
+arrayAUC(arr_scores, arr_labels[, scale])
 ```
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
 
 **Returned value**
 
