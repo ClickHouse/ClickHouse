@@ -88,13 +88,10 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
             res->startup();
             return res;
         }
-        else
-        {
-            auto res = std::make_shared<StorageSystemNumbers>(
-                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"});
-            res->startup();
-            return res;
-        }
+
+        auto res = std::make_shared<StorageSystemNumbers>(StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"});
+        res->startup();
+        return res;
     }
     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit' or 'offset, limit'.", getName());
 }

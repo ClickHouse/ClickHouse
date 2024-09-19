@@ -1017,8 +1017,7 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
 
     if (bytes_granularity == 0)
         return res;
-    else
-        return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
@@ -1038,16 +1037,13 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 
     if (bytes_granularity == 0)
         return marks;
-    else
-    {
-        /// Overflow
-        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
-            return max_marks;
-        if (bytes_setting)
-            return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
-        else
-            return marks;
-    }
+
+    /// Overflow
+    if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+        return max_marks;
+    if (bytes_setting)
+        return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return marks;
 }
 
 
@@ -1184,26 +1180,23 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 /// Empty mark (final mark)
                 return BoolMask(false, true);
             }
-            else
-            {
-                part_offset_left[0] = part->index_granularity.getMarkStartingRow(range.begin);
-                part_offset_right[0] = part->index_granularity.getMarkStartingRow(range.end) - 1;
-                part_offset_left[1] = part->name;
-                part_offset_right[1] = part->name;
 
-                return part_offset_condition->checkInRange(
-                    2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
-            }
+            part_offset_left[0] = part->index_granularity.getMarkStartingRow(range.begin);
+            part_offset_right[0] = part->index_granularity.getMarkStartingRow(range.end) - 1;
+            part_offset_left[1] = part->name;
+            part_offset_right[1] = part->name;
+
+            return part_offset_condition->checkInRange(
+                2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
         if (key_condition_useful && part_offset_condition_useful)
             return check_key_condition() & check_part_offset_condition();
-        else if (key_condition_useful)
+        if (key_condition_useful)
             return check_key_condition();
-        else if (part_offset_condition_useful)
+        if (part_offset_condition_useful)
             return check_part_offset_condition();
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition is useless but check_in_range still gets called. It is a bug");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition is useless but check_in_range still gets called. It is a bug");
     };
 
     bool key_condition_exact_range = !key_condition_useful || key_condition.matchesExactContinuousRange();
