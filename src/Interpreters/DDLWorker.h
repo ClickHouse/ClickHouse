@@ -149,8 +149,8 @@ protected:
     virtual bool initializeMainThread();
     virtual void initializeReplication();
 
-    void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
-    void markReplicasActive(bool reinitialized);
+    virtual void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
+    virtual void markReplicasActive(bool reinitialized);
 
     void runMainThread();
     void runCleanupThread();
