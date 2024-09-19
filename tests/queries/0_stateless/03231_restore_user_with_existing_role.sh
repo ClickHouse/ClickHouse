@@ -57,7 +57,7 @@ do_check
 
 echo "Role dropped"
 ${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
-${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} SETTINGS update_access_entities_dependents=true FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "RESTORE ALL FROM ${backup_name} FORMAT Null"
 do_check
 
 echo "Nothing dropped"
@@ -89,5 +89,5 @@ ${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.users FROM ${backup_name} SETTINGS skip_unresolved_access_dependencies=true FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'user_a', count() FROM system.users WHERE name = '${user_a}'"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'role_b', count() FROM system.roles WHERE name = '${role_b}'"
-${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.roles FROM ${backup_name} SETTINGS update_access_entities_dependents=true FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.roles FROM ${backup_name} FORMAT Null"
 do_check

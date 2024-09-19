@@ -118,7 +118,7 @@ struct RestoreSettings
     /// and now we're restoring only role `r2` and user `u2` already exists, then
     /// this flag is whether restored role `r2` should be granted to user `u2` again.
     /// If this flag is false then RESTORE won't update existing access entities.
-    bool update_access_entities_dependents = false;
+    bool update_access_entities_dependents = true;
 
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
