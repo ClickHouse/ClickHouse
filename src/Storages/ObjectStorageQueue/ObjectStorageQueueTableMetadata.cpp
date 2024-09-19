@@ -27,6 +27,12 @@ namespace
             return ObjectStorageQueueMode::UNORDERED;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
+
+    void validateMode(const std::string & mode)
+    {
+        if (mode != "ordered" && mode != "unordered")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
+    }
 }
 
 
@@ -39,9 +45,11 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , after_processing(engine_settings.after_processing.toString())
     , mode(engine_settings.mode.toString())
     , tracked_files_limit(engine_settings.tracked_files_limit)
-    , tracked_file_ttl_sec(engine_settings.tracked_file_ttl_sec)
+    , tracked_files_ttl_sec(engine_settings.tracked_file_ttl_sec)
     , buckets(engine_settings.buckets)
     , processing_threads_num(engine_settings.processing_threads_num)
+    , last_processed_path(engine_settings.last_processed_path)
+    , loading_retries(engine_settings.loading_retries)
 {
 }
 
@@ -51,17 +59,23 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("after_processing", after_processing);
     json.set("mode", mode);
     json.set("tracked_files_limit", tracked_files_limit);
-    json.set("tracked_file_ttl_sec", tracked_file_ttl_sec);
+    json.set("tracked_files_ttl_sec", tracked_files_ttl_sec);
     json.set("processing_threads_num", processing_threads_num);
     json.set("buckets", buckets);
     json.set("format_name", format_name);
     json.set("columns", columns);
     json.set("last_processed_file", last_processed_path);
+    json.set("loading_retries", loading_retries);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
+}
+
+ObjectStorageQueueMode ObjectStorageQueueTableMetadata::getMode() const
+{
+    return modeFromString(mode);
 }
 
 template <typename T>
@@ -86,11 +100,13 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , after_processing(json->getValue<String>("after_processing"))
     , mode(json->getValue<String>("mode"))
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
-    , tracked_file_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "s3queue_", 0))
+    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
     , buckets(getOrDefault(json, "buckets", "", 0))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
+    , loading_retries(getOrDefault(json, "loading_retries", "", 10))
 {
+    validateMode(mode);
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
@@ -126,18 +142,18 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
     if (tracked_files_limit != from_zk.tracked_files_limit)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in max set size. "
+            "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
             "Stored in ZooKeeper: {}, local: {}",
             from_zk.tracked_files_limit,
             tracked_files_limit);
 
-    if (tracked_file_ttl_sec != from_zk.tracked_file_ttl_sec)
+    if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in max set age. "
+            "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_file_ttl_sec,
-            tracked_file_ttl_sec);
+            from_zk.tracked_files_ttl_sec,
+            tracked_files_ttl_sec);
 
     if (format_name != from_zk.format_name)
         throw Exception(
