@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Core/DecimalFunctions.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/IFunction.h>
-#include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -97,7 +95,7 @@ template<> \
     template <> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
-        static auto execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone) \
+        static inline auto execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.add##INTERVAL_KIND##s(ExtendedDayNum(d), delta); \
         } \
@@ -110,7 +108,7 @@ template<> \
     template <>
     struct AddTime<IntervalKind::Kind::Week>
     {
-        static NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &)
+        static inline NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &)
         {
             return ExtendedDayNum(static_cast<Int32>(d + delta * 7));
         }
@@ -120,7 +118,7 @@ template<> \
     template <> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
-        static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
+        static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
         { return static_cast<UInt32>(t + delta * (INTERVAL)); } \
     };
     ADD_TIME(Day, 86400)
@@ -133,7 +131,7 @@ template<> \
 template <> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
-        static NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
+        static inline NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
             if (scale < (DEF_SCALE)) \
             { \

@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnVector.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
@@ -13,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -32,7 +31,7 @@ public:
         return std::make_shared<FunctionNowInBlock>(context);
     }
     explicit FunctionNowInBlock(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override
@@ -64,7 +63,7 @@ public:
     {
         if (arguments.size() > 1)
         {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 0 or 1", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {

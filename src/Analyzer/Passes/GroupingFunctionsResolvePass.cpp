@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 
@@ -25,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupByKind : uint8_t
+enum class GroupByKind
 {
     ORDINARY,
     ROLLUP,
@@ -257,3 +256,4 @@ void GroupingFunctionsResolvePass::run(QueryTreeNodePtr & query_tree_node, Conte
 }
 
 }
+

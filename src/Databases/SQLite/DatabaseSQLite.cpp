@@ -3,7 +3,6 @@
 #if USE_SQLITE
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
@@ -47,7 +46,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
 {
     std::lock_guard lock(mutex);
 
@@ -154,7 +153,6 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
-        /* comment = */ "",
         local_context);
 
     return storage;
@@ -220,7 +218,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
     };
-    factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("SQLite", create_fn);
 }
 }
 

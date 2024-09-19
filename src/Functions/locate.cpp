@@ -19,7 +19,7 @@ using FunctionLocate = FunctionsStringSearch<PositionImpl<NameLocate, PositionCa
 
 REGISTER_FUNCTION(Locate)
 {
-    FunctionDocumentation::Description doc_description = "Like function `position` but with arguments `haystack` and `locate` switched. The behavior of this function depends on the ClickHouse version: In versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`. In versions >= 24.3,, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`. The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.";
+    FunctionDocumentation::Description doc_description = "Like function `position` but with arguments `haystack` and `locate` switched. The behavior of this function depends on the ClickHouse version: In versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`. In versions >= 24.3,, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`. The previous behaviorcan be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.";
     FunctionDocumentation::Syntax doc_syntax = "location(needle, haystack[, start_pos])";
     FunctionDocumentation::Arguments doc_arguments = {{"needle", "Substring to be searched (String)"},
                                                       {"haystack", "String in which the search is performed (String)."},
@@ -29,6 +29,6 @@ REGISTER_FUNCTION(Locate)
     FunctionDocumentation::Categories doc_categories = {"String search"};
 
 
-    factory.registerFunction<FunctionLocate>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionLocate>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::CaseInsensitive);
 }
 }

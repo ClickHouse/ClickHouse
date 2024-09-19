@@ -12,7 +12,6 @@ public:
         ParallelReadingExtension extension_,
         CoordinationMode mode_,
         RangesInDataParts parts_,
-        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -31,7 +30,6 @@ private:
     const ParallelReadingExtension extension;
     const CoordinationMode mode;
 
-    size_t min_marks_per_task{0};
     bool no_more_tasks{false};
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;

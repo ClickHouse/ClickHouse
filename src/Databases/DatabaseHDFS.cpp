@@ -11,11 +11,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/re2.h>
-#include <Core/Settings.h>
 
 #include <Poco/URI.h>
 
@@ -51,7 +50,7 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     if (!source.empty())
     {
         if (!re2::RE2::FullMatch(source, std::string(HDFS_HOST_REGEXP)))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS host: {}. "
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs host: {}. "
                             "It should have structure 'hdfs://<host_name>:<port>'", source);
 
         context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source));
@@ -75,8 +74,8 @@ std::string DatabaseHDFS::getTablePath(const std::string & table_name) const
         return table_name;
 
     if (source.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. "
-            "It should have the following structure 'hdfs://<host_name>:<port>/path'", table_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. "
+                        "It should have structure 'hdfs://<host_name>:<port>/path'", table_name);
 
     return fs::path(source) / table_name;
 }
@@ -226,7 +225,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseHDFS::getTablesForBackup(cons
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
@@ -253,7 +252,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("HDFS", create_fn);
 }
 } // DB
 

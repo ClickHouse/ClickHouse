@@ -12,14 +12,12 @@
 #include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-
-#include <Common/CurrentMemoryTracker.h>
-#include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
+
+#include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 
+#include <Common/ThreadFuzzer.h>
 #include "config.h" // USE_JEMALLOC
 
 
@@ -52,16 +50,15 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (needsSetup())
-        setup();
-
     if (!isEffective())
     {
         /// It has no effect - disable it
         stop();
         return;
     }
+    setup();
 }
+
 
 template <typename T>
 static void initFromEnv(T & what, const char * name)
@@ -135,16 +132,10 @@ void ThreadFuzzer::initConfiguration()
 }
 
 
-bool ThreadFuzzer::needsSetup() const
-{
-    return cpu_time_period_us != 0
-        && (yield_probability > 0 || migrate_probability > 0 || (sleep_probability > 0 && sleep_time_us_max > 0));
-}
-
 bool ThreadFuzzer::isEffective() const
 {
-    if (needsSetup())
-        return true;
+    if (!isStarted())
+        return false;
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
@@ -171,13 +162,10 @@ bool ThreadFuzzer::isEffective() const
 #    undef INIT_WRAPPER_PARAMS
 #endif
 
-    if (explicit_sleep_probability > 0 && sleep_time_us_max > 0)
-        return true;
-
-    if (explicit_memory_exception_probability > 0)
-        return true;
-
-    return false;
+    return cpu_time_period_us != 0
+        && (yield_probability > 0
+            || migrate_probability > 0
+            || (sleep_probability > 0 && sleep_time_us_max > 0));
 }
 
 void ThreadFuzzer::stop()
@@ -231,9 +219,11 @@ static void injectionImpl(
     UNUSED(migrate_probability);
 #endif
 
-    if (sleep_probability > 0 && sleep_time_us_max > 0.001 && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
+    if (sleep_probability > 0
+        && sleep_time_us_max > 0
+        && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
     {
-        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max * 1000)));
+        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max)) * 1000); /*may sleep(0)*/
     }
 }
 
@@ -370,7 +360,7 @@ void ThreadFuzzer::setup() const
 
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64)
+#if defined(OS_LINUX) and !defined(USE_MUSL)
     /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
     #if defined(__amd64__)
     #    define GLIBC_SYMVER "GLIBC_2.2.5"
@@ -392,8 +382,7 @@ void ThreadFuzzer::setup() const
     GLIBC_COMPAT_SYMBOL(__pthread_mutex_lock)
 #endif
 
-/// The loongarch64's glibc_version is 2.36
-#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
+#if defined(ADDRESS_SANITIZER)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
 #endif

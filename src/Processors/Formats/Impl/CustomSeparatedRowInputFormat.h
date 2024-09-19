@@ -9,8 +9,7 @@
 namespace DB
 {
 
-class CustomSeparatedFormatReader;
-class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes<CustomSeparatedFormatReader>
+class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
     CustomSeparatedRowInputFormat(
@@ -81,7 +80,7 @@ public:
     bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
 
     bool checkForSuffixImpl(bool check_eof);
-    void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
 
     EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 
