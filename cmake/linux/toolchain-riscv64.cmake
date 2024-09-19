@@ -11,7 +11,7 @@ set (CMAKE_ASM_COMPILER_TARGET "riscv64-linux-gnu")
 
 set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-riscv64")
 
-set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}/riscv64-linux-gnu/libc")
+set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}")
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")

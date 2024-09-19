@@ -214,7 +214,8 @@
 	url = https://github.com/google/libprotobuf-mutator
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
-	url = https://github.com/ClickHouse/sysroot
+	url = https://github.com/allmazz/sysroot.git
+	branch = add-libresolv
 [submodule "contrib/nlp-data"]
 	path = contrib/nlp-data
 	url = https://github.com/ClickHouse/nlp-data
@@ -368,8 +369,7 @@
 	url = https://github.com/ClickHouse/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
-	url = https://github.com/allmazz/mongo-c-driver.git
-	branch = cherry-pick/initialization-freeze-fix
+	url = https://github.com/ClickHouse/mongo-c-driver.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
