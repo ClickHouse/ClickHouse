@@ -75,7 +75,8 @@ do_check
 echo "Everything dropped, restore system.roles, then system.users"
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user_a}"
 ${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
-${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.roles FROM ${backup_name} FORMAT Null"
+# Here "allow_unresolved_access_dependencies=true" because users don't exist yet and restored roles can't be granted to non-existent users.
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.roles FROM ${backup_name} SETTINGS allow_unresolved_access_dependencies=true FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'user_a', count() FROM system.users WHERE name = '${user_a}'"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'role_b', count() FROM system.roles WHERE name = '${role_b}'"
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.users FROM ${backup_name} FORMAT Null"
@@ -84,6 +85,7 @@ do_check
 echo "Everything dropped, restore system.users, then system.roles"
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user_a}"
 ${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"
+# Here "allow_unresolved_access_dependencies=true" because roles don't exist yet and can't be granted to restored users.
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.users FROM ${backup_name} SETTINGS allow_unresolved_access_dependencies=true FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'user_a', count() FROM system.users WHERE name = '${user_a}'"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'role_b', count() FROM system.roles WHERE name = '${role_b}'"

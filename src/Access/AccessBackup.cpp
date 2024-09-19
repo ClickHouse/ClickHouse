@@ -452,19 +452,19 @@ void AccessRestorerFromBackup::generateRandomIDsAndResolveDependencies(const Acc
         }
         else
         {
-            if (entity_info.is_dependency && !entity_info.restore && !skip_unresolved_dependencies)
-            {
-                throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "Cannot resolve {} while restoring from backup",
-                                AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
-            }
             if (entity_info.restore)
             {
                 entity_info.new_id = UUIDHelpers::generateV4();
                 LOG_TRACE(log, "{}: Generated new UUID {}", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name), *entity_info.new_id);
             }
-            else
+            else if (skip_unresolved_dependencies)
             {
                 LOG_TRACE(log, "{}: Not found, ignoring", AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "Cannot resolve {} while restoring from backup",
+                                AccessEntityTypeInfo::get(type).formatEntityNameWithType(name));
             }
         }
     }
