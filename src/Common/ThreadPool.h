@@ -43,7 +43,7 @@ public:
     // used as 'unlimited' thread pool size
     // on linux you can not have more threads even if the RAM is unlimited
     // see https://docs.kernel.org/admin-guide/sysctl/kernel.html#threads-max
-    static constexpr int MAX_THEORETICAL_THREAD_COUNT 0x3fffffff; // ~1 billion
+    static constexpr int MAX_THEORETICAL_THREAD_COUNT = 0x3fffffff; // ~1 billion
 
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
@@ -177,14 +177,14 @@ private:
     // If positive, then more threads can be started.
     // When it comes to zero, it means that max_threads threads have already been started.
     // it can be below zero when the threadpool is shutting down
-    std::atomic<int> remaining_pool_capacity;
+    std::atomic<int64_t> remaining_pool_capacity;
 
     // Increments every time a new thread joins the thread pool or a job finishes.
     // Decrements every time a task is scheduled.
     // If positive, it means that there are more threads than jobs (and some are idle).
     // If zero, it means that every thread has a job.
     // If negative, it means that we have more jobs than threads.
-    std::atomic<int> available_threads;
+    std::atomic<int64_t> available_threads;
 
     bool shutdown = false;
     bool threads_remove_themselves = true;

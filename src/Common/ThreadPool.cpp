@@ -49,9 +49,9 @@ namespace ProfileEvents
 
 struct ScopedDecrement
 {
-    std::atomic<int>& atomic_var;
+    std::atomic<int64_t>& atomic_var;
 
-    ScopedDecrement(std::atomic<int>& var)
+    ScopedDecrement(std::atomic<int64_t>& var)
         : atomic_var(var)
     {
         atomic_var.fetch_sub(1, std::memory_order_relaxed);
@@ -235,8 +235,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     std::unique_ptr<ThreadFromThreadPool> new_thread;
 
     // Load the current capacity
-    size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-    int currently_available_threads = available_threads.load(std::memory_order_relaxed);
+    int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+    int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
 
     // Try to create a new thread if all existing threads are busy and there is capacity.
     while (currently_available_threads <= 0 && capacity > 0)
@@ -396,7 +396,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 
         while (true)
         {
-            size_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+            int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
 
             if (capacity == 0)
                 break;
@@ -682,7 +682,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
-            parent_pool.new_job_or_shutdown.wait(lock, [&parent_pool] {
+            parent_pool.new_job_or_shutdown.wait(lock, [this] {
                 return !parent_pool.jobs.empty()
                     || parent_pool.shutdown
                     || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
