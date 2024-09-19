@@ -344,8 +344,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             }
             catch (...)
             {
-                // If thread creation fails, restore the pool capacity and return an error.
-                return on_error("cannot allocate thread slot");
+                /// Most likely this is a std::bad_alloc exception
+                return on_error("cannot emplace the thread in the pool");
             }
         }
         else // we have a thread but there is not space for that in the pool.
