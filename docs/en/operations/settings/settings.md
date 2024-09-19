@@ -5682,3 +5682,12 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## output_format_identifier_quoting_rule
+
+Define identifier quoting behavior:
+- `user_display`: Quote identifiers if they are one of the certain keywords defined in `writeProbablyQuotedStringImpl`
+- `when_necessary`: Quote identifiers if they are one of the certain keywords defined in `writeProbablyQuotedStringImpl`, and ambiguous identifiers passed to `writeIdentifier`
+- `always`: Always quote identifiers
+
+Default value: `when_necessary`.
