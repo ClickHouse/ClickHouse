@@ -4305,7 +4305,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     }
 }
 
-auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & part, const String & prefix) -> MakeClonePartInDetachedResult
+auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & part, const String & prefix) const -> MakeClonePartInDetachedResult
 {
     MakeClonePartInDetachedResult result = MakeClonePartInDetachedResult::FetchPart;
     const bool copy_instead_of_hardlink = part->isReplicatedZeroCopy();

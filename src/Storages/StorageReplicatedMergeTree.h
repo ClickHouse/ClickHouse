@@ -658,7 +658,7 @@ private:
 
     enum class MakeClonePartInDetachedResult : uint8_t { FetchPart, NoFetchPart };
 
-    MakeClonePartInDetachedResult makeClonePartInDetached(const DataPartPtr & part, const String & prefix);
+    MakeClonePartInDetachedResult makeClonePartInDetached(const DataPartPtr & part, const String & prefix) const;
 
     /// Running jobs from the queue.
 
