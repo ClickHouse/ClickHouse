@@ -46,6 +46,7 @@
 #include <Common/config_version.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 #include <base/sleep.h>
 
 namespace CurrentMetrics
@@ -65,6 +66,15 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 output_format_avro_rows_in_file;
+    extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -229,7 +239,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     cppkafka::Configuration conf = getProducerConfiguration();
 
     const Settings & settings = getContext()->getSettingsRef();
-    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
+    size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
     const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
 
     auto producer = std::make_unique<KafkaProducer>(
@@ -239,8 +249,8 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
-    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
-        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
+    if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
+        max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
         header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
@@ -476,25 +486,22 @@ void StorageKafka::cleanConsumers()
 
 size_t StorageKafka::getMaxBlockSize() const
 {
-    return kafka_settings->kafka_max_block_size.changed
-        ? kafka_settings->kafka_max_block_size.value
-        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+    return kafka_settings->kafka_max_block_size.changed ? kafka_settings->kafka_max_block_size.value
+                                                        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 size_t StorageKafka::getPollMaxBatchSize() const
 {
-    size_t batch_size = kafka_settings->kafka_poll_max_batch_size.changed
-                        ? kafka_settings->kafka_poll_max_batch_size.value
-                        : getContext()->getSettingsRef().max_block_size.value;
+    size_t batch_size = kafka_settings->kafka_poll_max_batch_size.changed ? kafka_settings->kafka_poll_max_batch_size.value
+                                                                          : getContext()->getSettingsRef()[Setting::max_block_size].value;
 
     return std::min(batch_size,getMaxBlockSize());
 }
 
 size_t StorageKafka::getPollTimeoutMillisecond() const
 {
-    return kafka_settings->kafka_poll_timeout_ms.changed
-        ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
-        : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+    return kafka_settings->kafka_poll_timeout_ms.changed ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
+                                                         : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
 void StorageKafka::threadFunc(size_t idx)
@@ -619,8 +626,8 @@ bool StorageKafka::streamToViews()
         StreamLocalLimits limits;
 
         Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
-                                          ? kafka_settings->kafka_flush_interval_ms
-                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
+            ? kafka_settings->kafka_flush_interval_ms
+            : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         source->setTimeLimit(max_execution_time);
     }
@@ -637,7 +644,7 @@ bool StorageKafka::streamToViews()
         // we need to read all consumers in parallel (sequential read may lead to situation
         // when some of consumers are not used, and will break some Kafka consumer invariants)
         block_io.pipeline.setNumThreads(stream_count);
-        block_io.pipeline.setConcurrencyControl(kafka_context->getSettingsRef().use_concurrency_control);
+        block_io.pipeline.setConcurrencyControl(kafka_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);

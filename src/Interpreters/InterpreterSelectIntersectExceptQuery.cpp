@@ -22,6 +22,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsUInt64 max_rows_in_distinct;
+    extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool optimize_distinct_in_order;
+}
 
 namespace ErrorCodes
 {
@@ -78,9 +86,8 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
 
     /// AST must have been changed by the visitor.
     if (final_operator == Operator::UNKNOWN || num_children != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "SelectIntersectExceptyQuery has not been normalized (number of children: {})",
-                        num_children);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "SelectIntersectExceptQuery has not been normalized (number of children: {})", num_children);
 
     nested_interpreters.resize(num_children);
 
@@ -143,8 +150,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto max_threads = settings.max_threads;
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, max_threads);
+    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, settings[Setting::max_threads]);
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
@@ -152,7 +158,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         || query.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
     {
         /// Add distinct transform
-        SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentDataStream(),
@@ -160,7 +166,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
             0,
             result_header.getNames(),
             false,
-            settings.optimize_distinct_in_order);
+            settings[Setting::optimize_distinct_in_order]);
 
         query_plan.addStep(std::move(distinct_step));
     }
