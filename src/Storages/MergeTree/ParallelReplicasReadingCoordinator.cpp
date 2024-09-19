@@ -398,7 +398,12 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (mark_segment_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
 
-    LOG_DEBUG(log, "Reading state is fully initialized: {}, mark_segment_size: {}", fmt::join(all_parts_to_read, "; "), mark_segment_size);
+    LOG_DEBUG(
+        log,
+        "Reading state is fully initialized from {} replica : {}, mark_segment_size: {}",
+        source_replica_for_parts_snapshot,
+        fmt::join(all_parts_to_read, "; "),
+        mark_segment_size);
 }
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
@@ -541,7 +546,7 @@ void DefaultCoordinator::tryToStealFromQueues(
         for (auto replica : order)
             tryToStealFromQueue(
                 distribution_by_hash_queue[replica],
-                replica,
+                (scan_mode == ScanMode::TakeEverythingAvailable ? -1 : replica),
                 replica_num,
                 scan_mode,
                 min_number_of_marks,
@@ -557,6 +562,7 @@ void DefaultCoordinator::tryToStealFromQueues(
     else
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingLeftoversMicroseconds);
+
         /// Check orphaned ranges
         tryToStealFromQueue(
             ranges_for_stealing_queue, /*owner=*/-1, replica_num, scan_mode, min_number_of_marks, current_marks_amount, description);
@@ -719,7 +725,7 @@ void DefaultCoordinator::enqueueSegment(const MergeTreePartInfo & info, const Ma
     {
         /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
         distribution_by_hash_queue[owner].insert(RangesInDataPartDescription{.info = info, .ranges = {segment}});
-        LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, info.getPartNameV1(), owner);
+        LOG_TRACE(log, "Segment {} of {} is added to its owner's ({}) queue", segment, info.getPartNameV1(), owner);
     }
     else
         enqueueToStealerOrStealingQueue(info, segment);
@@ -733,12 +739,12 @@ void DefaultCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo
     if (possiblyCanReadPart(stealer_by_hash, info))
     {
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
-        LOG_TEST(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, info.getPartNameV1(), stealer_by_hash);
+        LOG_TRACE(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, info.getPartNameV1(), stealer_by_hash);
     }
     else
     {
         ranges_for_stealing_queue.push_back(std::move(range));
-        LOG_TEST(log, "Segment {} of {} is added to stealing queue", segment, info.getPartNameV1());
+        LOG_TRACE(log, "Segment {} of {} is added to stealing queue", segment, info.getPartNameV1());
     }
 }
 
