@@ -128,6 +128,7 @@ def check_table_is_ready(instance, table_name):
     except Exception:
         return False
 
+
 def test_nats_select_empty(nats_cluster):
     instance.query(
         """
@@ -560,7 +561,7 @@ def test_nats_big_message(nats_cluster):
             break
 
     assert (
-            int(result) == nats_messages * batch_messages
+        int(result) == nats_messages * batch_messages
     ), "ClickHouse lost some messages: {}".format(result)
 
 
@@ -645,7 +646,7 @@ def test_nats_mv_combo(nats_cluster):
         )
 
     assert (
-            int(result) == messages_num * threads_num * NUM_MV
+        int(result) == messages_num * threads_num * NUM_MV
     ), "ClickHouse lost some messages: {}".format(result)
 
 
@@ -902,7 +903,7 @@ def test_nats_many_inserts(nats_cluster):
     )
 
     assert (
-            int(result) == messages_num * threads_num
+        int(result) == messages_num * threads_num
     ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(
         result
     )
@@ -991,7 +992,7 @@ def test_nats_overloaded_insert(nats_cluster):
         thread.join()
 
     assert (
-            int(result) == messages_num * threads_num
+        int(result) == messages_num * threads_num
     ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(
         result
     )
@@ -1149,7 +1150,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
             )
         )
         while not check_table_is_ready(
-                instance, "test.many_consumers_{}".format(table_id)
+            instance, "test.many_consumers_{}".format(table_id)
         ):
             logging.debug(
                 "Table test.many_consumers_{} is not yet ready".format(table_id)
@@ -1202,7 +1203,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
     )
 
     assert (
-            int(result1) == messages_num * threads_num
+        int(result1) == messages_num * threads_num
     ), "ClickHouse lost some messages: {}".format(result1)
 
 
@@ -1546,8 +1547,8 @@ def test_format_with_prefix_and_suffix(nats_cluster):
     thread.join()
 
     assert (
-            "".join(insert_messages)
-            == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
+        "".join(insert_messages)
+        == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
     )
 
 
@@ -1607,8 +1608,8 @@ def test_max_rows_per_message(nats_cluster):
     thread.join()
 
     assert (
-            "".join(insert_messages)
-            == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
+        "".join(insert_messages)
+        == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
     )
 
     attempt = 0
