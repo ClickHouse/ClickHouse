@@ -196,7 +196,8 @@ CREATE TABLE distinct_in_order
 )
 ENGINE = MergeTree
 ORDER BY (a, b)
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 8192,
+index_granularity_bytes = '10Mi';
 
 SYSTEM STOP MERGES distinct_in_order;
 
