@@ -21,7 +21,67 @@ def start_cluster():
         cluster.shutdown()
 
 
+def test_min_free_disk_settings(start_cluster):
+    # min_free_disk_bytes_to_throw_insert (default 0)
+    # min_free_disk_ratio_to_throw_insert (default 0.0)
+
+    node.query("DROP TABLE IF EXISTS test_table")
+
+    node.query(
+        f"""
+        CREATE TABLE test_table (
+            id UInt32,
+            data String
+        ) ENGINE = MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy = 'only_disk1'
+    """
+    )
+
+    node.query("INSERT INTO test_table (id, data) values (1, 'a')")
+
+    free_bytes = 7 * 1024 * 1024  # 7MB -- size of disk
+    node.query(f"SET min_free_disk_bytes_to_throw_insert = {free_bytes}")
+
+    try:
+        node.query("INSERT INTO test_table (id, data) values (1, 'a')")
+    except QueryRuntimeException as e:
+        assert "NOT_ENOUGH_SPACE" in str(e)
+
+    node.query("SET min_free_disk_bytes_to_throw_insert = 0")
+    node.query("INSERT INTO test_table (id, data) values (1, 'a')")
+
+    free_ratio = 1.0
+    node.query(f"SET min_free_disk_ratio_to_throw_insert = {free_ratio}")
+
+    try:
+        node.query("INSERT INTO test_table (id, data) values (1, 'a')")
+    except QueryRuntimeException as e:
+        assert "NOT_ENOUGH_SPACE" in str(e)
+
+    node.query("DROP TABLE test_table")
+
+    # server setting for min_free_disk_ratio_to_throw_insert is 1 but we can overwrite at table level
+    node.query(
+        f"""
+        CREATE TABLE test_table (
+            id UInt32,
+            data String
+        ) ENGINE = MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy = 'only_disk1', min_free_disk_ratio_to_throw_insert = 0.0
+    """
+    )
+
+    node.query("INSERT INTO test_table (id, data) values (1, 'a')")
+
+    node.query("DROP TABLE test_table")
+    node.query("SET min_free_disk_ratio_to_throw_insert = 0.0")
+
+
 def test_insert_stops_when_disk_full(start_cluster):
+    node.query("DROP TABLE IF EXISTS test_table")
+
     min_free_bytes = 3 * 1024 * 1024  # 3 MiB
 
     node.query(
