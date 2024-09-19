@@ -478,6 +478,7 @@ bool StorageMaterializedView::optimize(
 ContextMutablePtr StorageMaterializedView::createRefreshContext() const
 {
     auto refresh_context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(getContext());
+    refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
