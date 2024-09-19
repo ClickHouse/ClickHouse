@@ -1,12 +1,17 @@
+#include <Core/Settings.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
-
 #include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -68,7 +73,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const auto & settings = context->getSettingsRef();
 
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings[Setting::dictionary_use_async_executor];
 
         HashedDictionaryConfiguration configuration{
             static_cast<UInt64>(shards),
@@ -77,10 +82,11 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             require_nonempty,
             dict_lifetime,
             use_async_executor,
+            std::chrono::seconds(settings[Setting::max_execution_time].totalSeconds()),
         };
 
         if (source_ptr->hasUpdateField() && shards > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {

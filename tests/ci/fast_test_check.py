@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import argparse
 import csv
 import logging
 import os
@@ -10,8 +9,8 @@ from typing import Tuple
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import JobReport, TestResult, TestResults, read_test_results
+from pr_info import PRInfo
+from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -29,16 +28,17 @@ def get_fasttest_cmd(
 ) -> str:
     return (
         f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         "--network=host "  # required to get access to IAM credentials
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output "
-        f"-e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE "
+        f"-e FASTTEST_SOURCE=/repo "
         f"-e FASTTEST_CMAKE_FLAGS='-DCOMPILER_CACHE=sccache' "
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
         f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
         "-e stage=clone_submodules "
-        f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/ClickHouse "
-        f"--volume={output_path}:/test_output {image}"
+        f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/repo "
+        f"--volume={output_path}:/test_output {image} /repo/tests/docker_scripts/fasttest_runner.sh"
     )
 
 
@@ -56,44 +56,23 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results
+        return ERROR, "Invalid check_status.tsv", test_results
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results
+            return ERROR, "Empty test_results.tsv", test_results
     except Exception as e:
-        return ("error", f"Cannot parse test_results.tsv ({e})", test_results)
+        return (ERROR, f"Cannot parse test_results.tsv ({e})", test_results)
 
     return state, description, test_results
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="FastTest script",
-    )
-
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        # Fast tests in most cases done within 10 min and 40 min timout should be sufficient,
-        # though due to cold cache build time can be much longer
-        # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
-        default=40,
-        help="Timeout in minutes",
-    )
-    args = parser.parse_args()
-    args.timeout = args.timeout * 60
-    return args
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
-    args = parse_args()
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
@@ -124,14 +103,10 @@ def main():
     logs_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = logs_path / "run.log"
-    timeout_expired = False
 
-    with TeePopen(run_cmd, run_log_path, timeout=args.timeout) as process:
+    with TeePopen(run_cmd, run_log_path) as process:
         retcode = process.wait()
-        if process.timeout_exceeded:
-            logging.info("Timeout expired for command: %s", run_cmd)
-            timeout_expired = True
-        elif retcode == 0:
+        if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -149,26 +124,21 @@ def main():
     test_results = []  # type: TestResults
     if "submodule_log.txt" not in test_output_files:
         description = "Cannot clone repository"
-        state = "failure"
+        state = FAILURE
     elif "cmake_log.txt" not in test_output_files:
         description = "Cannot fetch submodules"
-        state = "failure"
+        state = FAILURE
     elif "build_log.txt" not in test_output_files:
         description = "Cannot finish cmake"
-        state = "failure"
+        state = FAILURE
     elif "install_log.txt" not in test_output_files:
         description = "Cannot build ClickHouse"
-        state = "failure"
+        state = FAILURE
     elif not test_log_exists and not test_result_exists:
         description = "Cannot install or start ClickHouse"
-        state = "failure"
+        state = FAILURE
     else:
         state, description, test_results = process_results(output_path)
-
-    if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(args.timeout))
-        state = "failure"
-        description = test_results[-1].name
 
     JobReport(
         description=description,
@@ -181,14 +151,8 @@ def main():
     ).dump()
 
     # Refuse other checks to run if fast test failed
-    if state != "success":
-        if state == "error":
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
-        else:
-            sys.exit(1)
+    if state != SUCCESS:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

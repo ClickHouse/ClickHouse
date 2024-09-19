@@ -322,6 +322,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             return 1;
         }
 
+        if (0 != munmap(output, le64toh(file_info.uncompressed_size)))
+            perror("munmap");
         if (0 != fsync(output_fd))
             perror("fsync");
         if (0 != close(output_fd))
@@ -527,6 +529,8 @@ int main(int/* argc*/, char* argv[])
         char decompressed_name[decompressed_name_len + 1];
         (void)snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, self, decompressed_suffix);
 
+#if defined(OS_DARWIN)
+        // We can't just rename it on Mac due to security issues, so we copy it...
         std::error_code ec;
         std::filesystem::copy_file(static_cast<char *>(decompressed_name), static_cast<char *>(self), ec);
         if (ec)
@@ -534,7 +538,13 @@ int main(int/* argc*/, char* argv[])
             std::cerr << ec.message() << std::endl;
             return 1;
         }
-
+#else
+        if (link(decompressed_name, self))
+        {
+            perror("link");
+            return 1;
+        }
+#endif
         if (chmod(self, static_cast<uint32_t>(decompressed_umask)))
         {
             perror("chmod");

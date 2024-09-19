@@ -1,35 +1,35 @@
 #!/usr/bin/env python3
 
-import os
-import logging
-import sys
 import json
-import subprocess
-import traceback
+import logging
+import os
 import re
+import subprocess
+import sys
+import traceback
 from pathlib import Path
 
 from github import Github
 
+from build_download_helper import download_builds_filter
+from ci_config import CI
+from clickhouse_helper import get_instance_id, get_instance_type
 from commit_status_helper import get_commit
-from ci_config import CI_CONFIG
-from docker_images_helper import pull_image, get_docker_image
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_RUN_URL,
     REPO_COPY,
+    REPORT_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
-    REPORT_PATH,
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from tee_popen import TeePopen
-from clickhouse_helper import get_instance_type, get_instance_id
+from report import FAILURE, SUCCESS, JobReport
 from stopwatch import Stopwatch
-from build_download_helper import download_builds_filter
-from report import JobReport
+from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
@@ -83,7 +83,7 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    required_build = CI_CONFIG.test_configs[check_name].required_build
+    required_build = CI.JOB_CONFIGS[check_name].get_required_build()
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)
@@ -152,7 +152,7 @@ def main():
     }
 
     download_builds_filter(
-        check_name, REPORT_PATH, TEMP_PATH, lambda url: "performance.tar.zst" in url
+        check_name, REPORT_PATH, temp_path, lambda url: "performance.tar.zst" in url
     )
     assert os.path.exists(f"{TEMP_PATH}/performance.tar.zst"), "Perf artifact not found"
 
@@ -223,20 +223,20 @@ def main():
             message = message_match.group(1).strip()
 
         # TODO: Remove me, always green mode for the first time, unless errors
-        status = "success"
+        status = SUCCESS
         if "errors" in message.lower() or too_many_slow(message.lower()):
-            status = "failure"
+            status = FAILURE
         # TODO: Remove until here
     except Exception:
         traceback.print_exc()
-        status = "failure"
+        status = FAILURE
         message = "Failed to parse the report."
 
     if not status:
-        status = "failure"
+        status = FAILURE
         message = "No status in report."
     elif not message:
-        status = "failure"
+        status = FAILURE
         message = "No message in report."
 
     JobReport(
@@ -249,7 +249,7 @@ def main():
         check_name=check_name_with_group,
     ).dump()
 
-    if status == "error":
+    if status != SUCCESS:
         sys.exit(1)
 
 

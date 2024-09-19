@@ -39,6 +39,7 @@ public:
         bool need_prefix_);
 
     bool execute();
+    void updateProfileEvents() const;
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
@@ -51,7 +52,7 @@ private:
 
     bool prepare();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE

@@ -4,6 +4,11 @@
 #include <map>
 #include <random>
 #include <pcg_random.hpp>
+
+#include "config.h"
+
+#if USE_QPL
+
 #include <qpl/qpl.h>
 
 namespace Poco
@@ -26,7 +31,7 @@ public:
 
     qpl_job * acquireJob(UInt32 & job_id);
     void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() { return job_pool_ready; }
+    const bool & isJobPoolReady() const { return job_pool_ready; }
 
 private:
     bool tryLockJob(UInt32 index);
@@ -65,10 +70,8 @@ class HardwareCodecDeflateQpl
 public:
     /// RET_ERROR stands for hardware codec fail, needs fallback to software codec.
     static constexpr Int32 RET_ERROR = -1;
-    /// Maximum times to check if hardware job complete, otherwise fallback to software codec.
-    static constexpr UInt32 MAX_CHECKS = UINT16_MAX;
 
-    HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
+    explicit HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
     ~HardwareCodecDeflateQpl();
 
     Int32 doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const;
@@ -119,3 +122,4 @@ private:
 };
 
 }
+#endif

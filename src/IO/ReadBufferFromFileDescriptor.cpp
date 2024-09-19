@@ -49,7 +49,7 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset)
+size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset) const
 {
     chassert(min_bytes <= max_bytes);
 
@@ -173,7 +173,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
+    if (file_offset_of_buffer_end - working_buffer.size() <= new_pos
         && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
@@ -253,7 +253,7 @@ void ReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
 }
@@ -265,7 +265,7 @@ bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
     return res == 0 && S_ISREG(stat.st_mode);
 }
 
-size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
+size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const
 {
     chassert(use_pread);
     return readImpl(to, n, n, offset);

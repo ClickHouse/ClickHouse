@@ -1,7 +1,3 @@
-#ifdef ENABLE_QPL_COMPRESSION
-
-#include <cstdio>
-#include <thread>
 #include <Compression/CompressionCodecDeflateQpl.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
@@ -11,6 +7,10 @@
 #include <Common/randomSeed.h>
 #include <base/scope_guard.h>
 #include <base/getPageSize.h>
+#include <cstdio>
+#include <thread>
+
+#if USE_QPL
 
 #include "libaccel_config.h"
 
@@ -223,15 +223,12 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataSynchronous(const char * source, 
         LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doDecompressDataSynchronous->qpl_submit_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
         return RET_ERROR;
     }
-
     /// Busy waiting till job complete.
-    UInt32 num_checks = 0;
     do
     {
         _tpause(1, __rdtsc() + 1000);
         status = qpl_check_job(job_ptr);
-        ++num_checks;
-    } while (status == QPL_STS_BEING_PROCESSED && num_checks < MAX_CHECKS);
+    } while (status == QPL_STS_BEING_PROCESSED);
 
     if (status != QPL_STS_OK)
     {
@@ -280,7 +277,6 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
 {
     auto n_jobs_processing = decomp_async_job_map.size();
     std::map<UInt32, qpl_job *>::iterator it = decomp_async_job_map.begin();
-    UInt32 num_checks = 0;
 
     while (n_jobs_processing)
     {
@@ -290,7 +286,7 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         job_ptr = it->second;
 
         auto status = qpl_check_job(job_ptr);
-        if ((status == QPL_STS_BEING_PROCESSED) && (num_checks < MAX_CHECKS))
+        if (status == QPL_STS_BEING_PROCESSED)
         {
             it++;
         }
@@ -316,7 +312,6 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         {
             it = decomp_async_job_map.begin();
             _tpause(1, __rdtsc() + 1000);
-            ++num_checks;
         }
     }
 }
@@ -471,7 +466,6 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
             sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             return;
     }
-    UNREACHABLE();
 }
 
 void CompressionCodecDeflateQpl::flushAsynchronousDecompressRequests()

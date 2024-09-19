@@ -17,7 +17,8 @@ public:
 
     std::string getName() const override { return "SystemColumns"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

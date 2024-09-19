@@ -1,18 +1,14 @@
 #include "config.h"
 
 #if USE_POCKETFFT
-#    ifdef __clang__
-#        pragma clang diagnostic push
-#        pragma clang diagnostic ignored "-Wshadow"
-#        pragma clang diagnostic ignored "-Wextra-semi-stmt"
-#        pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#    endif
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wshadow"
+#    pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 
 #    include <pocketfft_hdronly.h>
 
-#    ifdef __clang__
-#        pragma clang diagnostic pop
-#    endif
+#    pragma clang diagnostic pop
 
 #    include <cmath>
 #    include <Columns/ColumnArray.h>
@@ -56,8 +52,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
-        validateFunctionArgumentTypes(*this, arguments, args);
+        FunctionArgumentDescriptors args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -65,10 +61,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
-        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+        const ColumnArray & array = checkAndGetColumn<ColumnArray>(*array_ptr);
 
-        const IColumn & src_data = array->getData();
-        const ColumnArray::Offsets & offsets = array->getOffsets();
+        const IColumn & src_data = array.getData();
+        const ColumnArray::Offsets & offsets = array.getOffsets();
 
         auto res = ColumnFloat64::create(input_rows_count);
         auto & res_data = res->getData();
@@ -157,12 +153,8 @@ public:
             return true;
         }
 
-        std::vector<double> xfreq(spec_len);
         double step = 0.5 / (spec_len - 1);
-        for (size_t i = 0; i < spec_len; ++i)
-            xfreq[i] = i * step;
-
-        auto freq = xfreq[idx];
+        auto freq = idx * step;
 
         period = std::round(1 / freq);
         return true;

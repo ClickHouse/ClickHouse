@@ -29,6 +29,7 @@
 #include <Common/randomNumber.h>
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Parsers/CommonParsers.h>
@@ -36,6 +37,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool insert_allow_materialized_columns;
+}
 
 namespace ErrorCodes
 {
@@ -88,12 +94,12 @@ static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
 static ContextMutablePtr createQueryContext(ContextPtr context)
 {
-    Settings new_query_settings = context->getSettings();
-    new_query_settings.insert_allow_materialized_columns = true;
+    Settings new_query_settings = context->getSettingsCopy();
+    new_query_settings[Setting::insert_allow_materialized_columns] = true;
 
     /// To avoid call AST::format
     /// TODO: We need to implement the format function for MySQLAST
-    new_query_settings.enable_global_with_statement = false;
+    new_query_settings[Setting::enable_global_with_statement] = false;
 
     auto query_context = Context::createCopy(context);
     query_context->setSettings(new_query_settings);
@@ -151,8 +157,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         {"log_bin", "ON"},
         {"binlog_format", "ROW"},
         {"binlog_row_image", "FULL"},
-        {"default_authentication_plugin", "mysql_native_password"},
-        {"log_bin_use_v1_row_events", "OFF"}
+        {"default_authentication_plugin", "mysql_native_password"}
     };
 
     QueryPipeline pipeline(std::move(variables_input));
@@ -533,13 +538,17 @@ static inline void dumpDataForTables(
 bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
 {
     bool opened_transaction = false;
-    mysqlxx::PoolWithFailover::Entry connection;
 
     while (!isCancelled())
     {
         try
         {
-            connection = pool.tryGet();
+            mysqlxx::PoolWithFailover::Entry connection = pool.tryGet();
+            SCOPE_EXIT({
+                if (opened_transaction)
+                    connection->query("ROLLBACK").execute();
+            });
+
             if (connection.isNull())
             {
                 if (settings->max_wait_time_when_mysql_unavailable < 0)
@@ -602,9 +611,6 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
         catch (...)
         {
             tryLogCurrentException(log);
-
-            if (opened_transaction)
-                connection->query("ROLLBACK").execute();
 
             if (settings->max_wait_time_when_mysql_unavailable < 0)
                 throw;
@@ -717,6 +723,16 @@ static void writeFieldsToColumn(
 
                 null_map_column->insertValue(0);
             }
+            else
+            {
+                // Column is not null but field is null. It's possible due to overrides
+                if (field.isNull())
+                {
+                    column_to.insertDefault();
+                    return false;
+                }
+            }
+
 
             return true;
         };
@@ -725,11 +741,11 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
-                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template get<decltype(from_type)>()));
+                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template safeGet<decltype(from_type)>()));
             }
         };
 
@@ -765,21 +781,21 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        casted_int32_column->insertValue(static_cast<Int32>(value.get<Int32>()));
+                        casted_int32_column->insertValue(static_cast<Int32>(value.safeGet<Int32>()));
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
-                        const Int32 & num = static_cast<Int32>(value.get<Int32>());
+                        const Int32 & num = static_cast<Int32>(value.safeGet<Int32>());
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: it is a bug.");
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
                 }
             }
         }
@@ -787,12 +803,12 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
-                    const String & data = value.get<const String &>();
+                    const String & data = value.safeGet<const String &>();
                     casted_string_column->insertData(data.data(), data.size());
                 }
             }
@@ -801,12 +817,12 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
-                    const String & data = value.get<const String &>();
+                    const String & data = value.safeGet<const String &>();
                     casted_fixed_string_column->insertData(data.data(), data.size());
                 }
             }
@@ -844,7 +860,7 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
 static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
 
     size_t prev_bytes = buffer.bytes();
     std::vector<bool> writeable_rows_mask(rows_data.size());
@@ -853,7 +869,7 @@ static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t 
     {
         writeable_rows_mask[index + 1] = true;
         writeable_rows_mask[index] = differenceSortingKeys(
-            rows_data[index].get<const Tuple &>(), rows_data[index + 1].get<const Tuple &>(), sorting_columns_index);
+            rows_data[index].safeGet<const Tuple &>(), rows_data[index + 1].safeGet<const Tuple &>(), sorting_columns_index);
     }
 
     for (size_t column = 0; column < buffer.columns() - 2; ++column)

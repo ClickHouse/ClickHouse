@@ -67,4 +67,7 @@ template void readFloatText<Float64>(Float64 &, ReadBuffer &);
 template bool tryReadFloatText<Float32>(Float32 &, ReadBuffer &);
 template bool tryReadFloatText<Float64>(Float64 &, ReadBuffer &);
 
+template bool tryReadFloatTextNoExponent<Float32>(Float32 &, ReadBuffer &);
+template bool tryReadFloatTextNoExponent<Float64>(Float64 &, ReadBuffer &);
+
 }

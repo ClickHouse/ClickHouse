@@ -2,7 +2,12 @@
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
-exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 
 log_user 0
 set timeout 60
@@ -18,34 +23,34 @@ spawn bash
 send "source $basedir/../shell_config.sh\r"
 
 # Progress is not displayed by default
-send "\$CLICKHOUSE_LOCAL --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
+send "\$CLICKHOUSE_LOCAL --format TSV --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
 expect -exact "0\tHello\r\n"
 send "\3"
 
 # The option --progress has implicit value of true
-send "\$CLICKHOUSE_LOCAL --progress --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null\r"
+send "\$CLICKHOUSE_LOCAL --format TSV --progress --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null\r"
 expect "Progress: "
 expect "█"
 send "\3"
 
 # It works even if we redirect both stdout and stderr to /dev/null
-send "\$CLICKHOUSE_LOCAL --progress --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1\r"
+send "\$CLICKHOUSE_LOCAL --format TSV --progress --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1\r"
 expect "Progress: "
 expect "█"
 send "\3"
 
 # But we can set it to false
-send "\$CLICKHOUSE_LOCAL --progress false --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
+send "\$CLICKHOUSE_LOCAL --format TSV --progress false --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
 expect -exact "0\tHello\r\n"
 send "\3"
 
 # As well as to 0 for the same effect
-send "\$CLICKHOUSE_LOCAL --progress 0 --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
+send "\$CLICKHOUSE_LOCAL --format TSV --progress 0 --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
 expect -exact "0\tHello\r\n"
 send "\3"
 
 # If we set it to 1, the progress will be displayed as well
-send "\$CLICKHOUSE_LOCAL --progress 1 --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1\r"
+send "\$CLICKHOUSE_LOCAL --format TSV --progress 1 --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1\r"
 expect "Progress: "
 expect "█"
 send "\3"

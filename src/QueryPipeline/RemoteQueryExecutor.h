@@ -8,7 +8,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
-#include <Common/TimerDescriptor.h>
 #include <sys/types.h>
 
 
@@ -50,29 +49,55 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
-        GetPriorityForLoadBalancing::Func priority_func;
     };
+
+    /// Takes a connection pool for a node (not cluster)
+    RemoteQueryExecutor(
+        ConnectionPoolPtr pool,
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler_ = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         std::shared_ptr<Connection> connection,
-        const String & query_, const Block & header_, ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler_ = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
@@ -192,9 +217,12 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
+    bool needToSkipUnavailableShard() const;
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
+
+    /// return true if parallel replica packet was processed
+    bool processParallelReplicaPacketIfAny();
 
 private:
     RemoteQueryExecutor(
@@ -276,6 +304,8 @@ private:
     /** Got duplicated uuids from replica
       */
     bool got_duplicated_part_uuids = false;
+
+    bool has_postponed_packet = false;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

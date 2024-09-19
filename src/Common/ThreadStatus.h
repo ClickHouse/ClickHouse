@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/LogsLevel.h>
 #include <IO/Progress.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/StringRef.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
+#include <Common/Scheduler/ResourceLink.h>
 
 #include <boost/noncopyable.hpp>
 
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
@@ -66,7 +66,7 @@ class ThreadGroup
 public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -188,6 +188,10 @@ public:
     Progress progress_in;
     Progress progress_out;
 
+    /// IO scheduling
+    ResourceLink read_resource_link;
+    ResourceLink write_resource_link;
+
 private:
     /// Group of threads, to which this thread attached
     ThreadGroupPtr thread_group;
@@ -306,6 +310,8 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+
+    void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 
 private:
     void applyGlobalSettings();

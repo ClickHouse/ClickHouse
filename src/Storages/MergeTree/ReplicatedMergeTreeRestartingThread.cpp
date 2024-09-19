@@ -1,11 +1,12 @@
 #include <IO/Operators.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 
@@ -24,6 +25,11 @@ namespace ErrorCodes
     extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
+namespace FailPoints
+{
+    extern const char finish_clean_quorum_failed_parts[];
+};
+
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
 {
@@ -40,6 +46,20 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
+}
+
+void ReplicatedMergeTreeRestartingThread::start(bool schedule)
+{
+    LOG_TRACE(log, "Starting the restating thread, schedule: {}", schedule);
+    if (schedule)
+        task->activateAndSchedule();
+    else
+        task->activate();
+}
+
+void ReplicatedMergeTreeRestartingThread::wakeup()
+{
+    task->schedule();
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -241,6 +261,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
             storage.queue.removeFailedQuorumPart(part->info);
         }
     }
+    FailPointInjection::disableFailPoint(FailPoints::finish_clean_quorum_failed_parts);
 }
 
 
@@ -336,7 +357,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
 {
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
-    need_stop = true;
+    need_stop = part_of_full_shutdown;
     task->deactivate();
 
     /// Explicitly set the event, because the restarting thread will not set it again

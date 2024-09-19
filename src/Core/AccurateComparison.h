@@ -152,7 +152,7 @@ bool notEqualsOp(A a, B b)
 }
 
 /// Converts numeric to an equal numeric of other type.
-/// When `strict` is `true` check that result exactly same as input, otherwise just check overflow
+/// When `strict` is `true` check that result exactly the same as input, otherwise just check overflow
 template <typename From, typename To, bool strict = true>
 inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
 {

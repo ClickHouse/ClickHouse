@@ -40,8 +40,6 @@ fi
 
 DATA_DIR="${CLICKHOUSE_DATA_DIR:-/var/lib/clickhouse}"
 LOG_DIR="${LOG_DIR:-/var/log/clickhouse-keeper}"
-LOG_PATH="${LOG_DIR}/clickhouse-keeper.log"
-ERROR_LOG_PATH="${LOG_DIR}/clickhouse-keeper.err.log"
 COORDINATION_DIR="${DATA_DIR}/coordination"
 COORDINATION_LOG_DIR="${DATA_DIR}/coordination/log"
 COORDINATION_SNAPSHOT_DIR="${DATA_DIR}/coordination/snapshots"
@@ -80,11 +78,11 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     export CLICKHOUSE_WATCHDOG_ENABLE
 
-    cd /var/lib/clickhouse
+    cd "${DATA_DIR}"
 
     # There is a config file. It is already tested with gosu (if it is readably by keeper user)
     if [ -f "$KEEPER_CONFIG" ]; then
-        exec $gosu /usr/bin/clickhouse-keeper --config-file="$KEEPER_CONFIG" --log-file="$LOG_PATH" --errorlog-file="$ERROR_LOG_PATH" "$@"
+        exec $gosu /usr/bin/clickhouse-keeper --config-file="$KEEPER_CONFIG" "$@"
     fi
 
     # There is no config file. Will use embedded one

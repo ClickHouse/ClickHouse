@@ -21,6 +21,7 @@ CREATE TABLE t_random_1
 )
 ENGINE = GenerateRandom(1, 5, 3);
 
+SET optimize_trivial_insert_select = 1;
 INSERT INTO t_1 select rowNumberInAllBlocks(), *, '1984-01-01' from t_random_1 limit 1000000;
 
 OPTIMIZE TABLE t_1 FINAL;
@@ -52,7 +53,7 @@ SELECT _part_offset, foo FROM t_1 where granule == 0 AND _part_offset >= 100000 
 
 SELECT 'PREWHERE';
 SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere granule == 0 where _part_offset >= 100000;
-SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere _part != '' where granule == 0; -- { serverError 10 }
-SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere _part_offset > 100000 where granule == 0; -- { serverError 10 }
+SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere _part != '' where granule == 0;
+SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere _part_offset > 100000 where granule == 0;
 SELECT _part_offset FROM t_1 PREWHERE order_0 % 10000 == 42 ORDER BY order_0 LIMIT 3;
 SELECT _part_offset, foo FROM t_1 PREWHERE order_0 % 10000 == 42 ORDER BY order_0 LIMIT 3;

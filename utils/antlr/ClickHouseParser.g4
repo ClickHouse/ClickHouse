@@ -218,9 +218,17 @@ insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) co
 
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
-    : FORMAT identifier              # DataClauseFormat
-    | VALUES                         # DataClauseValues
-    | selectUnionStmt SEMICOLON? EOF # DataClauseSelect
+    : FORMAT identifier                                                         # DataClauseFormat
+    | VALUES  assignmentValues (COMMA assignmentValues)*                       # DataClauseValues
+    | selectUnionStmt SEMICOLON? EOF                                            # DataClauseSelect
+    ;
+
+assignmentValues
+    : LPAREN assignmentValue (COMMA assignmentValue)* RPAREN
+    | LPAREN RPAREN
+    ;
+assignmentValue
+    : literal
     ;
 
 // KILL statement

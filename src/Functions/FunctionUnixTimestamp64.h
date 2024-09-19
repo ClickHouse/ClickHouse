@@ -45,9 +45,9 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"value", &isDateTime64<IDataType>, nullptr, "DateTime64"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -107,11 +107,7 @@ private:
     const bool allow_nonconst_timezone_arguments;
 
 public:
-    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, ContextPtr context)
-        : target_scale(target_scale_)
-        , name(name_)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
-    {}
+    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, ContextPtr context);
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -140,7 +136,7 @@ public:
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
-        if (!checkAndGetColumn<ColumnVector<T>>(col))
+        if (!checkAndGetColumn<ColumnVector<T>>(&col))
             return false;
 
         auto & result_data = result_column->getData();

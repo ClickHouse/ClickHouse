@@ -7,7 +7,7 @@
 namespace DB
 {
 
-namespace ErrorCodesEnumValues
+namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }

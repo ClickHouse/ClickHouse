@@ -15,7 +15,6 @@ namespace ErrorCodes
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int UNSUPPORTED_METHOD;
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
@@ -253,11 +252,6 @@ public:
         checkResult(err);
     }
 
-    size_t getFileOffsetOfBufferEnd() const override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getFileOffsetOfBufferEnd is not supported when reading from zip archive");
-    }
-
     off_t seek(off_t off, int whence) override
     {
         off_t current_pos = getPosition();
@@ -323,7 +317,7 @@ public:
 
     String getFileName() const override { return handle.getFileName(); }
 
-    size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
+    std::optional<size_t> tryGetFileSize() override { return handle.getFileInfo().uncompressed_size; }
 
     /// Releases owned handle to pass it to an enumerator.
     HandleHolder releaseHandle() &&
@@ -586,6 +580,15 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::nextFile(std
     auto handle = std::move(*read_buffer_from_zip).releaseHandle();
     if (!handle.nextFile())
         return nullptr;
+    return std::make_unique<FileEnumeratorImpl>(std::move(handle));
+}
+
+std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::currentFile(std::unique_ptr<ReadBuffer> read_buffer)
+{
+    if (!dynamic_cast<ReadBufferFromZipArchive *>(read_buffer.get()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
+    auto read_buffer_from_zip = std::unique_ptr<ReadBufferFromZipArchive>(static_cast<ReadBufferFromZipArchive *>(read_buffer.release()));
+    auto handle = std::move(*read_buffer_from_zip).releaseHandle();
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 

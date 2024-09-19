@@ -48,7 +48,7 @@ friend class FileCache; /// Because of reserved_size in tryReserve().
 public:
     using Key = FileCacheKey;
     using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
-    using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
+    using LocalCacheWriterPtr = std::shared_ptr<WriteBufferFromFile>;
     using Downloader = std::string;
     using DownloaderId = std::string;
     using Priority = IFileCachePriority;
@@ -171,11 +171,13 @@ public:
      * ========== Methods used by `cache` ========================
      */
 
-    FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
+    FileSegmentGuard::Lock lock() const;
 
     Priority::IteratorPtr getQueueIterator() const;
 
     void setQueueIterator(Priority::IteratorPtr iterator);
+
+    void resetQueueIterator();
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -199,10 +201,14 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat = nullptr);
+    bool reserve(
+        size_t size_to_reserve,
+        size_t lock_wait_timeout_milliseconds,
+        std::string & failure_reason,
+        FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
-    void write(const char * from, size_t size, size_t offset);
+    void write(char * from, size_t size, size_t offset_in_file);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
@@ -210,14 +216,13 @@ public:
     // The reader typically requires its internal_buffer to be assigned from the outside before
     // calling next().
     RemoteFileReaderPtr getRemoteFileReader();
+    LocalCacheWriterPtr getLocalCacheWriter();
 
     RemoteFileReaderPtr extractRemoteFileReader();
 
     void resetRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
-
-    void setDownloadedSize(size_t delta);
 
     void setDownloadFailed();
 
@@ -241,7 +246,6 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
-    FileSegmentGuard::Lock lockFileSegment() const;
 
     String tryGetPath() const;
 
@@ -291,7 +295,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     size_t size() const { return file_segments.size(); }
 
-    String toString();
+    String toString(bool with_state = false);
 
     void popFront() { completeAndPopFrontImpl(); }
 
@@ -316,5 +320,7 @@ private:
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
+
+String toString(const FileSegments & file_segments, bool with_state = false);
 
 }

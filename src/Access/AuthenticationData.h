@@ -2,13 +2,16 @@
 
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Common/HTTPAuthenticationScheme.h>
+#include <Access/Common/SSLCertificateSubjects.h>
+#include <Common/SSHWrapper.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
-#include <Common/SSH/Wrappers.h>
 
 #include <vector>
 #include <base/types.h>
-#include <boost/container/flat_set.hpp>
+
+
+#include "config.h"
 
 namespace DB
 {
@@ -56,11 +59,14 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
-    const boost::container::flat_set<String> & getSSLCertificateCommonNames() const { return ssl_certificate_common_names; }
-    void setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_);
+    const SSLCertificateSubjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
+    void setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_);
+    void addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_);
 
-    const std::vector<ssh::SSHKey> & getSSHKeys() const { return ssh_keys; }
-    void setSSHKeys(std::vector<ssh::SSHKey> && ssh_keys_) { ssh_keys = std::forward<std::vector<ssh::SSHKey>>(ssh_keys_); }
+#if USE_SSH
+    const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
+    void setSSHKeys(std::vector<SSHKey> && ssh_keys_) { ssh_keys = std::forward<std::vector<SSHKey>>(ssh_keys_); }
+#endif
 
     HTTPAuthenticationScheme getHTTPAuthenticationScheme() const { return http_auth_scheme; }
     void setHTTPAuthenticationScheme(HTTPAuthenticationScheme scheme) { http_auth_scheme = scheme; }
@@ -92,9 +98,11 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
-    boost::container::flat_set<String> ssl_certificate_common_names;
+    SSLCertificateSubjects ssl_certificate_subjects;
     String salt;
-    std::vector<ssh::SSHKey> ssh_keys;
+#if USE_SSH
+    std::vector<SSHKey> ssh_keys;
+#endif
     /// HTTP authentication properties
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;

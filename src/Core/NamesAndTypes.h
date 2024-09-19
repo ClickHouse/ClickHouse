@@ -100,6 +100,7 @@ public:
     void getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const;
 
     Names getNames() const;
+    NameSet getNameSet() const;
     DataTypes getTypes() const;
 
     /// Remove columns which names are not in the `names`.
@@ -111,11 +112,15 @@ public:
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const Names & names) const;
 
+    /// Leave only the columns whose names are not in the `names`.
+    NamesAndTypesList eraseNames(const NameSet & names) const;
+
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
 
-    /// Check that column contains in list
+    /// Check if `name` is one of the column names
     bool contains(const String & name) const;
+    bool containsCaseInsensitive(const String & name) const;
 
     /// Try to get column by name, returns empty optional if column not found
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;

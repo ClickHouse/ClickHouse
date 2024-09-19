@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <string>
 #include <Coordination/KeeperLogStore.h>
-#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperSnapshotManager.h>
+#include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "Coordination/KeeperStateMachine.h"
 #include "Coordination/RaftServerConfig.h"
-#include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
 {
@@ -23,7 +22,6 @@ public:
         const std::string & config_prefix_,
         const std::string & server_state_file_name_,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
         KeeperContextPtr keeper_context_);
 
     /// Constructor for tests

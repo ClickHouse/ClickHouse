@@ -32,7 +32,7 @@ ASTPtr processColumnTransformers(
 
     tables_with_columns[0].addHiddenColumns(columns.getMaterialized());
     tables_with_columns[0].addHiddenColumns(columns.getAliases());
-    tables_with_columns[0].addHiddenColumns(table->getVirtuals());
+    tables_with_columns[0].addHiddenColumns(table->getVirtualsList());
 
     NameSet source_columns_set;
     for (const auto & identifier : query_columns->children)

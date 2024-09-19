@@ -1,16 +1,16 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-
-#include <unordered_set>
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <bitset>
+#include <base/range.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <bitset>
+#include <unordered_set>
 
 
 namespace DB
@@ -102,24 +102,24 @@ public:
             auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
             {
-                this->data(place).add(i);
+                data(place).add(i);
             }
         }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs));
+        data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).serialize(buf);
+        data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -130,13 +130,13 @@ public:
         ColumnArray::Offset current_offset = data_to.size();
         data_to.resize(current_offset + events_size);
 
-        const bool first_flag = this->data(place).events.test(0);
+        const bool first_flag = data(place).events.test(0);
         data_to[current_offset] = first_flag;
         ++current_offset;
 
         for (size_t i = 1; i < events_size; ++i)
         {
-            data_to[current_offset] = (first_flag && this->data(place).events.test(i));
+            data_to[current_offset] = (first_flag && data(place).events.test(i));
             ++current_offset;
         }
 

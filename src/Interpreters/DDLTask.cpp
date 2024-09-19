@@ -2,6 +2,9 @@
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
+#include <Core/Settings.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -14,11 +17,20 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 distributed_ddl_entry_format_version;
+    extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace ErrorCodes
 {
@@ -44,6 +56,11 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
     {
         return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
     }
+    catch (const DB::NetException &)
+    {
+        /// Avoid "Host not found" exceptions
+        return false;
+    }
     catch (const Poco::Net::NetException &)
     {
         /// Avoid "Host not found" exceptions
@@ -63,7 +80,7 @@ void DDLLogEntry::assertVersion() const
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
-    version = context->getSettingsRef().distributed_ddl_entry_format_version;
+    version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
     if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
@@ -148,9 +165,10 @@ void DDLLogEntry::parse(const String & data)
             String settings_str;
             rb >> "settings: " >> settings_str >> "\n";
             ParserSetQuery parser{true};
-            constexpr UInt64 max_size = 4096;
             constexpr UInt64 max_depth = 16;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, max_size, max_depth);
+            constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+            ASTPtr settings_ast = parseQuery(
+                parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
@@ -191,16 +209,16 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     const char * end = begin + entry.query.size();
     const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
+    ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
     query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
+    query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -531,7 +549,7 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
     assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
-    if (!value.get<UInt64>())
+    if (!value.safeGet<UInt64>())
         return;
 
     zookeeper->createIfNotExists(getSyncedNodePath(), "");
@@ -556,14 +574,27 @@ void ZooKeeperMetadataTransaction::commit()
     if (state != CREATED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state ({}), it's a bug", state);
     state = FAILED;
-    current_zookeeper->multi(ops);
+    current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
-        return replicated_db->tryGetCluster();
+    String name = cluster_name;
+    bool all_groups = false;
+    if (name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
+    {
+        name = name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
+        all_groups = true;
+    }
+
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    {
+        if (all_groups)
+            return replicated_db->tryGetAllGroupsCluster();
+        else
+            return replicated_db->tryGetCluster();
+    }
     return {};
 }
 

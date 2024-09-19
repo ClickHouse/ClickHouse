@@ -20,10 +20,10 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
-class ColumnConst final : public COWHelper<IColumn, ColumnConst>
+class ColumnConst final : public COWHelper<IColumnHelper<ColumnConst>, ColumnConst>
 {
 private:
-    friend class COWHelper<IColumn, ColumnConst>;
+    friend class COWHelper<IColumnHelper<ColumnConst>, ColumnConst>;
 
     WrappedPtr data;
     size_t s;
@@ -32,6 +32,8 @@ private:
     ColumnConst(const ColumnConst & src) = default;
 
 public:
+    bool isConst() const override { return true; }
+
     ColumnPtr convertToFullColumn() const;
 
     ColumnPtr convertToFullColumnIfConst() const override
@@ -121,7 +123,11 @@ public:
         return data->isNullAt(0);
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+#else
+    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+#endif
     {
         s += length;
     }
@@ -131,15 +137,34 @@ public:
         ++s;
     }
 
+    bool tryInsert(const Field & field) override
+    {
+        auto tmp = data->cloneEmpty();
+        if (!tmp->tryInsert(field))
+            return false;
+        ++s;
+        return true;
+    }
+
     void insertData(const char *, size_t) override
     {
         ++s;
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
+#else
+    void doInsertFrom(const IColumn &, size_t) override
+#endif
     {
         ++s;
     }
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+#else
+    void doInsertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+#endif
 
     void insertDefault() override
     {
@@ -151,9 +176,14 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
+    }
+
+    char * serializeValueIntoMemory(size_t, char * memory) const override
+    {
+        return data->serializeValueIntoMemory(0, memory);
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override
@@ -174,7 +204,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -207,7 +237,11 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
+#else
+    int doCompareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
+#endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
@@ -263,7 +297,7 @@ public:
         if (!data->isDefaultAt(0))
         {
             size_t to = limit && from + limit < size() ? from + limit : size();
-            indices.reserve(indices.size() + to - from);
+            indices.reserve_exact(indices.size() + to - from);
             for (size_t i = from; i < to; ++i)
                 indices.push_back(i);
         }
@@ -290,6 +324,8 @@ public:
     T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
+
+    bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
 };
 
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);

@@ -1,8 +1,7 @@
 <test>
     <settings>
         <max_insert_threads>8</max_insert_threads>
-        <allow_experimental_projection_optimization>0</allow_experimental_projection_optimization>
-        <max_threads>4</max_threads>
+        <max_threads>1</max_threads>
     </settings>
 
     <create_query>

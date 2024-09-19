@@ -17,22 +17,22 @@ namespace DB
 
 struct ProjectionAnalysisResult
 {
-    ActionsDAGPtr projection_actions;
+    ActionsAndProjectInputsFlagPtr projection_actions;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
-    ActionsDAGPtr project_names_actions;
+    ActionsAndProjectInputsFlagPtr project_names_actions;
 };
 
 struct FilterAnalysisResult
 {
-    ActionsDAGPtr filter_actions;
+    ActionsAndProjectInputsFlagPtr filter_actions;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
 
 struct AggregationAnalysisResult
 {
-    ActionsDAGPtr before_aggregation_actions;
+    ActionsAndProjectInputsFlagPtr before_aggregation_actions;
     Names aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
@@ -41,19 +41,19 @@ struct AggregationAnalysisResult
 
 struct WindowAnalysisResult
 {
-    ActionsDAGPtr before_window_actions;
+    ActionsAndProjectInputsFlagPtr before_window_actions;
     std::vector<WindowDescription> window_descriptions;
 };
 
 struct SortAnalysisResult
 {
-    ActionsDAGPtr before_order_by_actions;
+    ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
 };
 
 struct LimitByAnalysisResult
 {
-    ActionsDAGPtr before_limit_by_actions;
+    ActionsAndProjectInputsFlagPtr before_limit_by_actions;
     Names limit_by_column_names;
 };
 
@@ -64,7 +64,7 @@ public:
         : projection_analysis_result(std::move(projection_analysis_result_))
     {}
 
-    const ProjectionAnalysisResult & getProjection() const
+    ProjectionAnalysisResult & getProjection()
     {
         return projection_analysis_result;
     }
@@ -74,7 +74,7 @@ public:
         return where_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getWhere() const
+    FilterAnalysisResult & getWhere()
     {
         return where_analysis_result;
     }
@@ -89,7 +89,7 @@ public:
         return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
     }
 
-    const AggregationAnalysisResult & getAggregation() const
+    AggregationAnalysisResult & getAggregation()
     {
         return aggregation_analysis_result;
     }
@@ -104,7 +104,7 @@ public:
         return having_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getHaving() const
+    FilterAnalysisResult & getHaving()
     {
         return having_analysis_result;
     }
@@ -119,7 +119,7 @@ public:
         return !window_analysis_result.window_descriptions.empty();
     }
 
-    const WindowAnalysisResult & getWindow() const
+    WindowAnalysisResult & getWindow()
     {
         return window_analysis_result;
     }
@@ -129,12 +129,27 @@ public:
         window_analysis_result = std::move(window_analysis_result_);
     }
 
+    bool hasQualify() const
+    {
+        return qualify_analysis_result.filter_actions != nullptr;
+    }
+
+    FilterAnalysisResult & getQualify()
+    {
+        return qualify_analysis_result;
+    }
+
+    void addQualify(FilterAnalysisResult qualify_analysis_result_)
+    {
+        qualify_analysis_result = std::move(qualify_analysis_result_);
+    }
+
     bool hasSort() const
     {
         return sort_analysis_result.before_order_by_actions != nullptr;
     }
 
-    const SortAnalysisResult & getSort() const
+    SortAnalysisResult & getSort()
     {
         return sort_analysis_result;
     }
@@ -149,7 +164,7 @@ public:
         return limit_by_analysis_result.before_limit_by_actions != nullptr;
     }
 
-    const LimitByAnalysisResult & getLimitBy() const
+    LimitByAnalysisResult & getLimitBy()
     {
         return limit_by_analysis_result;
     }
@@ -165,6 +180,7 @@ private:
     AggregationAnalysisResult aggregation_analysis_result;
     FilterAnalysisResult having_analysis_result;
     WindowAnalysisResult window_analysis_result;
+    FilterAnalysisResult qualify_analysis_result;
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
 };

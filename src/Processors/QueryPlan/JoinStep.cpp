@@ -31,7 +31,7 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 
     if (!table_join.getClauses().empty())
-        description.emplace_back("Clauses", table_join.formatClauses(table_join.getClauses(), true /*short_format*/));
+        description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
 
     return description;
 }

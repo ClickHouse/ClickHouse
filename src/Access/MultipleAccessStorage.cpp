@@ -34,11 +34,23 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 
 MultipleAccessStorage::~MultipleAccessStorage()
 {
-    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    try
+    {
+        MultipleAccessStorage::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void MultipleAccessStorage::shutdown()
+{
+    /// It's better to shutdown the storages in the reverse order because they could depend on each other somehow.
     const auto storages = getStoragesPtr();
     for (const auto & storage : *storages | boost::adaptors::reversed)
     {
-        removeStorage(storage);
+        storage->shutdown();
     }
 }
 
@@ -70,6 +82,16 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
     ids_cache.clear();
+}
+
+void MultipleAccessStorage::removeAllStorages()
+{
+    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    const auto storages = getStoragesPtr();
+    for (const auto & storage : *storages | boost::adaptors::reversed)
+    {
+        removeStorage(storage);
+    }
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -238,7 +260,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids);
+        source_storage->remove(ids); // NOLINT
         need_rollback = true;
         destination_storage->insert(to_move, ids);
     }
@@ -331,7 +353,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -354,7 +376,7 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
             getStorageName());
     }
 
-    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
+    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
     {
         std::lock_guard lock{mutex};
         ids_cache.set(id, storage_for_insertion);

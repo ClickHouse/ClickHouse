@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
+
 --
 -- Atomic no SYNC
 -- (should go first to check that thread for DROP TABLE does not hang)
@@ -33,6 +35,7 @@ show tables from db_01517_atomic_sync;
 ---
 drop database if exists db_01517_ordinary;
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
 create database db_01517_ordinary Engine=Ordinary;
 
 create table db_01517_ordinary.source (key Int) engine=Null;

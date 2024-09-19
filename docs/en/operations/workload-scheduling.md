@@ -47,6 +47,8 @@ Example:
 
 Queries can be marked with setting `workload` to distinguish different workloads. If `workload` is not set, than value "default" is used. Note that you are able to specify the other value using settings profiles. Setting constraints can be used to make `workload` constant if you want all queries from the user to be marked with fixed value of `workload` setting.
 
+It is possible to assign a `workload` setting for background activities. Merges and mutations are using `merge_workload` and `mutation_workload` server settings correspondingly. These values can also be overridden for specific tables using `merge_workload` and `mutation_workload` merge tree settings
+
 Let's consider an example of a system with two different workloads: "production" and "development".
 
 ```sql
@@ -151,6 +153,9 @@ Example:
 </clickhouse>
 ```
 
-
 ## See also
  - [system.scheduler](/docs/en/operations/system-tables/scheduler.md)
+ - [merge_workload](/docs/en/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
+ - [merge_workload](/docs/en/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
+ - [mutation_workload](/docs/en/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
+ - [mutation_workload](/docs/en/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting

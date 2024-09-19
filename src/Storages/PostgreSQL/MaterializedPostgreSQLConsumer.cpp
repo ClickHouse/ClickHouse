@@ -313,7 +313,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 Int32 col_len = readInt32(message, pos, size);
                 String value;
                 for (Int32 i = 0; i < col_len; ++i)
-                    value += readInt8(message, pos, size);
+                    value += static_cast<char>(readInt8(message, pos, size));
 
                 insertValue(storage_data, value, column_idx);
                 break;
@@ -697,7 +697,13 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     insert->table_id = storage->getStorageID();
                     insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
 
-                    InterpreterInsertQuery interpreter(insert, insert_context, true);
+                    InterpreterInsertQuery interpreter(
+                        insert,
+                        insert_context,
+                        /* allow_materialized */ true,
+                        /* no_squash */ false,
+                        /* no_destination */ false,
+                        /* async_isnert */ false);
                     auto io = interpreter.execute();
                     auto input = std::make_shared<SourceFromSingleChunk>(
                         result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));

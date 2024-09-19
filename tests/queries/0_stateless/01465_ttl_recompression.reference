@@ -13,9 +13,9 @@ CREATE TABLE default.recompression_table\n(\n    `dt` DateTime,\n    `key` UInt6
 1_1_1	LZ4
 2_2_2	ZSTD(12)
 3_3_3	ZSTD(12)
-1_1_1	['plus(dt, toIntervalDay(1))']
-2_2_2	['plus(dt, toIntervalDay(1))']
-3_3_3	['plus(dt, toIntervalDay(1))']
+1_1_1	['dt + toIntervalDay(1)']
+2_2_2	['dt + toIntervalDay(1)']
+3_3_3	['dt + toIntervalDay(1)']
 1_1_1	LZ4
 2_2_2	LZ4
 3_3_3	LZ4

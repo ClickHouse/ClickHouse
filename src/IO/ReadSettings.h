@@ -10,7 +10,7 @@
 
 namespace DB
 {
-enum class LocalFSReadMethod
+enum class LocalFSReadMethod : uint8_t
 {
     /**
      * Simple synchronous reads with 'read'.
@@ -54,13 +54,14 @@ enum class LocalFSReadMethod
     pread_fake_async
 };
 
-enum class RemoteFSReadMethod
+enum class RemoteFSReadMethod : uint8_t
 {
     read,
     threadpool,
 };
 
 class MMappedFileCache;
+class PageCache;
 
 struct ReadSettings
 {
@@ -98,9 +99,13 @@ struct ReadSettings
     bool enable_filesystem_cache = true;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
-    /// Don't populate cache when the read is not part of query execution (e.g. background thread).
-    bool avoid_readthrough_cache_outside_query_context = true;
     size_t filesystem_cache_segments_batch_size = 20;
+    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    bool use_page_cache_for_disks_without_file_cache = false;
+    bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
+    bool page_cache_inject_eviction = false;
+    std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_query_cache = true;
@@ -113,17 +118,13 @@ struct ReadSettings
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;
 
-    // Resource to be used during reading
-    ResourceLink resource_link;
+    IOSchedulingSettings io_scheduling;
 
-    size_t http_max_tries = 1;
+    size_t http_max_tries = 10;
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
     bool http_make_head_request = true;
-
-    /// Monitoring
-    bool for_object_storage = false; // to choose which profile events should be incremented
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {

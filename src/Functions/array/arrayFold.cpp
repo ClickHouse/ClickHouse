@@ -14,7 +14,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
 }
@@ -32,10 +32,16 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
+    /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do
+    /// It's much simpler to avoid the adapters
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
         DataTypes accumulator_and_array_types(arguments.size() - 1);
         accumulator_and_array_types[0] = arguments.back();
@@ -58,7 +64,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
         const auto * lambda_function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
         if (!lambda_function_type)
@@ -164,8 +170,7 @@ public:
         {
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
-            if (cur_element_in_cur_array > max_array_size)
-                max_array_size = cur_element_in_cur_array;
+            max_array_size = std::max(cur_element_in_cur_array, max_array_size);
             while (first_row_with_non_empty_array < num_rows && cur_element_in_cur_array >= offsets[first_row_with_non_empty_array] - offsets[first_row_with_non_empty_array - 1])
             {
                 ++first_row_with_non_empty_array;

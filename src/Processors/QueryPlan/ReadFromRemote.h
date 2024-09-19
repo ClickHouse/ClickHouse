@@ -9,10 +9,6 @@
 
 namespace DB
 {
-
-class ConnectionPoolWithFailover;
-using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
-
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
 
@@ -73,6 +69,7 @@ public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
         ClusterPtr cluster_,
+        const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
@@ -81,7 +78,9 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         LoggerPtr log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
+        std::vector<ConnectionPoolPtr> pools_to_use,
+        std::optional<size_t> exclude_pool_index_ = std::nullopt);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -91,11 +90,11 @@ public:
     void enforceAggregationInOrder();
 
 private:
-
-    void addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
+    StorageID storage_id;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;
@@ -104,6 +103,8 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
+    std::vector<ConnectionPoolPtr> pools_to_use;
+    std::optional<size_t> exclude_pool_index;
 };
 
 }

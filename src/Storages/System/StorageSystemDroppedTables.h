@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class StorageSystemDroppedTables final : public IStorageSystemOneBlock<StorageSystemDroppedTables>
+class StorageSystemDroppedTables final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemMarkedDroppedTables"; }
@@ -14,7 +14,7 @@ public:
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

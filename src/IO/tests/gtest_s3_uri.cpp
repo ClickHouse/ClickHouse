@@ -74,6 +74,40 @@ const TestCase TestCases[] = {
      "data",
      "",
      true},
+    {S3::URI("https://bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/root/nested/file.txt"),
+     "https://bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com",
+     "root",
+     "nested/file.txt",
+     "",
+     false},
+    // Test with a file with no extension
+    {S3::URI("https://bucket.vpce-03b2c987f1bd55c5f-j3b4vg7w.s3.ap-southeast-2.vpce.amazonaws.com/some_bucket/document"),
+     "https://bucket.vpce-03b2c987f1bd55c5f-j3b4vg7w.s3.ap-southeast-2.vpce.amazonaws.com",
+     "some_bucket",
+     "document",
+     "",
+     false},
+    // Test with a deeply nested file path
+    {S3::URI("https://bucket.vpce-0242cd56f1bd55c5f-l5b7vg8x.s3.sa-east-1.vpce.amazonaws.com/some_bucket/b/c/d/e/f/g/h/i/j/data.json"),
+     "https://bucket.vpce-0242cd56f1bd55c5f-l5b7vg8x.s3.sa-east-1.vpce.amazonaws.com",
+     "some_bucket",
+     "b/c/d/e/f/g/h/i/j/data.json",
+     "",
+     false},
+    // Zonal
+    {S3::URI("https://bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w-us-east-1a.s3.us-east-1.vpce.amazonaws.com/root/nested/file.txt"),
+     "https://bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w-us-east-1a.s3.us-east-1.vpce.amazonaws.com",
+     "root",
+     "nested/file.txt",
+     "",
+     false},
+    // Non standard port
+    {S3::URI("https://bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w-us-east-1a.s3.us-east-1.vpce.amazonaws.com:65535/root/nested/file.txt"),
+     "https://bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w-us-east-1a.s3.us-east-1.vpce.amazonaws.com:65535",
+     "root",
+     "nested/file.txt",
+     "",
+     false},
 };
 
 class S3UriTest : public testing::TestWithParam<std::string>
@@ -162,11 +196,22 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
-}
-
-TEST_P(S3UriTest, invalidPatterns)
-{
-    ASSERT_ANY_THROW(S3::URI new_uri(GetParam()));
+    {
+        S3::URI uri("https://test-perf-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com/test.csv");
+        ASSERT_EQ("https://s3express-eun1-az1.eu-north-1.amazonaws.com", uri.endpoint);
+        ASSERT_EQ("test-perf-bucket--eun1-az1--x-s3", uri.bucket);
+        ASSERT_EQ("test.csv", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
+        S3::URI uri("https://bucket-test.cn-beijing-internal.oss-data-acc.aliyuncs.com/cc-2zeh496zqm0g6e09g");
+        ASSERT_EQ("https://cn-beijing-internal.oss-data-acc.aliyuncs.com", uri.endpoint);
+        ASSERT_EQ("bucket-test", uri.bucket);
+        ASSERT_EQ("cc-2zeh496zqm0g6e09g", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
 }
 
 TEST(S3UriTest, versionIdChecks)
@@ -181,19 +226,5 @@ TEST(S3UriTest, versionIdChecks)
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    S3,
-    S3UriTest,
-    testing::Values(
-        "https:///",
-        "https://.s3.amazonaws.com/key",
-        "https://s3.amazonaws.com/key",
-        "https://jokserfn.s3amazonaws.com/key",
-        "https://s3.amazonaws.com//",
-        "https://amazonaws.com/",
-        "https://amazonaws.com//",
-        "https://amazonaws.com//key"));
-
 }
-
 #endif

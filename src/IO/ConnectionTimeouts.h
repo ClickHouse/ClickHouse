@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Timespan.h>
 
 namespace DB
 {
 
+struct ServerSettings;
 struct Settings;
 
 #define APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(M) \
@@ -16,8 +17,8 @@ struct Settings;
     M(secure_connection_timeout, withSecureConnectionTimeout) \
     M(send_timeout, withSendTimeout) \
     M(receive_timeout, withReceiveTimeout) \
-    M(tcp_keep_alive_timeout, withTcpKeepAliveTimeout) \
-    M(http_keep_alive_timeout, withHttpKeepAliveTimeout) \
+    M(tcp_keep_alive_timeout, withTCPKeepAliveTimeout) \
+    M(http_keep_alive_timeout, withHTTPKeepAliveTimeout) \
     M(hedged_connection_timeout, withHedgedConnectionTimeout) \
     M(receive_data_timeout, withReceiveDataTimeout) \
     M(handshake_timeout, withHandshakeTimeout) \
@@ -34,6 +35,8 @@ struct ConnectionTimeouts
 
     Poco::Timespan tcp_keep_alive_timeout = Poco::Timespan(DEFAULT_TCP_KEEP_ALIVE_TIMEOUT, 0);
     Poco::Timespan http_keep_alive_timeout = Poco::Timespan(DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, 0);
+    size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
 
     /// Timeouts for HedgedConnections
     Poco::Timespan hedged_connection_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
@@ -68,8 +71,10 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
 
     ConnectionTimeouts & withConnectionTimeout(size_t seconds);
     ConnectionTimeouts & withConnectionTimeout(Poco::Timespan span);
+    ConnectionTimeouts & withHTTPKeepAliveMaxRequests(size_t requests);
 };
 
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define DEFINE_BUILDER_FOR_MEMBER(member, setter_func) \
     inline ConnectionTimeouts & ConnectionTimeouts::setter_func(size_t seconds) \
     { \
@@ -82,6 +87,7 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
     } \
 
     APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DEFINE_BUILDER_FOR_MEMBER)
+/// NOLINTEND(bugprone-macro-parentheses)
 
 #undef DEFINE_BUILDER_FOR_MEMBER
 
@@ -110,5 +116,14 @@ inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Time
     secure_connection_timeout = span;
     return *this;
 }
+
+inline ConnectionTimeouts & ConnectionTimeouts::withHTTPKeepAliveMaxRequests(size_t requests)
+{
+    http_keep_alive_max_requests = requests;
+    return *this;
+}
+
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts);
+ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session);
 
 }

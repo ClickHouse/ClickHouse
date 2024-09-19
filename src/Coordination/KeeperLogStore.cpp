@@ -66,13 +66,16 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
     return changelog.entryAt(index);
 }
 
+bool KeeperLogStore::is_conf(uint64_t index)
+{
+    std::lock_guard lock(changelog_lock);
+    return changelog.isConfigLog(index);
+}
+
 uint64_t KeeperLogStore::term_at(uint64_t index)
 {
     std::lock_guard lock(changelog_lock);
-    auto entry = changelog.entryAt(index);
-    if (entry)
-        return entry->get_term();
-    return 0;
+    return changelog.termAt(index);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperLogStore::pack(uint64_t index, int32_t cnt)
@@ -142,7 +145,13 @@ uint64_t KeeperLogStore::last_durable_index()
 void KeeperLogStore::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server)
 {
     std::lock_guard lock(changelog_lock);
-    return changelog.setRaftServer(raft_server);
+    changelog.setRaftServer(raft_server);
+}
+
+void KeeperLogStore::getKeeperLogInfo(KeeperLogInfo & log_info) const
+{
+    std::lock_guard lock(changelog_lock);
+    changelog.getKeeperLogInfo(log_info);
 }
 
 }

@@ -1,4 +1,6 @@
 #include <IO/S3/Client.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
@@ -21,13 +23,14 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
-
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+
+#include <Core/Settings.h>
 
 #include <base/sleep.h>
 
-#include <algorithm>
 
 namespace ProfileEvents
 {
@@ -41,14 +44,22 @@ namespace ProfileEvents
     extern const Event TinyS3Clients;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric DiskS3NoSuchKeyErrors;
+}
+
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool s3_use_adaptive_timeouts;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -106,19 +117,6 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
-void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
-{
-    if (auth_credentials.GetAWSAccessKeyId().empty())
-    {
-        return;
-    }
-    /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
-    if (!std::all_of(auth_credentials.GetAWSAccessKeyId().begin(), auth_credentials.GetAWSAccessKeyId().end(), isWordCharASCII))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has an invalid character");
-    }
-}
-
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const HTTPHeaderEntries & extra_headers
@@ -144,7 +142,6 @@ std::unique_ptr<Client> Client::create(
     const ClientSettings & client_settings)
 {
     verifyClientConfiguration(client_configuration);
-    validateCredentials(credentials_provider->GetAWSCredentials());
     return std::unique_ptr<Client>(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
 }
@@ -320,6 +317,9 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     request.setApiMode(api_mode);
 
+    if (isS3ExpressBucket())
+        request.setIsS3ExpressBucket();
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -391,7 +391,8 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
+    return processRequestResult(
+        HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
@@ -411,7 +412,8 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
@@ -546,7 +548,11 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-    if (client_settings.disable_checksum)
+
+    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
+    if (client_settings.is_s3express_bucket)
+        request.setIsS3ExpressBucket();
+    else if (client_settings.disable_checksum)
         request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -655,14 +661,14 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 if constexpr (IsReadMethod)
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
                 }
                 else
                 {
-                    if (client_configuration.for_disk_s3)
+                    if (isClientForDisk())
                         ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
                     else
                         ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
@@ -690,6 +696,26 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     };
 
     return doRequest(request, with_retries);
+}
+
+template <typename RequestResult>
+RequestResult Client::processRequestResult(RequestResult && outcome) const
+{
+    if (outcome.IsSuccess() || !isClientForDisk())
+        return std::forward<RequestResult>(outcome);
+
+    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
+
+    String enriched_message = fmt::format(
+        "{} {}",
+        outcome.GetError().GetMessage(),
+        "This error happened for S3 disk.");
+
+    auto error = outcome.GetError();
+    error.SetMessage(enriched_message);
+
+    return RequestResult(error);
 }
 
 bool Client::supportsMultiPartCopy() const
@@ -731,7 +757,7 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     if (outcome.IsSuccess())
     {
         const auto & result = outcome.GetResult();
-        region = result.GetRegion();
+        region = result.GetBucketRegion();
     }
     else
     {
@@ -812,6 +838,17 @@ void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) con
     cache->uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
 }
 
+ClientCache::ClientCache(const ClientCache & other)
+{
+    {
+        std::lock_guard lock(other.region_cache_mutex);
+        region_for_bucket_cache = other.region_for_bucket_cache;
+    }
+    {
+        std::lock_guard lock(other.uri_cache_mutex);
+        uri_for_bucket_cache = other.uri_for_bucket_cache;
+    }
+}
 
 void ClientCache::clearCache()
 {
@@ -931,9 +968,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
-        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings
-    );
+        client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
+                                            : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        client_settings);
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
@@ -949,10 +986,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,
@@ -962,7 +999,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
-        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
+        context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         get_request_throttler,
         put_request_throttler,
         error_report);
@@ -972,6 +1009,11 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     return config;
 }
 
+bool isS3ExpressEndpoint(const std::string & endpoint)
+{
+    /// On one hand this check isn't 100% reliable, on the other - all it will change is whether we attach checksums to the requests.
+    return endpoint.contains("s3express");
+}
 }
 
 }

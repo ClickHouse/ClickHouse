@@ -13,8 +13,8 @@
 #include <vector>
 #include <absl/container/flat_hash_map.h>
 
-/// GinIndexStore manages the generalized inverted index ("gin") for a data part, and it is made up of one or more immutable
-/// index segments.
+/// GinIndexStore manages the generalized inverted index ("gin") (full-text index )for a data part, and it is made up of one or more
+/// immutable index segments.
 ///
 /// There are 4 types of index files in a store:
 ///  1. Segment ID file(.gin_sid): it contains one byte for version followed by the next available segment ID.
@@ -299,5 +299,10 @@ private:
     GinIndexStores stores;
     std::mutex mutex;
 };
+
+inline bool isGinFile(const String &file_name)
+{
+    return (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"));
+}
 
 }

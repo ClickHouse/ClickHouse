@@ -9,7 +9,7 @@ using RegionID = UInt32;
 using RegionDepth = UInt8;
 using RegionPopulation = UInt32;
 
-enum class RegionType : Int8
+enum class RegionType : int8_t
 {
     Hidden = -1,
     Continent = 1,

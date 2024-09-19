@@ -9,10 +9,8 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc99-extensions"
-#endif
 
 namespace DB
 {
@@ -143,6 +141,16 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
     bool is_table_function;
+};
+
+
+/** Similar to ParserFunction (and yields ASTFunction), but can also parse identifiers without braces.
+  */
+class ParserExpressionWithOptionalArguments : public IParserBase
+{
+protected:
+    const char * getName() const override { return "expression with optional parameters"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 
@@ -297,6 +305,4 @@ protected:
 
 }
 
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif

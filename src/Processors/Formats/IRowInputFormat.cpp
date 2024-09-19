@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
 
@@ -50,7 +51,8 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
-        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM;
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)

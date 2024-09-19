@@ -94,7 +94,7 @@ namespace
         }
         void operator() (const IPv6 & x) const
         {
-            return operator()(String(reinterpret_cast<const char *>(&x), 16));
+            operator()(String(reinterpret_cast<const char *>(&x), 16));
         }
         void operator() (const Float64 & x) const
         {
@@ -241,7 +241,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(value[i].get<IPv4>().toUnderType());
+                result += toString(value[i].safeGet<IPv4>().toUnderType());
             else
                 result += applyVisitor(to_string_visitor, value[i]);
 
@@ -413,12 +413,12 @@ void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataM
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
+    StorageMetadataPtr metadata_snapshot, ContextPtr storage_context,
+    IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    const auto & context = storage.getContext();
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
-    return store(partition_key_sample, data_part_storage, checksums, context->getWriteSettings());
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage_context).sample_block;
+    return store(partition_key_sample, data_part_storage, checksums, storage_context->getWriteSettings());
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
@@ -464,45 +464,6 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
             partition_column.name = "modulo" + partition_column.name.substr(std::strlen(modulo_legacy_function_name));
 
         partition_column.column->get(row, value[i++]);
-    }
-}
-
-void MergeTreePartition::createAndValidateMinMaxPartitionIds(
-    const StorageMetadataPtr & metadata_snapshot, Block block_with_min_max_partition_ids, ContextPtr context)
-{
-    if (!metadata_snapshot->hasPartitionKey())
-        return;
-
-    auto partition_key_names_and_types = executePartitionByExpression(metadata_snapshot, block_with_min_max_partition_ids, context);
-    value.resize(partition_key_names_and_types.size());
-
-    /// Executing partition_by expression adds new columns to passed block according to partition functions.
-    /// The block is passed by reference and is used afterwards. `moduloLegacy` needs to be substituted back
-    /// with just `modulo`, because it was a temporary substitution.
-    static constexpr std::string_view modulo_legacy_function_name = "moduloLegacy";
-
-    size_t i = 0;
-    for (const auto & element : partition_key_names_and_types)
-    {
-        auto & partition_column = block_with_min_max_partition_ids.getByName(element.name);
-
-        if (element.name.starts_with(modulo_legacy_function_name))
-            partition_column.name.replace(0, modulo_legacy_function_name.size(), "modulo");
-
-        Field extracted_min_partition_id_field;
-        Field extracted_max_partition_id_field;
-
-        partition_column.column->get(0, extracted_min_partition_id_field);
-        partition_column.column->get(1, extracted_max_partition_id_field);
-
-        if (extracted_min_partition_id_field != extracted_max_partition_id_field)
-        {
-            throw Exception(
-                ErrorCodes::INVALID_PARTITION_VALUE,
-                "Can not create the partition. A partition can not contain values that have different partition ids");
-        }
-
-        partition_column.column->get(0u, value[i++]);
     }
 }
 

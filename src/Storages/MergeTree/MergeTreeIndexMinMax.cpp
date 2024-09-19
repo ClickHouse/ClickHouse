@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -156,7 +157,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
 {
     return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
 }
@@ -164,7 +165,7 @@ KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr 
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
+    const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_actions_dag, context))
 {
@@ -197,7 +198,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const Me
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+    const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_actions_dag, context);
 }
@@ -217,7 +218,20 @@ MergeTreeIndexPtr minmaxIndexCreator(
     return std::make_shared<MergeTreeIndexMinMax>(index);
 }
 
-void minmaxIndexValidator(const IndexDescription & /* index */, bool /* attach */)
+void minmaxIndexValidator(const IndexDescription & index, bool attach)
 {
+    if (attach)
+        return;
+
+    for (const auto & column : index.sample_block)
+    {
+        if (!column.type->isComparable())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Data type of argument for minmax index must be comparable, got {} type for column {} instead",
+                column.type->getName(), column.name);
+        }
+    }
 }
+
 }

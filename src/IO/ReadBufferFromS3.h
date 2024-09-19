@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -28,7 +28,7 @@ private:
     String bucket;
     String key;
     String version_id;
-    const S3Settings::RequestSettings request_settings;
+    const S3::RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
@@ -47,7 +47,7 @@ public:
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3::RequestSettings & request_settings_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,
@@ -55,7 +55,7 @@ public:
         bool restricted_seek_ = false,
         std::optional<size_t> file_size = std::nullopt);
 
-    ~ReadBufferFromS3() override;
+    ~ReadBufferFromS3() override = default;
 
     bool nextImpl() override;
 
@@ -63,7 +63,7 @@ public:
 
     off_t getPosition() override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
@@ -74,7 +74,7 @@ public:
 
     String getFileName() const override { return bucket + "/" + key; }
 
-    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) override;
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
 
@@ -89,8 +89,6 @@ private:
     bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
-
-    bool readAllRangeSuccessfully() const;
 
     ReadSettings read_settings;
 

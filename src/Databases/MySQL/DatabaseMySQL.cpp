@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 #    include <string>
+#    include <base/isSharedPtrUnique.h>
 #    include <Databases/DatabaseFactory.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
@@ -29,6 +30,7 @@
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
+#    include <Core/Settings.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
 #    include <Parsers/ASTIdentifier.h>
@@ -37,6 +39,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -105,7 +113,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
@@ -174,12 +182,14 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         ast_storage->settings = nullptr;
     }
 
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-    auto create_table_query = DB::getCreateQueryFromStorage(storage,
-                                                            table_storage_define,
-                                                            true,
-                                                            max_parser_depth,
-                                                            throw_on_error);
+    const Settings & settings = getContext()->getSettingsRef();
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        table_storage_define,
+        true,
+        static_cast<unsigned>(settings[Setting::max_parser_depth]),
+        static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
+        throw_on_error);
     return create_table_query;
 }
 
@@ -339,7 +349,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
-    fs::remove_all(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
@@ -352,7 +362,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     {
         for (auto iterator = outdated_tables.begin(); iterator != outdated_tables.end();)
         {
-            if (!iterator->unique())
+            if (!isSharedPtrUnique(*iterator))
                 ++iterator;
             else
             {
@@ -388,7 +398,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
     if (fs::exists(remove_flag))
-        fs::remove(remove_flag);
+        (void)fs::remove(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
@@ -438,7 +448,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     if (fs::exists(remove_flag))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exists remove tables, it is bug.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exist remove tables, it is bug.",
                         backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     auto table_iter = local_tables_cache.find(table_name);
@@ -542,7 +552,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
 
             if (engine_name == "MySQL")
             {
-                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+                size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
                 configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
             }
             else
@@ -580,7 +590,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn);
+    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true});
 }
 }
 

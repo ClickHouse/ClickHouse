@@ -265,8 +265,6 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-You can work with dates without using `INTERVAL`, just by adding or subtracting seconds, minutes, and hours. For example, an interval of one day can be set by adding `60*60*24`.
-
 :::note    
 The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
 :::
@@ -353,7 +351,7 @@ For efficiency, the `and` and `or` functions accept any number of arguments. The
 
 ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
-### IS NULL
+### IS NULL {#is_null}
 
 - For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NULL` operator returns:
     - `1`, if the value is `NULL`.
@@ -374,7 +372,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-### IS NOT NULL
+### IS NOT NULL {#is_not_null}
 
 - For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
     - `0`, if the value is `NULL`.

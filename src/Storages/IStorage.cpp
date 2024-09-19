@@ -1,6 +1,7 @@
 #include <Storages/IStorage.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -12,13 +13,18 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/Statistics/Estimator.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool parallelize_output_from_storages;
+}
+
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
@@ -27,10 +33,20 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
+IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
+    : storage_id(std::move(storage_id_))
+    , virtuals(std::make_unique<VirtualColumnsDescription>())
+{
+    if (metadata_)
+        metadata.set(std::move(metadata_));
+    else
+        metadata.set(std::make_unique<StorageInMemoryMetadata>());
+}
+
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && getVirtuals().contains(column_name);
+    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -146,7 +162,7 @@ void IStorage::read(
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
+    const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
     if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
@@ -226,7 +242,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionEstimator IStorage::getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const
+ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
 {
     return {};
 }
@@ -235,11 +251,6 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
     storage_id = new_table_id;
-}
-
-NamesAndTypesList IStorage::getVirtuals() const
-{
-    return {};
 }
 
 Names IStorage::getAllRegisteredNames() const
@@ -303,7 +314,7 @@ void IStorage::backupData(BackupEntriesCollector &, const String &, const std::o
 void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
     /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
-    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
+    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup, /*recursive*/ false);
     if (!filenames.empty())
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
                         getStorageID().getFullTableName(), data_path_in_backup);
@@ -319,9 +330,8 @@ std::string PrewhereInfo::dump() const
         ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
     }
 
-    if (prewhere_actions)
     {
-        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
+        ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column
@@ -335,10 +345,8 @@ std::string FilterDAGInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-    if (actions)
-    {
-        ss << "actions " << actions->dumpDAG() << "\n";
-    }
+
+    ss << "actions " << actions.dumpDAG() << "\n";
 
     return ss.str();
 }

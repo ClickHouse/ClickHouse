@@ -19,10 +19,8 @@ RUN apt-get update -y \
             openssl \
             netcat-openbsd \
             brotli \
-    && apt-get clean
-
-COPY run.sh /
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-CMD ["/bin/bash", "/run.sh"]

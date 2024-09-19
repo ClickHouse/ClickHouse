@@ -2353,7 +2353,7 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
     )
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
     show_db = clickhouse_node.query("SHOW CREATE DATABASE table_overrides")
-    assert "TABLE OVERRIDE `t1`\\n(\\n\\n)" in show_db, show_db
+    assert "TABLE OVERRIDE t1\\n(\\n\\n)" in show_db, show_db
 
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
@@ -3379,7 +3379,7 @@ def gtid_after_attach_test(clickhouse_node, mysql_node, replication):
         f"CREATE TABLE {db}.t(id INT PRIMARY KEY AUTO_INCREMENT, score int, create_time DATETIME DEFAULT NOW())"
     )
 
-    db_count = 6
+    db_count = 4
     for i in range(db_count):
         replication.create_db_ch(
             f"{db}{i}",
@@ -3392,7 +3392,11 @@ def gtid_after_attach_test(clickhouse_node, mysql_node, replication):
         "t\n",
     )
     for i in range(int(db_count / 2)):
-        clickhouse_node.query(f"DETACH DATABASE {db}{i}")
+        check_query(
+            clickhouse_node,
+            f"DETACH DATABASE {db}{i}",
+            "",
+        )
 
     mysql_node.query(f"USE {db}")
     rows = 10000
@@ -3408,4 +3412,43 @@ def gtid_after_attach_test(clickhouse_node, mysql_node, replication):
         "1\n",
         interval_seconds=1,
         retry_count=300,
+    )
+
+
+def mysql_create_database_without_connection(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS create_without_connection")
+    clickhouse_node.query("DROP DATABASE IF EXISTS create_without_connection")
+    mysql_node.query("CREATE DATABASE create_without_connection")
+    mysql_node.query(
+        "CREATE TABLE create_without_connection.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+    )
+
+    clickhouse_node.cluster.pause_container(service_name)
+
+    assert "ConnectionFailed:" in clickhouse_node.query_and_get_error(
+        """
+        CREATE DATABASE create_without_connection
+        ENGINE = MaterializedMySQL('{}:3306', 'create_without_connection', 'root', 'clickhouse')
+        """.format(
+            service_name
+        )
+    )
+
+    clickhouse_node.query(
+        """
+        CREATE DATABASE create_without_connection
+        ENGINE = MaterializedMySQL('{}:3306', 'create_without_connection', 'root', 'clickhouse')
+        SETTINGS allow_startup_database_without_connection_to_mysql=1
+        """.format(
+            service_name
+        )
+    )
+
+    clickhouse_node.cluster.unpause_container(service_name)
+    mysql_node.alloc_connection()
+
+    check_query(
+        clickhouse_node,
+        "SHOW TABLES FROM create_without_connection FORMAT TSV",
+        "test\n",
     )

@@ -1,8 +1,8 @@
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterShowFunctionsQuery.h>
-
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterShowFunctionsQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowFunctionsQuery.h>
 
@@ -25,13 +25,13 @@ String InterpreterShowFunctionsQuery::getRewrittenQuery()
 
     const auto & query = query_ptr->as<ASTShowFunctionsQuery &>();
 
-    DatabasePtr systemDb = DatabaseCatalog::instance().getSystemDatabase();
+    DatabasePtr system_db = DatabaseCatalog::instance().getSystemDatabase();
 
     String rewritten_query = fmt::format(
         R"(
 SELECT *
 FROM {}.{})",
-        systemDb->getDatabaseName(),
+        system_db->getDatabaseName(),
         functions_table);
 
     if (!query.like.empty())

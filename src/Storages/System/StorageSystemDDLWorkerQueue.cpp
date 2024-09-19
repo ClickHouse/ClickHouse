@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -19,8 +20,15 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
-enum class Status
+enum class Status : uint8_t
 {
     INACTIVE,
     ACTIVE,
@@ -75,10 +83,9 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
     const auto & settings = context->getSettingsRef();
 
     String description = fmt::format("from {}", task.entry_path);
-    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
-    ASTPtr query = parseQuery(parser_query, begin, end, description,
-                              settings.max_query_size,
-                              settings.max_parser_depth);
+    ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
+    ASTPtr query = parseQuery(
+        parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
     String cluster_name;
     if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
@@ -182,7 +189,10 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 {
     auto maybe_finished_status = finished_data_future.get();
     if (maybe_finished_status.error == Coordination::Error::ZNONODE)
-        return fillStatusColumnsWithNulls(res_columns, col, Status::REMOVING);
+    {
+        fillStatusColumnsWithNulls(res_columns, col, Status::REMOVING);
+        return;
+    }
 
     /// asyncTryGet should throw on other error codes
     assert(maybe_finished_status.error == Coordination::Error::ZOK);
@@ -198,13 +208,13 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 
     UInt64 query_finish_time_ms = maybe_finished_status.stat.ctime;
     /// query_finish_time
-    res_columns[col++]->insert(static_cast<UInt64>(query_finish_time_ms / 1000));
+    res_columns[col++]->insert(query_finish_time_ms / 1000);
     /// query_duration_ms
-    res_columns[col++]->insert(static_cast<UInt64>(query_finish_time_ms - query_create_time_ms));
+    res_columns[col++]->insert(query_finish_time_ms - query_create_time_ms);
 }
 
 
-void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto& ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();

@@ -8,6 +8,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -88,26 +89,38 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'merge' requires exactly 2 arguments - name "
-                        "of source database and regexp for table names.");
+                        "Table function 'merge' requires from 1 to 2 parameters: "
+                        "merge(['db_name',] 'tables_regexp')");
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.size() != 2)
+    if (args.size() == 1)
+    {
+        database_is_regexp = false;
+        source_database_name_or_regexp = context->getCurrentDatabase();
+
+        args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
+        source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");
+    }
+    else if (args.size() == 2)
+    {
+        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
+
+        database_is_regexp = is_regexp;
+
+        if (!is_regexp)
+            args[0] = database_ast;
+        source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+
+        args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
+        source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
+    }
+    else
+    {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'merge' requires exactly 2 arguments - name "
-                        "of source database and regexp for table names.");
-
-    auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
-
-    database_is_regexp = is_regexp;
-
-    if (!is_regexp)
-        args[0] = database_ast;
-    source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
-
-    args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
-    source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
+                        "Table function 'merge' requires from 1 to 2 parameters: "
+                        "merge(['db_name',] 'tables_regexp')");
+    }
 }
 
 

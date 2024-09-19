@@ -2,12 +2,15 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/Stopwatch.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
+
 
 namespace CurrentMetrics
 {
@@ -19,7 +22,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class AggregatedChunkInfo : public ChunkInfo
+class AggregatedChunkInfo : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
 public:
     bool is_overflows = false;
@@ -71,16 +74,12 @@ struct AggregatingTransformParams
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
-    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
-
-        for (auto & mut : mutexes)
-            mut = std::make_unique<std::mutex>();
     }
 
     ~ManyAggregatedData()
@@ -171,6 +170,7 @@ public:
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
@@ -213,6 +213,8 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    RowsBeforeStepCounterPtr rows_before_aggregation;
 
     void initGenerate();
 };

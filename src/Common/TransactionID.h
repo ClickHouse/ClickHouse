@@ -16,7 +16,7 @@ class MergeTreeTransaction;
 /// or transaction object is not needed and not passed intentionally.
 #ifndef NO_TRANSACTION_PTR
 #define NO_TRANSACTION_PTR std::shared_ptr<MergeTreeTransaction>(nullptr)
-#define NO_TRANSACTION_RAW static_cast<MergeTreeTransaction *>(nullptr)
+#define NO_TRANSACTION_RAW static_cast<MergeTreeTransaction *>(nullptr) /// NOLINT(bugprone-macro-parentheses)
 #endif
 
 /// Commit Sequence Number
@@ -108,7 +108,7 @@ struct fmt::formatter<DB::TransactionID>
     }
 
     template<typename FormatContext>
-    auto format(const DB::TransactionID & tid, FormatContext & context)
+    auto format(const DB::TransactionID & tid, FormatContext & context) const
     {
         return fmt::format_to(context.out(), "({}, {}, {})", tid.start_csn, tid.local_tid, tid.host_id);
     }

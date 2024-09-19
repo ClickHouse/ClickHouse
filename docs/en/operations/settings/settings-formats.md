@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 
@@ -171,8 +171,8 @@ If the `schema_inference_hints` is not formated properly, or if there is a typo 
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
-Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+Controls making inferred types `Nullable` in schema inference.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 
 Default value: `true`.
 
@@ -194,6 +194,17 @@ If enabled, ClickHouse will try to infer type `DateTime64` from string fields in
 
 Enabled by default.
 
+## input_format_try_infer_variants {#input_format_try_infer_variants}
+
+If enabled, ClickHouse will try to infer type [`Variant`](../../sql-reference/data-types/variant.md) in schema inference for text formats when there is more than one possible type for column/array elements.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.
+
 ## date_time_input_format {#date_time_input_format}
 
 Allows choosing a parser of the text representation of date and time.
@@ -211,6 +222,8 @@ Possible values:
     ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
 
 Default value: `'basic'`.
+
+Cloud default value: `'best_effort'`.
 
 See also:
 
@@ -465,7 +478,7 @@ Enabled by default.
 
 Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
 In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
-by using String type for keys with unknown types. 
+by using String type for keys with unknown types.
 
 Example:
 
@@ -649,6 +662,12 @@ This setting works only when setting `input_format_json_named_tuples_as_objects`
 
 Enabled by default.
 
+## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
+
+Throw an exception if JSON string contains bad escape sequence in JSON input formats. If disabled, bad escape sequences will remain as is in the data.
+
+Enabled by default.
+
 ## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format.
@@ -725,6 +744,17 @@ When enabled, escape special characters in Markdown.
 ```
 ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
 ```
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
+
+Default value: 0.
+
+### input_format_json_empty_as_default {#input_format_json_empty_as_default}
+
+When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
 Possible values:
 
@@ -823,7 +853,13 @@ Default value: `0`.
 
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
-Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+Use DOS/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+
+Disabled by default.
+
+### input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
+
+Use DOS/Windows-style line separator (CRLF) for TSV input files instead of Unix style (LF).
 
 Disabled by default.
 
@@ -889,7 +925,7 @@ Default value: `,`.
 
 If it is set to true, allow strings in single quotes.
 
-Enabled by default.
+Disabled by default.
 
 ### format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
 
@@ -1365,7 +1401,7 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Disabled by default.
+Enabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
@@ -1402,6 +1438,24 @@ Default value: `2.latest`.
 Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
 
 Default value: `lz4`.
+
+### input_format_parquet_max_block_size {#input_format_parquet_max_block_size}
+Max block row size for parquet reader. By controlling the number of rows in each block, you can control the memory usage, 
+and in some operators that cache blocks, you can improve the accuracy of the operator's memory control。
+
+Default value: `65409`.
+
+### input_format_parquet_prefer_block_bytes {#input_format_parquet_prefer_block_bytes}
+Average block bytes output by parquet reader. Lowering the configuration in the case of reading some high compression parquet relieves the memory pressure.
+
+Default value: `65409 * 256 = 16744704`
+
+### output_format_parquet_write_page_index {#input_format_parquet_max_block_size}
+
+Could add page index into parquet files. To enable this, need set `output_format_parquet_use_custom_encoder`=`false` and
+`output_format_parquet_write_page_index`=`true`.
+
+Enable by default.
 
 ## Hive format settings {#hive-format-settings}
 
@@ -1603,7 +1657,7 @@ possible values:
 -   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
 -   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
 
-Default value is `auto`. 
+Default value is `auto`.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
@@ -1634,7 +1688,7 @@ Possible values:
 - 0 — Output without row numbers.
 - 1 — Output with row numbers.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
@@ -1654,11 +1708,79 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
+### output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
+
+Print a readable number tip on the right side of the table if the block consists of a single number which exceeds
+this value (except 0).
+
+Possible values:
+
+- 0 — The readable number tip will not be printed.
+- Positive integer — The readable number tip will be printed if the single number exceeds this value.
+
+Default value: `1000000`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT 1000000000 as a;
+```
+
+Result:
+```text
+┌──────────a─┐
+│ 1000000000 │ -- 1.00 billion
+└────────────┘
+```
+
+## output_format_pretty_display_footer_column_names
+
+Display column names in the footer if there are many table rows.
+
+Possible values:
+
+- 0 — No column names are displayed in the footer.
+- 1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows) (50 by default).
+
+Default value: `1`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
+```
+
+Result:
+
+```response
+      ┌─number─┬─toTypeName(number)─┐
+   1. │      0 │ UInt64             │
+   2. │      1 │ UInt64             │
+   3. │      2 │ UInt64             │
+   ...
+ 999. │    998 │ UInt64             │
+1000. │    999 │ UInt64             │
+      └─number─┴─toTypeName(number)─┘
+```
+## output_format_pretty_display_footer_column_names_min_rows
+
+Sets the minimum number of rows for which a footer with column names will be displayed if setting [output_format_pretty_display_footer_column_names](#output_format_pretty_display_footer_column_names) is enabled.
+
+Default value: `50`.
+
 ## Template format settings {#template-format-settings}
 
 ### format_template_resultset {#format_template_resultset}
 
 Path to file which contains format string for result set (for Template format).
+
+### format_template_resultset_format {#format_template_resultset_format}
+
+Format string for result set (for Template format)
 
 ### format_template_row {#format_template_row}
 
@@ -1667,6 +1789,10 @@ Path to file which contains format string for rows (for Template format).
 ### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 Delimiter between rows (for Template format).
+
+### format_template_row_format {#format_template_row_format}
+
+Format string for rows (for Template format)
 
 ## CustomSeparated format settings {custom-separated-format-settings}
 
@@ -1847,6 +1973,18 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 
 Default value: `1GiB`.
 
+### output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
+
+Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes output format.
+
+Disabled by default.
+
+### input_format_binary_decode_types_in_binary_format {#input_format_binary_decode_types_in_binary_format}
+
+Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes input format.
+
+Disabled by default.
+
 ## Native format settings {#native-format-settings}
 
 ### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
@@ -1854,3 +1992,15 @@ Default value: `1GiB`.
 Allow types conversion in Native input format between columns from input data and requested columns.
 
 Enabled by default.
+
+### output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
+
+Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native output format.
+
+Disabled by default.
+
+### input_format_native_decode_types_in_binary_format {#input_format_native_decode_types_in_binary_format}
+
+Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native input format.
+
+Disabled by default.

@@ -23,7 +23,6 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
 
 # Table of Contents
 
-- [ClickHouse GitHub data](#clickhouse-github-data)
 - [Table of Contents](#table-of-contents)
 - [Generating the data](#generating-the-data)
 - [Downloading and inserting the data](#downloading-and-inserting-the-data)

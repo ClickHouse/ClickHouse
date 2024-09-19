@@ -325,11 +325,21 @@ void DWARFBlockInputFormat::skipAttribute(
     const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
     const UnitState & unit) const
 {
-    if (!llvm::DWARFFormValue::skipValue(
-        attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
-                "Failed to skip attribute {} of form {} at offset {}",
-                llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
+    if (attr.Form == llvm::dwarf::DW_FORM_strx3)
+    {
+        /// DWARFFormValue::skipValue() fails on DW_FORM_strx3 because the `switch` statement is
+        /// missing this form for some reason. Maybe it's a bug in llvm.
+        /// Use extractValue() to work around.
+        parseAttribute(attr, offset, unit);
+    }
+    else
+    {
+        if (!llvm::DWARFFormValue::skipValue(
+            attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                    "Failed to skip attribute {} of form {} at offset {}",
+                    llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
+    }
 }
 
 uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const llvm::DWARFFormValue & val, const UnitState & unit)

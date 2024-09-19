@@ -17,7 +17,7 @@ ColumnsDescription StorageSystemContributors::getColumnsDescription()
     };
 }
 
-void StorageSystemContributors::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemContributors::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     std::vector<const char *> contributors;
     for (auto * it = auto_contributors; *it; ++it)

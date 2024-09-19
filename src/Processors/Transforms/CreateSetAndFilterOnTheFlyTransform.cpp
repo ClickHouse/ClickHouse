@@ -12,6 +12,8 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <base/types.h>
 
+#include <Poco/String.h>
+
 namespace DB
 {
 

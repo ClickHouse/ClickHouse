@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {

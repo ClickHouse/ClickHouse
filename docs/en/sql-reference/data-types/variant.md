@@ -1,16 +1,21 @@
 ---
-slug: /en/sql-reference/data-types/json
-sidebar_position: 55
-sidebar_label: Variant
+slug: /en/sql-reference/data-types/variant
+sidebar_position: 40
+sidebar_label: Variant(T1, T2, ...)
 ---
 
-# Variant(T1, T2, T3, ...)
+# Variant(T1, T2, ...)
 
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
 
 The order of nested types doesn't matter: Variant(T1, T2) = Variant(T2, T1).
 Nested types can be arbitrary types except Nullable(...), LowCardinality(Nullable(...)) and Variant(...) types.
+
+:::note
+It's not recommended to use similar types as variants (for example different numeric types like `Variant(UInt32, Int64)` or different date types like `Variant(Date, DateTime)`),
+because working with values of such types can lead to ambiguity. By default, creating such `Variant` type will lead to an exception, but can be enabled using setting `allow_suspicious_variant_types`
+:::
 
 :::note
 The Variant data type is an experimental feature. To use it, set `allow_experimental_variant_type = 1`.
@@ -185,22 +190,67 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Conversion between Variant column and other columns
+## Conversion between a Variant column and other columns
 
-There are 3 possible conversions that can be performed with Variant column.
+There are 4 possible conversions that can be performed with a column of type `Variant`.
 
-### Converting an ordinary column to a Variant column
+### Converting a String column to a Variant column
 
-It is possible to convert ordinary column with type `T` to a `Variant` column containing this type:
+Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
 
 ```sql
-SELECT toTypeName(variant) as type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
+SELECT '42'::Variant(String, UInt64) as variant, variantType(variant) as variant_type
 ```
 
 ```text
-┌─type_name──────────────────────────────┬─variant───────┐
-│ Variant(Array(UInt64), String, UInt64) │ Hello, World! │
-└────────────────────────────────────────┴───────────────┘
+┌─variant─┬─variant_type─┐
+│ 42      │ UInt64       │
+└─────────┴──────────────┘
+```
+
+```sql
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt64) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') as map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) as map_of_variant_types```
+```
+
+```text
+┌─map_of_variants─────────────────────────────┬─map_of_variant_types──────────────────────────┐
+│ {'key1':42,'key2':true,'key3':'2020-01-01'} │ {'key1':'UInt64','key2':'Bool','key3':'Date'} │
+└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+### Converting an ordinary column to a Variant column
+
+It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:
+
+```sql
+SELECT toTypeName(variant) as type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
+ ```
+
+```text
+┌─type_name──────────────────────────────┬─variant─┬─variant_name──┐
+│ Variant(Array(UInt64), String, UInt64) │ [1,2,3] │ Array(UInt64) │
+└────────────────────────────────────────┴─────────┴───────────────┘
+```
+
+Note: converting from `String` type is always performed through parsing, if you need to convert `String` column to `String` variant of a `Variant` without parsing, you can do the following:
+```sql
+SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
+```
+
+```sql
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
 ```
 
 ### Converting a Variant column to an ordinary column
@@ -271,4 +321,156 @@ $$)
 │ 2020-01-01 00:00:00 │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │ 2020-01-01 00:00:00 │ []      │
 │ [1,2,3]             │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ [1,2,3] │
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
+```
+
+
+## Comparing values of Variant type
+
+Values of a `Variant` type can be compared only with values with the same `Variant` type.
+
+The result of operator `<` for values `v1` with underlying type `T1` and `v2` with underlying type `T2`  of a type `Variant(..., T1, ... T2, ...)` is defined as follows:
+- If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
+- If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
+
+Examples:
+```sql
+CREATE TABLE test (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE=Memory;
+INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, []), (42, NULL);
+```
+
+```sql
+SELECT v2, variantType(v2) as v2_type from test order by v2;
+```
+
+```text
+┌─v2──────┬─v2_type───────┐
+│ []      │ Array(UInt32) │
+│ [1,2,3] │ Array(UInt32) │
+│ abc     │ String        │
+│ 42      │ UInt64        │
+│ 43      │ UInt64        │
+│ ᴺᵁᴸᴸ    │ None          │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT v1, variantType(v1) as v1_type, v2, variantType(v2) as v2_type, v1 = v2, v1 < v2, v1 > v2 from test;
+```
+
+```text
+┌─v1─┬─v1_type─┬─v2──────┬─v2_type───────┬─equals(v1, v2)─┬─less(v1, v2)─┬─greater(v1, v2)─┐
+│ 42 │ UInt64  │ 42      │ UInt64        │              1 │            0 │               0 │
+│ 42 │ UInt64  │ 43      │ UInt64        │              0 │            1 │               0 │
+│ 42 │ UInt64  │ abc     │ String        │              0 │            0 │               1 │
+│ 42 │ UInt64  │ [1,2,3] │ Array(UInt32) │              0 │            0 │               1 │
+│ 42 │ UInt64  │ []      │ Array(UInt32) │              0 │            0 │               1 │
+│ 42 │ UInt64  │ ᴺᵁᴸᴸ    │ None          │              0 │            1 │               0 │
+└────┴─────────┴─────────┴───────────────┴────────────────┴──────────────┴─────────────────┘
+
+```
+
+If you need to find the row with specific `Variant` value, you can do one of the following:
+
+- Cast value to the corresponding `Variant` type:
+
+```sql
+SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
+```
+
+```text
+┌─v1─┬─v2──────┐
+│ 42 │ [1,2,3] │
+└────┴─────────┘
+```
+
+- Compare `Variant` subcolumn with required type:
+
+```sql
+SELECT * FROM test WHERE v2.`Array(UInt32)` == [1,2,3] -- or using variantElement(v2, 'Array(UInt32)')
+```
+
+```text
+┌─v1─┬─v2──────┐
+│ 42 │ [1,2,3] │
+└────┴─────────┘
+```
+
+Sometimes it can be useful to make additional check on variant type as subcolumns with complex types like `Array/Map/Tuple` cannot be inside `Nullable` and will have default values instead of `NULL` on rows with different types:
+
+```sql
+SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE v2.`Array(UInt32)` == [];
+```
+
+```text
+┌─v2───┬─v2.Array(UInt32)─┬─variantType(v2)─┐
+│ 42   │ []               │ UInt64          │
+│ 43   │ []               │ UInt64          │
+│ abc  │ []               │ String          │
+│ []   │ []               │ Array(UInt32)   │
+│ ᴺᵁᴸᴸ │ []               │ None            │
+└──────┴──────────────────┴─────────────────┘
+```
+
+```sql
+SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE variantType(v2) == 'Array(UInt32)' AND v2.`Array(UInt32)` == [];
+```
+
+```text
+┌─v2─┬─v2.Array(UInt32)─┬─variantType(v2)─┐
+│ [] │ []               │ Array(UInt32)   │
+└────┴──────────────────┴─────────────────┘
+```
+
+**Note:** values of variants with different numeric types are considered as different variants and not compared between each other, their type names are compared instead.
+
+Example:
+
+```sql
+SET allow_suspicious_variant_types = 1;
+CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
+INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
+SELECT v, variantType(v) FROM test ORDER by v;
+```
+
+```text
+┌─v───┬─variantType(v)─┐
+│ 1   │ Int64          │
+│ 100 │ Int64          │
+│ 1   │ UInt32         │
+│ 100 │ UInt32         │
+└─────┴────────────────┘
+```
+
+## JSONExtract functions with Variant
+
+All `JSONExtract*` functions support `Variant` type:
+
+```sql
+SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Variant(UInt32, String, Array(UInt32))') AS variant, variantType(variant) AS variant_type;
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt32) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Variant(UInt32, String, Array(UInt32)))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
+```
+
+```text
+┌─map_of_variants──────────────────┬─map_of_variant_types────────────────────────────┐
+│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'UInt32','b':'String','c':'Array(UInt32)'} │
+└──────────────────────────────────┴─────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Variant(UInt32, String, Array(UInt32))') AS variants, arrayMap(x -> (x.1, variantType(x.2)), variants) AS variant_types
+```
+
+```text
+┌─variants───────────────────────────────┬─variant_types─────────────────────────────────────────┐
+│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```

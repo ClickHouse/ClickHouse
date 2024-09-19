@@ -1,4 +1,5 @@
 #include <Compression/CompressionFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -6,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -18,6 +20,8 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -25,28 +29,36 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
-#include <Parsers/ASTStatisticDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool flatten_nested;
+}
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_STATISTIC;
+    extern const int ILLEGAL_STATISTICS;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
@@ -109,7 +121,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
-            command.comment = ast_comment.value.get<String>();
+            command.comment = ast_comment.value.safeGet<String>();
         }
 
         if (ast_col_decl.codec)
@@ -167,7 +179,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
-            command.comment.emplace(ast_comment.value.get<String>());
+            command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
         if (ast_col_decl.ttl)
@@ -210,7 +222,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = COMMENT_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -220,7 +232,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = COMMENT_TABLE;
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
@@ -265,17 +277,32 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::ADD_STATISTIC)
+    else if (command_ast->type == ASTAlterCommand::ADD_STATISTICS)
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistic_decl = command_ast->statistic_decl->clone();
-        command.type = AlterCommand::ADD_STATISTIC;
+        command.statistics_decl = command_ast->statistics_decl->clone();
+        command.type = AlterCommand::ADD_STATISTICS;
 
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistic_columns = ast_stat_decl.getColumnNames();
-        command.statistic_type = ast_stat_decl.type;
+        command.statistics_columns = ast_stat_decl.getColumnNames();
+        command.statistics_types = ast_stat_decl.getTypeNames();
+        command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_STATISTICS)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.statistics_decl = command_ast->statistics_decl->clone();
+        command.type = AlterCommand::MODIFY_STATISTICS;
+
+        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
+
+        command.statistics_columns = ast_stat_decl.getColumnNames();
+        command.statistics_types = ast_stat_decl.getTypeNames();
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -339,17 +366,17 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_STATISTIC)
+    else if (command_ast->type == ASTAlterCommand::DROP_STATISTICS)
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.type = AlterCommand::DROP_STATISTIC;
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+        command.statistics_decl = command_ast->statistics_decl->clone();
+        command.type = AlterCommand::DROP_STATISTICS;
+        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistic_columns = ast_stat_decl.getColumnNames();
-        command.statistic_type = ast_stat_decl.type;
+        command.statistics_columns = ast_stat_decl.getColumnNames();
         command.if_exists = command_ast->if_exists;
-        command.clear = command_ast->clear_statistic;
+        command.clear = command_ast->clear_statistics;
 
         if (command_ast->partition)
             command.partition = command_ast->partition->clone();
@@ -442,6 +469,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_SQL_SECURITY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_SQL_SECURITY;
+        command.sql_security = command_ast->sql_security->clone();
+        return command;
+    }
     else
         return {};
 }
@@ -465,7 +500,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
-        if (context->getSettingsRef().flatten_nested)
+        if (context->getSettingsRef()[Setting::flatten_nested])
         {
             StorageInMemoryMetadata temporary_metadata;
             temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
@@ -670,40 +705,55 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.secondary_indices.erase(erase_it);
         }
     }
-    else if (type == ADD_STATISTIC)
+    else if (type == ADD_STATISTICS)
     {
-        for (const auto & statistic_column_name : statistic_columns)
+        for (const auto & statistics_column_name : statistics_columns)
         {
-            if (!metadata.columns.has(statistic_column_name))
+            if (!metadata.columns.has(statistics_column_name))
             {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: this column is not found", statistic_column_name, statistic_type);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot add statistics for column {}: this column is not found", statistics_column_name);
             }
-            if (!if_exists && metadata.columns.get(statistic_column_name).stat)
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: statistic on this column with this type already exists", statistic_column_name, statistic_type);
         }
 
-        auto stats = StatisticDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
-        for (auto && stat : stats)
+        auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
+        for (const auto & [stats_column_name, stats] : stats_vec)
         {
-            metadata.columns.modify(stat.column_name,
-                [&](ColumnDescription & column) { column.stat = std::move(stat); });
+            metadata.columns.modify(stats_column_name,
+                [&](ColumnDescription & column) { column.statistics.merge(stats, column.name, column.type, if_not_exists); });
         }
     }
-    else if (type == DROP_STATISTIC)
+    else if (type == DROP_STATISTICS)
     {
-        for (const auto & stat_column_name : statistic_columns)
+        for (const auto & statistics_column_name : statistics_columns)
         {
-            if (!metadata.columns.has(stat_column_name) || !metadata.columns.get(stat_column_name).stat)
+            if (!metadata.columns.has(statistics_column_name)
+                || metadata.columns.get(statistics_column_name).statistics.empty())
             {
                 if (if_exists)
                     return;
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Wrong statistic name. Cannot find statistic {} with type {} to drop", backQuote(stat_column_name), statistic_type);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Wrong statistics name. Cannot find statistics {} to drop", backQuote(statistics_column_name));
             }
-            if (!partition && !clear)
+
+            if (!clear && !partition)
+                metadata.columns.modify(statistics_column_name,
+                    [&](ColumnDescription & column) { column.statistics.clear(); });
+        }
+    }
+    else if (type == MODIFY_STATISTICS)
+    {
+        for (const auto & statistics_column_name : statistics_columns)
+        {
+            if (!metadata.columns.has(statistics_column_name))
             {
-                metadata.columns.modify(stat_column_name,
-                    [&](ColumnDescription & column) { column.stat = std::nullopt; });
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot modify statistics for column {}: this column is not found", statistics_column_name);
             }
+        }
+
+        auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
+        for (const auto & [stats_column_name, stats] : stats_vec)
+        {
+            metadata.columns.modify(stats_column_name,
+                [&](ColumnDescription & column) { column.statistics.assign(stats); });
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -757,7 +807,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
     }
     else if (type == REMOVE_TTL)
     {
@@ -768,7 +819,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
         Block as_select_sample;
 
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
         }
@@ -827,8 +878,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
-                if (column_to_modify.name == column_name && column_to_modify.stat)
-                    column_to_modify.stat->column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)
@@ -854,6 +903,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         for (auto & index : metadata.secondary_indices)
             rename_visitor.visit(index.definition_ast);
     }
+    else if (type == MODIFY_SQL_SECURITY)
+        metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 }
@@ -950,13 +1001,12 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTIC)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
         return true;
 
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
-            column_name == LightweightDeleteDescription::FILTER_COLUMN.name || column_name == BlockNumberColumn::name;
+        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -1019,7 +1069,7 @@ bool AlterCommand::isRemovingProperty() const
 
 bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
         || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
@@ -1058,10 +1108,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         result.predicate = nullptr;
     }
-    else if (type == DROP_STATISTIC)
+    else if (type == DROP_STATISTICS)
     {
-        result.type = MutationCommand::Type::DROP_STATISTIC;
-        result.statistic_columns = statistic_columns;
+        result.type = MutationCommand::Type::DROP_STATISTICS;
+        result.statistics_columns = statistics_columns;
 
         if (clear)
             result.clear = true;
@@ -1093,11 +1143,31 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == FULL_TEXT_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
         if (index.type == INVERTED_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == "vector_similarity")
             return true;
     }
     return false;
@@ -1136,7 +1206,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         {
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer().visit(partition_key.get());
+            FunctionNameNormalizer::visit(partition_key.get());
             auto primary_key_asts = metadata_copy.primary_key.expression_list_ast->children;
             metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
                 metadata_copy.columns, partition_key, minmax_columns, primary_key_asts, context));
@@ -1190,13 +1260,18 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(
+            ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
         metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
         metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+            metadata_copy.table_ttl.definition_ast,
+            metadata_copy.columns,
+            context,
+            metadata_copy.primary_key,
+            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 
     metadata = std::move(metadata_copy);
 }
@@ -1205,6 +1280,13 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 {
     auto columns = metadata.columns;
+
+    auto ast_to_str = [](const ASTPtr & query) -> String
+    {
+        if (!query)
+            return "";
+        return queryToString(query);
+    };
 
     for (size_t i = 0; i < size(); ++i)
     {
@@ -1217,7 +1299,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
             if (has_column)
             {
-                auto column_from_table = columns.get(command.column_name);
+                const auto & column_from_table = columns.get(command.column_name);
                 if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;
@@ -1238,6 +1320,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
             if (!has_column && command.if_exists)
                 command.ignore = true;
         }
+        else if (command.type == AlterCommand::MODIFY_ORDER_BY)
+        {
+            if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
+                command.ignore = true;
+        }
     }
 
     prepared = true;
@@ -1246,7 +1333,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
-    const StorageInMemoryMetadata & metadata = table->getInMemoryMetadata();
+    const auto & metadata = table->getInMemoryMetadata();
+    auto virtuals = table->getVirtualsPtr();
+
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
@@ -1275,23 +1364,30 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
+            validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+
             /// FIXME: Adding a new column of type Object(JSON) is broken.
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
             /// So we don't allow to do it for now.
-            if (command.data_type->hasDynamicSubcolumns())
+            if (command.data_type->hasDynamicSubcolumnsDeprecated())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
-            if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
-                                "this column name is reserved for lightweight delete feature", backQuote(column_name));
-
-            if (column_name == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
-                                                            "this column name is reserved for _block_number persisting feature", backQuote(column_name));
+            if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+            {
+                const auto & settings = context->getSettingsRef();
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                    command.codec,
+                    command.data_type,
+                    !settings[Setting::allow_suspicious_codecs],
+                    settings[Setting::allow_experimental_codecs],
+                    settings[Setting::enable_deflate_qpl_codec],
+                    settings[Setting::enable_zstd_qat_codec]);
+            }
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -1316,7 +1412,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                    command.codec,
+                    command.data_type,
+                    !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                    context->getSettingsRef()[Setting::allow_experimental_codecs],
+                    context->getSettingsRef()[Setting::enable_deflate_qpl_codec],
+                    context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
@@ -1350,16 +1452,26 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
+                validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
-                bool old_type_has_object = old_data_type->hasDynamicSubcolumns();
+                bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
+                bool old_type_has_deprecated_object = old_data_type->hasDynamicSubcolumnsDeprecated();
 
-                if (new_type_has_object || old_type_has_object)
+                if (new_type_has_deprecated_object || old_type_has_deprecated_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",
+                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
+
+                bool has_object_type = isObject(command.data_type);
+                command.data_type->forEachChild([&](const IDataType & type){ has_object_type |= isObject(type); });
+                if (has_object_type)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The change of data type {} of column {} to {} is not supported.",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 
@@ -1405,9 +1517,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) ||
-                all_columns.hasNested(command.column_name) ||
-                (command.clear && column_name == LightweightDeleteDescription::FILTER_COLUMN.name))
+            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -1491,16 +1601,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             if (all_columns.has(command.rename_to))
-                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Cannot rename to {}: "
-                                "column with this name already exists", backQuote(command.rename_to));
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                    "Cannot rename to {}: column with this name already exists", backQuote(command.rename_to));
 
-            if (command.rename_to == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
-                                "this column name is reserved for lightweight delete feature", backQuote(command.rename_to));
-
-            if (command.rename_to == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
-                                                            "this column name is reserved for _block_number persisting feature", backQuote(command.rename_to));
+            if (virtuals->tryGet(command.rename_to, VirtualsKind::Persistent))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot rename to {}: this column name is reserved for persistent virtual column", backQuote(command.rename_to));
 
             if (modified_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
@@ -1559,7 +1665,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
-                auto column_in_table = all_columns.get(column_name);
+                const auto & column_in_table = all_columns.get(column_name);
                 /// Column doesn't have a default, nothing to check
                 if (!column_in_table.default_desc.expression)
                     continue;
@@ -1576,7 +1682,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
     }
 
-    if (all_columns.empty())
+    /// Parameterized views do not have 'columns' in their metadata
+    bool is_parameterized_view = table->as<StorageView>() && table->as<StorageView>()->isParameterizedView();
+
+    if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);

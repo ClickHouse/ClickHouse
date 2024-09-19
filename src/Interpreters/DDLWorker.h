@@ -7,11 +7,13 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
+#include <Poco/Event.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <list>
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
@@ -193,6 +195,9 @@ protected:
     std::atomic<UInt32> max_id = 0;
 
     ConcurrentSet entries_to_skip;
+
+    std::atomic_uint64_t subsequent_errors_count = 0;
+    String last_unexpected_error;
 
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;

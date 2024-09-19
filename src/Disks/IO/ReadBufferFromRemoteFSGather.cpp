@@ -1,14 +1,12 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
-#include <IO/ReadBufferFromFileBase.h>
-
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <base/hex.h>
 #include <Common/logger_useful.h>
 
 using namespace DB;
@@ -16,12 +14,15 @@ using namespace DB;
 
 namespace
 {
-bool withCache(const ReadSettings & settings)
-{
-    return settings.remote_fs_cache && settings.enable_filesystem_cache
-        && (!CurrentThread::getQueryId().empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-            || !settings.avoid_readthrough_cache_outside_query_context);
-}
+    bool withFileCache(const ReadSettings & settings)
+    {
+        return settings.remote_fs_cache && settings.enable_filesystem_cache;
+    }
+
+    bool withPageCache(const ReadSettings & settings, bool with_file_cache)
+    {
+        return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
+    }
 }
 
 namespace DB
@@ -34,7 +35,7 @@ namespace ErrorCodes
 size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size)
 {
     /// Only when cache is used we could download bigger portions of FileSegments than what we actually gonna read within particular task.
-    if (!withCache(settings))
+    if (!withFileCache(settings))
         return settings.remote_fs_buffer_size;
 
     /// Buffers used for prefetch and pre-download better to have enough size, but not bigger than the whole file.
@@ -44,27 +45,30 @@ size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
+    const std::string & cache_path_prefix_,
     const ReadSettings & settings_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     bool use_external_buffer_)
-    : ReadBufferFromFileBase(
-        use_external_buffer_ ? 0 : chooseBufferSizeForRemoteReading(settings_, getTotalSize(blobs_to_read_)), nullptr, 0)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : chooseBufferSizeForRemoteReading(
+        settings_, getTotalSize(blobs_to_read_)), nullptr, 0)
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
+    , cache_path_prefix(cache_path_prefix_)
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
-    , with_cache(withCache(settings))
+    , with_file_cache(withFileCache(settings))
+    , with_page_cache(withPageCache(settings, with_file_cache))
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
+SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object, size_t start_offset)
 {
-    if (current_buf && !with_cache)
+    if (current_buf && !with_file_cache)
     {
         appendUncachedReadInfo();
     }
@@ -72,30 +76,50 @@ std::unique_ptr<ReadBufferFromFileBase> ReadBufferFromRemoteFSGather::createImpl
     current_object = object;
     const auto & object_path = object.remote_path;
 
-    size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
-    auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
+    std::unique_ptr<ReadBufferFromFileBase> buf;
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-    if (with_cache)
+    if (with_file_cache)
     {
-        auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
-        return std::make_unique<CachedOnDiskReadBufferFromFile>(
-            object_path,
-            cache_key,
-            settings.remote_fs_cache,
-            FileCache::getCommonUser(),
-            std::move(current_read_buffer_creator),
-            settings,
-            query_id,
-            object.bytes_size,
-            /* allow_seeks */false,
-            /* use_external_buffer */true,
-            read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt,
-            cache_log);
+        if (settings.remote_fs_cache->isInitialized())
+        {
+            auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
+            buf = std::make_unique<CachedOnDiskReadBufferFromFile>(
+                object_path,
+                cache_key,
+                settings.remote_fs_cache,
+                FileCache::getCommonUser(),
+                [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
+                settings,
+                query_id,
+                object.bytes_size,
+                /* allow_seeks */false,
+                /* use_external_buffer */true,
+                /* read_until_position */std::nullopt,
+                cache_log);
+        }
+        else
+        {
+            settings.remote_fs_cache->throwInitExceptionIfNeeded();
+        }
     }
-#endif
 
-    return current_read_buffer_creator();
+    /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
+    /// former doesn't support seeks.
+    if (with_page_cache && !buf)
+    {
+        auto inner = read_buffer_creator(/* restricted_seek */false, object);
+        auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_path };
+        buf = std::make_unique<CachedInMemoryReadBufferFromFile>(
+            cache_key, settings.page_cache, std::move(inner), settings);
+    }
+
+    if (!buf)
+        buf = read_buffer_creator(/* restricted_seek */true, object);
+
+    if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
+        buf->setReadUntilPosition(read_until_position - start_offset);
+
+    return buf;
 }
 
 void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
@@ -124,12 +148,12 @@ void ReadBufferFromRemoteFSGather::initialize()
         return;
 
     /// One clickhouse file can be split into multiple files in remote fs.
-    auto current_buf_offset = file_offset_of_buffer_end;
+    size_t start_offset = 0;
     for (size_t i = 0; i < blobs_to_read.size(); ++i)
     {
         const auto & object = blobs_to_read[i];
 
-        if (object.bytes_size > current_buf_offset)
+        if (start_offset + object.bytes_size > file_offset_of_buffer_end)
         {
             LOG_TEST(log, "Reading from file: {} ({})", object.remote_path, object.local_path);
 
@@ -137,14 +161,14 @@ void ReadBufferFromRemoteFSGather::initialize()
             if (!current_buf || current_buf_idx != i)
             {
                 current_buf_idx = i;
-                current_buf = createImplementationBuffer(object);
+                current_buf = createImplementationBuffer(object, start_offset);
             }
 
-            current_buf->seek(current_buf_offset, SEEK_SET);
+            current_buf->seek(file_offset_of_buffer_end - start_offset, SEEK_SET);
             return;
         }
 
-        current_buf_offset -= object.bytes_size;
+        start_offset += object.bytes_size;
     }
     current_buf_idx = blobs_to_read.size();
     current_buf = nullptr;
@@ -171,14 +195,14 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 {
     /// If there is no available buffers - nothing to read.
-    if (current_buf_idx + 1 >= blobs_to_read.size())
+    if (current_buf_idx + 1 >= blobs_to_read.size() || (read_until_position && file_offset_of_buffer_end >= read_until_position))
         return false;
 
     ++current_buf_idx;
 
     const auto & object = blobs_to_read[current_buf_idx];
     LOG_TEST(log, "Reading from next file: {} ({})", object.remote_path, object.local_path);
-    current_buf = createImplementationBuffer(object);
+    current_buf = createImplementationBuffer(object, file_offset_of_buffer_end);
 
     return true;
 }
@@ -263,7 +287,7 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
 
 ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
 {
-    if (!with_cache)
+    if (!with_file_cache)
         appendUncachedReadInfo();
 }
 

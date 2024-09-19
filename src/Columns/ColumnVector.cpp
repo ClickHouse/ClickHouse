@@ -14,12 +14,14 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
+#include <Common/findExtreme.h>
 #include <Common/iota.h>
 
 #include <bit>
@@ -52,31 +54,6 @@ namespace ErrorCodes
 }
 
 template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
-{
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
-    unalignedStore<T>(pos, data[n]);
-    return res;
-}
-
-template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.emplace_back(unalignedLoad<T>(pos));
@@ -96,13 +73,10 @@ void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <typename T>
-void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
     auto s = data.size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -114,6 +88,8 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
         ++begin;
         ++hash_data;
     }
+
+    return hash;
 }
 
 template <typename T>
@@ -247,6 +223,26 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
         limit = 0;
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
+
+    if constexpr (has_find_extreme_implementation<T> && !std::is_floating_point_v<T>)
+    {
+        /// Disabled for:floating point
+        /// * floating point: We don't deal with nan_direction_hint
+        /// * stability::Stable: We might return any value, not the first
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
+        {
+            std::optional<size_t> index;
+            if (direction == IColumn::PermutationSortDirection::Ascending)
+                index = findExtremeMinIndex(data.data(), 0, data.size());
+            else
+                index = findExtremeMaxIndex(data.data(), 0, data.size());
+            if (index)
+            {
+                res.data()[0] = *index;
+                return;
+            }
+        }
+    }
 
     if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
     {
@@ -417,6 +413,25 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
     }
 }
 
+template<typename T>
+size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        StringRef value = getDataAt(permuted_i);
+        elements.emplace(value, inserted);
+    }
+    return elements.size();
+}
+
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
@@ -465,7 +480,33 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 }
 
 template <typename T>
+bool ColumnVector<T>::tryInsert(const DB::Field & x)
+{
+    NearestFieldType<T> value;
+    if (!x.tryGet<NearestFieldType<T>>(value))
+    {
+        if constexpr (std::is_same_v<T, UInt8>)
+        {
+            /// It's also possible to insert boolean values into UInt8 column.
+            bool boolean_value;
+            if (x.tryGet<bool>(boolean_value))
+            {
+                data.push_back(static_cast<T>(boolean_value));
+                return true;
+            }
+        }
+        return false;
+    }
+    data.push_back(static_cast<T>(value));
+    return true;
+}
+
+template <typename T>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
@@ -645,7 +686,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     Container & res_data = res->getData();
 
     if (result_size_hint)
-        res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+        res_data.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
@@ -860,12 +901,6 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 template <typename T>

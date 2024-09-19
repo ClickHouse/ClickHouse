@@ -3,15 +3,15 @@
 import json
 import logging
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 from typing import Tuple
 
 from build_download_helper import download_unit_tests
-from docker_images_helper import pull_image, get_docker_image
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
-from report import ERROR, FAILURE, FAIL, OK, SUCCESS, JobReport, TestResults, TestResult
+from report import ERROR, FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -23,7 +23,7 @@ def get_test_name(line):
     for element in elements:
         if "(" not in element and ")" not in element:
             return element
-    raise Exception(f"No test name in line '{line}'")
+    raise ValueError(f"No test name in line '{line}'")
 
 
 def process_results(
@@ -104,7 +104,7 @@ def process_results(
             if "failures" in test_case:
                 raw_logs = ""
                 for failure in test_case["failures"]:
-                    raw_logs += failure["failure"]
+                    raw_logs += failure[FAILURE]
                 if (
                     "Segmentation fault" in raw_logs  # type: ignore
                     and SEGFAULT not in description
@@ -166,7 +166,7 @@ def main():
 
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
-    download_unit_tests(check_name, REPORT_PATH, TEMP_PATH)
+    download_unit_tests(check_name, REPORT_PATH, temp_path)
 
     tests_binary = temp_path / "unit_tests_dbms"
     os.chmod(tests_binary, 0o777)
@@ -174,9 +174,13 @@ def main():
     test_output = temp_path / "test_output"
     test_output.mkdir(parents=True, exist_ok=True)
 
+    # Don't run ASAN under gdb since that breaks leak detection
+    gdb_enabled = "NO_GDB" if "asan" in check_name else "GDB"
+
     run_command = (
         f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
-        f"--volume={test_output}:/test_output {docker_image}"
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
+        f"--volume={test_output}:/test_output {docker_image} {gdb_enabled}"
     )
 
     run_log_path = test_output / "run.log"
@@ -193,6 +197,11 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
     state, description, test_results = process_results(test_output)
+    if retcode != 0 and state == SUCCESS:
+        # The process might have failed without reporting it in the test_output (e.g. LeakSanitizer)
+        state = FAILURE
+        description = "Invalid return code. Check run.log"
+
     additional_files = [run_log_path] + [
         p for p in test_output.iterdir() if not p.is_dir()
     ]
@@ -205,7 +214,7 @@ def main():
         additional_files=additional_files,
     ).dump()
 
-    if state == "failure":
+    if state == FAILURE:
         sys.exit(1)
 
 

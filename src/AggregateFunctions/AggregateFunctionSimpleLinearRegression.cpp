@@ -123,22 +123,22 @@ public:
         Float64 x = columns[0]->getFloat64(row_num);
         Float64 y = columns[1]->getFloat64(row_num);
 
-        this->data(place).add(x, y);
+        data(place).add(x, y);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs));
+        data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).serialize(buf);
+        data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        data(place).deserialize(buf);
     }
 
     static DataTypePtr createResultType()
@@ -168,8 +168,8 @@ public:
         IColumn & to,
         Arena *) const override
     {
-        Float64 k = this->data(place).getK();
-        Float64 b = this->data(place).getB(k);
+        Float64 k = data(place).getK();
+        Float64 b = data(place).getB(k);
 
         auto & col_tuple = assert_cast<ColumnTuple &>(to);
         auto & col_k = assert_cast<ColumnVector<Float64> &>(col_tuple.getColumn(0));

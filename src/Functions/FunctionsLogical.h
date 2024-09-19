@@ -84,47 +84,47 @@ struct AndImpl
 {
     using ResultType = UInt8;
 
-    static inline constexpr bool isSaturable() { return true; }
+    static constexpr bool isSaturable() { return true; }
 
     /// Final value in two-valued logic (no further operations with True, False will change this value)
-    static inline constexpr bool isSaturatedValue(bool a) { return !a; }
+    static constexpr bool isSaturatedValue(bool a) { return !a; }
 
     /// Final value in three-valued logic (no further operations with True, False, Null will change this value)
-    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::False; }
+    static constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::False; }
 
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
+    static constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
 
-    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::min(a, b); }
+    static constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::min(a, b); }
 
     /// Will use three-valued logic for NULLs (see above) or default implementation (any operation with NULL returns NULL).
-    static inline constexpr bool specialImplementationForNulls() { return true; }
+    static constexpr bool specialImplementationForNulls() { return true; }
 };
 
 struct OrImpl
 {
     using ResultType = UInt8;
 
-    static inline constexpr bool isSaturable() { return true; }
-    static inline constexpr bool isSaturatedValue(bool a) { return a; }
-    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
-    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::max(a, b); }
-    static inline constexpr bool specialImplementationForNulls() { return true; }
+    static constexpr bool isSaturable() { return true; }
+    static constexpr bool isSaturatedValue(bool a) { return a; }
+    static constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
+    static constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
+    static constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::max(a, b); }
+    static constexpr bool specialImplementationForNulls() { return true; }
 };
 
 struct XorImpl
 {
     using ResultType = UInt8;
 
-    static inline constexpr bool isSaturable() { return false; }
-    static inline constexpr bool isSaturatedValue(bool) { return false; }
-    static inline constexpr bool isSaturatedValueTernary(UInt8) { return false; }
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
-    static inline constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return a != b; }
-    static inline constexpr bool specialImplementationForNulls() { return false; }
+    static constexpr bool isSaturable() { return false; }
+    static constexpr bool isSaturatedValue(bool) { return false; }
+    static constexpr bool isSaturatedValueTernary(UInt8) { return false; }
+    static constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
+    static constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return a != b; }
+    static constexpr bool specialImplementationForNulls() { return false; }
 
 #if USE_EMBEDDED_COMPILER
-    static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    static llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
         return builder.CreateXor(a, b);
     }
@@ -136,13 +136,13 @@ struct NotImpl
 {
     using ResultType = UInt8;
 
-    static inline ResultType apply(A a)
+    static ResultType apply(A a)
     {
         return !static_cast<bool>(a);
     }
 
 #if USE_EMBEDDED_COMPILER
-    static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a)
+    static llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a)
     {
         return builder.CreateNot(a);
     }
@@ -164,7 +164,7 @@ public:
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
-        settings.enable_lazy_execution_for_first_argument = false;
+        settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
         settings.force_enable_lazy_execution = false;
         return name == NameAnd::name || name == NameOr::name;

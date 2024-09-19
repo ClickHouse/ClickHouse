@@ -10,7 +10,7 @@ bool ParserDatabaseOrNone::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     auto result = std::make_shared<ASTDatabaseOrNone>();
     node = result;
 
-    if (ParserKeyword{"NONE"}.ignore(pos, expected))
+    if (ParserKeyword(Keyword::NONE).ignore(pos, expected))
     {
         result->none = true;
         return true;

@@ -13,7 +13,7 @@ FROM
             day_,
             type_1
         FROM test_grouping_sets_predicate
-        PREWHERE day_ = \'2023-01-05\'
+        WHERE day_ = \'2023-01-05\'
         GROUP BY
             GROUPING SETS (
                 (day_, type_1),
@@ -39,8 +39,10 @@ ExpressionTransform × 2
             Copy 1 → 2
               (Expression)
               ExpressionTransform
-                (ReadFromMergeTree)
-                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                (Expression)
+                ExpressionTransform
+                  (ReadFromMergeTree)
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 (Expression)
 ExpressionTransform × 2
   (Filter)
@@ -70,8 +72,8 @@ ExpressionTransform × 2
         FilterTransform
           (Filter)
           FilterTransform
-            (Filter)
-            FilterTransform
+            (Expression)
+            ExpressionTransform
               (ReadFromMergeTree)
               MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 (Expression)

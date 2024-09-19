@@ -9,6 +9,21 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace S3
+{
+    std::string tryGetRunningAvailabilityZone()
+    {
+        try
+        {
+            return getRunningAvailabilityZone();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("tryGetRunningAvailabilityZone");
+            return "";
+        }
+    }
+}
 }
 
 #if USE_AWS_S3
@@ -22,7 +37,6 @@ namespace ErrorCodes
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
-#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/platform/FileSystem.h>
 
@@ -31,9 +45,7 @@ namespace ErrorCodes
 #    include <IO/S3/Client.h>
 
 #    include <fstream>
-#    include <base/EnumReflection.h>
 
-#    include <boost/algorithm/string.hpp>
 #    include <boost/algorithm/string/split.hpp>
 #    include <boost/algorithm/string/classification.hpp>
 #    include <Poco/Exception.h>
@@ -133,12 +145,16 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
 {
     String user_agent_string = awsComputeUserAgentString();
     auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
-    if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST)
+    if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST
+        || response_code == Aws::Http::HttpResponseCode::REQUEST_NOT_MADE)
+    {
+        /// At least the host should be available and reply, otherwise neither IMDSv2 nor IMDSv1 are usable.
         return {};
+    }
     else if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
     {
         LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, "
-                  "falling back to less secure way. HTTP response code: {}", response_code);
+                  "falling back to a less secure way. HTTP response code: {}", response_code);
         return getDefaultCredentials();
     }
 
@@ -205,7 +221,7 @@ static Aws::String getAWSMetadataEndpoint()
     if (ec2_metadata_service_endpoint.empty())
     {
         Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
-        if (ec2_metadata_service_endpoint_mode.length() == 0)
+        if (ec2_metadata_service_endpoint_mode.empty())
         {
             ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
         }
@@ -235,7 +251,7 @@ static Aws::String getAWSMetadataEndpoint()
     return ec2_metadata_service_endpoint;
 }
 
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
 {
     auto endpoint = getAWSMetadataEndpoint();
     return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
@@ -755,7 +771,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.put_request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
-            /// See MakeDefaultHttpResourceClientConfiguration().
+            /// See MakeDefaultHTTPResourceClientConfiguration().
             /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
             /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
             aws_client_configuration.maxConnections = 2;
@@ -769,11 +785,13 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
             /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
             /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
-            aws_client_configuration.connectTimeoutMs = 1000;
+            /// But the connection timeout should be small because there is the case when there is no IMDS at all,
+            /// like outside of the cloud, on your own machines.
+            aws_client_configuration.connectTimeoutMs = 50;
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
-            auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
+            auto ec2_metadata_client = createEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
             AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));

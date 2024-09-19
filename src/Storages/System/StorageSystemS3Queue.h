@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class StorageSystemS3Queue final : public IStorageSystemOneBlock<StorageSystemS3Queue>
+class StorageSystemS3Queue final : public IStorageSystemOneBlock
 {
 public:
     explicit StorageSystemS3Queue(const StorageID & table_id_);
@@ -17,7 +17,7 @@ public:
     static ColumnsDescription getColumnsDescription();
 
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

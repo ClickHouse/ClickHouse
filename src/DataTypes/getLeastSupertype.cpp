@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeDynamic.h>
 
 
 namespace DB
@@ -79,8 +80,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
 
     auto maximize = [](size_t & what, size_t value)
     {
-        if (value > what)
-            what = value;
+        what = std::max(value, what);
     };
 
     for (const auto & type : types)
@@ -228,6 +228,39 @@ void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & type
     }
 }
 
+DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &types_set)
+{
+    auto min_interval = IntervalKind::Kind::Year;
+    DataTypePtr smallest_type;
+
+    bool is_higher_interval = false; // For Years, Quarters and Months
+
+    for (const auto &type : types)
+    {
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
+        {
+            auto current_interval = interval_type->getKind().kind;
+            if (current_interval > IntervalKind::Kind::Week)
+                is_higher_interval = true;
+            if (current_interval < min_interval)
+            {
+                min_interval = current_interval;
+                smallest_type = type;
+            }
+        }
+    }
+
+    if (is_higher_interval && min_interval <= IntervalKind::Kind::Week)
+        throw Exception(ErrorCodes::NO_COMMON_TYPE, "Cannot compare intervals {} and {} because the number of days in a month is not fixed", types[0]->getName(), types[1]->getName());
+
+    if (smallest_type)
+    {
+        types_set.clear();
+        types_set.insert(smallest_type->getTypeId());
+    }
+
+    return smallest_type;
+}
 }
 
 template <LeastSupertypeOnError on_error>
@@ -255,6 +288,24 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (all_equal)
             return types[0];
+    }
+
+    /// If one of the types is Dynamic, the supertype is Dynamic
+    {
+        bool have_dynamic = false;
+        size_t max_dynamic_types = 0;
+
+        for (const auto & type : types)
+        {
+            if (const auto & dynamic_type = typeid_cast<const DataTypeDynamic *>(type.get()))
+            {
+                have_dynamic = true;
+                max_dynamic_types = std::max(max_dynamic_types, dynamic_type->getMaxDynamicTypes());
+            }
+        }
+
+        if (have_dynamic)
+            return std::make_shared<DataTypeDynamic>(max_dynamic_types);
     }
 
     /// Recursive rules
@@ -463,6 +514,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// nested_type will be nullptr, we should return nullptr in this case.
             if (!nested_type)
                 return nullptr;
+            /// Common type for Nullable(Nothing) and Variant(...) is Variant(...)
+            if (isVariant(nested_type))
+                return nested_type;
             return std::make_shared<DataTypeNullable>(nested_type);
         }
     }
@@ -474,16 +528,18 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         type_ids.insert(type->getTypeId());
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
-    /// No other types are compatible with Strings. TODO Enums?
+    /// If there are Enums and any type of Strings, the common type is String.
+    /// No other types are compatible with Strings.
     {
         size_t have_string = type_ids.count(TypeIndex::String);
         size_t have_fixed_string = type_ids.count(TypeIndex::FixedString);
+        size_t have_enums = type_ids.count(TypeIndex::Enum8) + type_ids.count(TypeIndex::Enum16);
 
         if (have_string || have_fixed_string)
         {
-            bool all_strings = type_ids.size() == (have_string + have_fixed_string);
-            if (!all_strings)
-                return throwOrReturn<on_error>(types, "because some of them are String/FixedString and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+            bool all_compatible_with_string = type_ids.size() == (have_string + have_fixed_string + have_enums);
+            if (!all_compatible_with_string)
+                return throwOrReturn<on_error>(types, "because some of them are String/FixedString/Enum and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeString>();
         }
@@ -591,9 +647,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     continue;
                 }
 
-                UInt32 scale = getDecimalScale(*type);
-                if (scale > max_scale)
-                    max_scale = scale;
+                max_scale = std::max(max_scale, getDecimalScale(*type));
             }
 
             UInt32 min_precision = max_scale + leastDecimalPrecisionFor(max_int);
@@ -631,6 +685,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             return numeric_type;
     }
 
+    /// For interval data types.
+    {
+        auto res = findSmallestIntervalSuperType(types, type_ids);
+        if (res)
+            return res;
+    }
+
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
     return throwOrReturn<on_error>(types, "", ErrorCodes::NO_COMMON_TYPE);
 }
@@ -640,7 +701,8 @@ DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::String>(types);
 }
 
-DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
+template<>
+DataTypePtr getLeastSupertype<LeastSupertypeOnError::Variant>(const DataTypes & types)
 {
     auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
     if (common_type)
@@ -664,6 +726,11 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
     }
 
     return std::make_shared<DataTypeVariant>(variants);
+}
+
+DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
+{
+    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)

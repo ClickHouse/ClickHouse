@@ -20,12 +20,12 @@ namespace ErrorCodes
 
 namespace
 {
-    inline constexpr bool is_leap_year(int32_t year)
+    constexpr bool is_leap_year(int32_t year)
     {
         return (year % 4 == 0) && ((year % 400 == 0) || (year % 100 != 0));
     }
 
-    inline constexpr uint8_t monthLength(bool is_leap_year, uint8_t month)
+    constexpr uint8_t monthLength(bool is_leap_year, uint8_t month)
     {
         switch (month)
         {
@@ -49,7 +49,7 @@ namespace
     /** Integer division truncated toward negative infinity.
       */
     template <typename I, typename J>
-    inline constexpr I div(I x, J y)
+    constexpr I div(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         if (x > 0 && y_cast < 0)
@@ -63,7 +63,7 @@ namespace
     /** Integer modulus, satisfying div(x, y)*y + mod(x, y) == x.
       */
     template <typename I, typename J>
-    inline constexpr I mod(I x, J y)
+    constexpr I mod(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         const auto r = x % y_cast;
@@ -76,7 +76,7 @@ namespace
     /** Like std::min(), but the type of operands may differ.
       */
     template <typename I, typename J>
-    inline constexpr I min(I x, J y)
+    constexpr I min(I x, J y)
     {
         const auto y_cast = static_cast<I>(y);
         return x < y_cast ? x : y_cast;
@@ -284,12 +284,12 @@ void OrdinalDate::init(int64_t modified_julian_day)
 
 bool OrdinalDate::tryInit(int64_t modified_julian_day)
 {
-    /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
+    /// This function supports day number from -678941 to 2973483 (which represent 0000-01-01 and 9999-12-31 respectively).
 
     if (modified_julian_day < -678941)
         return false;
 
-    if (modified_julian_day > 2973119)
+    if (modified_julian_day > 2973483)
         return false;
 
     const auto a         = modified_julian_day + 678575;

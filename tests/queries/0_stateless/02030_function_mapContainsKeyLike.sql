@@ -12,6 +12,7 @@ SELECT id, map FROM map_containsKeyLike_test WHERE mapContainsKeyLike(map, '3-%'
 DROP TABLE map_containsKeyLike_test;
 
 SELECT mapContainsKeyLike(map('aa', 1, 'bb', 2), 'a%');
+SELECT mapContainsKeyLike(map(toLowCardinality('aa'), 1, toLowCardinality('b'), 2), 'a%');
 SELECT mapContainsKeyLike(map('aa', 1, 'bb', 2), materialize('a%'));
 SELECT mapContainsKeyLike(materialize(map('aa', 1, 'bb', 2)), 'a%');
 SELECT mapContainsKeyLike(materialize(map('aa', 1, 'bb', 2)), materialize('a%'));

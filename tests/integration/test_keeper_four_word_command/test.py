@@ -266,6 +266,7 @@ def test_cmd_conf(started_cluster):
         assert result["heart_beat_interval_ms"] == "500"
         assert result["election_timeout_lower_bound_ms"] == "1000"
         assert result["election_timeout_upper_bound_ms"] == "2000"
+        assert result["leadership_expiry_ms"] == "0"
         assert result["reserved_log_items"] == "100000"
 
         assert result["snapshot_distance"] == "75"
@@ -292,6 +293,16 @@ def test_cmd_conf(started_cluster):
         assert result["configuration_change_tries_count"] == "20"
 
         assert result["async_replication"] == "true"
+
+        assert result["latest_logs_cache_size_threshold"] == "1073741824"
+        assert result["commit_logs_cache_size_threshold"] == "524288000"
+
+        assert result["disk_move_retries_wait_ms"] == "1000"
+        assert result["disk_move_retries_during_init"] == "100"
+
+        assert result["log_slow_total_threshold_ms"] == "5000"
+        assert result["log_slow_cpu_threshold_ms"] == "100"
+        assert result["log_slow_connection_operation_threshold_ms"] == "1000"
     finally:
         close_keeper_socket(client)
 

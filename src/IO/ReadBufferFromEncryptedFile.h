@@ -27,10 +27,10 @@ public:
     std::string getFileName() const override { return in->getFileName(); }
 
     void setReadUntilPosition(size_t position) override { in->setReadUntilPosition(position + FileEncryption::Header::kSize); }
+
     void setReadUntilEnd() override { in->setReadUntilEnd(); }
 
-    size_t getFileSize() override;
-    size_t getFileOffsetOfBufferEnd() const override;
+    std::optional<size_t> tryGetFileSize() override { return in->tryGetFileSize(); }
 
 private:
     bool nextImpl() override;

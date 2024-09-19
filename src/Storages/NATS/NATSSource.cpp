@@ -1,18 +1,23 @@
 #include <Storages/NATS/NATSSource.h>
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/NATS/NATSConsumer.h>
-#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+}
 
-static std::pair<Block, Block> getHeaders(StorageNATS & storage, const StorageSnapshotPtr & storage_snapshot)
+static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->getSampleBlockForColumns(storage.getVirtuals().getNames());
+    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
 
     return {non_virtual_header, virtual_header};
 }
@@ -33,7 +38,7 @@ NATSSource::NATSSource(
     const Names & columns,
     size_t max_block_size_,
     StreamingHandleErrorMode handle_error_mode_)
-    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_, storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
+    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
 {
 }
 
@@ -86,7 +91,7 @@ Chunk NATSSource::generate()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
         consumer->subscribe();
     }

@@ -33,7 +33,7 @@ struct MongoDBArrayInfo
 
 void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password);
 
-bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_);
+bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_, const std::string & database_name_);
 
 class MongoDBCursor
 {

@@ -1,9 +1,27 @@
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/ConnectionTimeouts.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds connect_timeout;
+    extern const SettingsSeconds send_timeout;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds tcp_keep_alive_timeout;
+    extern const SettingsMilliseconds handshake_timeout_ms;
+    extern const SettingsMilliseconds hedged_connection_timeout_ms;
+    extern const SettingsMilliseconds receive_data_timeout_ms;
+    extern const SettingsMilliseconds connect_timeout_with_failover_ms;
+    extern const SettingsMilliseconds connect_timeout_with_failover_secure_ms;
+    extern const SettingsSeconds http_connection_timeout;
+    extern const SettingsSeconds http_send_timeout;
+    extern const SettingsSeconds http_receive_timeout;
+}
+
 
 Poco::Timespan ConnectionTimeouts::saturate(Poco::Timespan timespan, Poco::Timespan limit)
 {
@@ -17,32 +35,32 @@ Poco::Timespan ConnectionTimeouts::saturate(Poco::Timespan timespan, Poco::Times
 ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Settings & settings)
 {
     return ConnectionTimeouts()
-        .withConnectionTimeout(settings.connect_timeout)
-        .withSendTimeout(settings.send_timeout)
-        .withReceiveTimeout(settings.receive_timeout)
-        .withTcpKeepAliveTimeout(settings.tcp_keep_alive_timeout)
-        .withHandshakeTimeout(settings.handshake_timeout_ms)
-        .withHedgedConnectionTimeout(settings.hedged_connection_timeout_ms)
-        .withReceiveDataTimeout(settings.receive_data_timeout_ms);
+        .withConnectionTimeout(settings[Setting::connect_timeout])
+        .withSendTimeout(settings[Setting::send_timeout])
+        .withReceiveTimeout(settings[Setting::receive_timeout])
+        .withTCPKeepAliveTimeout(settings[Setting::tcp_keep_alive_timeout])
+        .withHandshakeTimeout(settings[Setting::handshake_timeout_ms])
+        .withHedgedConnectionTimeout(settings[Setting::hedged_connection_timeout_ms])
+        .withReceiveDataTimeout(settings[Setting::receive_data_timeout_ms]);
 }
 
 /// Timeouts for the case when we will try many addresses in a loop.
 ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const Settings & settings)
 {
     return getTCPTimeoutsWithoutFailover(settings)
-        .withUnsecureConnectionTimeout(settings.connect_timeout_with_failover_ms)
-        .withSecureConnectionTimeout(settings.connect_timeout_with_failover_secure_ms);
+        .withUnsecureConnectionTimeout(settings[Setting::connect_timeout_with_failover_ms])
+        .withSecureConnectionTimeout(settings[Setting::connect_timeout_with_failover_secure_ms]);
 }
 
 ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout)
 {
     return ConnectionTimeouts()
-        .withConnectionTimeout(settings.http_connection_timeout)
-        .withSendTimeout(settings.http_send_timeout)
-        .withReceiveTimeout(settings.http_receive_timeout)
-        .withHttpKeepAliveTimeout(http_keep_alive_timeout)
-        .withTcpKeepAliveTimeout(settings.tcp_keep_alive_timeout)
-        .withHandshakeTimeout(settings.handshake_timeout_ms);
+        .withConnectionTimeout(settings[Setting::http_connection_timeout])
+        .withSendTimeout(settings[Setting::http_send_timeout])
+        .withReceiveTimeout(settings[Setting::http_receive_timeout])
+        .withHTTPKeepAliveTimeout(http_keep_alive_timeout)
+        .withTCPKeepAliveTimeout(settings[Setting::tcp_keep_alive_timeout])
+        .withHandshakeTimeout(settings[Setting::handshake_timeout_ms]);
 }
 
 ConnectionTimeouts ConnectionTimeouts::getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings)
@@ -139,6 +157,26 @@ ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method
     return ConnectionTimeouts(*this)
         .withSendTimeout(saturate(send, send_timeout))
         .withReceiveTimeout(saturate(recv, receive_timeout));
+}
+
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+{
+    session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+    /// we can not change keep alive timeout for already initiated connections
+    if (!session.connected())
+    {
+        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+        session.setKeepAliveMaxRequests(int(timeouts.http_keep_alive_max_requests));
+    }
+}
+
+ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session)
+{
+    return ConnectionTimeouts()
+            .withConnectionTimeout(session.getConnectionTimeout())
+            .withSendTimeout(session.getSendTimeout())
+            .withReceiveTimeout(session.getReceiveTimeout())
+            .withHTTPKeepAliveTimeout(session.getKeepAliveTimeout());
 }
 
 }

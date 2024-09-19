@@ -37,7 +37,7 @@ std::string getIdentifierQuote(nanodbc::ConnectionHolderPtr connection_holder)
 IdentifierQuotingStyle getQuotingStyle(nanodbc::ConnectionHolderPtr connection)
 {
     auto identifier_quote = getIdentifierQuote(connection);
-    if (identifier_quote.length() == 0)
+    if (identifier_quote.empty())
         return IdentifierQuotingStyle::None;
     else if (identifier_quote[0] == '`')
         return IdentifierQuotingStyle::Backticks;

@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -148,9 +149,23 @@ public:
         if constexpr (is_utf8)
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-                return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, UTF8StringSource(*col), input_rows_count);
+            {
+                bool all_ascii = isAllASCII(col->getChars().data(), col->getChars().size());
+                if (all_ascii)
+                    return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, StringSource(*col), input_rows_count);
+                else
+                    return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, UTF8StringSource(*col), input_rows_count);
+            }
+
             if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
+            {
+                StringRef str_ref = col_const->getDataAt(0);
+                bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(str_ref.data), str_ref.size);
+                if (all_ascii)
+                    return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, ConstSource<StringSource>(*col_const), input_rows_count);
+                else
+                    return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
+            }
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
         }
         else
@@ -186,11 +201,12 @@ public:
 
 REGISTER_FUNCTION(Substring)
 {
-    factory.registerFunction<FunctionSubstring<false>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("substr", "substring", FunctionFactory::CaseInsensitive); // MySQL alias
-    factory.registerAlias("mid", "substring", FunctionFactory::CaseInsensitive); /// MySQL alias
+    factory.registerFunction<FunctionSubstring<false>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("substr", "substring", FunctionFactory::Case::Insensitive); // MySQL alias
+    factory.registerAlias("mid", "substring", FunctionFactory::Case::Insensitive); /// MySQL alias
+    factory.registerAlias("byteSlice", "substring", FunctionFactory::Case::Insensitive); /// resembles PostgreSQL's get_byte function, similar to ClickHouse's bitSlice
 
-    factory.registerFunction<FunctionSubstring<true>>({}, FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionSubstring<true>>();
 }
 
 }

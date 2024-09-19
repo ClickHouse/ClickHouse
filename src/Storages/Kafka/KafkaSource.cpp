@@ -1,11 +1,12 @@
 #include <Storages/Kafka/KafkaSource.h>
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
-#include <Storages/Kafka/KafkaConsumer.h>
-#include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Storages/Kafka/KafkaConsumer.h>
+#include <Common/logger_useful.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -19,6 +20,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds kafka_max_wait_ms;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -45,7 +51,7 @@ KafkaSource::KafkaSource(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
+    , virtual_header(storage.getVirtualsHeader())
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
 }
@@ -78,7 +84,7 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)
@@ -262,7 +268,7 @@ Chunk KafkaSource::generateImpl()
     // they are not needed here:
     // and it's misleading to use them here,
     // as columns 'materialized' that way stays 'ephemeral'
-    // i.e. will not be stored anythere
+    // i.e. will not be stored anywhere
     // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
 
     auto result_block  = non_virtual_header.cloneWithColumns(executor.getResultColumns());

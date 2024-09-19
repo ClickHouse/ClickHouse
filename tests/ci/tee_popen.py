@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
+import logging
+import os
+import signal
+import sys
 from io import TextIOWrapper
 from pathlib import Path
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import PIPE, STDOUT, Popen
 from threading import Thread
 from time import sleep
 from typing import Optional, Union
-import logging
-import os
-import sys
 
 
 # Very simple tee logic implementation. You can specify a shell command, output
@@ -30,20 +31,34 @@ class TeePopen:
         self._process = None  # type: Optional[Popen]
         self.timeout = timeout
         self.timeout_exceeded = False
+        self.terminated_by_sigterm = False
+        self.terminated_by_sigkill = False
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
         sleep(self.timeout)
+        logging.warning(
+            "Timeout exceeded. Send SIGTERM to process %s, timeout %s",
+            self.process.pid,
+            self.timeout,
+        )
+        self.send_signal(signal.SIGTERM)
+        time_wait = 0
+        self.terminated_by_sigterm = True
         self.timeout_exceeded = True
+        while self.process.poll() is None and time_wait < 100:
+            print("wait...")
+            wait = 5
+            sleep(wait)
+            time_wait += wait
         while self.process.poll() is None:
-            logging.warning(
-                "Killing process %s, timeout %s exceeded",
-                self.process.pid,
-                self.timeout,
+            logging.error(
+                "Process is still running. Send SIGKILL",
             )
-            os.killpg(self.process.pid, 9)
-            sleep(10)
+            self.send_signal(signal.SIGKILL)
+            self.terminated_by_sigkill = True
+            sleep(5)
 
     def __enter__(self) -> "TeePopen":
         self.process = Popen(
@@ -57,6 +72,8 @@ class TeePopen:
             bufsize=1,
             errors="backslashreplace",
         )
+        sleep(1)
+        print(f"Subprocess started, pid [{self.process.pid}]")
         if self.timeout is not None and self.timeout > 0:
             t = Thread(target=self._check_timeout)
             t.daemon = True  # does not block the program from exit
@@ -85,6 +102,12 @@ class TeePopen:
 
         return self.process.wait()
 
+    def poll(self):
+        return self.process.poll()
+
+    def send_signal(self, signal_num):
+        os.killpg(self.process.pid, signal_num)
+
     @property
     def process(self) -> Popen:
         if self._process is not None:
@@ -98,5 +121,6 @@ class TeePopen:
     @property
     def log_file(self) -> TextIOWrapper:
         if self._log_file is None:
+            # pylint:disable-next=consider-using-with
             self._log_file = open(self._log_file_name, "w", encoding="utf-8")
         return self._log_file

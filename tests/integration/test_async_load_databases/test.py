@@ -28,9 +28,6 @@ def started_cluster():
             """
             CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
             CREATE DATABASE IF NOT EXISTS test;
-            DROP TABLE IF EXISTS test.elements;
-            CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;
-            INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);
             """
         )
 
@@ -48,6 +45,13 @@ def get_status(dictionary_name):
 
 def test_dict_get_data(started_cluster):
     query = instance.query
+
+    query(
+        "CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;"
+    )
+    query(
+        "INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);"
+    )
 
     # dictionaries_lazy_load == false, so these dictionary are not loaded.
     assert get_status("dep_x") == "NOT_LOADED"
@@ -97,6 +101,8 @@ def test_dict_get_data(started_cluster):
     assert query("SELECT dictGetString('dep_x', 'a', toUInt64(4))") == "XX\n"
     assert query("SELECT dictGetString('dep_y', 'a', toUInt64(4))") == "ether\n"
     assert query("SELECT dictGetString('dep_z', 'a', toUInt64(4))") == "ZZ\n"
+    query("DROP TABLE IF EXISTS test.elements;")
+    instance.restart_clickhouse()
 
 
 def dependent_tables_assert():
@@ -122,6 +128,9 @@ def test_dependent_tables(started_cluster):
     )
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
+    for i in range(2, 100):
+        query(f"insert into system.join values (1, {i})")
+
     query(
         "create table src (n int, m default joinGet('system.join', 'm', 1::int),"
         "t default dictGetOrNull('a.d', 'm', toUInt64(3)),"
@@ -172,3 +181,5 @@ def test_multiple_tables(started_cluster):
     random.shuffle(order)
     for i in order:
         assert query(f"select count() from test.table_{i}") == "100\n"
+    for i in range(tables_count):
+        query(f"drop table test.table_{i} sync")

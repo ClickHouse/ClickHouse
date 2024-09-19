@@ -32,11 +32,10 @@ public:
     explicit PasteJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "PasteJoinAlgorithm"; }
-    virtual void initialize(Inputs inputs) override;
-    virtual void consume(Input & input, size_t source_num) override;
-    virtual Status merge() override;
-
-    void logElapsed(double seconds);
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
+    Status merge() override;
+    MergedStats getMergedStats() const override;
 
 private:
     Chunk createBlockWithDefaults(size_t source_num);
@@ -55,6 +54,7 @@ private:
     {
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
+        size_t num_bytes[2] = {0, 0};
 
         size_t max_blocks_loaded = 0;
     };

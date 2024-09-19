@@ -4,6 +4,73 @@ sidebar_label: Polygons
 title: "Functions for Working with Polygons"
 ---
 
+## WKT
+
+Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are:
+
+- POINT
+- POLYGON
+- MULTIPOLYGON
+- LINESTRING
+- MULTILINESTRING
+
+**Syntax**
+
+```sql
+WKT(geo_data)
+```
+
+**Parameters**
+
+`geo_data` can be one of the following [Geo Data Types](../../data-types/geo.md) or their underlying primitive types:
+
+- [Point](../../data-types/geo.md#point)
+- [Ring](../../data-types/geo.md#ring)
+- [Polygon](../../data-types/geo.md#polygon)
+- [MultiPolygon](../../data-types/geo.md#multipolygon)
+- [LineString](../../data-types/geo.md#linestring)
+- [MultiLineString](../../data-types/geo.md#multilinestring)
+
+**Returned value**
+
+- WKT geometric object `POINT` is returned for a Point.
+- WKT geometric object `POLYGON` is returned for a Polygon
+- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon.
+- WKT geometric object `LINESTRING` is returned for a LineString.
+- WKT geometric object `MULTILINESTRING` is returned for a MultiLineString.
+
+**Examples**
+
+POINT from tuple:
+
+```sql
+SELECT wkt((0., 0.));
+```
+
+```response
+POINT(0 0)
+```
+
+POLYGON from an array of tuples or an array of tuple arrays:
+
+```sql
+SELECT wkt([(0., 0.), (10., 0.), (10., 10.), (0., 10.)]);
+```
+
+```response
+POLYGON((0 0,10 0,10 10,0 10))
+```
+
+MULTIPOLYGON from an array of multi-dimensional tuple arrays:
+
+```sql
+SELECT wkt([[[(0., 0.), (10., 0.), (10., 10.), (0., 10.)], [(4., 4.), (5., 4.), (5., 5.), (4., 5.)]], [[(-10., -10.), (-10., -9.), (-9., 10.)]]]);
+```
+
+```response
+MULTIPOLYGON(((0 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))
+```
+
 ## readWKTMultiPolygon
 
 Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.
@@ -23,7 +90,7 @@ SELECT
 
 ### Input parameters
 
-String starting with `MULTIPOLYGON` 
+String starting with `MULTIPOLYGON`
 
 ### Returned value
 
@@ -53,6 +120,118 @@ String starting with `POLYGON`
 
 Polygon
 
+## readWKTPoint
+
+The `readWKTPoint` function in ClickHouse parses a Well-Known Text (WKT) representation of a Point geometry and returns a point in the internal ClickHouse format.
+
+### Syntax
+
+```sql
+readWKTPoint(wkt_string)
+```
+
+### Arguments
+
+- `wkt_string`: The input WKT string representing a Point geometry.
+
+### Returned value
+
+The function returns a ClickHouse internal representation of the Point geometry.
+
+### Example
+
+```sql
+SELECT readWKTPoint('POINT (1.2 3.4)');
+```
+
+```response
+(1.2,3.4)
+```
+
+## readWKTLineString
+
+Parses a Well-Known Text (WKT) representation of a LineString geometry and returns it in the internal ClickHouse format.
+
+### Syntax
+
+```sql
+readWKTLineString(wkt_string)
+```
+
+### Arguments
+
+- `wkt_string`: The input WKT string representing a LineString geometry.
+
+### Returned value
+
+The function returns a ClickHouse internal representation of the linestring geometry.
+
+### Example
+
+```sql
+SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');
+```
+
+```response
+[(1,1),(2,2),(3,3),(1,1)]
+```
+
+## readWKTMultiLineString
+
+Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
+
+### Syntax
+
+```sql
+readWKTMultiLineString(wkt_string)
+```
+
+### Arguments
+
+- `wkt_string`: The input WKT string representing a MultiLineString geometry.
+
+### Returned value
+
+The function returns a ClickHouse internal representation of the multilinestring geometry.
+
+### Example
+
+```sql
+SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');
+```
+
+```response
+[[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
+## readWKTRing
+
+Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns a ring (closed linestring) in the internal ClickHouse format.
+
+### Syntax
+
+```sql
+readWKTRing(wkt_string)
+```
+
+### Arguments
+
+- `wkt_string`: The input WKT string representing a Polygon geometry.
+
+### Returned value
+
+The function returns a ClickHouse internal representation of the ring (closed linestring) geometry.
+
+### Example
+
+```sql
+SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');
+```
+
+```response
+[(1,1),(2,2),(3,3),(1,1)]
+```
+
 ## polygonsWithinSpherical
 
 Returns true or false depending on whether or not one polygon lies completely inside another polygon. Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/within/within_2.html
@@ -74,7 +253,7 @@ UInt8, 0 for false, 1 for true
 
 ## polygonsDistanceSpherical
 
-Calculates the minimal distance between two points where one point belongs to the first polygon and the second to another polygon. Spherical means that coordinates are interpreted as coordinates on a pure and ideal sphere, which is not true for the Earth. Using this type of coordinate system speeds up execution, but of course is not precise. 
+Calculates the minimal distance between two points where one point belongs to the first polygon and the second to another polygon. Spherical means that coordinates are interpreted as coordinates on a pure and ideal sphere, which is not true for the Earth. Using this type of coordinate system speeds up execution, but of course is not precise.
 
 ### Example
 

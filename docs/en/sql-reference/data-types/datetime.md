@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/datetime
-sidebar_position: 48
+sidebar_position: 16
 sidebar_label: DateTime
 ---
 
@@ -36,9 +36,9 @@ You can explicitly set a time zone for `DateTime`-type columns when creating a t
 
 The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn’t explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings.md#settings-date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings-formats.md#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
 
-When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
+When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings-formats.md#date_time_input_format) setting.
 
 ## Examples
 
@@ -137,7 +137,7 @@ If the time transition (due to daylight saving time or for other reasons) was pe
 
 Non-monotonic calendar dates. For example, in Happy Valley - Goose Bay, the time was transitioned one hour backwards at 00:01:00 7 Nov 2010 (one minute after midnight). So after 6th Nov has ended, people observed a whole one minute of 7th Nov, then time was changed back to 23:01 6th Nov and after another 59 minutes the 7th Nov started again. ClickHouse does not (yet) support this kind of fun. During these days the results of time processing functions may be slightly incorrect.
 
-Similar issue exists for Casey Antarctic station in year 2010. They changed time three hours back at 5 Mar, 02:00. If you are working in antarctic station, please don't afraid to use ClickHouse. Just make sure you set timezone to UTC or be aware of inaccuracies.
+Similar issue exists for Casey Antarctic station in year 2010. They changed time three hours back at 5 Mar, 02:00. If you are working in antarctic station, please don't be afraid to use ClickHouse. Just make sure you set timezone to UTC or be aware of inaccuracies.
 
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
@@ -147,8 +147,8 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 - [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
-- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#settings-date_time_input_format)
-- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#settings-date_time_output_format)
+- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
 - [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)

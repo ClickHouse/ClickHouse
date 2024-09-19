@@ -21,11 +21,12 @@ class ReadBufferFromRemoteFSGather final : public ReadBufferFromFileBase
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(bool restricted_seek, const StoredObject & object)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
+        const std::string & cache_path_prefix_,
         const ReadSettings & settings_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         bool use_external_buffer_);
@@ -38,9 +39,9 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
-    size_t getFileSize() override { return getTotalSize(blobs_to_read); }
+    std::optional<size_t> tryGetFileSize() override { return getTotalSize(blobs_to_read); }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
@@ -53,7 +54,7 @@ public:
     bool isContentCached(size_t offset, size_t size) override;
 
 private:
-    std::unique_ptr<ReadBufferFromFileBase> createImplementationBuffer(const StoredObject & object);
+    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object, size_t start_offset);
 
     bool nextImpl() override;
 
@@ -70,17 +71,19 @@ private:
     const ReadSettings settings;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
+    const std::string cache_path_prefix;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const bool use_external_buffer;
-    const bool with_cache;
+    const bool with_file_cache;
+    const bool with_page_cache;
 
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
 
     StoredObject current_object;
     size_t current_buf_idx = 0;
-    std::unique_ptr<ReadBufferFromFileBase> current_buf;
+    SeekableReadBufferPtr current_buf;
 
     LoggerPtr log;
 };

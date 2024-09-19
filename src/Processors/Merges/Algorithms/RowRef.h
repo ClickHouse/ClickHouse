@@ -181,7 +181,7 @@ struct RowRefWithOwnedChunk
 
     UInt64 source_stream_index = 0;
 
-    void swap(RowRefWithOwnedChunk & other)
+    void swap(RowRefWithOwnedChunk & other) /// NOLINT(performance-noexcept-swap)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);

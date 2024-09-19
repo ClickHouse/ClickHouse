@@ -5,6 +5,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -15,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+}
 
 namespace
 {
@@ -100,7 +105,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_if_transform_strings_to_enum)
+        if (!getSettings()[Setting::optimize_if_transform_strings_to_enum])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -133,8 +138,8 @@ public:
                 return;
 
             std::set<std::string> string_values;
-            string_values.insert(first_literal->getValue().get<std::string>());
-            string_values.insert(second_literal->getValue().get<std::string>());
+            string_values.insert(first_literal->getValue().safeGet<std::string>());
+            string_values.insert(second_literal->getValue().safeGet<std::string>());
 
             changeIfArguments(*function_if_node, string_values, context);
             wrapIntoToString(*function_node, std::move(modified_if_node), context);
@@ -162,7 +167,7 @@ public:
             if (!isArray(literal_to->getResultType()) || !isString(literal_default->getResultType()))
                 return;
 
-            auto array_to = literal_to->getValue().get<Array>();
+            auto array_to = literal_to->getValue().safeGet<Array>();
 
             if (array_to.empty())
                 return;
@@ -177,9 +182,9 @@ public:
             std::set<std::string> string_values;
 
             for (const auto & value : array_to)
-                string_values.insert(value.get<std::string>());
+                string_values.insert(value.safeGet<std::string>());
 
-            string_values.insert(literal_default->getValue().get<std::string>());
+            string_values.insert(literal_default->getValue().safeGet<std::string>());
 
             changeTransformArguments(*function_modified_transform_node, string_values, context);
             wrapIntoToString(*function_node, std::move(modified_transform_node), context);
@@ -190,7 +195,7 @@ public:
 
 }
 
-void IfTransformStringsToEnumPass::run(QueryTreeNodePtr query, ContextPtr context)
+void IfTransformStringsToEnumPass::run(QueryTreeNodePtr & query, ContextPtr context)
 {
     ConvertStringsToEnumVisitor visitor(std::move(context));
     visitor.visit(query);

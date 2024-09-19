@@ -5,10 +5,9 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/RestoreSettings.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/RestorerFromBackup.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -67,6 +66,18 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
 
 ReplicatedAccessStorage::~ReplicatedAccessStorage()
 {
+    try
+    {
+        ReplicatedAccessStorage::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void ReplicatedAccessStorage::shutdown()
+{
     stopWatchingThread();
 }
 
@@ -108,7 +119,7 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
@@ -116,7 +127,7 @@ bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr 
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists); });
+    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
 
     if (!ok)
         return false;
@@ -131,7 +142,8 @@ bool ReplicatedAccessStorage::insertZooKeeper(
     const UUID & id,
     const AccessEntityPtr & new_entity,
     bool replace_if_exists,
-    bool throw_if_exists)
+    bool throw_if_exists,
+    UUID * conflicting_id)
 {
     const String & name = new_entity->getName();
     const AccessEntityType type = new_entity->getType();
@@ -155,27 +167,52 @@ bool ReplicatedAccessStorage::insertZooKeeper(
 
     if (res == Coordination::Error::ZNODEEXISTS)
     {
-        if (!throw_if_exists && !replace_if_exists)
-            return false; /// Couldn't insert a new entity.
-
-        if (throw_if_exists)
+        if (!replace_if_exists)
         {
             if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
             {
-                /// To fail with a nice error message, we need info about what already exists.
-                /// This itself could fail if the conflicting uuid disappears in the meantime.
-                /// If that happens, then we'll just retry from the start.
-                String existing_entity_definition = zookeeper->get(entity_path);
+                /// Couldn't insert the new entity because there is an existing entity with such UUID.
+                if (throw_if_exists)
+                {
+                    /// To fail with a nice error message, we need info about what already exists.
+                    /// This itself can fail if the conflicting uuid disappears in the meantime.
+                    /// If that happens, then retryOnZooKeeperUserError() will just retry the operation from the start.
+                    String existing_entity_definition = zookeeper->get(entity_path);
 
-                AccessEntityPtr existing_entity = deserializeAccessEntity(existing_entity_definition, entity_path);
-                AccessEntityType existing_type = existing_entity->getType();
-                String existing_name = existing_entity->getName();
-                throwIDCollisionCannotInsert(id, type, name, existing_type, existing_name);
+                    AccessEntityPtr existing_entity = deserializeAccessEntity(existing_entity_definition, entity_path);
+                    AccessEntityType existing_type = existing_entity->getType();
+                    String existing_name = existing_entity->getName();
+                    throwIDCollisionCannotInsert(id, type, name, existing_type, existing_name);
+                }
+                else
+                {
+                    if (conflicting_id)
+                        *conflicting_id = id;
+                    return false;
+                }
+            }
+            else if (responses[1]->error == Coordination::Error::ZNODEEXISTS)
+            {
+                /// Couldn't insert the new entity because there is an existing entity with the same name.
+                if (throw_if_exists)
+                {
+                    throwNameCollisionCannotInsert(type, name);
+                }
+                else
+                {
+                    if (conflicting_id)
+                    {
+                        /// Get UUID of the existing entry with the same name.
+                        /// This itself can fail if the conflicting name disappears in the meantime.
+                        /// If that happens, then retryOnZooKeeperUserError() will just retry the operation from the start.
+                        *conflicting_id = parseUUID(zookeeper->get(name_path));
+                    }
+                    return false;
+                }
             }
             else
             {
-                /// Couldn't insert the new entity because there is an existing entity with such name.
-                throwNameCollisionCannotInsert(type, name);
+                zkutil::KeeperMultiException::check(res, ops, responses);
             }
         }
 
@@ -616,7 +653,7 @@ void ReplicatedAccessStorage::setEntityNoLock(const UUID & id, const AccessEntit
 void ReplicatedAccessStorage::removeEntityNoLock(const UUID & id)
 {
     LOG_DEBUG(getLogger(), "Removing entity with id {}", toString(id));
-    memory_storage.remove(id, /* throw_if_not_exists= */ false);
+    memory_storage.remove(id, /* throw_if_not_exists= */ false); // NOLINT
 }
 
 
@@ -654,7 +691,7 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
         throwBackupNotAllowed();
 
     auto entities = readAllWithIDs(type);
-    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
     if (entities.empty())
         return;
@@ -681,28 +718,10 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
 }
 
 
-void ReplicatedAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+bool ReplicatedAccessStorage::acquireReplicatedRestore(RestorerFromBackup & restorer) const
 {
-    if (!isRestoreAllowed())
-        throwRestoreNotAllowed();
-
     auto restore_coordination = restorer.getRestoreCoordination();
-    if (!restore_coordination->acquireReplicatedAccessStorage(zookeeper_path))
-        return;
-
-    auto entities = restorer.getAccessEntitiesToRestore();
-    if (entities.empty())
-        return;
-
-    auto create_access = restorer.getRestoreSettings().create_access;
-    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
-
-    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
-    {
-        for (const auto & [id, entity] : my_entities)
-            insert(id, entity, replace_if_exists, throw_if_exists);
-    });
+    return restore_coordination->acquireReplicatedAccessStorage(zookeeper_path);
 }
 
 }

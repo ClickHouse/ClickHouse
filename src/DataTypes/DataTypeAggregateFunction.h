@@ -1,7 +1,7 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
-
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 
 
@@ -25,21 +25,16 @@ private:
     mutable std::optional<size_t> version;
 
     String getNameImpl(bool with_version) const;
-    size_t getVersion() const;
 
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
-        : function(std::move(function_))
-        , argument_types(argument_types_)
-        , parameters(parameters_)
-        , version(version_)
-    {
-    }
+                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt);
 
-    String getFunctionName() const { return function->getName(); }
+    size_t getVersion() const;
+
+    String getFunctionName() const;
     AggregateFunctionPtr getFunction() const { return function; }
 
     String doGetName() const override;
@@ -51,8 +46,8 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr getReturnType() const { return function->getResultType(); }
-    DataTypePtr getReturnTypeToPredict() const { return function->getReturnTypeToPredict(); }
+    DataTypePtr getReturnType() const;
+    DataTypePtr getReturnTypeToPredict() const;
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
     MutableColumnPtr createColumn() const override;
@@ -69,7 +64,7 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
     bool supportsSparseSerialization() const override { return false; }
 
-    bool isVersioned() const { return function->isVersioned(); }
+    bool isVersioned() const;
 
     /// Version is not empty only if it was parsed from AST or implicitly cast to 0 or version according
     /// to server revision.
@@ -84,10 +79,7 @@ public:
         version = version_;
     }
 
-    void updateVersionFromRevision(size_t revision, bool if_empty) const
-    {
-        setVersion(function->getVersionFromRevision(revision), if_empty);
-    }
+    void updateVersionFromRevision(size_t revision, bool if_empty) const;
 };
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);

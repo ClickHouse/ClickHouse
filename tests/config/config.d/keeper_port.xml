@@ -3,7 +3,7 @@
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
 
-        <create_snapshot_on_exit>1</create_snapshot_on_exit>
+        <create_snapshot_on_exit>0</create_snapshot_on_exit>
         <digest_enabled>1</digest_enabled>
 
         <coordination_settings>
@@ -24,6 +24,9 @@
             <compress_logs>0</compress_logs>
 
             <async_replication>1</async_replication>
+
+            <latest_logs_cache_size_threshold>1073741824</latest_logs_cache_size_threshold>
+            <commit_logs_cache_size_threshold>524288000</commit_logs_cache_size_threshold>
         </coordination_settings>
 
         <raft_configuration>
@@ -39,6 +42,7 @@
             <multi_read>1</multi_read>
             <check_not_exists>1</check_not_exists>
             <create_if_not_exists>1</create_if_not_exists>
+            <remove_recursive>1</remove_recursive>
         </feature_flags>
     </keeper_server>
 </clickhouse>

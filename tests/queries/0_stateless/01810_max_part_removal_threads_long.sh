@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Tags: long, no-s3-storage
+# Tags: long, no-object-storage
 # Because parallel parts removal disabled for s3 storage
 
 # NOTE: this done as not .sql since we need to Ordinary database
 # (to account threads in query_log for DROP TABLE query)
 # and we can do it compatible with parallel run only in .sh
 # (via $CLICKHOUSE_DATABASE)
+
+# Creation of a database with Ordinary engine emits a warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,10 +17,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The number of threads removing data parts should be between 1 and 129.
 # Because max_parts_cleaning_thread_pool_size is 128 by default
 
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -nm -q "create database ordinary_$CLICKHOUSE_DATABASE engine=Ordinary"
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -m -q "create database ordinary_$CLICKHOUSE_DATABASE engine=Ordinary"
 
 # MergeTree
-$CLICKHOUSE_CLIENT -nm -q """
+$CLICKHOUSE_CLIENT -m -q """
     use ordinary_$CLICKHOUSE_DATABASE;
     drop table if exists data_01810;
 
@@ -44,7 +47,7 @@ $CLICKHOUSE_CLIENT -nm -q """
 """
 
 # ReplicatedMergeTree
-$CLICKHOUSE_CLIENT -nm -q """
+$CLICKHOUSE_CLIENT -m -q """
     use ordinary_$CLICKHOUSE_DATABASE;
     drop table if exists rep_data_01810;
 
@@ -73,4 +76,4 @@ $CLICKHOUSE_CLIENT -nm -q """
     format Null;
 """
 
-$CLICKHOUSE_CLIENT -nm -q "drop database ordinary_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT -m -q "drop database ordinary_$CLICKHOUSE_DATABASE"

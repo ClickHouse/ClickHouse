@@ -21,12 +21,14 @@ limitations under the License. */
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include <Core/Settings.h>
 #include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
@@ -53,11 +55,22 @@ limitations under the License. */
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_live_view;
+    extern const SettingsSeconds live_view_heartbeat_interval;
+    extern const SettingsUInt64 max_live_view_insert_blocks_before_refresh;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsBool use_concurrency_control;
+}
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int TABLE_WAS_NOT_DROPPED;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -86,14 +99,14 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
         if (inner_select_with_union_query)
         {
             if (inner_select_with_union_query->list_of_selects->children.size() != 1)
-                throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "UNION is not supported for LIVE VIEW");
 
             inner_query = inner_select_with_union_query->list_of_selects->children[0];
         }
 
         auto * inner_select_query = inner_query->as<ASTSelectQuery>();
         if (!inner_select_query)
-            throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW,
+            throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
                 "LIVE VIEWs are only supported for queries from tables, "
                 "but there is no table name in select query.");
 
@@ -218,6 +231,10 @@ StorageLiveView::StorageLiveView(
 
     setInMemoryMetadata(storage_metadata);
 
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "");
+    setVirtuals(std::move(virtuals));
+
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
@@ -226,41 +243,14 @@ StorageLiveView::StorageLiveView(
 
     DatabaseCatalog::instance().addViewDependency(select_query_description.select_table_id, table_id_);
 
-    if (query.live_view_periodic_refresh)
-    {
-        is_periodically_refreshed = true;
-        periodic_live_view_refresh = Seconds {*query.live_view_periodic_refresh};
-    }
-
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
-
-    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask",
-        [this]
-        {
-            try
-            {
-                periodicRefreshTaskFunc();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Exception in LiveView periodic refresh task in BackgroundSchedulePool");
-            }
-        });
-    periodic_refresh_task->deactivate();
 }
 
 StorageLiveView::~StorageLiveView()
 {
     shutdown(false);
-}
-
-NamesAndTypesList StorageLiveView::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
-    };
 }
 
 void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
@@ -285,16 +275,11 @@ void StorageLiveView::drop()
 
 void StorageLiveView::startup()
 {
-    if (is_periodically_refreshed)
-        periodic_refresh_task->activate();
 }
 
 void StorageLiveView::shutdown(bool)
 {
     shutdown_called = true;
-
-    if (is_periodically_refreshed)
-        periodic_refresh_task->deactivate();
 
     DatabaseCatalog::instance().removeViewDependency(select_query_description.select_table_id, getStorageID());
 }
@@ -311,17 +296,7 @@ Pipe StorageLiveView::read(
     std::lock_guard lock(mutex);
 
     if (!(*blocks_ptr))
-    {
         refreshImpl(lock);
-    }
-    else if (is_periodically_refreshed)
-    {
-        Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
-        Seconds blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime(lock).time_since_epoch());
-
-        if ((current_time - periodic_live_view_refresh) >= blocks_time)
-            refreshImpl(lock);
-    }
 
     return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, getHeader()));
 }
@@ -349,29 +324,34 @@ Pipe StorageLiveView::watch(
     if (query.is_watch_events)
         reader = Pipe(std::make_shared<LiveViewEventsSource>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
-            blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
-            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds()));
+            blocks_ptr,
+            blocks_metadata_ptr,
+            active_ptr,
+            has_limit,
+            limit,
+            local_context->getSettingsRef()[Setting::live_view_heartbeat_interval].totalSeconds()));
     else
         reader = Pipe(std::make_shared<LiveViewSource>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
-            blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
-            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds()));
+            blocks_ptr,
+            blocks_metadata_ptr,
+            active_ptr,
+            has_limit,
+            limit,
+            local_context->getSettingsRef()[Setting::live_view_heartbeat_interval].totalSeconds()));
 
     {
         std::lock_guard lock(mutex);
 
         if (!(*blocks_ptr))
             refreshImpl(lock);
-
-        if (is_periodically_refreshed)
-            scheduleNextPeriodicRefresh(lock);
     }
 
     processed_stage = QueryProcessingStage::Complete;
     return reader;
 }
 
-void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
+void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr local_context)
 {
     auto output = std::make_shared<LiveViewSink>(*this);
 
@@ -393,7 +373,9 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
 
     {
         std::lock_guard lock(mutex);
-        if (!mergeable_blocks || mergeable_blocks->blocks->size() >= local_context->getGlobalContext()->getSettingsRef().max_live_view_insert_blocks_before_refresh)
+        if (!mergeable_blocks
+            || mergeable_blocks->blocks->size()
+                >= local_context->getGlobalContext()->getSettingsRef()[Setting::max_live_view_insert_blocks_before_refresh])
         {
             mergeable_blocks = collectMergeableBlocks(local_context, lock);
             from = blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
@@ -417,7 +399,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
 
         QueryPipelineBuilder builder;
 
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
+        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             auto select_description = buildSelectQueryTreeDescription(select_query_description.inner_query, local_context);
             if (select_description.dependent_table_node)
@@ -450,6 +432,21 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
 
         builder.addSimpleTransform([&](const Block & cur_header)
         {
+            return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), cur_header);
+        });
+
+        String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
+        });
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+        });
+
+        builder.addSimpleTransform([&](const Block & cur_header)
+        {
             return std::make_shared<MaterializingTransform>(cur_header);
         });
 
@@ -478,7 +475,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
     });
 
     auto executor = pipeline.execute();
-    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
+    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef()[Setting::use_concurrency_control]);
 }
 
 void StorageLiveView::refresh()
@@ -499,7 +496,7 @@ Block StorageLiveView::getHeader() const
 
     if (!sample_block)
     {
-        if (live_view_context->getSettingsRef().allow_experimental_analyzer)
+        if (live_view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query_description.select_query,
                 live_view_context,
@@ -543,7 +540,7 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
         auto & select_with_union_query = select_query_description.select_query->as<ASTSelectWithUnionQuery &>();
         auto blocks_query = select_with_union_query.list_of_selects->children.at(0)->clone();
 
-        if (!live_view_context->getSettingsRef().allow_experimental_analyzer)
+        if (!live_view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             /// Rewrite inner query with right aliases for JOIN.
             /// It cannot be done in constructor or startup() because InterpreterSelectQuery may access table,
@@ -567,7 +564,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     QueryPipelineBuilder builder;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_description.inner_query,
             local_context,
@@ -623,7 +620,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
 
     QueryPipelineBuilder builder;
 
-    if (block_context->getSettingsRef().allow_experimental_analyzer)
+    if (block_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto select_description = buildSelectQueryTreeDescription(select_query_description.select_query, block_context);
 
@@ -665,13 +662,14 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    builder.addSimpleTransform([&](const Block & cur_header)
-    {
-        return std::make_shared<SquashingChunksTransform>(
-            cur_header,
-            getContext()->getSettingsRef().min_insert_block_size_rows,
-            getContext()->getSettingsRef().min_insert_block_size_bytes);
-    });
+    builder.addSimpleTransform(
+        [&](const Block & cur_header)
+        {
+            return std::make_shared<SquashingTransform>(
+                cur_header,
+                getContext()->getSettingsRef()[Setting::min_insert_block_size_rows],
+                getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes]);
+        });
 
     builder.addResources(std::move(resource_holder));
 
@@ -746,49 +744,19 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
     return updated;
 }
 
-void StorageLiveView::periodicRefreshTaskFunc()
-{
-    LOG_TRACE(log, "periodic refresh task");
-
-    std::lock_guard lock(mutex);
-
-    if (hasActiveUsers(lock))
-        scheduleNextPeriodicRefresh(lock);
-}
-
-void StorageLiveView::scheduleNextPeriodicRefresh(const std::lock_guard<std::mutex> & lock)
-{
-    Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
-    Seconds blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime(lock).time_since_epoch());
-
-    if ((current_time - periodic_live_view_refresh) >= blocks_time)
-    {
-        refreshImpl(lock);
-        blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime(lock).time_since_epoch());
-    }
-    current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
-
-    auto next_refresh_time = blocks_time + periodic_live_view_refresh;
-
-    if (current_time >= next_refresh_time)
-        periodic_refresh_task->scheduleAfter(0);
-    else
-    {
-        auto schedule_time = std::chrono::duration_cast<MilliSeconds> (next_refresh_time - current_time);
-        periodic_refresh_task->scheduleAfter(static_cast<size_t>(schedule_time.count()));
-    }
-}
-
 void registerStorageLiveView(StorageFactory & factory)
 {
-    factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
-    {
-        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
+    factory.registerStorage(
+        "LiveView",
+        [](const StorageFactory::Arguments & args)
+        {
+            if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_live_view])
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
 
-        return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
-    });
+            return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
+        });
 }
 
 }

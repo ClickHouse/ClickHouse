@@ -23,21 +23,25 @@ SHOW CREATE tab;
 INSERT INTO TABLE tab SELECT number, randomPrintableASCII(1000), randomPrintableASCII(10), rand(number), rand(number+1), rand(number+2) FROM numbers(1000);
 SELECT count() FROM tab;
 
+SELECT formatQuery('ALTER TABLE tab MODIFY COLUMN long_string MODIFY SETTING min_compress_block_size = 8192;');
 ALTER TABLE tab MODIFY COLUMN long_string MODIFY SETTING min_compress_block_size = 8192;
 SHOW CREATE tab;
 
+SELECT formatQuery('ALTER TABLE tab MODIFY COLUMN long_string RESET SETTING min_compress_block_size;');
 ALTER TABLE tab MODIFY COLUMN long_string RESET SETTING min_compress_block_size;
 SHOW CREATE tab;
 
+SELECT formatQuery('ALTER TABLE tab MODIFY COLUMN long_string REMOVE SETTINGS;');
 ALTER TABLE tab MODIFY COLUMN long_string REMOVE SETTINGS;
 SHOW CREATE tab;
 
+SELECT formatQuery('ALTER TABLE tab MODIFY COLUMN long_string String SETTINGS (min_compress_block_size = 163840, max_compress_block_size = 163840);');
 ALTER TABLE tab MODIFY COLUMN long_string String SETTINGS (min_compress_block_size = 163840, max_compress_block_size = 163840);
 SHOW CREATE tab;
 
 DROP TABLE tab;
 
-SELECT '--- ';
+SELECT '---';
 
 SET allow_experimental_object_type = 1;
 
@@ -45,7 +49,7 @@ CREATE TABLE tab
 (
     id UInt64,
     tup Tuple(UInt64, UInt64) SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
-    json JSON SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
+    json Object('json') SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -56,7 +60,7 @@ SELECT tup, json.key AS key FROM tab ORDER BY key LIMIT 10;
 
 DROP TABLE tab;
 
-SELECT '--- ';
+SELECT '---';
 
 -- Unsupported column-level settings are rejected
 CREATE TABLE tab

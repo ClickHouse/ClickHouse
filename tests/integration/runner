@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import shlex
+import shutil
 import signal
 import string
 import subprocess
@@ -39,9 +40,7 @@ def check_args_and_update_paths(args):
         else:
             CLICKHOUSE_ROOT = args.clickhouse_root
     else:
-        logging.info(
-            "ClickHouse root is not set. Will use %s" % (DEFAULT_CLICKHOUSE_ROOT)
-        )
+        logging.info("ClickHouse root is not set. Will use %s", DEFAULT_CLICKHOUSE_ROOT)
         CLICKHOUSE_ROOT = DEFAULT_CLICKHOUSE_ROOT
 
     if not os.path.isabs(args.binary):
@@ -74,9 +73,7 @@ def check_args_and_update_paths(args):
         args.base_configs_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO)
         )
-        logging.info(
-            "Base configs dir is not set. Will use %s" % (args.base_configs_dir)
-        )
+        logging.info("Base configs dir is not set. Will use %s", args.base_configs_dir)
 
     if args.cases_dir:
         if not os.path.isabs(args.cases_dir):
@@ -87,7 +84,7 @@ def check_args_and_update_paths(args):
         args.cases_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, INTEGRATION_DIR_IN_REPO)
         )
-        logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
+        logging.info("Cases dir is not set. Will use %s", args.cases_dir)
 
     if args.utils_dir:
         if not os.path.isabs(args.utils_dir):
@@ -98,12 +95,13 @@ def check_args_and_update_paths(args):
         args.utils_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, UTILS_DIR_IN_REPO)
         )
-        logging.info("utils dir is not set. Will use %s" % (args.utils_dir))
+        logging.info("utils dir is not set. Will use %s", args.utils_dir)
 
     logging.info(
-        "base_configs_dir: {}, binary: {}, cases_dir: {} ".format(
-            args.base_configs_dir, args.binary, args.cases_dir
-        )
+        "base_configs_dir: %s, binary: %s, cases_dir: %s ",
+        args.base_configs_dir,
+        args.binary,
+        args.cases_dir,
     )
 
     for path in [
@@ -115,7 +113,7 @@ def check_args_and_update_paths(args):
         CLICKHOUSE_ROOT,
     ]:
         if not os.path.exists(path):
-            raise Exception("Path {} doesn't exist".format(path))
+            raise FileNotFoundError(f"Path {path} doesn't exist")
 
     if args.dockerd_volume:
         if not os.path.isabs(args.dockerd_volume):
@@ -126,21 +124,69 @@ def check_args_and_update_paths(args):
     if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (
         not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))
     ):
-        raise Exception(
-            "No config.xml or config.yaml in {}".format(args.base_configs_dir)
+        raise FileNotFoundError(
+            f"No config.xml or config.yaml in {args.base_configs_dir}"
         )
 
     if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (
         not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))
     ):
-        raise Exception(
-            "No users.xml or users.yaml in {}".format(args.base_configs_dir)
+        raise FileNotFoundError(
+            f"No users.xml or users.yaml in {args.base_configs_dir}"
         )
 
 
+def check_iptables_legacy():
+    iptables_path = shutil.which("iptables")
+    ip6tables_path = shutil.which("ip6tables")
+
+    if iptables_path is None:
+        print("Error: 'iptables' not found in PATH")
+        sys.exit(1)
+    if ip6tables_path is None:
+        print("Error: 'ip6tables' not found in PATH, ignoring")
+
+    try:
+        file_info = os.stat(iptables_path)
+        file_info_str = str(file_info)
+
+        if "legacy" in file_info_str:
+            print(
+                """
+                iptables on your host machine is in 'legacy' mode. This is not supported.
+
+                Please switch to 'nftables' mode, usualy by installing `iptables-nft` or `nftables`, consult your distribution manual.
+                Or, use --ignore-iptables-legacy-check.
+                """
+            )
+            sys.exit(1)
+
+        if not ip6tables_path:
+            return
+
+        file_info = os.stat(ip6tables_path)
+        file_info_str = str(file_info)
+
+        if "legacy" in file_info_str:
+            print(
+                """
+                ip6tables on your host machine is in 'legacy' mode. This is not supported.
+
+                Please switch to 'nftables' mode, usualy by installing `iptables-nft` or `nftables`, consult your distribution manual.
+                Or, use --ignore-iptables-legacy-check.
+                """
+            )
+            sys.exit(1)
+
+    except FileNotFoundError:
+        print(f"Error: '{iptables_path}' not found")
+        sys.exit(1)
+
+
 def docker_kill_handler_handler(signum, frame):
+    _, _ = signum, frame
     subprocess.check_call(
-        "docker ps --all --quiet --filter name={name}".format(name=CONTAINER_NAME),
+        f"docker ps --all --quiet --filter name={CONTAINER_NAME}",
         shell=True,
     )
     raise KeyboardInterrupt("Killed by Ctrl+C")
@@ -165,6 +211,7 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)",
     )
+
     parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
     parser.add_argument(
@@ -246,6 +293,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--count", action="store", type=int, dest="count", help="Repeat count"
+    )
+
+    parser.add_argument(
         "--no-random",
         action="store",
         dest="no_random",
@@ -287,11 +338,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--analyzer",
+        "--old-analyzer",
         action="store_true",
         default=False,
-        dest="analyzer",
-        help="Use new analyzer infrastructure",
+        dest="old_analyzer",
+        help="Use old analyzer infrastructure",
     )
 
     parser.add_argument(
@@ -309,16 +360,32 @@ if __name__ == "__main__":
         help="Bind volume to this dir to use for dockerd files",
     )
 
+    parser.add_argument(
+        "--ignore-iptables-legacy-check",
+        action="store_true",
+        default=False,
+        help="Ignore iptables-legacy usage check",
+    )
+
     parser.add_argument("pytest_args", nargs="*", help="args for pytest command")
 
     args = parser.parse_args()
 
     check_args_and_update_paths(args)
 
+    if not args.ignore_iptables_legacy_check:
+        check_iptables_legacy()
+    else:
+        logging.warning("Skipping iptables-legacy check")
+
     parallel_args = ""
     if args.parallel:
         parallel_args += "--dist=loadfile"
-        parallel_args += " -n {}".format(args.parallel)
+        parallel_args += f" -n {args.parallel}".format()
+
+    repeat_args = (
+        f" --count {args.count}" if args.count is not None and args.count > 0 else ""
+    )
 
     rand_args = ""
     # if not args.no_random:
@@ -326,7 +393,7 @@ if __name__ == "__main__":
 
     net = ""
     if args.network:
-        net = "--net={}".format(args.network)
+        net = f"--net={args.network}"
     elif not args.disable_net_host:
         net = "--net=host"
 
@@ -350,9 +417,7 @@ if __name__ == "__main__":
         dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
     elif args.dockerd_volume:
         dockerd_internal_volume = (
-            "--mount type=bind,source={},target=/var/lib/docker".format(
-                args.dockerd_volume
-            )
+            f"--mount type=bind,source={args.dockerd_volume},target=/var/lib/docker"
         )
     else:
         try:
@@ -389,9 +454,9 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    use_analyzer = ""
-    if args.analyzer:
-        use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
+    use_old_analyzer = ""
+    if args.old_analyzer:
+        use_old_analyzer = "-e CLICKHOUSE_USE_OLD_ANALYZER=1"
 
     # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
     pytest_opts = " ".join(
@@ -412,14 +477,14 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
-        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
+        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
+        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
     cmd = cmd_base + " " + args.command
     cmd_pre_pull = (
-        f"{cmd_base} find /compose -name docker_compose_*.yml "
+        f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
         r"-exec docker-compose -f '{}' pull \;"
     )
 

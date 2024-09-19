@@ -93,6 +93,14 @@ namespace
         if (no_output)
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (settings.hilite ? IAST::hilite_none : "") << "*.*";
     }
+
+
+    void formatCurrentGrantsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << "(";
+        formatElementsWithoutOptions(elements, settings);
+        settings.ostr << ")";
+    }
 }
 
 
@@ -148,9 +156,14 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
                             "to grant or revoke, not both of them");
     }
     else if (current_grants)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
+        formatCurrentGrantsElements(access_rights_elements, settings);
+    }
     else
+    {
         formatElementsWithoutOptions(access_rights_elements, settings);
+    }
 
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
                   << (settings.hilite ? IAST::hilite_none : "");

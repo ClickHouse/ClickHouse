@@ -1,11 +1,13 @@
-CREATE TABLE table_02184 (x UInt8); --{serverError 119}
+SET default_table_engine = 'None';
+
+CREATE TABLE table_02184 (x UInt8); --{serverError ENGINE_REQUIRED}
 SET default_table_engine = 'Log';
 CREATE TABLE table_02184 (x UInt8);
 SHOW CREATE TABLE table_02184;
 DROP TABLE table_02184;
 
 SET default_table_engine = 'MergeTree';
-CREATE TABLE table_02184 (x UInt8); --{serverError 42}
+CREATE TABLE table_02184 (x UInt8); --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 CREATE TABLE table_02184 (x UInt8, PRIMARY KEY (x));
 SHOW CREATE TABLE table_02184;
 DROP TABLE table_02184;
@@ -13,7 +15,7 @@ DROP TABLE table_02184;
 CREATE TABLE test_optimize_exception (date Date) PARTITION BY toYYYYMM(date) ORDER BY date;
 SHOW CREATE TABLE test_optimize_exception;
 DROP TABLE test_optimize_exception;
-CREATE TABLE table_02184 (x UInt8) PARTITION BY x; --{serverError 36}
+CREATE TABLE table_02184 (x UInt8) PARTITION BY x; --{serverError BAD_ARGUMENTS}
 CREATE TABLE table_02184 (x UInt8) ORDER BY x;
 SHOW CREATE TABLE table_02184;
 DROP TABLE table_02184;
@@ -65,11 +67,11 @@ DROP TABLE t1;
 DROP TABLE t2;
 
 
-CREATE DATABASE test_02184 ORDER BY kek; -- {serverError 80}
-CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError 115}
-CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) ENGINE=MergeTree PRIMARY KEY y; -- {clientError 36}
+CREATE DATABASE test_02184 ORDER BY kek; -- {serverError INCORRECT_QUERY}
+CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError UNKNOWN_SETTING}
+CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) ENGINE=MergeTree PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}
 SET default_table_engine = 'MergeTree';
-CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) PRIMARY KEY y; -- {clientError 36}
+CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}
 
 CREATE TABLE mt (a UInt64, b Nullable(String), PRIMARY KEY (a, coalesce(b, 'test')), INDEX b_index b TYPE set(123) GRANULARITY 1);
 SHOW CREATE TABLE mt;
@@ -83,8 +85,8 @@ CREATE TEMPORARY TABLE tmp (n int);
 SHOW CREATE TEMPORARY TABLE tmp;
 CREATE TEMPORARY TABLE tmp1 (n int) ENGINE=Memory;
 CREATE TEMPORARY TABLE tmp2 (n int) ENGINE=Log;
-CREATE TEMPORARY TABLE tmp2 (n int) ORDER BY n; -- {serverError 36}
-CREATE TEMPORARY TABLE tmp2 (n int, PRIMARY KEY (n)); -- {serverError 36}
+CREATE TEMPORARY TABLE tmp2 (n int) ORDER BY n; -- {serverError BAD_ARGUMENTS}
+CREATE TEMPORARY TABLE tmp2 (n int, PRIMARY KEY (n)); -- {serverError BAD_ARGUMENTS}
 
 CREATE TABLE log (n int);
 SHOW CREATE log;
@@ -98,9 +100,9 @@ DROP TABLE log1;
 DROP TABLE mem;
 
 SET default_table_engine = 'None';
-CREATE TABLE mem AS SELECT 1 as n; --{serverError 119}
+CREATE TABLE mem AS SELECT 1 as n; --{serverError ENGINE_REQUIRED}
 SET default_table_engine = 'Memory';
-CREATE TABLE mem ORDER BY n AS SELECT 1 as n; -- {serverError 36}
+CREATE TABLE mem ORDER BY n AS SELECT 1 as n; -- {serverError BAD_ARGUMENTS}
 SET default_table_engine = 'MergeTree';
 CREATE TABLE mt ORDER BY n AS SELECT 1 as n;
 CREATE TABLE mem ENGINE=Memory AS SELECT 1 as n;

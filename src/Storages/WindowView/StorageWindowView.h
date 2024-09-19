@@ -111,7 +111,8 @@ public:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_);
+        const String & comment,
+        LoadingStrictnessLevel mode);
 
     String getName() const override { return "WindowView"; }
 
@@ -166,7 +167,7 @@ public:
 
     BlockIO populate();
 
-    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
+    static void writeIntoWindowView(StorageWindowView & window_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr context);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 
@@ -271,5 +272,9 @@ private:
     StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
+
+    bool disabled_due_to_analyzer = false;
+
+    void throwIfWindowViewIsDisabled(ContextPtr local_context = nullptr) const;
 };
 }

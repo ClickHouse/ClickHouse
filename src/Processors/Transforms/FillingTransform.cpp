@@ -53,21 +53,20 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
-    IntervalKind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
+    IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
     static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
     switch (kind) // NOLINT(bugprone-switch-missing-default-case)
     {
 #define DECLARE_CASE(NAME) \
-        case IntervalKind::NAME: \
+        case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.get<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
     }
-    UNREACHABLE();
 }
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
@@ -140,31 +139,31 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     {
         if (which.isDate() || which.isDate32())
         {
-            Int64 avg_seconds = descr.fill_step.get<Int64>() * descr.step_kind->toAvgSeconds();
+            Int64 avg_seconds = descr.fill_step.safeGet<Int64>() * descr.step_kind->toAvgSeconds();
             if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                                 "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
         }
 
         if (which.isDate())
-            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, descr.fill_step.get<Int64>(), DateLUT::instance());
+            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), DateLUT::instance());
         else if (which.isDate32())
-            descr.step_func = getStepFunction<Int32>(*descr.step_kind, descr.fill_step.get<Int64>(), DateLUT::instance());
+            descr.step_func = getStepFunction<Int32>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), DateLUT::instance());
         else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
-            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, descr.fill_step.get<Int64>(), date_time->getTimeZone());
+            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), date_time->getTimeZone());
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
-            const auto & step_dec = descr.fill_step.get<const DecimalField<Decimal64> &>();
+            const auto & step_dec = descr.fill_step.safeGet<const DecimalField<Decimal64> &>();
             Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
             static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
             switch (*descr.step_kind) // NOLINT(bugprone-switch-missing-default-case)
             {
 #define DECLARE_CASE(NAME) \
-                case IntervalKind::NAME: \
+                case IntervalKind::Kind::NAME: \
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
-                        auto field_decimal = field.get<DecimalField<DateTime64>>(); \
+                        auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
                         auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, utc_time_zone, field_decimal.getScale()); \
                         field = DecimalField(res, field_decimal.getScale()); \
                     }; \
@@ -204,7 +203,7 @@ FillingTransform::FillingTransform(
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
     if (interpolate_description)
-        interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
+        interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
 
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
@@ -237,10 +236,21 @@ FillingTransform::FillingTransform(
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
-    std::set<size_t> unique_positions;
+    std::unordered_set<size_t> ordinary_sort_positions;
+    for (const auto & desc : sort_description)
+    {
+        if (!desc.with_fill)
+            ordinary_sort_positions.insert(header_.getPositionByName(desc.column_name));
+    }
+
+    std::unordered_set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
+    {
         if (!unique_positions.insert(pos).second)
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
+        if (ordinary_sort_positions.contains(pos))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "ORDER BY containing the same expression with and without WITH FILL modifier is not supported");
+    }
 
     if (use_with_fill_by_sorting_prefix)
     {
@@ -534,8 +544,7 @@ size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
 
     const size_t linear_probe_threadhold = 16;
     size_t linear_probe_end = begin + linear_probe_threadhold;
-    if (linear_probe_end > end)
-        linear_probe_end = end;
+    linear_probe_end = std::min(linear_probe_end, end);
 
     for (size_t pos = begin; pos < linear_probe_end; ++pos)
     {

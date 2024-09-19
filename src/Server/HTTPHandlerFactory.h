@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Common/AsynchronousMetrics.h>
-#include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
-#include <Common/StringUtils/StringUtils.h>
-
+#include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
 
 namespace DB
 {
@@ -18,6 +16,7 @@ namespace ErrorCodes
 }
 
 class IServer;
+class AsynchronousMetrics;
 
 template <typename TEndpoint>
 class HandlingRuleHTTPHandlerFactory : public HTTPRequestHandlerFactory
@@ -34,7 +33,6 @@ public:
     {
         creator = [&server]() -> std::unique_ptr<TEndpoint> { return std::make_unique<TEndpoint>(server); };
     }
-
 
     void addFilter(Filter cur_filter)
     {
@@ -56,6 +54,8 @@ public:
                 continue;
             else if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));
+            else if (filter_type == "empty_query_string")
+                addFilter(emptyQueryStringFilter());
             else if (filter_type == "headers")
                 addFilter(headersFilter(config, prefix + ".headers"));
             else if (filter_type == "methods")
@@ -123,18 +123,6 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix);
-
-HTTPRequestHandlerFactoryPtr
-createPrometheusHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & config_prefix);
-
-HTTPRequestHandlerFactoryPtr
-createPrometheusMainHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & name);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer

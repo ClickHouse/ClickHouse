@@ -80,11 +80,7 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
-    static Names getVirtualColumnNames();
-
-    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
@@ -93,6 +89,9 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -104,7 +103,7 @@ public:
     {
         std::vector<std::string> paths_to_archives;
         std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
+        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
 
         bool isSingleFileRead() const
         {
@@ -112,28 +111,33 @@ public:
         }
     };
 
-    ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
-
     static ColumnsDescription getTableStructureFromFile(
         const String & format,
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context,
+        const ContextPtr & context,
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFile(
+        const std::vector<String> & paths,
+        const String & compression_method,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context,
         const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
+    static void parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax);
 
     static ArchiveInfo getArchiveInfo(
         const std::string & path_to_archive,
         const std::string & file_in_archive,
         const std::string & user_files_path,
-        ContextPtr context,
+        const ContextPtr & context,
         size_t & total_bytes_to_read);
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     friend class StorageFileSource;
@@ -141,6 +145,16 @@ protected:
     friend class ReadFromFile;
 
 private:
+    std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFileImpl(
+        std::optional<String> format,
+        const std::vector<String> & paths,
+        const String & compression_method,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context,
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+
     void setStorageMetadata(CommonArguments args);
 
     std::string format_name;
@@ -182,15 +196,13 @@ private:
     std::atomic<int32_t> readers_counter = 0;
     FileRenamer file_renamer;
     bool was_renamed = false;
-
-    NamesAndTypesList virtual_columns;
     bool distributed_processing = false;
 };
 
-class StorageFileSource : public SourceWithKeyCondition
+class StorageFileSource : public SourceWithKeyCondition, WithContext
 {
 public:
-    class FilesIterator
+    class FilesIterator : WithContext
     {
     public:
         explicit FilesIterator(
@@ -198,7 +210,7 @@ public:
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
-            ContextPtr context_,
+            const ContextPtr & context_,
             bool distributed_processing_ = false);
 
         String next();
@@ -227,8 +239,6 @@ private:
         std::atomic<size_t> index = 0;
 
         bool distributed_processing;
-
-        ContextPtr context;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -236,7 +246,7 @@ private:
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
@@ -256,7 +266,7 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override;
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
 
@@ -270,6 +280,7 @@ private:
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
+    std::optional<Poco::Timestamp> current_file_last_modified;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
@@ -279,14 +290,13 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     std::shared_ptr<IArchiveReader> archive_reader;
-    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
 
-    ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
     UInt64 max_block_size;
 
     bool finished_generate = false;

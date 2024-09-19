@@ -1,0 +1,51 @@
+┌─part_name─┬─mark_number─┬─rows_in_granule─┬─a─┬─b─┬─modulo(sipHash64(sp), 100)─┐
+│ all_1_1_0 │           0 │               3 │ 0 │ 0 │                         19 │
+│ all_1_1_0 │           1 │               3 │ 1 │ 6 │                         19 │
+│ all_1_1_0 │           2 │               3 │ 3 │ 3 │                         19 │
+│ all_1_1_0 │           3 │               1 │ 4 │ 9 │                         19 │
+│ all_1_1_0 │           4 │               0 │ 4 │ 9 │                         19 │
+│ all_2_2_0 │           0 │               3 │ 0 │ 0 │                         96 │
+│ all_2_2_0 │           1 │               2 │ 3 │ 3 │                         96 │
+│ all_2_2_0 │           2 │               0 │ 4 │ 4 │                         96 │
+│ all_3_3_0 │           0 │               3 │ 0 │ 0 │                         96 │
+│ all_3_3_0 │           1 │               3 │ 1 │ 6 │                         96 │
+│ all_3_3_0 │           2 │               3 │ 3 │ 3 │                         96 │
+│ all_3_3_0 │           3 │               1 │ 4 │ 9 │                         96 │
+│ all_3_3_0 │           4 │               0 │ 4 │ 9 │                         96 │
+└───────────┴─────────────┴─────────────────┴───┴───┴────────────────────────────┘
+┌─part_name─┬─mark_number─┬─rows_in_granule─┬─a─┬─b─┬─modulo(sipHash64(sp), 100)─┬─a.mark──┬─b.mark──┬─c.mark──────┬─sp.sparse.idx.mark─┬─sp.mark─┬─arr.size0.mark─┬─arr.dict.mark─┬─arr.mark─┬─n.size0.mark─┬─n%2Ec1.mark─┬─n%2Ec2.mark─┬─t%2Ec2.mark─┬─t%2Ec1.mark─┬─t.mark──────┬─column%2Ewith%2Edots.mark─┐
+│ all_1_1_0 │           0 │               3 │ 0 │ 0 │                         19 │ (0,0)   │ (0,0)   │ (NULL,NULL) │ (0,0)              │ (0,0)   │ (0,0)          │ (0,8)         │ (0,0)    │ (0,0)        │ (0,0)       │ (0,0)       │ (0,0)       │ (0,0)       │ (NULL,NULL) │ (0,0)                     │
+│ all_1_1_0 │           1 │               3 │ 1 │ 6 │                         19 │ (0,24)  │ (0,24)  │ (NULL,NULL) │ (0,9)              │ (0,0)   │ (0,24)         │ (0,8)         │ (0,22)   │ (0,24)       │ (0,36)      │ (0,72)      │ (0,24)      │ (0,24)      │ (NULL,NULL) │ (0,24)                    │
+│ all_1_1_0 │           2 │               3 │ 3 │ 3 │                         19 │ (0,48)  │ (0,48)  │ (NULL,NULL) │ (0,18)             │ (0,0)   │ (0,48)         │ (0,8)         │ (0,44)   │ (0,48)       │ (0,72)      │ (0,144)     │ (0,48)      │ (0,48)      │ (NULL,NULL) │ (0,48)                    │
+│ all_1_1_0 │           3 │               1 │ 4 │ 9 │                         19 │ (0,72)  │ (0,72)  │ (NULL,NULL) │ (0,27)             │ (0,0)   │ (0,72)         │ (0,8)         │ (0,66)   │ (0,72)       │ (0,108)     │ (0,216)     │ (0,72)      │ (0,72)      │ (NULL,NULL) │ (0,72)                    │
+│ all_1_1_0 │           4 │               0 │ 4 │ 9 │                         19 │ (0,80)  │ (0,80)  │ (NULL,NULL) │ (0,36)             │ (0,0)   │ (0,80)         │ (0,25)        │ (0,84)   │ (0,80)       │ (0,120)     │ (0,240)     │ (0,80)      │ (0,80)      │ (NULL,NULL) │ (0,80)                    │
+│ all_2_2_0 │           0 │               3 │ 0 │ 0 │                         96 │ (0,0)   │ (42,0)  │ (84,0)      │ (NULL,NULL)        │ (126,0) │ (NULL,NULL)    │ (NULL,NULL)   │ (165,0)  │ (NULL,NULL)  │ (232,0)     │ (286,0)     │ (NULL,NULL) │ (NULL,NULL) │ (342,0)     │ (391,0)                   │
+│ all_2_2_0 │           1 │               2 │ 3 │ 3 │                         96 │ (433,0) │ (472,0) │ (511,0)     │ (NULL,NULL)        │ (550,0) │ (NULL,NULL)    │ (NULL,NULL)   │ (589,0)  │ (NULL,NULL)  │ (659,0)     │ (717,0)     │ (NULL,NULL) │ (NULL,NULL) │ (773,0)     │ (817,0)                   │
+│ all_2_2_0 │           2 │               0 │ 4 │ 4 │                         96 │ (856,0) │ (856,0) │ (856,0)     │ (NULL,NULL)        │ (856,0) │ (NULL,NULL)    │ (NULL,NULL)   │ (856,0)  │ (NULL,NULL)  │ (856,0)     │ (856,0)     │ (NULL,NULL) │ (NULL,NULL) │ (856,0)     │ (856,0)                   │
+│ all_3_3_0 │           0 │               3 │ 0 │ 0 │                         96 │ (0,0)   │ (0,0)   │ (0,0)       │ (NULL,NULL)        │ (0,0)   │ (0,0)          │ (0,8)         │ (0,0)    │ (0,0)        │ (0,0)       │ (0,0)       │ (0,0)       │ (0,0)       │ (NULL,NULL) │ (0,0)                     │
+│ all_3_3_0 │           1 │               3 │ 1 │ 6 │                         96 │ (0,24)  │ (0,24)  │ (0,24)      │ (NULL,NULL)        │ (0,24)  │ (0,24)         │ (0,8)         │ (0,22)   │ (0,24)       │ (0,36)      │ (0,72)      │ (0,24)      │ (0,24)      │ (NULL,NULL) │ (0,24)                    │
+│ all_3_3_0 │           2 │               3 │ 3 │ 3 │                         96 │ (0,48)  │ (0,48)  │ (0,48)      │ (NULL,NULL)        │ (0,48)  │ (0,48)         │ (0,8)         │ (0,44)   │ (0,48)       │ (0,72)      │ (0,144)     │ (0,48)      │ (0,48)      │ (NULL,NULL) │ (0,48)                    │
+│ all_3_3_0 │           3 │               1 │ 4 │ 9 │                         96 │ (0,72)  │ (0,72)  │ (0,72)      │ (NULL,NULL)        │ (0,72)  │ (0,72)         │ (0,8)         │ (0,66)   │ (0,72)       │ (0,108)     │ (0,216)     │ (0,72)      │ (0,72)      │ (NULL,NULL) │ (0,72)                    │
+│ all_3_3_0 │           4 │               0 │ 4 │ 9 │                         96 │ (0,80)  │ (0,80)  │ (0,80)      │ (NULL,NULL)        │ (0,80)  │ (0,80)         │ (0,25)        │ (0,84)   │ (0,80)       │ (0,120)     │ (0,240)     │ (0,80)      │ (0,80)      │ (NULL,NULL) │ (0,80)                    │
+└───────────┴─────────────┴─────────────────┴───┴───┴────────────────────────────┴─────────┴─────────┴─────────────┴────────────────────┴─────────┴────────────────┴───────────────┴──────────┴──────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴───────────────────────────┘
+part_name	String
+mark_number	UInt64
+rows_in_granule	UInt64
+a	UInt64
+b	UInt64
+modulo(sipHash64(sp), 100)	UInt8
+a.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+b.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+c.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+sp.sparse.idx.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+sp.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+arr.size0.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+arr.dict.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+arr.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+n.size0.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+n%2Ec1.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+n%2Ec2.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+t%2Ec2.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+t%2Ec1.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+t.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))
+column%2Ewith%2Edots.mark	Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64))

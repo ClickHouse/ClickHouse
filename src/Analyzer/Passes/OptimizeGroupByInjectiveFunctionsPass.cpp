@@ -3,32 +3,20 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool optimize_injective_functions_in_group_by;
+}
 
 namespace
 {
-
-const std::unordered_set<String> possibly_injective_function_names
-{
-        "dictGet",
-        "dictGetString",
-        "dictGetUInt8",
-        "dictGetUInt16",
-        "dictGetUInt32",
-        "dictGetUInt64",
-        "dictGetInt8",
-        "dictGetInt16",
-        "dictGetInt32",
-        "dictGetInt64",
-        "dictGetFloat32",
-        "dictGetFloat64",
-        "dictGetDate",
-        "dictGetDateTime"
-};
 
 class OptimizeGroupByInjectiveFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeGroupByInjectiveFunctionsVisitor>
 {
@@ -40,7 +28,14 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_injective_functions_in_group_by)
+        if (!getSettings()[Setting::optimize_injective_functions_in_group_by])
+            return;
+
+        /// Don't optimize injective functions when group_by_use_nulls=true,
+        /// because in this case we make initial group by keys Nullable
+        /// and eliminating some functions can cause issues with arguments Nullability
+        /// during their execution. See examples in https://github.com/ClickHouse/ClickHouse/pull/61567#issuecomment-2008181143
+        if (getSettings()[Setting::group_by_use_nulls])
             return;
 
         auto * query = node->as<QueryNode>();
@@ -115,7 +110,7 @@ private:
 
 }
 
-void OptimizeGroupByInjectiveFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void OptimizeGroupByInjectiveFunctionsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     OptimizeGroupByInjectiveFunctionsVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

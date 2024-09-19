@@ -2,16 +2,11 @@
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
-#include <list>
 
+#include <list>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 template<typename V>
 struct ListNode
@@ -19,55 +14,47 @@ struct ListNode
     StringRef key;
     V value;
 
-    /// |*                *            ****** |
-    ///  ^                ^            ^
-    ///  active_in_map    free_key     version
-    ///  (1 byte)         (1 byte)     (6 bytes)
-    uint64_t node_metadata = 0;
+    struct
+    {
+        bool active_in_map : 1;
+        bool free_key : 1;
+        uint64_t version : 62;
+    } node_metadata{false, false, 0};
 
     void setInactiveInMap()
     {
-        node_metadata &= ~active_in_map_mask;
+        node_metadata.active_in_map = false;
     }
 
     void setActiveInMap()
     {
-        node_metadata |= active_in_map_mask;
+        node_metadata.active_in_map = true;
     }
 
     bool isActiveInMap()
     {
-        return node_metadata & active_in_map_mask;
+        return node_metadata.active_in_map;
     }
 
     void setFreeKey()
     {
-        node_metadata |= free_key_mask;
+        node_metadata.free_key = true;
     }
 
     bool getFreeKey()
     {
-        return node_metadata & free_key_mask;
+        return node_metadata.free_key;
     }
 
     uint64_t getVersion()
     {
-        return node_metadata & version_mask;
+        return node_metadata.version;
     }
 
     void setVersion(uint64_t version)
     {
-        if (version > version_mask)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Snapshot version {} is larger than maximum allowed value {}", version, version_mask);
-
-        node_metadata &= ~version_mask;
-        node_metadata |= version;
+        node_metadata.version = version;
     }
-
-    static constexpr uint64_t active_in_map_mask = static_cast<uint64_t>(1) << 63;
-    static constexpr uint64_t free_key_mask      = static_cast<uint64_t>(1) << 62;
-    static constexpr uint64_t version_mask       = ~(static_cast<uint64_t>(3) << 62);
 };
 
 template <class V>
@@ -183,8 +170,51 @@ private:
         }
     }
 
+    void insertOrReplace(StringRef key, V value, bool owns_key)
+    {
+        size_t hash_value = map.hash(key);
+        auto new_value_size = value.sizeInBytes();
+        auto it = map.find(key, hash_value);
+        uint64_t old_value_size = it == map.end() ? 0 : it->getMapped()->value.sizeInBytes();
+
+        if (it == map.end())
+        {
+            auto list_key = owns_key ? key : copyStringInArena(arena, key);
+            ListElem elem{list_key, std::move(value)};
+            elem.setVersion(current_version);
+            auto itr = list.insert(list.end(), std::move(elem));
+            bool inserted;
+            map.emplace(itr->key, it, inserted, hash_value);
+            itr->setActiveInMap();
+            chassert(inserted);
+            it->getMapped() = itr;
+        }
+        else
+        {
+            if (owns_key)
+                arena.free(key.data, key.size);
+
+            auto list_itr = it->getMapped();
+            if (snapshot_mode)
+            {
+                ListElem elem{list_itr->key, std::move(value)};
+                elem.setVersion(current_version);
+                list_itr->setInactiveInMap();
+                auto new_list_itr = list.insert(list.end(), std::move(elem));
+                it->getMapped() = new_list_itr;
+                snapshot_invalid_iters.push_back(list_itr);
+            }
+            else
+            {
+                list_itr->value = std::move(value);
+            }
+        }
+        updateDataSize(INSERT_OR_REPLACE, key.size, new_value_size, old_value_size, !snapshot_mode);
+    }
+
 public:
 
+    using Node = V;
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
     using ValueUpdater = std::function<void(V & value)>;
@@ -217,41 +247,39 @@ public:
         return std::make_pair(it, false);
     }
 
-    void insertOrReplace(const std::string & key, const V & value)
+    void reserve(size_t node_num)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
-        uint64_t old_value_size = it == map.end() ? 0 : it->getMapped()->value.sizeInBytes();
+        map.reserve(node_num);
+    }
 
-        if (it == map.end())
+    void insertOrReplace(const std::string & key, V value)
+    {
+        insertOrReplace(key, std::move(value), /*owns_key*/ false);
+    }
+
+    struct KeyDeleter
+    {
+        void operator()(const char * key)
         {
-            ListElem elem{copyStringInArena(arena, key), value};
-            elem.setVersion(current_version);
-            auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
-            map.emplace(itr->key, it, inserted, hash_value);
-            itr->setActiveInMap();
-            chassert(inserted);
-            it->getMapped() = itr;
+            if (key)
+                arena->free(key, size);
         }
-        else
-        {
-            auto list_itr = it->getMapped();
-            if (snapshot_mode)
-            {
-                ListElem elem{list_itr->key, value};
-                elem.setVersion(current_version);
-                list_itr->setInactiveInMap();
-                auto new_list_itr = list.insert(list.end(), std::move(elem));
-                it->getMapped() = new_list_itr;
-                snapshot_invalid_iters.push_back(list_itr);
-            }
-            else
-            {
-                list_itr->value = value;
-            }
-        }
-        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size, !snapshot_mode);
+
+        size_t size;
+        GlobalArena * arena;
+    };
+
+    using KeyPtr = std::unique_ptr<char[], KeyDeleter>;
+
+    KeyPtr allocateKey(size_t size)
+    {
+        return KeyPtr{new char[size], KeyDeleter{size, &arena}};
+    }
+
+    void insertOrReplace(KeyPtr key_data, size_t key_size, V value)
+    {
+        StringRef key{key_data.release(), key_size};
+        insertOrReplace(key, std::move(value), /*owns_key*/ true);
     }
 
     bool erase(const std::string & key)
@@ -336,6 +364,7 @@ public:
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
+            /// return std::make_shared<KVPair>(KVPair{map_it->getMapped()->key, map_it->getMapped()->value});
             return map_it->getMapped();
         return list.end();
     }

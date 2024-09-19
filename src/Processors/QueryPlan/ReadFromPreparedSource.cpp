@@ -1,13 +1,12 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
 
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
-    : SourceStepWithFilter(DataStream{.header = pipe_.getHeader()})
+    : ISourceStep(DataStream{.header = pipe_.getHeader()})
     , pipe(std::move(pipe_))
 {
 }
@@ -33,13 +32,6 @@ ReadFromStorageStep::ReadFromStorageStep(
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);
-}
-
-void ReadFromStorageStep::applyFilters()
-{
-    for (const auto & processor : pipe.getProcessors())
-        if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
-            source->setKeyCondition(filter_nodes.nodes, context);
 }
 
 }

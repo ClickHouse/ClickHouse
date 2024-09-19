@@ -15,14 +15,20 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <base/range.h>
 #include "registerTableFunctions.h"
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 table_function_remote_max_addresses;
+}
 
 namespace ErrorCodes
 {
@@ -246,7 +252,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     else
     {
         /// Create new cluster from the scratch
-        size_t max_addresses = context->getSettingsRef().table_function_remote_max_addresses;
+        size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
@@ -305,21 +311,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
         cached_columns = getActualTableStructure(context, is_insert_query);
 
     assert(cluster);
-    StoragePtr res = remote_table_function_ptr
-        ? std::make_shared<StorageDistributed>(
-            StorageID(getDatabaseName(), table_name),
-            cached_columns,
-            ConstraintsDescription{},
-            remote_table_function_ptr,
-            String{},
-            context,
-            sharding_key,
-            String{},
-            String{},
-            DistributedSettings{},
-            false,
-            cluster)
-        : std::make_shared<StorageDistributed>(
+    StoragePtr res = std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
@@ -332,8 +324,10 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             String{},
             DistributedSettings{},
-            false,
-            cluster);
+            LoadingStrictnessLevel::CREATE,
+            cluster,
+            remote_table_function_ptr,
+            !is_cluster_function);
 
     res->startup();
     return res;

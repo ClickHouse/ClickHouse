@@ -10,6 +10,8 @@
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <base/range.h>
+
 #include <bitset>
 #include <stack>
 
@@ -182,7 +184,7 @@ public:
     }
 
 private:
-    enum class PatternActionType
+    enum class PatternActionType : uint8_t
     {
         SpecificEvent,
         AnyEvent,
@@ -575,7 +577,7 @@ protected:
     }
 
 private:
-    enum class DFATransition : char
+    enum class DFATransition : uint8_t
     {
         ///   .-------.
         ///   |       |

@@ -1,7 +1,9 @@
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 
@@ -31,7 +33,7 @@ ColumnsDescription SystemMergeTreeSettings<replicated>::getColumnsDescription()
 }
 
 template <bool replicated>
-void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();

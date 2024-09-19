@@ -149,7 +149,7 @@ public:
 
         /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
-        switch (end - data)
+        switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
             case 6: current_bytes[CURRENT_BYTES_IDX(5)] = data[5]; [[fallthrough]];
@@ -209,7 +209,7 @@ public:
     {
         if (!is_reference_128)
             throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR, "Logical error: can't call get128Reference when is_reference_128 is not set");
+                DB::ErrorCodes::LOGICAL_ERROR, "Can't call get128Reference when is_reference_128 is not set");
         finalize();
         const auto lo = v0 ^ v1 ^ v2 ^ v3;
         v1 ^= 0xdd;

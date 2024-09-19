@@ -1,15 +1,10 @@
+import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
-import os
-import logging
 
-from env_helper import (
-    GITHUB_JOB_URL,
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_URL,
-    GITHUB_SERVER_URL,
-)
-from report import ReportColorTheme, TestResults, create_test_html_report
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, GITHUB_SERVER_URL
+from report import GITHUB_JOB_URL, TestResults, create_test_html_report
 from s3_helper import S3Helper
 
 
@@ -92,9 +87,13 @@ def upload_results(
     else:
         raw_log_url = GITHUB_JOB_URL()
 
-    statuscolors = (
-        ReportColorTheme.bugfixcheck if "bugfix validate check" in check_name else None
-    )
+    try:
+        job_url = GITHUB_JOB_URL()
+    except Exception:
+        print(
+            "ERROR: Failed to get job URL from GH API, job report will use run URL instead."
+        )
+        job_url = GITHUB_RUN_URL
 
     if test_results or not ready_report_url:
         html_report = create_test_html_report(
@@ -102,12 +101,11 @@ def upload_results(
             test_results,
             raw_log_url,
             GITHUB_RUN_URL,
-            GITHUB_JOB_URL(),
+            job_url,
             branch_url,
             branch_name,
             commit_url,
             additional_urls,
-            statuscolors=statuscolors,
         )
         report_path = Path("report.html")
         report_path.write_text(html_report, encoding="utf-8")

@@ -1,13 +1,15 @@
 #include "Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h"
 
-#include "Functions/UserDefined/UserDefinedSQLFunctionFactory.h"
-#include "Functions/UserDefined/UserDefinedSQLObjectType.h"
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+
+#include <Core/Settings.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -30,6 +32,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -52,11 +60,10 @@ namespace
 }
 
 UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
-    : global_context(global_context_)
+    : UserDefinedSQLObjectsStorageBase(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
     , log{getLogger("UserDefinedSQLObjectsLoaderFromDisk")}
 {
-    createDirectory();
 }
 
 
@@ -92,7 +99,8 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
                     object_create_query.data() + object_create_query.size(),
                     "",
                     0,
-                    global_context->getSettingsRef().max_parser_depth);
+                    global_context->getSettingsRef()[Setting::max_parser_depth],
+                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
                 return ast;
             }
         }
@@ -121,7 +129,12 @@ void UserDefinedSQLObjectsDiskStorage::reloadObjects()
 void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
 {
     LOG_INFO(log, "Loading user defined objects from {}", dir_path);
-    createDirectory();
+
+    if (!std::filesystem::exists(dir_path))
+    {
+        LOG_DEBUG(log, "The directory for user defined objects ({}) does not exist: nothing to load", dir_path);
+        return;
+    }
 
     std::vector<std::pair<String, ASTPtr>> function_names_and_queries;
 
@@ -156,7 +169,6 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
 
 void UserDefinedSQLObjectsDiskStorage::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
-    createDirectory();
     auto ast = tryLoadObject(object_type, object_name);
     if (ast)
         setObject(object_name, *ast);
@@ -184,6 +196,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     bool replace_if_exists,
     const Settings & settings)
 {
+    createDirectory();
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Storing user-defined object {} to file {}", backQuote(object_name), file_path);
 
@@ -207,7 +220,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
         WriteBufferFromFile out(temp_file_path, create_statement.size());
         writeString(create_statement, out);
         out.next();
-        if (settings.fsync_metadata)
+        if (settings[Setting::fsync_metadata])
             out.sync();
         out.close();
 

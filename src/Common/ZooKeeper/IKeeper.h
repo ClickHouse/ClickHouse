@@ -8,6 +8,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <span>
 #include <functional>
 
 /** Generic interface for ZooKeeper-like services.
@@ -247,6 +248,23 @@ struct RemoveResponse : virtual Response
 {
 };
 
+struct RemoveRecursiveRequest : virtual Request
+{
+    String path;
+
+    /// strict limit for number of deleted nodes
+    uint32_t remove_nodes_limit = 1;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+
+    size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
+};
+
+struct RemoveRecursiveResponse : virtual Response
+{
+};
+
 struct ExistsRequest : virtual Request
 {
     String path;
@@ -390,11 +408,17 @@ struct ReconfigResponse : virtual Response
     size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
+template <typename T>
 struct MultiRequest : virtual Request
 {
-    Requests requests;
+    std::vector<T> requests;
 
-    void addRootPath(const String & root_path) override;
+    void addRootPath(const String & root_path) override
+    {
+        for (auto & request : requests)
+            request->addRootPath(root_path);
+    }
+
     String getPath() const override { return {}; }
 
     size_t bytesSize() const override
@@ -429,6 +453,7 @@ struct ErrorResponse : virtual Response
 
 using CreateCallback = std::function<void(const CreateResponse &)>;
 using RemoveCallback = std::function<void(const RemoveResponse &)>;
+using RemoveRecursiveCallback = std::function<void(const RemoveRecursiveResponse &)>;
 using ExistsCallback = std::function<void(const ExistsResponse &)>;
 using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
@@ -465,37 +490,37 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const Error code_, int); /// NOLINT
-    Exception(PreformattedMessage && msg, const Error code_);
+    Exception(const std::string & msg, Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, Error code_);
 
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    Exception(T && message, const Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
+    Exception(T && message, Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
     {
         incrementErrorMetrics(code);
     }
 
-    static void incrementErrorMetrics(const Error code_);
+    static void incrementErrorMetrics(Error code_);
 
 public:
-    explicit Exception(const Error code_); /// NOLINT
+    explicit Exception(Error code_); /// NOLINT
     Exception(const Exception & exc);
 
     template <typename... Args>
-    Exception(const Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+    Exception(Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
         : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
         , code(code_)
     {
         incrementErrorMetrics(code);
     }
 
-    inline static Exception createDeprecated(const std::string & msg, const Error code_)
+    static Exception createDeprecated(const std::string & msg, Error code_)
     {
         return Exception(msg, code_, 0);
     }
 
-    inline static Exception fromPath(const Error code_, const std::string & path)
+    static Exception fromPath(Error code_, const std::string & path)
     {
         return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
     }
@@ -503,7 +528,7 @@ public:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    inline static Exception fromMessage(const Error code_, T && message)
+    static Exception fromMessage(Error code_, T && message)
     {
         return Exception(std::forward<T>(message), code_);
     }
@@ -547,7 +572,7 @@ public:
     virtual bool isExpired() const = 0;
 
     /// Get the current connected node idx.
-    virtual Int8 getConnectedNodeIdx() const = 0;
+    virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
 
     /// Get the current connected host and port.
     virtual String getConnectedHostPort() const = 0;
@@ -557,6 +582,8 @@ public:
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
+
+    virtual String tryGetAvailabilityZone() { return ""; }
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -583,6 +610,11 @@ public:
         const String & path,
         int32_t version,
         RemoveCallback callback) = 0;
+
+    virtual void removeRecursive(
+        const String & path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) = 0;
 
     virtual void exists(
         const String & path,
@@ -623,16 +655,16 @@ public:
         ReconfigCallback callback) = 0;
 
     virtual void multi(
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) = 0;
+
+    virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
 
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
-
-    /// A ZooKeeper session can have an optional deadline set on it.
-    /// After it has been reached, the session needs to be finalized.
-    virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
@@ -642,7 +674,7 @@ public:
 
 template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
 {
-    constexpr auto format(Coordination::Error code, auto & ctx)
+    constexpr auto format(Coordination::Error code, auto & ctx) const
     {
         return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
     }

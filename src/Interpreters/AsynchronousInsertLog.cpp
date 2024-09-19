@@ -32,27 +32,27 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
             {"Preprocessed", static_cast<Int8>(DataKind::Preprocessed)},
         });
 
-    return ColumnsDescription
-    {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+    return ColumnsDescription{
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"event_date", std::make_shared<DataTypeDate>(), "The date when the async insert happened."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the async insert finished execution."},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the async insert finished execution with microseconds precision."},
 
-        {"query", std::make_shared<DataTypeString>()},
-        {"database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"format", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"bytes", std::make_shared<DataTypeUInt64>()},
-        {"rows", std::make_shared<DataTypeUInt64>()},
-        {"exception", std::make_shared<DataTypeString>()},
-        {"status", type_status},
-        {"data_kind", type_data_kind},
+        {"query", std::make_shared<DataTypeString>(), "Query string."},
+        {"database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of the database the table is in."},
+        {"table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Table name."},
+        {"format", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Format name."},
+        {"query_id", std::make_shared<DataTypeString>(), "ID of the initial query."},
+        {"bytes", std::make_shared<DataTypeUInt64>(), "Number of inserted bytes."},
+        {"rows", std::make_shared<DataTypeUInt64>(), "Number of inserted rows."},
+        {"exception", std::make_shared<DataTypeString>(), "Exception message."},
+        {"status", type_status, "Status of the view. Values: 'Ok' = 1 — Successful insert, 'ParsingError' = 2 — Exception when parsing the data, 'FlushError' = 3 — Exception when flushing the data"},
+        {"data_kind", type_data_kind, "The status of the data. Value: 'Parsed' and 'Preprocessed'."},
 
-        {"flush_time", std::make_shared<DataTypeDateTime>()},
-        {"flush_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
-        {"flush_query_id", std::make_shared<DataTypeString>()},
+        {"flush_time", std::make_shared<DataTypeDateTime>(), "The date and time when the flush happened."},
+        {"flush_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the flush happened with microseconds precision."},
+        {"flush_query_id", std::make_shared<DataTypeString>(), "ID of the flush query."},
+        {"timeout_milliseconds", std::make_shared<DataTypeUInt64>(), "The adaptive timeout calculated for this entry."},
     };
 }
 
@@ -80,6 +80,7 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(flush_time);
     columns[i++]->insert(flush_time_microseconds);
     columns[i++]->insert(flush_query_id);
+    columns[i++]->insert(timeout_milliseconds);
 }
 
 }

@@ -11,6 +11,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/ActionLock.h>
@@ -19,7 +20,6 @@
 #include <Common/TypePromotion.h>
 
 #include <optional>
-#include <compare>
 
 
 namespace DB
@@ -68,7 +68,7 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
-class ConditionEstimator;
+class ConditionSelectivityEstimator;
 
 struct ColumnSize
 {
@@ -98,14 +98,12 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 public:
     IStorage() = delete;
     /// Storage metadata can be set separately in setInMemoryMetadata method
-    explicit IStorage(StorageID storage_id_)
-        : storage_id(std::move(storage_id_))
-        , metadata(std::make_unique<StorageInMemoryMetadata>()) {}
+    explicit IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_ = nullptr);
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
 
-    /// The main name of the table type (for example, StorageMergeTree).
+    /// The main name of the table type (e.g. Memory, MergeTree, CollapsingMergeTree).
     virtual std::string getName() const = 0;
 
     /// The name of the table.
@@ -137,7 +135,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const;
+    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -167,14 +165,18 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if storage supports optimizations of functions by reading subcolumns.
+    virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
+    /// Returns true if the storage supports storing of data type Object.
+    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
+
     /// Returns true if the storage supports storing of dynamic subcolumns.
-    /// For now it makes sense only for data type Object.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
@@ -215,6 +217,10 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    void setVirtuals(VirtualColumnsDescription virtuals_)
+    {
+        virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
+    }
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
     /// majority of cases virtual columns are static constant part of Storage
@@ -226,7 +232,9 @@ public:
     /// virtual column will be overridden and inaccessible.
     ///
     /// By default return empty list of columns.
-    virtual NamesAndTypesList getVirtuals() const;
+    VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
+    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
+    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
     Names getAllRegisteredNames() const override;
 
@@ -254,23 +262,31 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
+    /// Return true if storage has any projection.
+    virtual bool hasProjection() const { return false; }
+
     /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
-    virtual bool supportsTrivialCountOptimization() const { return false; }
+    /// 'storage_snapshot' may be nullptr.
+    virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
+    {
+        return false;
+    }
 
 private:
-
     StorageID storage_id;
 
     mutable std::mutex id_mutex;
 
-    /// Multiversion storage metadata. Allows to read/write storage metadata
-    /// without locks.
+    /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
+
+    /// Description of virtual columns. Optional, may be set in constructor.
+    MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -669,7 +685,7 @@ public:
     virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr &, ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

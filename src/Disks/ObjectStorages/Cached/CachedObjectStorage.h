@@ -3,6 +3,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
+#include "config.h"
 
 namespace Poco
 {
@@ -79,7 +80,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -90,13 +91,21 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override;
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    ObjectStorageKey
+    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
+
+    bool isPlain() const override { return object_storage->isPlain(); }
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
@@ -118,7 +127,24 @@ public:
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
-    static bool canUseReadThroughCache(const ReadSettings & settings);
+#if USE_AZURE_BLOB_STORAGE
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
+    {
+        return object_storage->getAzureBlobStorageClient();
+    }
+#endif
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() override
+    {
+        return object_storage->getS3StorageClient();
+    }
+
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() override
+    {
+        return object_storage->tryGetS3StorageClient();
+    }
+#endif
 
 private:
     FileCacheKey getCacheKey(const std::string & path) const;

@@ -95,12 +95,9 @@ def test_cluster_groups(started_cluster):
     # Exception
     main_node_2.stop_clickhouse()
     settings = {"distributed_ddl_task_timeout": 5}
-    assert (
-        "There are 1 unfinished hosts (0 of them are currently executing the task)"
-        in main_node_1.query_and_get_error(
-            "CREATE TABLE cluster_groups.table_2 (d Date, k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);",
-            settings=settings,
-        )
+    assert "is not finished on 1 of 2 hosts" in main_node_1.query_and_get_error(
+        "CREATE TABLE cluster_groups.table_2 (d Date, k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);",
+        settings=settings,
     )
 
     # 3. After start both groups are synced

@@ -1,5 +1,4 @@
 #include <Poco/Logger.h>
-#include <algorithm>
 #include <optional>
 
 #include <Poco/DirectoryIterator.h>
@@ -7,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -17,11 +16,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Poco/Net/NetException.h>
 
-#if USE_AZURE_BLOB_STORAGE
-#include <azure/core/http/http.hpp>
-#endif
 
 namespace CurrentMetrics
 {
@@ -39,11 +36,13 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
+    extern const int ABORTED;
 }
 
 
@@ -58,7 +57,7 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_MREMAP;
 }
 
-bool isRetryableException(const std::exception_ptr exception_ptr)
+bool isRetryableException(std::exception_ptr exception_ptr)
 {
     try
     {
@@ -67,33 +66,30 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)
     {
-        if (s3_exception.isRetryableError())
-            return true;
+        return s3_exception.isRetryableError();
     }
 #endif
 #if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::RequestFailedException &)
+    catch (const Azure::Core::RequestFailedException & e)
     {
-        return true;
+        return isRetryableAzureException(e);
     }
 #endif
     catch (const ErrnoException & e)
     {
-        if (e.getErrno() == EMFILE)
-            return true;
+        return e.getErrno() == EMFILE;
     }
-    catch (const Coordination::Exception  & e)
+    catch (const Coordination::Exception & e)
     {
-        if (Coordination::isHardwareError(e.code))
-            return true;
+        return Coordination::isHardwareError(e.code);
     }
     catch (const Exception & e)
     {
-        if (isNotEnoughMemoryErrorCode(e.code()))
-            return true;
-
-        if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
-            return true;
+        return isNotEnoughMemoryErrorCode(e.code())
+            || e.code() == ErrorCodes::NETWORK_ERROR
+            || e.code() == ErrorCodes::SOCKET_TIMEOUT
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -103,10 +99,12 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
     {
         return true;
     }
-
-    /// In fact, there can be other similar situations.
-    /// But it is OK, because there is a safety guard against deleting too many parts.
-    return false;
+    catch (...)
+    {
+        /// In fact, there can be other similar situations.
+        /// But it is OK, because there is a safety guard against deleting too many parts.
+        return false;
+    }
 }
 
 
@@ -217,6 +215,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
+                /// Skip ephemeral subcolumns that don't store any real data.
+                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                    return;
+
                 auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
 
                 if (!stream_name)
@@ -226,7 +228,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            });
+            }, column.type, data_part->getColumnSample(column));
         }
     }
     else
@@ -257,8 +259,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
+        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
+        if (isGinFile(file_name))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
@@ -286,11 +288,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             return {};
 
         auto projection_file = name + ".proj";
-        if (!throw_on_broken_projection && projection->is_broken)
-        {
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-        }
 
         IMergeTreeDataPart::Checksums projection_checksums;
         try
@@ -307,26 +304,30 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
                 throw;
 
+            is_broken_projection = true;
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+
+            const auto exception_message = getCurrentExceptionMessage(true);
+
             if (!projection->is_broken)
             {
-                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
-                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
+                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
+                            name, projection_file, exception_message);
+                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
             }
 
-            is_broken_projection = true;
             if (throw_on_broken_projection)
             {
                 if (!broken_projections_message.empty())
                     broken_projections_message += "\n";
 
                 broken_projections_message += fmt::format(
-                    "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, getCurrentExceptionMessage(false));
-                continue;
+                    "Part `{}` has broken projection `{}` (error: {})",
+                    data_part->name, name, exception_message);
             }
 
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
+            continue;
         }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
@@ -336,33 +337,30 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
-    if (throw_on_broken_projection && !broken_projections_message.empty())
+    if (throw_on_broken_projection)
     {
-        throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
-    }
+        if (!broken_projections_message.empty())
+        {
+            throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
+        }
 
-    if (require_checksums && !projections_on_disk.empty())
-    {
-        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
-            "Found unexpected projection directories: {}",
-            fmt::join(projections_on_disk, ","));
+        /// This one is actually not broken, just redundant files on disk which
+        /// MergeTree will never use.
+        if (require_checksums && !projections_on_disk.empty())
+        {
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+                "Found unexpected projection directories: {}",
+                fmt::join(projections_on_disk, ","));
+        }
     }
 
     if (is_cancelled())
         return {};
 
     if (require_checksums || !checksums_txt.files.empty())
-        checksums_txt.checkEqual(checksums_data, check_uncompressed);
+        checksums_txt.checkEqual(checksums_data, check_uncompressed, data_part->name);
 
     return checksums_data;
-}
-
-IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
-{
-    IMergeTreeDataPart::Checksums data_checksums;
-    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
-    data_part->checksums.checkEqual(data_checksums, true);
-    return data_checksums;
 }
 
 IMergeTreeDataPart::Checksums checkDataPart(
@@ -372,9 +370,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
     std::function<bool()> is_cancelled,
     bool throw_on_broken_projection)
 {
-    if (auto part_in_memory = asInMemoryPart(data_part))
-        return checkDataPartInMemory(part_in_memory);
-
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.
@@ -396,8 +391,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
-                auto remote_path = data_part_storage.getRemotePath(file_name);
-                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                auto remote_paths = data_part_storage.getRemotePaths(file_name);
+                for (const auto & remote_path : remote_paths)
+                    cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
 

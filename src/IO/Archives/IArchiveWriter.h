@@ -22,6 +22,8 @@ public:
     /// of the function `writeFile()` should be destroyed before next call of `writeFile()`.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename) = 0;
 
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, size_t size) = 0;
+
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().
     /// This function should be used mostly for debugging purposes.
     virtual bool isWritingFile() const = 0;
@@ -34,10 +36,10 @@ public:
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    virtual void setCompression(const String & /* compression_method */, int /* compression_level */ = kDefaultCompressionLevel) {}
+    virtual void setCompression(const String & /*compression_method*/, int /*compression_level*/) {}
 
     /// Sets password. If the password is not empty it will enable encryption in the archive.
-    virtual void setPassword(const String & /* password */) {}
+    virtual void setPassword(const String & /*password*/) {}
 };
 
 }

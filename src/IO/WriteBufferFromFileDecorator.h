@@ -24,6 +24,8 @@ public:
 protected:
     void finalizeImpl() override;
 
+    void cancelImpl() noexcept override;
+
     std::unique_ptr<WriteBuffer> impl;
 
 private:

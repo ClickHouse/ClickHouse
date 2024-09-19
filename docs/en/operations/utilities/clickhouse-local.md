@@ -16,7 +16,7 @@ sidebar_label: clickhouse-local
 
 While `clickhouse-local` is a great tool for development and testing purposes, and for processing files, it is not suitable for serving end users or applications. In these scenarios, it is recommended to use the open-source [ClickHouse](https://clickhouse.com/docs/en/install). ClickHouse is a powerful OLAP database that is designed to handle large-scale analytical workloads. It provides fast and efficient processing of complex queries on large datasets, making it ideal for use in production environments where high-performance is critical. Additionally, ClickHouse offers a wide range of features such as replication, sharding, and high availability, which are essential for scaling up to handle large datasets and serving applications. If you need to handle larger datasets or serve end users or applications, we recommend using open-source ClickHouse instead of `clickhouse-local`.
 
-Please read the docs below that show example use cases for `clickhouse-local`, such as [querying local CSVs](#query-data-in-a-csv-file-using-sql) or [reading a parquet file in S3](#query-data-in-a-parquet-file-in-aws-s3).
+Please read the docs below that show example use cases for `clickhouse-local`, such as [querying local file](#query_data_in_file) or [reading a parquet file in S3](#query-data-in-a-parquet-file-in-aws-s3).
 
 ## Download clickhouse-local
 
@@ -34,7 +34,7 @@ The binary you just downloaded can run all sorts of ClickHouse tools and utiliti
 
 A common use of `clickhouse-local` is to run ad-hoc queries on files: where you don't have to insert the data into a table. `clickhouse-local` can stream the data from a file into a temporary table and execute your SQL.
 
-If the file is sitting on the same machine as `clickhouse-local`, you can simple specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+If the file is sitting on the same machine as `clickhouse-local`, you can simply specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
 
 ```bash
 ./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
@@ -201,12 +201,12 @@ Arguments:
 
 - `-S`, `--structure` — table structure for input data.
 - `--input-format` — input format, `TSV` by default.
-- `-f`, `--file` — path to data, `stdin` by default.
+- `-F`, `--file` — path to data, `stdin` by default.
 - `-q`, `--query` — queries to execute with `;` as delimiter. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
 - `--queries-file` - file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `-N`, `--table` — table name where to put output data, `table` by default.
-- `--format`, `--output-format` — output format, `TSV` by default.
+- `-f`, `--format`, `--output-format` — output format, `TSV` by default.
 - `-d`, `--database` — default database, `_local` by default.
 - `--stacktrace` — whether to dump debug output in case of exception.
 - `--echo` — print query before execution.
@@ -220,7 +220,7 @@ Arguments:
 - `--help` — arguments references for `clickhouse-local`.
 - `-V`, `--version` — print version information and exit.
 
-Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
+Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
 
 ## Examples {#examples}
@@ -236,10 +236,10 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 Previous example is the same as:
 
 ``` bash
-$ echo -e "1,2\n3,4" | clickhouse-local --query "
+$ echo -e "1,2\n3,4" | clickhouse-local -n --query "
     CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
     SELECT a, b FROM table;
-    DROP TABLE table"
+    DROP TABLE table;"
 Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 1   2
 3   4

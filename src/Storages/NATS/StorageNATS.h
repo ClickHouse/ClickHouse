@@ -23,8 +23,9 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
+        const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
-        bool is_attach_);
+        LoadingStrictnessLevel mode);
 
     std::string getName() const override { return "NATS"; }
 
@@ -61,7 +62,6 @@ public:
     NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
-    NamesAndTypesList getVirtuals() const override;
 
     void incrementReader();
     void decrementReader();
@@ -117,7 +117,7 @@ private:
     std::mutex loop_mutex;
 
     mutable bool drop_table = false;
-    bool is_attach;
+    bool throw_on_startup_failure;
 
     NATSConsumerPtr createConsumer();
 
@@ -137,6 +137,7 @@ private:
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
