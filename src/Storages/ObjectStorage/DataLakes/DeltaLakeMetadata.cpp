@@ -685,7 +685,10 @@ DeltaLakeMetadata::DeltaLakeMetadata(
 {
     auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);
     auto result = impl.processMetadataFiles();
-    data_files = result.data_files;
+    for (const auto & data_file_name : result.data_files)
+    {
+        data_files.emplace_back(DataFileInfo{data_file_name});
+    }
     schema = result.schema;
     partition_columns = result.partition_columns;
 

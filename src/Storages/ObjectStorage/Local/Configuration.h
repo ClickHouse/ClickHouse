@@ -46,8 +46,8 @@ public:
     Path getPath() const override { return path; }
     void setPath(const Path & path_) override { path = path_; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override { paths = paths_; }
+    const DataFileInfos & getPaths() const override { return paths; }
+    void setPaths(const DataFileInfos & paths_) override { paths = paths_; }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
@@ -63,7 +63,7 @@ private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     Path path;
-    Paths paths;
+    DataFileInfos paths;
 };
 
 }

@@ -25,7 +25,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     , sample_block(sample_block_)
 {
     const auto & settings = context->getSettingsRef();
-    const auto path = blob_path.empty() ? configuration->getPaths().back() : blob_path;
+    const auto path = blob_path.empty() ? configuration->getPaths().back().data_path : blob_path;
     const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
 
     auto buffer = object_storage->writeObject(
