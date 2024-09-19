@@ -825,6 +825,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
+        total_memory_tracker.resetPageCache();
     }
 
     bool hasTraceCollector() const
@@ -3105,14 +3106,14 @@ void Context::clearUncompressedCache() const
         shared->uncompressed_cache->clear();
 }
 
-void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
+void Context::setPageCache(size_t default_block_size, const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->page_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
 
-    shared->page_cache = std::make_shared<PageCache>(bytes_per_chunk, bytes_per_mmap, bytes_total, use_madv_free, use_huge_pages);
+    shared->page_cache = std::make_shared<PageCache>(default_block_size, cache_policy, size_ratio, min_size_in_bytes, max_size_in_bytes, free_memory_ratio);
 }
 
 PageCachePtr Context::getPageCache() const
@@ -3121,7 +3122,7 @@ PageCachePtr Context::getPageCache() const
     return shared->page_cache;
 }
 
-void Context::dropPageCache() const
+void Context::clearPageCache() const
 {
     PageCachePtr cache;
     {
@@ -3129,7 +3130,7 @@ void Context::dropPageCache() const
         cache = shared->page_cache;
     }
     if (cache)
-        cache->dropCache();
+        cache->clear();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)

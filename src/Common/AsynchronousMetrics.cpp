@@ -1,6 +1,5 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
-#include <IO/UncompressedCache.h>
 #include <base/cgroupsv2.h>
 #include <base/errnoToString.h>
 #include <base/find_symbols.h>

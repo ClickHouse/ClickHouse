@@ -196,34 +196,38 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
 /// Also, different tick rates are used because not all options are equally fast
-MemoryWorker::MemoryWorker(uint64_t period_ms_)
+MemoryWorker::MemoryWorker(uint64_t period_ms_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_)
     : log(getLogger("MemoryWorker"))
     , period_ms(period_ms_)
+    , page_cache(page_cache_)
 {
+    if (use_cgroup)
+    {
 #if defined(OS_LINUX)
-    try
-    {
-        static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
+        try
+        {
+            static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-        const auto [cgroup_path, version] = getCgroupsPath();
-        LOG_INFO(
-            getLogger("CgroupsReader"),
-            "Will create cgroup reader from '{}' (cgroups version: {})",
-            cgroup_path,
-            (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
+            const auto [cgroup_path, version] = getCgroupsPath();
+            LOG_INFO(
+                getLogger("CgroupsReader"),
+                "Will create cgroup reader from '{}' (cgroups version: {})",
+                cgroup_path,
+                (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
 
-        cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
-        source = MemoryUsageSource::Cgroups;
-        if (period_ms == 0)
-            period_ms = cgroups_memory_usage_tick_ms;
+            cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+            source = MemoryUsageSource::Cgroups;
+            if (period_ms == 0)
+                period_ms = cgroups_memory_usage_tick_ms;
 
-        return;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot use cgroups reader");
-    }
+            return;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot use cgroups reader");
+        }
 #endif
+    }
 
 #if USE_JEMALLOC
     static constexpr uint64_t jemalloc_memory_usage_tick_ms{100};
@@ -321,6 +325,9 @@ void MemoryWorker::backgroundThread()
             MemoryTracker::updateAllocated(allocated_mib.getValue());
         }
 #endif
+
+        if (page_cache)
+            page_cache->autoResize(total_memory_tracker.get(), total_memory_tracker.getHardLimit());
 
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());

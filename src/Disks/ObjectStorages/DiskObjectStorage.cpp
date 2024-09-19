@@ -526,7 +526,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
             if (!object_namespace.empty())
                 cache_path_prefix += object_namespace + "/";
 
-            const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_.remote_path };
+            const auto cache_key = PageCacheKey { .path = cache_path_prefix + object_.remote_path };
 
             impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
                 cache_key, read_settings.page_cache, std::move(impl), read_settings);
