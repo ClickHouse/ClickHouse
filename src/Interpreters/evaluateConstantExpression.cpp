@@ -2,20 +2,11 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
-#include "Common/logger_useful.h"
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
-#include "Analyzer/ConstantNode.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Analyzer/Passes/QueryAnalysisPass.h"
-#include "Analyzer/QueryNode.h"
-#include "Analyzer/QueryTreeBuilder.h"
-#include "Analyzer/TableNode.h"
-#include "Interpreters/SelectQueryOptions.h"
-#include "Planner/PlannerActionsVisitor.h"
-#include "Planner/PlannerContext.h"
-#include "Planner/Utils.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/StorageDummy.h"
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/TableNode.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,15 +22,21 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageDummy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <optional>
@@ -48,6 +45,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool normalize_function_names;
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCodes
 {
@@ -92,7 +94,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
     ColumnPtr result_column;
     DataTypePtr result_type;
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto execution_context = Context::createCopy(context);
         auto expression = buildQueryTree(ast, execution_context);
@@ -126,7 +128,8 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
         /// already normalized on initiator node, or not normalized and should remain unnormalized for
         /// compatibility.
-        if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
+        if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+            && context->getSettingsRef()[Setting::normalize_function_names])
             FunctionNameNormalizer::visit(ast.get());
 
         auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
