@@ -12,12 +12,6 @@
         <!-- librdkafka stat in system.kafka_consumers -->
         <!-- default 3000 (every three second) seems too long for test -->
         <statistics_interval_ms>600</statistics_interval_ms>
-        <!-- In librdkafka 1.7.0 the default value of session.timeout.ms was changed -->
-        <!-- from 10s to 45s. Let's keep the old behavior for the tests as some of -->
-        <!-- are depending on this timing. It shouldn't cause any issues in normal -->
-        <!-- use, only consumers should be more robust, see KIP-735. -->
-        <session_timeout_ms>10000</session_timeout_ms>
-
         <kafka_topic>
             <name>consumer_hang</name>
             <!-- default: 3000 -->
@@ -29,6 +23,12 @@
             <heartbeat_interval_ms>302</heartbeat_interval_ms>
         </kafka_separate_settings>
         <consumer>
+            <!-- In librdkafka 1.7.0 the default value of session.timeout.ms was changed -->
+            <!-- from 10s to 45s. Let's keep the old behavior for the tests as some of -->
+            <!-- are depending on this timing. It shouldn't cause any issues in normal -->
+            <!-- use, only consumers should be more robust, see KIP-735. -->
+            <session_timeout_ms>10000</session_timeout_ms>
+
             <auto_offset_reset>earliest</auto_offset_reset>
             <kafka_topic>
                 <!-- Setting for topic will be applied only for consumer -->
