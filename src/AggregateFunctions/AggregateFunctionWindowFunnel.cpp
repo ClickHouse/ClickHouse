@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <base/range.h>
 
 #include <unordered_set>
 #include <Columns/ColumnsNumber.h>

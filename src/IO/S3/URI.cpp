@@ -9,6 +9,7 @@
 #include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB

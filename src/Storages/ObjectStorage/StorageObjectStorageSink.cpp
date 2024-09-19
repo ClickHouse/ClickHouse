@@ -8,6 +8,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsUInt64 output_format_compression_zstd_window_log;
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -32,10 +38,10 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     write_buf = wrapWriteBufferWithCompressionMethod(
-                    std::move(buffer),
-                    chosen_compression_method,
-                    static_cast<int>(settings.output_format_compression_level),
-                    static_cast<int>(settings.output_format_compression_zstd_window_log));
+        std::move(buffer),
+        chosen_compression_method,
+        static_cast<int>(settings[Setting::output_format_compression_level]),
+        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
         configuration->format, *write_buf, sample_block, context, format_settings_);
