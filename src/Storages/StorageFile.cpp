@@ -1159,13 +1159,13 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
 
     if (filter_dag)
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns);
+        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, context_);
     }
 }
 

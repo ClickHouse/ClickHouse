@@ -1120,6 +1120,7 @@ void Runner::runBenchmarkFromLog()
         else
         {
             request_from_log->connection = get_zookeeper_connection(request_from_log->session_id);
+            request_from_log->executor_id %= concurrency;
             push_request(std::move(*request_from_log));
         }
 
