@@ -13,6 +13,10 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 database_replicated_initial_query_timeout_sec;
+}
 
 namespace ErrorCodes
 {
@@ -317,7 +321,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->is_initial_query = true;
 
     LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
-    UInt64 timeout = query_context->getSettingsRef().database_replicated_initial_query_timeout_sec;
+    UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
     StopToken cancellation = query_context->getDDLQueryCancellation();
     StopCallback cancellation_callback(cancellation, [&] { wait_current_task_change.notify_all(); });
     {

@@ -64,6 +64,7 @@ static struct InitFiu
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    REGULAR(slowdown_index_analysis) \
 
 
 namespace FailPoints

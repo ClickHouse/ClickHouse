@@ -25,6 +25,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -105,7 +111,7 @@ OwnedRefreshTask RefreshTask::create(
 
 void RefreshTask::startup()
 {
-    if (view->getContext()->getSettingsRef().stop_refreshable_materialized_views_on_startup)
+    if (view->getContext()->getSettingsRef().[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
@@ -536,7 +542,7 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
             String query_for_logging = refresh_query->formatForLogging(
-                refresh_context->getSettingsRef().log_queries_cut_to_length);
+                refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
             auto process_list_entry = refresh_context->getProcessList().insert(
                 query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
@@ -843,7 +849,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
             // Either ABA problem or something's broken. Don't retry, just in case.
             break;
         }
-        storage_lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        storage_lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         if (storage_lock)
             break;
     }

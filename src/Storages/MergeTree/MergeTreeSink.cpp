@@ -19,6 +19,11 @@ namespace ErrorCodes
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool insert_deduplicate;
+    extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+}
 
 struct MergeTreeSink::DelayedChunk
 {
@@ -140,8 +145,8 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         size_t max_insert_delayed_streams_for_parallel_write;
 
-        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
-            max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
+        if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
+            max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
         else if (support_parallel_write)
             max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
         else
@@ -209,7 +214,7 @@ void MergeTreeSink::finishDelayedChunk()
 
             auto * deduplication_log = storage.getDeduplicationLog();
 
-            if (settings.insert_deduplicate && deduplication_log)
+            if (settings[Setting::insert_deduplicate] && deduplication_log)
             {
                 const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
                 auto res = deduplication_log->addPart(block_id, part->info);

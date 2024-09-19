@@ -280,6 +280,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     void sanityCheck(size_t background_pool_tasks) const;
 
     std::vector<String> getAllRegisteredNames() const override;
+
+    static std::string_view resolveName(std::string_view name);
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;

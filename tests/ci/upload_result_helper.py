@@ -1,15 +1,10 @@
+import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
-import os
-import logging
 
-from env_helper import (
-    GITHUB_JOB_URL,
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_URL,
-    GITHUB_SERVER_URL,
-)
-from report import TestResults, create_test_html_report
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, GITHUB_SERVER_URL
+from report import GITHUB_JOB_URL, TestResults, create_test_html_report
 from s3_helper import S3Helper
 
 
