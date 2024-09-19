@@ -4285,17 +4285,32 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
         }
 
+        if (cancel_fetch_for_broken)
+        {
+            Coordination::Responses results;
+            auto rc = zookeeper->tryMulti(ops, results, /* check_session_valid */ true);
+
+            if (rc == Coordination::Error::ZBADVERSION)
+            {
+                LOG_TRACE(log, "Version conflict, will retry.");
+                continue;
+            }
+
+            zkutil::KeeperMultiException::check(rc, ops, results);
+
+            outdate_broken_part();
+            LOG_TRACE(log, "Cancel fetch for broken part {}", part_name);
+            return;
+        }
+
         LogEntryPtr log_entry = std::make_shared<LogEntry>();
         log_entry->type = LogEntry::GET_PART;
         log_entry->create_time = part_create_time;
         log_entry->source_replica = "";
         log_entry->new_part_name = part_name;
 
-        if (!cancel_fetch_for_broken)
-        {
-            ops.emplace_back(zkutil::makeCreateRequest(
-                fs::path(replica_path) / "queue/queue-", log_entry->toString(), zkutil::CreateMode::PersistentSequential));
-        }
+        ops.emplace_back(zkutil::makeCreateRequest(
+            fs::path(replica_path) / "queue/queue-", log_entry->toString(), zkutil::CreateMode::PersistentSequential));
 
         Coordination::Responses results;
         auto rc = zookeeper->tryMulti(ops, results, /* check_session_valid */ true);
@@ -4307,13 +4322,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         }
 
         zkutil::KeeperMultiException::check(rc, ops, results);
-
-        if (cancel_fetch_for_broken)
-        {
-            outdate_broken_part();
-            LOG_TRACE(log, "Cancel fetch for broken part {}", part_name);
-            return;
-        }
 
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
         log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
