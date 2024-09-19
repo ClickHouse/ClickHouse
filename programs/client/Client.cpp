@@ -730,7 +730,8 @@ bool Client::processWithFuzzing(const String & full_query)
     }
 
     // Kusto is not a subject for fuzzing (yet)
-    if (client_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    if (client_context->getSettingsRef().dialect == DB::Dialect::kusto
+        || client_context->getSettingsRef().dialect == DB::Dialect::mongo)
     {
         return true;
     }

@@ -296,6 +296,7 @@ enum class Dialect : uint8_t
     clickhouse,
     kusto,
     prql,
+    mongo,
 };
 
 DECLARE_SETTING_ENUM(Dialect)

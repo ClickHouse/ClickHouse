@@ -66,6 +66,9 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include "Core/SettingsEnums.h"
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -725,7 +728,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ReadBuffer * istr)
 {
     const bool internal = flags.internal;
-
+    std::string full_inp(begin, end);
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
     /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
@@ -786,6 +789,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserPRQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
+        else if (settings.dialect == Dialect::mongo && !internal)
+        {
+            Mongo::ParserMongoQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        }
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
@@ -832,8 +840,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         const char * query_end = end;
         if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+        {
             query_end = insert_query->data;
-
+        }
         bool is_create_parameterized_view = false;
         if (const auto * create_query = ast->as<ASTCreateQuery>())
         {
@@ -849,7 +858,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (!is_create_parameterized_view && probably_has_params)
+        if (!is_create_parameterized_view && probably_has_params && settings.dialect != Dialect::mongo)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);

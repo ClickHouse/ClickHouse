@@ -20,6 +20,8 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
+#include <Parsers/Mongo/ParserMongoQuery.h>
 
 namespace DB
 {
@@ -165,12 +167,16 @@ void LocalConnection::sendQuery(
             parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
         else if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        else if (dialect == Dialect::mongo)
+            parser = std::make_unique<Mongo::ParserMongoQuery>(settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         else
             parser = std::make_unique<ParserQuery>(end, settings.allow_settings_after_format_in_insert);
 
         ASTPtr parsed_query;
         if (dialect == Dialect::kusto)
             parsed_query = parseKQLQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        else if (dialect == Dialect::mongo)
+            parsed_query = Mongo::parseMongoQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         else
             parsed_query = parseQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 

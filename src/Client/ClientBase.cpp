@@ -47,6 +47,8 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
+#include <Parsers/Mongo/ParserMongoQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -303,6 +305,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
+    else if (dialect == Dialect::mongo)
+        parser = std::make_unique<Mongo::ParserMongoQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     else
         parser = std::make_unique<ParserQuery>(end, settings.allow_settings_after_format_in_insert);
 
@@ -311,6 +315,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         String message;
         if (dialect == Dialect::kusto)
             res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
+        else if (dialect == Dialect::mongo)
+            res = Mongo::tryParseMongoQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
         else
             res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
@@ -324,6 +330,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         if (dialect == Dialect::kusto)
             res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
+        else if (dialect == Dialect::mongo)
+            res = Mongo::parseMongoQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
         else
             res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     }
