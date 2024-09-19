@@ -1,4 +1,5 @@
 SET allow_experimental_dynamic_type = 1;
+SET allow_suspicious_types_in_order_by = 1;
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t0 (c0 Int) ENGINE = AggregatingMergeTree() ORDER BY (c0);
