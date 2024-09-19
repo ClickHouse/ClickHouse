@@ -47,30 +47,30 @@ private:
         std::string getData() { return data; }
     };
 
-    UInt16 getKeyDepth(const std::string & key)
-    {
-        UInt16 depth = 0;
-        for (size_t i = 0; i < key.size(); i++)
-        {
-            if (key[i] == '/' && i + 1 != key.size())
-                depth ++;
-        }
-        return depth;
-    }
+    /// UInt16 getKeyDepth(const std::string & key)
+    /// {
+    ///     UInt16 depth = 0;
+    ///     for (size_t i = 0; i < key.size(); i++)
+    ///     {
+    ///         if (key[i] == '/' && i + 1 != key.size())
+    ///             depth ++;
+    ///     }
+    ///     return depth;
+    /// }
 
-    std::string getEncodedKey(const std::string & key, bool child_prefix = false)
-    {
-        WriteBufferFromOwnString key_buffer;
-        UInt16 depth = getKeyDepth(key) + (child_prefix ? 1 : 0);
-        writeIntBinary(depth, key_buffer);
-        writeString(key, key_buffer);
-        return key_buffer.str();
-    }
+    /// std::string getEncodedKey(const std::string & key, bool child_prefix = false)
+    /// {
+    ///     WriteBufferFromOwnString key_buffer;
+    ///     UInt16 depth = getKeyDepth(key) + (child_prefix ? 1 : 0);
+    ///     writeIntBinary(depth, key_buffer);
+    ///     writeString(key, key_buffer);
+    ///     return key_buffer.str();
+    /// }
 
-    static std::string_view getDecodedKey(const std::string_view & key)
-    {
-        return std::string_view(key.begin() + 2, key.end());
-    }
+    /// static std::string_view getDecodedKey(const std::string_view & key)
+    /// {
+    ///     return std::string_view(key.begin() + 2, key.end());
+    /// }
 
 
     struct KVPair
@@ -151,7 +151,7 @@ public:
             if (iter && iter->Valid())
             {
                 auto new_pair = std::make_shared<KVPair>();
-                new_pair->key = StringRef(getDecodedKey(iter->key().ToStringView()));
+                new_pair->key = StringRef(iter->key().ToStringView());
                 ReadBufferFromOwnString buffer(iter->value().ToStringView());
                 typename Node::Meta & meta = new_pair->value;
                 readPODBinary(meta, buffer);
@@ -219,14 +219,30 @@ public:
         std::string key = key_;
         if (!key.ends_with('/'))
             key += '/';
-        size_t len = key.size() + 2;
+        size_t len = key.size();
 
         auto iter = std::unique_ptr<rocksdb::Iterator>(rocksdb_ptr->NewIterator(read_options));
-        std::string encoded_string = getEncodedKey(key, true);
-        rocksdb::Slice prefix(encoded_string);
+        rocksdb::Slice prefix(key);
         std::vector<std::pair<std::string, Node>> result;
+        auto is_direct_child = [](rocksdb::Slice iter_key, rocksdb::Slice seek_key)
+        {
+            size_t rslash_pos = 0;
+            for (size_t i = iter_key.size() - 1; i > 0; --i)
+            {
+                if (iter_key[i] == '/')
+                {
+                    rslash_pos = i;
+                    break;
+                }
+            }
+            if (rslash_pos == 0 && seek_key.size() == 1)
+                return true;
+            return seek_key.compare(rocksdb::Slice(iter_key.data(), rslash_pos)) == 0;
+        };
         for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix); iter->Next())
         {
+            if (!is_direct_child(iter->key(), rocksdb::Slice(key_)))
+                continue;
             Node node;
             ReadBufferFromOwnString buffer(iter->value().ToStringView());
             typename Node::Meta & meta = node;
@@ -242,7 +258,6 @@ public:
                 }
             }
             std::string real_key(iter->key().data() + len, iter->key().size() - len);
-            // std::cout << "real key: " << real_key << std::endl;
             result.emplace_back(std::move(real_key), std::move(node));
         }
 
@@ -251,9 +266,8 @@ public:
 
     bool contains(const std::string & path)
     {
-        const std::string & encoded_key = getEncodedKey(path);
         std::string buffer_str;
-        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), encoded_key, &buffer_str);
+        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), path, &buffer_str);
         if (status.IsNotFound())
             return false;
         if (!status.ok())
@@ -261,19 +275,18 @@ public:
         return true;
     }
 
-    const_iterator find(StringRef key_)
+    const_iterator find(StringRef key)
     {
         /// rocksdb::PinnableSlice slice;
-        const std::string & encoded_key = getEncodedKey(key_.toString());
         std::string buffer_str;
-        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), encoded_key, &buffer_str);
+        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key.toView(), &buffer_str);
         if (status.IsNotFound())
             return end();
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during executing find. The error message is {}.", status.ToString());
         ReadBufferFromOwnString buffer(buffer_str);
         auto kv = std::make_shared<KVPair>();
-        kv->key = key_;
+        kv->key = key;
         typename Node::Meta & meta = kv->value;
         readPODBinary(meta, buffer);
         /// TODO: Sometimes we don't need to load data.
@@ -293,36 +306,31 @@ public:
         return MockNode(it->value.stats.numChildren(), it->value.getData());
     }
 
-    const_iterator updateValue(StringRef key_, ValueUpdater updater)
+    const_iterator updateValue(StringRef key, ValueUpdater updater)
     {
-        /// rocksdb::PinnableSlice slice;
-        const std::string & key = key_.toString();
-        const std::string & encoded_key = getEncodedKey(key);
         std::string buffer_str;
-        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), encoded_key, &buffer_str);
+        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key.toView(), &buffer_str);
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during find. The error message is {}.", status.ToString());
         auto kv = std::make_shared<KVPair>();
-        kv->key = key_;
+        kv->key = key;
         kv->value.decodeFromString(buffer_str);
-        /// storage->removeDigest(node, key);
         updater(kv->value);
-        insertOrReplace(key, kv->value);
+        insertOrReplace<false>(key.toString(), kv->value);
         return const_iterator(kv);
     }
 
     bool insert(const std::string & key, Node & value)
     {
         std::string value_str;
-        const std::string & encoded_key = getEncodedKey(key);
-        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), encoded_key, &value_str);
+        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key, &value_str);
         if (status.ok())
         {
             return false;
         }
         else if (status.IsNotFound())
         {
-            status = rocksdb_ptr->Put(write_options, encoded_key, value.getEncodedString());
+            status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
             if (status.ok())
             {
                 counter++;
@@ -333,19 +341,22 @@ public:
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
     }
 
+    template<bool need_get = true>
     void insertOrReplace(const std::string & key, Node & value)
     {
-        const std::string & encoded_key = getEncodedKey(key);
-        /// storage->addDigest(value, key);
-        std::string value_str;
-        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), encoded_key, &value_str);
         bool increase_counter = false;
-        if (status.IsNotFound())
-            increase_counter = true;
-        else if (!status.ok())
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
+        rocksdb::Status status;
+        if constexpr (need_get)
+        {
+            std::string value_str;
+            status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key, &value_str);
+            if (status.IsNotFound())
+                increase_counter = true;
+            else if (!status.ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
+        }
 
-        status = rocksdb_ptr->Put(write_options, encoded_key, value.getEncodedString());
+        status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
         if (status.ok())
             counter += increase_counter;
         else
@@ -368,10 +379,7 @@ public:
 
     bool erase(const std::string & key)
     {
-        /// storage->removeDigest(value, key);
-        const std::string & encoded_key = getEncodedKey(key);
-
-        auto status = rocksdb_ptr->Delete(write_options, encoded_key);
+        auto status = rocksdb_ptr->Delete(write_options, key);
         if (status.IsNotFound())
             return false;
         if (status.ok())
