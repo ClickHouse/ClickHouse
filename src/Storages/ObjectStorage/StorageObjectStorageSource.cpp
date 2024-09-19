@@ -131,7 +131,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     else
     {
         ConfigurationPtr copy_configuration = configuration->clone();
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
@@ -142,7 +142,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns);
+            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, local_context);
             copy_configuration->setPaths(keys);
         }
 
@@ -489,6 +489,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , virtual_columns(virtual_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
     , read_keys(read_keys_)
+    , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
     if (configuration->isNamespaceWithGlobs())
@@ -510,7 +511,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs == "/**";
-        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -585,7 +586,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 for (const auto & object_info : new_batch)
                     paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
-                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns);
+                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns, local_context);
 
                 LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
             }
