@@ -24,21 +24,6 @@ namespace ErrorCodes
 
 namespace
 {
-//    parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_t * buffer, uint32_t buffer_size)
-//    {
-//        if (isStringOrFixedString(type))
-//        {
-//            return view;
-//        }
-//        else
-//        {
-//            auto size = static_cast<uint32_t>(std::max(view.size(), sizeof(uint32_t)));
-//            chassert(size <= buffer_size);
-//            std::copy(view.begin(), view.end(), buffer);
-//            return parquet::ByteArray(size, buffer);
-//        }
-//    }
-
     template <typename IntegerType, typename ColumnType = IntegerType>
     void hashInt(const IColumn * data_column, ColumnUInt64::Container & hashes_internal_data)
     {
@@ -78,21 +63,22 @@ namespace
         switch (clickhouse_type->getTypeId())
         {
             case TypeIndex::UInt8:
-                hashInt<uint8_t>(data_column, hashes_internal_data);
+                hashInt<int32_t, uint8_t>(data_column, hashes_internal_data);
                 break;
             case TypeIndex::UInt16:
-                hashInt<uint8_t>(data_column, hashes_internal_data);
+                hashInt<int32_t, uint16_t>(data_column, hashes_internal_data);
                 break;
             case TypeIndex::UInt32:
-                hashInt<uint8_t>(data_column, hashes_internal_data);
+                hashInt<int32_t, uint32_t>(data_column, hashes_internal_data);
                 break;
-//            case TypeIndex::UInt64:
-//                break;
+            case TypeIndex::UInt64:
+                hashInt<int64_t, uint64_t>(data_column, hashes_internal_data);
+                break;
             case TypeIndex::Int8:
-                hashInt<int8_t>(data_column, hashes_internal_data);
+                hashInt<int32_t, int8_t>(data_column, hashes_internal_data);
                 break;
             case TypeIndex::Int16:
-                hashInt<int16_t>(data_column, hashes_internal_data);
+                hashInt<int32_t, int16_t>(data_column, hashes_internal_data);
                 break;
             case TypeIndex::Int32:
                 hashInt<int32_t>(data_column, hashes_internal_data);
@@ -107,8 +93,6 @@ namespace
                 hashString<ColumnFixedString>(data_column, hashes_internal_data);
                 break;
 //            case TypeIndex::IPv4:
-//                break;
-//            case TypeIndex::JSONPaths:
 //                break;
             default:
                 break;
@@ -139,6 +123,17 @@ namespace
         return match_all;
     }
 
+    bool isClickHouseTypeCompatibleWithParquetIntegerType(const DataTypePtr clickhouse_type)
+    {
+        return isInteger(clickhouse_type) || isIPv4(clickhouse_type);
+    }
+
+    bool isClickHouseTypeCompatibleWithParquetByteType(const DataTypePtr clickhouse_type)
+    {
+        return isStringOrFixedString(clickhouse_type) || isIPv6(clickhouse_type)
+            || isUInt128(clickhouse_type) || isUInt256(clickhouse_type);
+    }
+
     bool isColumnSupported(const DataTypePtr clickhouse_type, const parquet::ColumnDescriptor * column_descriptor)
     {
         if (column_descriptor->converted_type() == parquet::ConvertedType::NONE && column_descriptor->logical_type() != nullptr)
@@ -159,9 +154,14 @@ namespace
         if (physical_type == parquet::Type::type::INT32 || physical_type == parquet::Type::type::INT64)
         {
             // branching with false and true is weird
-            if (!isInteger(clickhouse_type) && !(isIPv4(clickhouse_type)))
+            if (!isClickHouseTypeCompatibleWithParquetIntegerType(clickhouse_type))
             {
                 return false;
+            }
+
+            if (!logical_type && parquet::ConvertedType::type::NONE == converted_type)
+            {
+                return true;
             }
 
             if (logical_type && logical_type->is_int())
@@ -179,6 +179,17 @@ namespace
         }
         else if (physical_type == parquet::Type::type::BYTE_ARRAY || physical_type == parquet::Type::type::FIXED_LEN_BYTE_ARRAY)
         {
+            // branching with false and true is weird
+            if (!isClickHouseTypeCompatibleWithParquetByteType(clickhouse_type))
+            {
+                return false;
+            }
+
+            if (!logical_type && parquet::ConvertedType::type::NONE == converted_type)
+            {
+                return true;
+            }
+
             if (logical_type && (logical_type->is_string() || logical_type->is_BSON() || logical_type->is_JSON()))
             {
                 return true;
@@ -315,6 +326,9 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
     using RPNElement = KeyCondition::RPNElement;
     using Function = ParquetBloomFilterCondition::ConditionElement::Function;
 
+    // todo arthur
+    // where toIPv4(uint32_col) = ...
+    // results in function unknown..
     for (const auto & rpn_element : rpn)
     {
         Columns columns;
