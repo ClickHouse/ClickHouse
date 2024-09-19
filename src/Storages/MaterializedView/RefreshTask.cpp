@@ -111,7 +111,7 @@ OwnedRefreshTask RefreshTask::create(
 
 void RefreshTask::startup()
 {
-    if (view->getContext()->getSettingsRef().[Setting::stop_refreshable_materialized_views_on_startup])
+    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
