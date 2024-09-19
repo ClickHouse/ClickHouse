@@ -194,6 +194,9 @@ private:
     /// Applies conditions only to events with strictly increasing timestamps
     bool strict_increase;
 
+    /// Count each event only once in the chain even if it meets the condition several times
+    bool strict_once;
+
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
@@ -243,6 +246,10 @@ private:
             }
             else if (event_idx == 0)
             {
+                if (!strict_once)
+                    /// Do not keep all sequences, when mode is disabled
+                    event_sequences[0].clear();
+
                 auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
@@ -290,6 +297,10 @@ private:
                     if (time_matched)
                     {
                         prev_path[event_idx] = unique_id;
+                        if (!strict_once)
+                            /// Do not keep all sequences, when mode is disabled
+                            event_sequences[event_idx].clear();
+
                         auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
                         new_seq.event_path = std::move(prev_path);
                         if (event_idx + 1 == events_size)
@@ -323,6 +334,7 @@ public:
         strict_deduplication = false;
         strict_order = false;
         strict_increase = false;
+        strict_once = false;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
@@ -332,6 +344,8 @@ public:
                 strict_order = true;
             else if (option == "strict_increase")
                 strict_increase = true;
+            else if (option == "strict_once")
+                strict_once = true;
             else if (option == "strict")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter 'strict' is replaced with 'strict_deduplication' in Aggregate function {}", getName());
             else
@@ -351,6 +365,8 @@ public:
             if (event_occurred)
             {
                 this->data(place).add(timestamp, i);
+                if (!strict_once)
+                    this->data(place).advanceId();
                 has_event = true;
             }
         }
@@ -367,24 +383,14 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    /// Versioning for serialization
-    /// Version 1 supports deduplication of the same event several times
-    static constexpr auto MIN_REVISION_FOR_V1 = 54470;
-    bool isVersioned() const override { return true; }
-    size_t getDefaultVersion() const override { return 1; }
-    size_t getVersionFromRevision(size_t revision) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
-        return revision >= MIN_REVISION_FOR_V1 ? 1 : 0;
+        this->data(place).serialize(buf, strict_once);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
-        this->data(place).serialize(buf, version.value_or(0));
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
-    {
-        this->data(place).deserialize(buf, version.value_or(0));
+        this->data(place).deserialize(buf, strict_once);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

@@ -93,7 +93,8 @@ insert into funnel_test_strict_increase values (0,1000),(1,1001),(1,1002),(1,100
 
 select 5 = windowFunnel(10000)(timestamp, event = 1000, event = 1001, event = 1002, event = 1003, event = 1004) from funnel_test_strict_increase;
 select 2 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1000, event = 1001, event = 1002, event = 1003, event = 1004) from funnel_test_strict_increase;
-select 1 = windowFunnel(10000)(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
+select 3 = windowFunnel(10000)(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
+select 1 = windowFunnel(10000, 'strict_once')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 select 1 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 
 
@@ -113,13 +114,13 @@ insert into funnel_test2 SELECT data.1, data.2, data.3  FROM (
         ]) data);
 
 SELECT '-';
-SELECT uid, windowFunnel(200, 'strict_increase')( toUInt32(event_ts), result='failure', result='failure', result='success' )
+SELECT uid, windowFunnel(200, 'strict_once', 'strict_increase')( toUInt32(event_ts), result='failure', result='failure', result='success' )
 FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
 SELECT '-';
-SELECT uid, windowFunnel(200)( toUInt32(event_ts), result='failure', result='failure', result='success' )
+SELECT uid, windowFunnel(200, 'strict_once')( toUInt32(event_ts), result='failure', result='failure', result='success' )
 FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
 SELECT '-';
-SELECT uid, windowFunnel(200, 'strict_deduplication')( toUInt32(event_ts), result='failure', result='failure', result='success' )
+SELECT uid, windowFunnel(200, 'strict_once', 'strict_deduplication')( toUInt32(event_ts), result='failure', result='failure', result='success' )
 FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
 SELECT '-';
 

@@ -264,6 +264,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
     - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
     - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
     - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
+    - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
 
 **Returned value**
 
