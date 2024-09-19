@@ -9,6 +9,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
@@ -35,6 +36,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -46,6 +48,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
@@ -1574,6 +1577,35 @@ struct ConvertImpl
                         arguments, result_type, input_rows_count, additions);
             }
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeInterval> && std::is_same_v<ToDataType, DataTypeInterval>)
+        {
+            IntervalKind to = typeid_cast<const DataTypeInterval *>(result_type.get())->getKind();
+            IntervalKind from = typeid_cast<const DataTypeInterval *>(arguments[0].type.get())->getKind();
+
+            if (from == to || arguments[0].column->empty())
+                return arguments[0].column;
+
+            Int64 conversion_factor = 1;
+            Int64 result_value;
+
+            int from_position = static_cast<int>(from.kind);
+            int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
+
+            if (from_position < to_position)
+            {
+                for (int i = from_position; i < to_position; ++i)
+                    conversion_factor *= interval_conversions[i];
+                result_value = arguments[0].column->getInt(0) / conversion_factor;
+            }
+            else
+            {
+                for (int i = from_position; i > to_position; --i)
+                    conversion_factor *= interval_conversions[i];
+                result_value = arguments[0].column->getInt(0) * conversion_factor;
+            }
+
+            return ColumnConst::create(ColumnInt64::create(1, result_value), input_rows_count);
+        }
         else
         {
             using FromFieldType = typename FromDataType::FieldType;
@@ -2182,7 +2214,7 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        [[maybe_unused]] FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
 
         if (context)
             date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
@@ -2278,7 +2310,7 @@ private:
                 }
             }
             else
-                  result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
             return true;
         };
@@ -2335,6 +2367,10 @@ private:
                 else
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
             }
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
+                if (WhichDataType(from_type).isInterval())
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
         }
 
         if (!done)
@@ -3880,7 +3916,7 @@ private:
                     "Expected tuple with {} subcolumn, but got {} subcolumns",
                     tuple_size, column_tuple.getColumns().size());
 
-            auto res = ColumnObject::create(has_nullable_subcolumns);
+            auto res = ColumnObjectDeprecated::create(has_nullable_subcolumns);
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
@@ -3957,7 +3993,7 @@ private:
                         subcolumn->insertDefault();
             }
 
-            auto column_object = ColumnObject::create(has_nullable_subcolumns);
+            auto column_object = ColumnObjectDeprecated::create(has_nullable_subcolumns);
             for (auto && [key, subcolumn] : subcolumns)
             {
                 PathInData path(key.toView());
@@ -3968,7 +4004,7 @@ private:
         };
     }
 
-    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_type) const
+    WrapperType createObjectDeprecatedWrapper(const DataTypePtr & from_type, const DataTypeObjectDeprecated * to_type) const
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
         {
@@ -3987,12 +4023,12 @@ private:
                 return res;
             };
         }
-        else if (checkAndGetDataType<DataTypeObject>(from_type.get()))
+        else if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()))
         {
             return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
             {
-                const auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
-                auto res = ColumnObject::create(is_nullable);
+                const auto & column_object = assert_cast<const ColumnObjectDeprecated &>(*arguments.front().column);
+                auto res = ColumnObjectDeprecated::create(is_nullable);
                 for (size_t i = 0; i < column_object.size(); i++)
                     res->insert(column_object[i]);
 
@@ -4003,6 +4039,25 @@ private:
 
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
+    }
+
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
+    {
+        if (checkAndGetDataType<DataTypeString>(from_type.get()))
+        {
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            {
+                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
+                res->finalize();
+                return res;
+            };
+        }
+
+        /// TODO: support CAST between JSON types with different parameters
+        ///       support CAST from Map to JSON
+        ///       support CAST from Tuple to JSON
+        ///       support CAST from Object('json') to JSON
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
     }
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const
@@ -4079,6 +4134,29 @@ private:
         };
     }
 
+    /// Create wrapper only if we support this conversion.
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const
+    {
+        try
+        {
+            /// We can avoid try/catch here if we will implement check that 2 types can be casted, but it
+            /// requires quite a lot of work. By now let's simply use try/catch.
+            /// First, check that we can create a wrapper.
+            WrapperType wrapper = prepareUnpackDictionaries(from, to);
+            /// Second, check if we can perform a conversion on column with default value.
+            /// (we cannot just check empty column as we do some checks only during iteration over rows).
+            auto test_col = from->createColumn();
+            test_col->insertDefault();
+            ColumnsWithTypeAndName column_from = {{test_col->getPtr(), from, "" }};
+            wrapper(column_from, to, nullptr, 1);
+            return wrapper;
+        }
+        catch (const Exception &)
+        {
+            return {};
+        }
+    }
+
     WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
     {
         const auto & variant_types = from_variant.getVariants();
@@ -4087,7 +4165,19 @@ private:
 
         /// Create conversion wrapper for each variant.
         for (const auto & variant_type : variant_types)
-            variant_wrappers.push_back(prepareUnpackDictionaries(variant_type, to_type));
+        {
+            WrapperType wrapper;
+            if (cast_type == CastType::accurateOrNull)
+            {
+                /// Create wrapper only if we support conversion from variant to the resulting type.
+                wrapper = createWrapperIfCanConvert(variant_type, to_type);
+            }
+            else
+            {
+                wrapper = prepareUnpackDictionaries(variant_type, to_type);
+            }
+            variant_wrappers.push_back(wrapper);
+        }
 
         return [variant_wrappers, variant_types, to_type]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
@@ -4102,7 +4192,11 @@ private:
                 auto variant_col = column_variant.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
                 const auto & variant_wrapper = variant_wrappers[i];
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                casted_variant_columns.push_back(std::move(casted_variant));
             }
 
             /// Second, construct resulting column from casted variant columns according to discriminators.
@@ -4112,7 +4206,7 @@ private:
             for (size_t i = 0; i != input_rows_count; ++i)
             {
                 auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !casted_variant_columns[global_discr])
                     res->insertDefault();
                 else
                     res->insertFrom(*casted_variant_columns[global_discr], column_variant.offsetAt(i));
@@ -4302,10 +4396,27 @@ private:
             casted_variant_columns.reserve(variant_types.size());
             for (size_t i = 0; i != variant_types.size(); ++i)
             {
+                /// Skip shared variant, it will be processed later.
+                if (i == column_dynamic.getSharedVariantDiscriminator())
+                {
+                    casted_variant_columns.push_back(nullptr);
+                    continue;
+                }
+
                 const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                casted_variant_columns.push_back(casted_variant);
             }
 
             /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -4361,8 +4472,18 @@ private:
             for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
             {
                 ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
-                casted_shared_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types_from_shared_variant[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
+                casted_shared_variant_columns.push_back(casted_variant);
             }
 
             /// Construct result column from all casted variants.
@@ -4372,11 +4493,23 @@ private:
             {
                 auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
                 if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                {
                     res->insertDefault();
+                }
                 else if (global_discr == shared_variant_discr)
-                    res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                {
+                    if (casted_shared_variant_columns[shared_variant_indexes[i]])
+                        res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                    else
+                        res->insertDefault();
+                }
                 else
-                    res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                {
+                    if (casted_variant_columns[global_discr])
+                        res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                    else
+                        res->insertDefault();
+                }
             }
 
             return res;
@@ -5079,6 +5212,8 @@ private:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
+            case TypeIndex::ObjectDeprecated:
+                return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
             case TypeIndex::Object:
                 return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:

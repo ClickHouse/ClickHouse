@@ -558,7 +558,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             pool,
             use_table_cache);
     };
-    factory.registerDatabase("PostgreSQL", create_fn);
+    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
 }
 }
 

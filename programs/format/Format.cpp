@@ -175,6 +175,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            auto context_const = WithContext(context).getContext();
+            context->makeGlobalContext();
+
             registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
@@ -259,7 +264,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOwnString str_buf;
-                        formatAST(*res, str_buf, hilite, oneline || approx_query_length < max_line_length);
+                        bool oneline_current_query = oneline || approx_query_length < max_line_length;
+                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
+                        settings.show_secrets = true;
+                        settings.print_pretty_type_names = !oneline_current_query;
+                        res->format(settings);
 
                         if (insert_query_payload)
                         {
@@ -302,7 +311,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     else
                     {
                         WriteBufferFromOwnString str_buf;
-                        formatAST(*res, str_buf, hilite, oneline);
+                        bool oneline_current_query = oneline || approx_query_length < max_line_length;
+                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
+                        settings.show_secrets = true;
+                        settings.print_pretty_type_names = !oneline_current_query;
+                        res->format(settings);
 
                         auto res_string = str_buf.str();
                         WriteBufferFromOStream res_cout(std::cout, 4096);

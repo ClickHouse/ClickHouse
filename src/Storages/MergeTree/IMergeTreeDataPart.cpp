@@ -808,7 +808,7 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(const Stri
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
     MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage);
-    return builder.withPartInfo({"all", 0, 0, 0}).withParentPart(this);
+    return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this);
 }
 
 void IMergeTreeDataPart::addProjectionPart(
@@ -1335,17 +1335,6 @@ void IMergeTreeDataPart::loadRowsCount()
         auto buf = metadata_manager->read("count.txt");
         readIntText(rows_count, *buf);
         assertEOF(*buf);
-
-        if (!index_granularity.empty() && rows_count < index_granularity.getTotalRows() && index_granularity_info.fixed_index_granularity)
-        {
-            /// Adjust last granule size to match the number of rows in the part in case of fixed index_granularity.
-            index_granularity.popMark();
-            index_granularity.appendMark(rows_count % index_granularity_info.fixed_index_granularity);
-            if (rows_count != index_granularity.getTotalRows())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Index granularity total rows in part {} does not match rows_count: {}, instead of {}",
-                    name, index_granularity.getTotalRows(), rows_count);
-        }
     };
 
     if (index_granularity.empty())
@@ -2075,6 +2064,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = copy_instead_of_hardlink,
+        .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
