@@ -1280,13 +1280,13 @@ bool KeyCondition::tryPrepareSetIndex(
             if (WhichDataType(set_element_type).isLowCardinality())
             {
                 set_element_type = removeLowCardinality(set_element_type);
-                set_column = set_column->convertToFullColumnIfLowCardinality();
+                transformed_set_columns[set_element_index] = set_column->convertToFullColumnIfLowCardinality();
             }
 
             set_element_type = removeNullable(set_element_type);
 
             // Obtain the nullable column without reassigning set_column immediately
-            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(set_column.get());
+            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
             if (!set_column_nullable)
                 return false;
 
