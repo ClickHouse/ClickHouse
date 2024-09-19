@@ -23,6 +23,19 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_bytes_before_external_sort;
+    extern const SettingsUInt64 max_bytes_before_remerge_sort;
+    extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsUInt64 prefer_external_sort_block_bytes;
+    extern const SettingsBool read_in_order_use_buffering;
+    extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
+    extern const SettingsOverflowMode sort_overflow_mode;
+}
 
 namespace ErrorCodes
 {
@@ -32,15 +45,15 @@ namespace ErrorCodes
 SortingStep::Settings::Settings(const Context & context)
 {
     const auto & settings = context.getSettingsRef();
-    max_block_size = settings.max_block_size;
-    size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
-    max_bytes_before_remerge = settings.max_bytes_before_remerge_sort;
-    remerge_lowered_memory_bytes_ratio = settings.remerge_sort_lowered_memory_bytes_ratio;
-    max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
+    max_block_size = settings[Setting::max_block_size];
+    size_limits = SizeLimits(settings[Setting::max_rows_to_sort], settings[Setting::max_bytes_to_sort], settings[Setting::sort_overflow_mode]);
+    max_bytes_before_remerge = settings[Setting::max_bytes_before_remerge_sort];
+    remerge_lowered_memory_bytes_ratio = settings[Setting::remerge_sort_lowered_memory_bytes_ratio];
+    max_bytes_before_external_sort = settings[Setting::max_bytes_before_external_sort];
     tmp_data = context.getTempDataOnDisk();
-    min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
-    max_block_bytes = settings.prefer_external_sort_block_bytes;
-    read_in_order_use_buffering = settings.read_in_order_use_buffering;
+    min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
+    max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
+    read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)

@@ -82,24 +82,24 @@ def drop_postgres_schema(cursor, schema_name):
 def create_postgres_table(
     cursor,
     table_name,
-    database_name="",
     replica_identity_full=False,
     template=postgres_table_template,
 ):
-    if database_name == "":
-        name = table_name
-    else:
-        name = f"{database_name}.{table_name}"
-    drop_postgres_table(cursor, name)
-    query = template.format(name)
-    cursor.execute(query)
+    drop_postgres_table(cursor, table_name)
+    query = template.format(table_name)
+
     print(f"Query: {query}")
+    cursor.execute(query)
+
     if replica_identity_full:
-        cursor.execute(f"ALTER TABLE {name} REPLICA IDENTITY FULL;")
+        cursor.execute(f"""ALTER TABLE "{table_name}" REPLICA IDENTITY FULL;""")
 
 
-def drop_postgres_table(cursor, name):
-    cursor.execute(f"""DROP TABLE IF EXISTS "{name}" """)
+def drop_postgres_table(cursor, name, database_name=""):
+    if database_name != "":
+        cursor.execute(f"""DROP TABLE IF EXISTS "{database_name}"."{name}" """)
+    else:
+        cursor.execute(f"""DROP TABLE IF EXISTS "{name}" """)
 
 
 def create_postgres_table_with_schema(cursor, schema_name, table_name):
@@ -269,15 +269,28 @@ class PostgresManager:
     def create_postgres_table(
         self, table_name, database_name="", template=postgres_table_template
     ):
-        create_postgres_table(
-            self.cursor, table_name, database_name=database_name, template=template
-        )
+        database_name = self.database_or_default(database_name)
+        cursor = self.cursor
+        if database_name != self.get_default_database:
+            try:
+                self.create_postgres_db(database_name)
+            except:
+                # postgres does not support create database if not exists
+                pass
+            conn = get_postgres_conn(
+                ip=self.ip,
+                port=self.port,
+                database=True,
+                database_name=database_name,
+            )
+            cursor = conn.cursor()
+        create_postgres_table(cursor, table_name, template=template)
 
     def create_and_fill_postgres_table(self, table_name, database_name=""):
-        create_postgres_table(self.cursor, table_name, database_name)
         database_name = self.database_or_default(database_name)
+        self.create_postgres_table(table_name, database_name)
         self.instance.query(
-            f"INSERT INTO {database_name}.{table_name} SELECT number, number from numbers(50)"
+            f"INSERT INTO `{database_name}`.`{table_name}` SELECT number, number from numbers(50)"
         )
 
     def create_and_fill_postgres_tables(
@@ -289,11 +302,11 @@ class PostgresManager:
     ):
         for i in range(tables_num):
             table_name = f"{table_name_base}_{i}"
-            create_postgres_table(self.cursor, table_name, database_name)
+            self.create_postgres_table(table_name, database_name)
             if numbers > 0:
                 db = self.database_or_default(database_name)
                 self.instance.query(
-                    f"INSERT INTO {db}.{table_name} SELECT number, number from numbers({numbers})"
+                    f"INSERT INTO `{db}`.{table_name} SELECT number, number from numbers({numbers})"
                 )
 
 
@@ -363,6 +376,7 @@ def check_tables_are_synchronized(
     postgres_database="postgres_database",
     materialized_database="test_database",
     schema_name="",
+    columns=["*"],
 ):
     assert_nested_table_is_created(
         instance, table_name, materialized_database, schema_name
@@ -378,7 +392,7 @@ def check_tables_are_synchronized(
     result_query = f"select * from {table_path} order by {order_by};"
 
     expected = instance.query(
-        f"select * from `{postgres_database}`.`{table_name}` order by {order_by};"
+        f"select {','.join(columns)} from `{postgres_database}`.`{table_name}` order by {order_by};"
     )
     result = instance.query(result_query)
 
@@ -407,4 +421,9 @@ def check_several_tables_are_synchronized(
     schema_name="",
 ):
     for i in range(tables_num):
-        check_tables_are_synchronized(instance, f"postgresql_replica_{i}")
+        check_tables_are_synchronized(
+            instance,
+            f"postgresql_replica_{i}",
+            postgres_database=postgres_database,
+            materialized_database=materialized_database,
+        )
