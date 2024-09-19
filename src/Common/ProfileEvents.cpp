@@ -372,6 +372,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas", ValueType::Microseconds) \
     M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements", ValueType::Microseconds) \
+    M(ParallelReplicasAnnouncementMicroseconds, "Time spent to send an announcement", ValueType::Microseconds) \
+    M(ParallelReplicasReadRequestMicroseconds, "Time spent for read requests", ValueType::Microseconds) \
     \
     M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash", ValueType::Number) \
     M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled", ValueType::Number) \

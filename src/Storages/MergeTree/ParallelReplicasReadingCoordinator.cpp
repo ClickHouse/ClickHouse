@@ -373,17 +373,20 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (state_initialized)
         return;
 
-    for (auto && part : announcement.description)
     {
-        auto intersecting_it = std::find_if(
-            all_parts_to_read.begin(),
-            all_parts_to_read.end(),
-            [&part](const Part & other) { return !other.description.info.isDisjoint(part.info); });
+        /// To speedup search for adjacent parts
+        Parts known_parts(all_parts_to_read.begin(), all_parts_to_read.end());
 
-        if (intersecting_it != all_parts_to_read.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
+        for (auto && part : announcement.description)
+        {
+            auto intersecting_it = known_parts.lower_bound(Part{.description = part, .replicas = {}});
 
-        all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+            if (intersecting_it != known_parts.end() && !intersecting_it->description.info.isDisjoint(part.info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
+
+            known_parts.emplace(Part{.description = part, .replicas = {}});
+            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        }
     }
 
     std::ranges::sort(
@@ -870,8 +873,7 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
     /// To get rid of duplicates
     for (auto && part: announcement.description)
     {
-        auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return other.description.info == part.info; });
+        auto the_same_it = all_parts_to_read.find(Part{.description = part, .replicas = {}});
 
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
@@ -883,12 +885,28 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
         if (state_initialized)
             continue;
 
-        auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return other.description.info.contains(part.info) ||  part.info.contains(other.description.info); });
+        /// Look for the first part >= current
+        auto covering_it = all_parts_to_read.lower_bound(Part{.description = part, .replicas = {}});
 
-        /// It is covering part or we have covering - skip it
-        if (covering_or_the_same_it != all_parts_to_read.end())
-            continue;
+        if (covering_it != all_parts_to_read.end())
+        {
+            /// Checks if other part covers this one or this one covers the other
+            auto is_covered_or_covering = [&part] (const Part & other)
+                {
+                    return other.description.info.contains(part.info) || part.info.contains(other.description.info);
+                };
+
+            if (is_covered_or_covering(*covering_it))
+                continue;
+
+            /// Also look at the previous part, it could be covering the current one
+            if (covering_it != all_parts_to_read.begin())
+            {
+                --covering_it;
+                if (is_covered_or_covering(*covering_it))
+                    continue;
+            }
+        }
 
         new_rows_to_read += part.rows;
 
@@ -896,6 +914,21 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
         auto & ranges = inserted_it->description.ranges;
         std::sort(ranges.begin(), ranges.end());
     }
+
+#ifndef NDEBUG
+    /// Double check that there are no intersecting parts
+    {
+        auto intersecting_part_it = std::adjacent_find(all_parts_to_read.begin(), all_parts_to_read.end(),
+            [] (const Part & lhs, const Part & rhs)
+            {
+                return !lhs.description.info.isDisjoint(rhs.description.info);
+            });
+
+        if (intersecting_part_it != all_parts_to_read.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} intersect",
+                intersecting_part_it->description.info.getPartNameV1(), std::next(intersecting_part_it)->description.info.getPartNameV1());
+    }
+#endif
 
     state_initialized = true;
 

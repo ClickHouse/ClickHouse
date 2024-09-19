@@ -13,6 +13,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool geo_distance_returns_float64_on_float64_arguments;
+}
 
 namespace ErrorCodes
 {
@@ -229,7 +233,7 @@ class FunctionGeoDistance : public IFunction
 public:
     explicit FunctionGeoDistance(ContextPtr context)
     {
-        always_float32 = !context->getSettingsRef().geo_distance_returns_float64_on_float64_arguments;
+        always_float32 = !context->getSettingsRef()[Setting::geo_distance_returns_float64_on_float64_arguments];
     }
 
 private:

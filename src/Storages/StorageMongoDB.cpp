@@ -8,6 +8,7 @@
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/parseAddress.h>
@@ -17,6 +18,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <base/range.h>
 
 #include <DataTypes/DataTypeArray.h>
 

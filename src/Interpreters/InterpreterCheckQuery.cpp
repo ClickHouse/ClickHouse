@@ -36,6 +36,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_query_single_value_result;
+    extern const SettingsMaxThreads max_threads;
+}
 
 namespace ErrorCodes
 {
@@ -422,7 +427,7 @@ BlockIO InterpreterCheckQuery::execute()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query {} in InterpreterCheckQuery", query_ptr->formatForErrorMessage());
     }
 
-    size_t num_streams = std::max<size_t>(settings.max_threads, 1);
+    size_t num_streams = std::max<size_t>(settings[Setting::max_threads], 1);
 
     processors->emplace_back(worker_source);
     std::vector<OutputPort *> worker_ports;
@@ -463,7 +468,7 @@ BlockIO InterpreterCheckQuery::execute()
         resize_outport = &resize_processor->getOutputs().front();
     }
 
-    if (settings.check_query_single_value_result)
+    if (settings[Setting::check_query_single_value_result])
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         Block header = processors->back()->getOutputs().front().getHeader();

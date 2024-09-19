@@ -20,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool parallelize_output_from_storages;
+}
+
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
@@ -157,7 +162,7 @@ void IStorage::read(
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
+    const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
     if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
