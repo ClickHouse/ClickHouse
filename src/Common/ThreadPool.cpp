@@ -51,7 +51,7 @@ struct ScopedDecrement
 {
     std::atomic<int64_t>& atomic_var;
 
-    ScopedDecrement(std::atomic<int64_t>& var)
+    explicit ScopedDecrement(std::atomic<int64_t>& var)
         : atomic_var(var)
     {
         atomic_var.fetch_sub(1, std::memory_order_relaxed);
@@ -142,6 +142,8 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
 {
+    chassert(max_threads <= MAX_THEORETICAL_THREAD_COUNT);
+    chassert(max_free_threads <= MAX_THEORETICAL_THREAD_COUNT);
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
     available_threads.store(0, std::memory_order_relaxed);
 }
@@ -149,6 +151,7 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
 template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
+    chassert(value <= MAX_THEORETICAL_THREAD_COUNT);
     std::lock_guard lock(mutex);
     remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
 
@@ -184,6 +187,7 @@ size_t ThreadPoolImpl<Thread>::getMaxThreads() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 {
+    chassert(value <= MAX_THEORETICAL_THREAD_COUNT);
     std::lock_guard lock(mutex);
     bool need_finish_free_threads = (value < max_free_threads);
 
