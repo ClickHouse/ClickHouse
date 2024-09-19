@@ -408,11 +408,17 @@ struct ReconfigResponse : virtual Response
     size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
+template <typename T>
 struct MultiRequest : virtual Request
 {
-    Requests requests;
+    std::vector<T> requests;
 
-    void addRootPath(const String & root_path) override;
+    void addRootPath(const String & root_path) override
+    {
+        for (auto & request : requests)
+            request->addRootPath(root_path);
+    }
+
     String getPath() const override { return {}; }
 
     size_t bytesSize() const override
