@@ -15,6 +15,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_create_index_without_type;
+    extern const SettingsBool create_index_ignore_unique;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -32,7 +38,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
 
     if (create_index.unique)
     {
-        if (!current_context->getSettingsRef().create_index_ignore_unique)
+        if (!current_context->getSettingsRef()[Setting::create_index_ignore_unique])
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CREATE UNIQUE INDEX is not supported."
                 " SET create_index_ignore_unique=1 to ignore this UNIQUE keyword.");
@@ -42,7 +48,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     // Noop if allow_create_index_without_type = true. throw otherwise
     if (!create_index.index_decl->as<ASTIndexDeclaration>()->getType())
     {
-        if (!current_context->getSettingsRef().allow_create_index_without_type)
+        if (!current_context->getSettingsRef()[Setting::allow_create_index_without_type])
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY, "CREATE INDEX without TYPE is forbidden."
                 " SET allow_create_index_without_type=1 to ignore this statements");
@@ -92,7 +98,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
 
     alter_commands.emplace_back(std::move(command));
 
-    auto alter_lock = table->lockForAlter(current_context->getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = table->lockForAlter(current_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
     alter_commands.validate(table, current_context);
     alter_commands.prepare(metadata);
