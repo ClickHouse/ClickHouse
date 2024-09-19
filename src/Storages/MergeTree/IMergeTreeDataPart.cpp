@@ -2070,12 +2070,12 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
     };
 
     return getDataPartStorage().freeze(
-            storage.relative_data_path,
-            *maybe_path_in_detached,
-            Context::getGlobalContextInstance()->getReadSettings(),
-            Context::getGlobalContextInstance()->getWriteSettings(),
-            /* save_metadata_callback= */ {},
-            params);
+        storage.relative_data_path,
+        *maybe_path_in_detached,
+        Context::getGlobalContextInstance()->getReadSettings(),
+        Context::getGlobalContextInstance()->getWriteSettings(),
+        /* save_metadata_callback= */ {},
+        params);
 }
 
 bool IMergeTreeDataPart::isReplicatedZeroCopy() const
