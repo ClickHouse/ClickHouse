@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/KnownObjectNames.h>
+#include <Common/re2.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -49,6 +50,11 @@ public:
         bool are_named = false; /// Arguments like `password = 'password'` are considered as named arguments.
         /// E.g. "headers" in `url('..', headers('foo' = '[HIDDEN]'))`
         std::vector<std::string> nested_maps;
+        /// Full replacement of an argument. Only supported when count is 1, otherwise all arguments will be replaced with this string.
+        /// It's needed in cases when we don't want to hide the entire parameter, but some part of it, e.g. "connection_string" in
+        /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
+        /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
+        std::string replacement;
 
         bool hasSecrets() const
         {
@@ -74,6 +80,7 @@ protected:
             result.are_named = argument_is_named;
         }
         chassert(index >= result.start); /// We always check arguments consecutively
+        chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
         result.count = index + 1 - result.start;
         if (!argument_is_named)
             result.are_named = false;
@@ -199,32 +206,39 @@ protected:
 
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
     {
-        /// azureBlobStorage('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
+        /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
         size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
         if (!is_cluster_function && isNamedCollectionName(0))
         {
             /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+            if (maskAzureConnectionString(-1, true, 1))
+                return;
             findSecretNamedArgument("account_key", 1);
             return;
         }
         else if (is_cluster_function && isNamedCollectionName(1))
         {
             /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
+            if (maskAzureConnectionString(-1, true, 2))
+                return;
             findSecretNamedArgument("account_key", 2);
             return;
         }
 
-        /// We should check other arguments first because we don't need to do any replacement in case storage_account_url is not used
-        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
-        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+        if (maskAzureConnectionString(url_arg_idx))
+            return;
+
+        /// We should check other arguments first because we don't need to do any replacement in case of
+        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
+        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
         size_t count = function->arguments->size();
         if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
         {
-            String second_arg;
-            if (tryGetStringFromArgument(url_arg_idx + 3, &second_arg))
+            String fourth_arg;
+            if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
             {
-                if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
+                if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
                     return; /// The argument after 'url' is a format: s3('url', 'format', ...)
             }
         }
@@ -232,6 +246,40 @@ protected:
         /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
         if (url_arg_idx + 4 < count)
             markSecretArgument(url_arg_idx + 4);
+    }
+
+    bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0)
+    {
+        String url_arg;
+        if (argument_is_named)
+        {
+            url_arg_idx = findNamedArgument(&url_arg, "connection_string", start);
+            if (url_arg_idx == -1 || url_arg.empty())
+                url_arg_idx = findNamedArgument(&url_arg, "storage_account_url", start);
+            if (url_arg_idx == -1 || url_arg.empty())
+                return false;
+        }
+        else
+        {
+            if (!tryGetStringFromArgument(url_arg_idx, &url_arg))
+                return false;
+        }
+
+        if (!url_arg.starts_with("http"))
+        {
+            static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
+            if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
+            {
+                chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+                result.start = url_arg_idx;
+                result.are_named = argument_is_named;
+                result.count = 1;
+                result.replacement = url_arg;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     void findURLSecretArguments()
@@ -513,8 +561,9 @@ protected:
         return function->arguments->at(arg_idx)->isIdentifier();
     }
 
-    /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
-    void findSecretNamedArgument(const std::string_view & key, size_t start = 0)
+    /// Looks for an argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
+    /// Returns -1 if no argument was found.
+    ssize_t findNamedArgument(String * res, const std::string_view & key, size_t start = 0)
     {
         for (size_t i = start; i < function->arguments->size(); ++i)
         {
@@ -531,8 +580,22 @@ protected:
                 continue;
 
             if (found_key == key)
-                markSecretArgument(i, /* argument_is_named= */ true);
+            {
+                tryGetStringFromArgument(*equals_func->arguments->at(1), res);
+                return i;
+            }
         }
+
+        return -1;
+    }
+
+    /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
+    /// If the argument is found, it is marked as a secret.
+    void findSecretNamedArgument(const std::string_view & key, size_t start = 0)
+    {
+        ssize_t arg_idx = findNamedArgument(nullptr, key, start);
+        if (arg_idx >= 0)
+            markSecretArgument(arg_idx, /* argument_is_named= */ true);
     }
 };
 
