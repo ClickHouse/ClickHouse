@@ -525,8 +525,16 @@ void ThreadPoolImpl<Thread>::finalize()
     /// Notify all threads to wake them up, so they can complete their work and exit gracefully.
     new_job_or_shutdown.notify_all();
 
-    /// Clear the thread list. This triggers the destruction of ThreadFromThreadPool objects,
-    /// and in their destructors, the threads will be joined automatically.
+    /// Join all threads before clearing the list
+    for (auto& thread_ptr : threads)
+    {
+        if (thread_ptr && thread_ptr->thread.joinable())
+        {
+            thread_ptr->thread.join();
+        }
+    }
+
+    // now it's safe to clear the threads
     threads.clear();
 }
 
