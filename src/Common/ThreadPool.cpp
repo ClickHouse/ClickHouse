@@ -629,7 +629,7 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
     parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
 
     thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
-    
+
     join();
 
     ProfileEvents::increment(
