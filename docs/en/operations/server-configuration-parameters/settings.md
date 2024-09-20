@@ -3167,4 +3167,6 @@ Zero means unlimited
 
 Use the legacy MongoDB integration implementation. Deprecated.
 
+Type: Bool
+
 Default value: `true`.

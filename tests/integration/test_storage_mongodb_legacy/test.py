@@ -415,6 +415,7 @@ def test_no_credentials(started_cluster):
     )
     assert node.query("SELECT count() FROM simple_mongo_table_2") == "100\n"
     simple_mongo_table.drop()
+    node.query("DROP TABLE IF EXISTS simple_mongo_table_2")
 
 
 @pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
@@ -426,11 +427,12 @@ def test_auth_source(started_cluster):
         "clickhouse",
         roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
     )
-    simple_mongo_table = admin_db["simple_table"]
+    simple_mongo_table_admin = admin_db["simple_table"]
     data = []
     for i in range(0, 50):
         data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
+    simple_mongo_table_admin.insert_many(data)
+
     db = mongo_connection["test"]
     simple_mongo_table = db["simple_table"]
     data = []
@@ -448,6 +450,9 @@ def test_auth_source(started_cluster):
     )
     assert node.query("SELECT count() FROM simple_mongo_table_ok") == "100\n"
     simple_mongo_table.drop()
+    simple_mongo_table_admin.drop()
+    node.query("DROP TABLE IF EXISTS simple_mongo_table_ok")
+    node.query("DROP TABLE IF EXISTS simple_mongo_table_fail")
 
 
 @pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
@@ -471,6 +476,7 @@ def test_missing_columns(started_cluster):
     result = node.query("SELECT count() FROM simple_mongo_table WHERE isNull(data)")
     assert result == "10\n"
     simple_mongo_table.drop()
+    node.query("DROP TABLE IF EXISTS simple_mongo_table")
 
 
 @pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
