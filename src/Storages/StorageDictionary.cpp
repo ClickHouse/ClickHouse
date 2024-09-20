@@ -20,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_validate_primary_key_type;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -112,7 +117,12 @@ StorageDictionary::StorageDictionary(
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_, context_->getSettingsRef().dictionary_validate_primary_key_type)}, comment, location_, context_)
+          table_id_,
+          dictionary_name_,
+          ColumnsDescription{getNamesAndTypes(dictionary_structure_, context_->getSettingsRef()[Setting::dictionary_validate_primary_key_type])},
+          comment,
+          location_,
+          context_)
 {
 }
 

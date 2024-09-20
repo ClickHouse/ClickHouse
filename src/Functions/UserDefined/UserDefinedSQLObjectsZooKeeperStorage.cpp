@@ -18,6 +18,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -312,8 +317,8 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                global_context->getSettingsRef().max_parser_depth,
-                global_context->getSettingsRef().max_parser_backtracks);
+                global_context->getSettingsRef()[Setting::max_parser_depth],
+                global_context->getSettingsRef()[Setting::max_parser_backtracks]);
             return ast;
         }
     }
