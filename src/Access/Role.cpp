@@ -21,7 +21,7 @@ std::vector<UUID> Role::findDependencies() const
     return res;
 }
 
-void Role::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+void Role::doReplaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     granted_roles.replaceDependencies(old_to_new_ids);
     settings.replaceDependencies(old_to_new_ids);

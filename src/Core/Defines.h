@@ -20,6 +20,9 @@ static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
 /// The size of the I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_BUFFER_SIZE = 1048576ULL;
 
+/// The initial size of adaptive I/O buffer by default.
+static constexpr auto DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE = 16384ULL;
+
 static constexpr auto PADDING_FOR_SIMD = 64;
 
 /** Which blocks by default read the data (by number of rows).
@@ -40,7 +43,7 @@ static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
 static constexpr auto DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD = 60;
-/// replica error max cap, this is to prevent replica from accumulating too many errors and taking to long to recover.
+/// replica error max cap, this is to prevent replica from accumulating too many errors and taking too long to recover.
 static constexpr auto DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT = 1000;
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
