@@ -23,7 +23,7 @@ struct ObjectStorageQueueTableMetadata
     const String after_processing;
     const String mode;
     const UInt64 tracked_files_limit;
-    const UInt64 tracked_file_ttl_sec;
+    const UInt64 tracked_files_ttl_sec;
     const UInt64 buckets;
     const UInt64 processing_threads_num;
     const String last_processed_path;

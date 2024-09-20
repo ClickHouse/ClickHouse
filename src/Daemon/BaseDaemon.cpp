@@ -18,12 +18,13 @@
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
-#include <unistd.h>
-#include <algorithm>
 #include <iostream>
 #include <memory>
+#include <sstream>
+#include <unistd.h>
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
