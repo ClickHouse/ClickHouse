@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <thread>
 #include <unordered_map>
 
@@ -17,7 +18,7 @@ class TerminalKeystrokeInterceptor
     using CallbackMap = std::unordered_map<char, Callback>;
 
 public:
-    explicit TerminalKeystrokeInterceptor(int fd_);
+    explicit TerminalKeystrokeInterceptor(int fd_, std::ostream & error_stream_);
     ~TerminalKeystrokeInterceptor();
     void registerCallback(char key, Callback cb);
 
@@ -29,6 +30,7 @@ private:
     void runImpl(const CallbackMap &) const;
 
     const int fd;
+    std::ostream & error_stream;
 
     std::mutex mutex;
 

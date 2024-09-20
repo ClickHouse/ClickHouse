@@ -881,7 +881,7 @@ void ClientBase::initKeystrokeInterceptor()
 {
     if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("enable-progress-table-toggle", true))
     {
-        keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd);
+        keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd, error_stream);
         keystroke_interceptor->registerCallback(' ', [this]() { show_progress_table = !show_progress_table; });
 
     }
@@ -1149,7 +1149,32 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
     std::exception_ptr local_format_error;
 
     if (keystroke_interceptor)
-        keystroke_interceptor->startIntercept();
+    {
+        try
+        {
+            keystroke_interceptor->startIntercept();
+        }
+        catch (const DB::Exception &)
+        {
+            error_stream << getCurrentExceptionMessage(false);
+            keystroke_interceptor.reset();
+        }
+    }
+
+    SCOPE_EXIT({
+        if (keystroke_interceptor)
+        {
+            try
+            {
+                keystroke_interceptor->stopIntercept();
+            }
+            catch (...)
+            {
+                error_stream << getCurrentExceptionMessage(false);
+                keystroke_interceptor.reset();
+            }
+        }
+    });
 
     while (true)
     {
@@ -1205,16 +1230,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 local_format_error = std::current_exception();
             connection->sendCancel();
         }
-        catch (...)
-        {
-            if (keystroke_interceptor)
-                keystroke_interceptor->stopIntercept();
-            throw;
-        }
     }
-
-    if (keystroke_interceptor)
-        keystroke_interceptor->stopIntercept();
 
     if (local_format_error)
         std::rethrow_exception(local_format_error);

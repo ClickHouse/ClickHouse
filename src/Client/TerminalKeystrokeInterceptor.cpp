@@ -2,20 +2,35 @@
 #include <memory>
 #include <Client/TerminalKeystrokeInterceptor.h>
 
+#include <Common/Exception.h>
+
+#include <ostream>
 #include <termios.h>
 #include <unistd.h>
 #include <base/defines.h>
 
+namespace DB::ErrorCodes
+{
+extern const int SYSTEM_ERROR;
+}
+
 namespace DB
 {
 
-TerminalKeystrokeInterceptor::TerminalKeystrokeInterceptor(int fd_) : fd(fd_)
+TerminalKeystrokeInterceptor::TerminalKeystrokeInterceptor(int fd_, std::ostream & error_stream_) : fd(fd_), error_stream(error_stream_)
 {
 }
 
 TerminalKeystrokeInterceptor::~TerminalKeystrokeInterceptor()
 {
-    stopIntercept();
+    try
+    {
+        stopIntercept();
+    }
+    catch (...)
+    {
+        error_stream << getCurrentExceptionMessage(false);
+    }
 }
 
 void TerminalKeystrokeInterceptor::registerCallback(char key, TerminalKeystrokeInterceptor::Callback cb)
@@ -36,14 +51,18 @@ void TerminalKeystrokeInterceptor::startIntercept()
 
     /// Save terminal state.
     orig_termios = std::make_unique<struct termios>();
-    tcgetattr(fd, orig_termios.get());
+    if (tcgetattr(fd, orig_termios.get()))
+        throw DB::ErrnoException(
+            DB::ErrorCodes::SYSTEM_ERROR, "Cannot get the state of the terminal referred to by file descriptor '{}'", fd);
 
-    /// Enable raw terminal mode.
+    /// Set terminal to the raw terminal mode.
     struct termios raw = *orig_termios;
     raw.c_lflag &= ~(ECHO | ICANON);
     raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 1;
-    tcsetattr(fd, TCSAFLUSH, &raw);
+    if (tcsetattr(fd, TCSAFLUSH, &raw))
+        throw DB::ErrnoException(
+            DB::ErrorCodes::SYSTEM_ERROR, "Cannot set terminal to the raw mode for the terminal referred to by file desciptor '{}'", fd);
 
     intercept_thread = std::make_unique<std::thread>(&TerminalKeystrokeInterceptor::run, this, callbacks);
 }
@@ -60,10 +79,15 @@ void TerminalKeystrokeInterceptor::stopIntercept()
         intercept_thread.reset();
     }
 
-    /// Reset original terminal mode.
+    /// Set to the original (canonical) terminal mode.
     if (orig_termios)
     {
-        tcsetattr(fd, TCSAFLUSH, orig_termios.get());
+        if (tcsetattr(fd, TCSAFLUSH, orig_termios.get()))
+            throw DB::ErrnoException(
+                DB::ErrorCodes::SYSTEM_ERROR,
+                "Cannot set terminal to the original (canonical) mode for the terminal referred to by file desciptor '{}'",
+                fd);
+
         orig_termios.reset();
     }
 }
