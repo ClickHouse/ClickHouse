@@ -166,7 +166,7 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
     if (stat)
     {
         writeChar('\t', buf);
-        writeEscapedString(formatASTStateAware(stat->ast, state), buf);
+        writeEscapedString(formatASTStateAware(*stat->ast, state), buf);
     }
 
     if (ttl)
