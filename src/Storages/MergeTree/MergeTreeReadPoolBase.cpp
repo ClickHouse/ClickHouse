@@ -63,8 +63,7 @@ static size_t calculateMinMarksPerTask(
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     const Settings & settings)
 {
-    size_t min_marks_per_task
-        = std::max<size_t>(settings[Setting::merge_tree_min_read_task_size], pool_settings.min_marks_for_concurrent_read);
+    size_t min_marks_per_task = pool_settings.min_marks_for_concurrent_read;
     const size_t part_marks_count = part.getMarksCount();
     if (part_marks_count && part.data_part->isStoredOnRemoteDisk())
     {
@@ -77,11 +76,19 @@ static size_t calculateMinMarksPerTask(
         const size_t part_compressed_bytes = getApproxSizeOfPart(*part.data_part, columns);
 
         const auto avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
-        const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
         /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
         /// We also create at least two tasks per thread to have something to steal from a slow thread.
-        const auto heuristic_min_marks
-            = std::min<size_t>(pool_settings.sum_marks / pool_settings.threads / 2, min_bytes_per_task / avg_mark_bytes);
+        const auto min_bytes_per_task = std::min<size_t>(
+            pool_settings.sum_marks / pool_settings.threads / 2,
+            settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading] / avg_mark_bytes);
+        const auto lower_bound = std::max<size_t>(settings[Setting::merge_tree_min_read_task_size] / avg_mark_bytes, 1);
+        LOG_DEBUG(
+            &Poco::Logger::get("MergeTreeReadPoolBase"),
+            "settings[Setting::merge_tree_min_read_task_size]={}, avg_mark_bytes={}, lower_bound);={}",
+            settings[Setting::merge_tree_min_read_task_size],
+            avg_mark_bytes,
+            lower_bound);
+        const auto heuristic_min_marks = std::max(min_bytes_per_task, lower_bound);
         if (heuristic_min_marks > min_marks_per_task)
         {
             LOG_TRACE(
