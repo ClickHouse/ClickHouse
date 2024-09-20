@@ -607,9 +607,18 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename std::list<std:
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::join()
 {
+    // the thread destructed, so the capacity grows
+    parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
+    parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+
+    thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
+
     // Ensure the thread is joined before destruction if still joinable
     if (thread.joinable())
         thread.join();
+
+    ProfileEvents::increment(
+        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
 }
 
 template <typename Thread>
@@ -624,16 +633,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::removeSelfFromPoolNoPoolLock(
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 {
-    // the thread destructed, so the capacity grows
-    parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
-    parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-
-    thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
-    
     join();
-
-    ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
 }
 
 template <typename Thread>
