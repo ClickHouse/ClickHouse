@@ -95,7 +95,7 @@ namespace Setting
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
@@ -885,6 +885,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_context->canUseParallelReplicasCustomKey())
                 {
                     if (settings[Setting::parallel_replicas_count] > 1)
+                    {
                         if (auto parallel_replicas_custom_key_filter_info= buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context))
                             add_filter(*parallel_replicas_custom_key_filter_info, "Parallel replicas custom key filter");
                     }

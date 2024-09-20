@@ -172,7 +172,7 @@ namespace Setting
     extern const SettingsBool optimize_uniq_to_count;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
@@ -2424,7 +2424,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 enable_para
     const Settings & settings = context->getSettingsRef();
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
-        && (max_parallel_replicas == 0)
+        && (enable_parallel_replicas == 0)
         && !settings[Setting::allow_experimental_query_deduplication]
         && !settings[Setting::empty_result_for_aggregation_by_empty_set]
         && storage

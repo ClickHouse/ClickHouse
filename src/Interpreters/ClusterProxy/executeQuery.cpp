@@ -37,7 +37,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 use_parallel_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsUInt64 limit;
@@ -55,7 +55,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -275,7 +275,7 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
     return [my_custom_key_ast = std::move(custom_key_ast),
             column_description = columns,
-            custom_key_type = settings[Setting::parallel_replicas_mode.value].value,
+            custom_key_type = settings[Setting::parallel_replicas_mode].value,
             custom_key_range_lower = settings[Setting::parallel_replicas_custom_key_range_lower].value,
             custom_key_range_upper = settings[Setting::parallel_replicas_custom_key_range_upper].value,
             query_context = context,

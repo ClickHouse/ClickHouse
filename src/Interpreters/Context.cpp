@@ -220,6 +220,7 @@ namespace Setting
     extern const SettingsUInt64 min_bytes_to_use_direct_io;
     extern const SettingsUInt64 min_bytes_to_use_mmap_io;
     extern const SettingsBool page_cache_inject_eviction;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
@@ -5723,8 +5724,8 @@ bool Context::canUseParallelReplicasCustomKey() const
     const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
     const bool parallel_replicas_enabled = settings_ref[Setting::enable_parallel_replicas] > 0;
     const bool is_parallel_replicas_with_custom_key =
-        settings->parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
-        settings->parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY_RANGE;
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
 
     return has_enough_servers && parallel_replicas_enabled && is_parallel_replicas_with_custom_key;
 }
@@ -5746,9 +5747,9 @@ bool Context::canUseOffsetParallelReplicas() const
     const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
     const bool parallel_replicas_enabled = settings_ref[Setting::enable_parallel_replicas] > 0;
     const bool is_parallel_replicas_with_custom_key_or_native_sampling_key =
-        settings->parallel_replicas_mode == ParallelReplicasMode::SAMPLING_KEY ||
-        settings->parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
-        settings->parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY_RANGE;
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
     return offset_parallel_replicas_enabled &&
            has_enough_servers &&
            parallel_replicas_enabled &&

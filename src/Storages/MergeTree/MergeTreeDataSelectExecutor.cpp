@@ -67,6 +67,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_query_deduplication;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -75,11 +76,13 @@ namespace Setting
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_threads_for_indexes;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
 namespace ErrorCodes
