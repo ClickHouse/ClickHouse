@@ -1,22 +1,22 @@
 #pragma once
 
 
+#include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
-#include <Common/QueryFuzzer.h>
-#include <Common/DNSResolver.h>
-#include <Common/InterruptListener.h>
-#include <Common/ProgressIndication.h>
-#include <Common/ProgressTable.h>
-#include <Common/ShellCommand.h>
-#include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Poco/SplitterChannel.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Poco/Util/Application.h>
+#include <Common/DNSResolver.h>
+#include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
@@ -69,7 +69,7 @@ ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
 class InternalTextLogs;
-class KeystrokeInterceptor;
+class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
 
 /**
@@ -258,7 +258,7 @@ protected:
     /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
 
-    std::unique_ptr<KeystrokeInterceptor> keystroke_interceptor;
+    std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;

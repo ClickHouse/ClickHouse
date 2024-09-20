@@ -1,6 +1,6 @@
 #include <chrono>
 #include <memory>
-#include <Common/KeystrokeInterceptor.h>
+#include <Client/TerminalKeystrokeInterceptor.h>
 
 #include <termios.h>
 #include <unistd.h>
@@ -9,21 +9,21 @@
 namespace DB
 {
 
-KeystrokeInterceptor::KeystrokeInterceptor(int fd_) : fd(fd_)
+TerminalKeystrokeInterceptor::TerminalKeystrokeInterceptor(int fd_) : fd(fd_)
 {
 }
 
-KeystrokeInterceptor::~KeystrokeInterceptor()
+TerminalKeystrokeInterceptor::~TerminalKeystrokeInterceptor()
 {
     stopIntercept();
 }
 
-void KeystrokeInterceptor::registerCallback(char key, KeystrokeInterceptor::Callback cb)
+void TerminalKeystrokeInterceptor::registerCallback(char key, TerminalKeystrokeInterceptor::Callback cb)
 {
     callbacks.emplace(key, cb);
 }
 
-void KeystrokeInterceptor::startIntercept()
+void TerminalKeystrokeInterceptor::startIntercept()
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -45,10 +45,10 @@ void KeystrokeInterceptor::startIntercept()
     raw.c_cc[VTIME] = 1;
     tcsetattr(fd, TCSAFLUSH, &raw);
 
-    intercept_thread = std::make_unique<std::thread>(&KeystrokeInterceptor::run, this, callbacks);
+    intercept_thread = std::make_unique<std::thread>(&TerminalKeystrokeInterceptor::run, this, callbacks);
 }
 
-void KeystrokeInterceptor::stopIntercept()
+void TerminalKeystrokeInterceptor::stopIntercept()
 {
     stop_requested = true;
 
@@ -68,7 +68,7 @@ void KeystrokeInterceptor::stopIntercept()
     }
 }
 
-void KeystrokeInterceptor::run(KeystrokeInterceptor::CallbackMap map)
+void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap map)
 {
     while (!stop_requested)
     {
@@ -77,7 +77,7 @@ void KeystrokeInterceptor::run(KeystrokeInterceptor::CallbackMap map)
     }
 }
 
-void KeystrokeInterceptor::runImpl(const DB::KeystrokeInterceptor::CallbackMap & map) const
+void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeInterceptor::CallbackMap & map) const
 {
     char ch;
     if (read(fd, &ch, 1) > 0)

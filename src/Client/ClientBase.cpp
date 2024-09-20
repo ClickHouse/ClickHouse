@@ -1,8 +1,9 @@
 #include <Client/ClientBase.h>
-#include <Client/LineReader.h>
 #include <Client/ClientBaseHelpers.h>
-#include <Client/TestHint.h>
 #include <Client/InternalTextLogs.h>
+#include <Client/LineReader.h>
+#include <Client/TerminalKeystrokeInterceptor.h>
+#include <Client/TestHint.h>
 #include <Client/TestTags.h>
 
 #include <base/safeExit.h>
@@ -14,7 +15,6 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
-#include <Common/KeystrokeInterceptor.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -881,7 +881,7 @@ void ClientBase::initKeystrokeInterceptor()
 {
     if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("enable-progress-table-toggle", true))
     {
-        keystroke_interceptor = std::make_unique<KeystrokeInterceptor>(in_fd);
+        keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd);
         keystroke_interceptor->registerCallback(' ', [this]() { show_progress_table = !show_progress_table; });
 
     }

@@ -11,14 +11,14 @@ struct termios;
 namespace DB
 {
 
-class KeystrokeInterceptor
+class TerminalKeystrokeInterceptor
 {
     using Callback = std::function<void()>;
     using CallbackMap = std::unordered_map<char, Callback>;
 
 public:
-    explicit KeystrokeInterceptor(int fd_);
-    ~KeystrokeInterceptor();
+    explicit TerminalKeystrokeInterceptor(int fd_);
+    ~TerminalKeystrokeInterceptor();
     void registerCallback(char key, Callback cb);
 
     void startIntercept();
