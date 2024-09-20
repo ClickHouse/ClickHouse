@@ -469,6 +469,53 @@ By the way, HDFS is unsupported and therefore there might be issues when using i
 
 Keep in mind that HDFS may not work in corner cases.
 
+## Using Ceph RADOS storage
+
+To be fully written.
+
+`MergeTree` family table engines can store data to [Ceph RADOS](https://docs.ceph.com/en/latest/architecture/) using a disk with type `rados`. While Ceph support various common interfaces (S3 via Rados Gateway, POSIX-compliant filesystem interface via CephFS, etc.), directly storing data to RADOS brings benefits like better performance and lower latency.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <ceph0>
+                <type>rados</type>
+                <user>admin</user>
+                <pool>clickhouse</pool>
+                <namespace>integration_test</namespace>
+                <options>
+                    <mon_host>ceph1:3300</mon_host>
+                    <key>AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==</key>
+                    <osd_max_object_size>6291456</osd_max_object_size>
+                    <osd_max_write_size>4</osd_max_write_size>
+                    <objecter_inflight_ops>32</objecter_inflight_ops>
+                </options>
+                <metadata_path>/var/lib/clickhouse/ceph_metadata/</metadata_path>
+                <skip_access_check>true</skip_access_check>
+            </ceph0>
+            <ceph0_cache>
+                <type>cache</type>
+                <disk>ceph0</disk>
+                <path>/var/lib/clickhouse/ceph_cache/</path>
+                <max_size>1Gi</max_size>
+                <max_file_segment_size>2Mi</max_file_segment_size>
+                <boundary_alignment>1Mi</boundary_alignment>
+            </ceph0_cache>
+        </disks>
+        <policies>
+            <ceph>
+                <volumes>
+                    <main>
+                        <disk>ceph0_cache</disk>
+                    </main>
+                </volumes>
+            </ceph>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
 ### Using Data Encryption {#encrypted-virtual-file-system}
 
 You can encrypt the data stored on [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#configuring-hdfs) (unsupported) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.

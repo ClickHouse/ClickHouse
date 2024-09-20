@@ -29,3 +29,6 @@ odbc_mysql_db = "clickhouse"
 odbc_psql_db = "postgres"
 odbc_psql_user = "postgres"
 odbc_psql_pass = "mysecretpassword"
+
+# CEPH CREDENTIALS
+ceph_admin_secret = "ceph123"

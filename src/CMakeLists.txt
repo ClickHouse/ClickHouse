@@ -81,6 +81,7 @@ add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
+add_headers_and_sources(clickhouse_common_io IO/Ceph)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 
@@ -113,6 +114,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/ObjectStorage/Ceph)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -134,6 +136,7 @@ if (TARGET ch_contrib::aws_s3)
     add_headers_and_sources(dbms Disks/ObjectStorages/S3)
 endif()
 
+
 if (TARGET ch_contrib::azure_sdk)
     add_headers_and_sources(dbms Disks/ObjectStorages/AzureBlobStorage)
     add_headers_and_sources(dbms IO/AzureBlobStorage)
@@ -141,6 +144,11 @@ endif()
 
 if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
+endif()
+
+if (TARGET ch_contrib::aws_s3)
+    add_headers_and_sources(dbms Common/Ceph)
+    add_headers_and_sources(dbms Disks/ObjectStorages/Ceph)
 endif()
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
@@ -495,6 +503,10 @@ endif()
 if (TARGET ch_contrib::azure_sdk)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::azure_sdk)
     dbms_target_link_libraries (PRIVATE ch_contrib::azure_sdk)
+endif()
+
+if (TARGET ch_contrib::ceph)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::ceph)
 endif()
 
 if (TARGET ch_contrib::s2)

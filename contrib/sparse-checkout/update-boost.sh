@@ -79,6 +79,16 @@ echo '/boost/circular_buffer/*' >> $FILES_TO_CHECKOUT
 echo '/boost/proto/*' >> $FILES_TO_CHECKOUT
 echo '/boost/qvm/*' >> $FILES_TO_CHECKOUT
 echo '/boost/property_tree/*' >> $FILES_TO_CHECKOUT
+echo '/boost/thread/*' >> $FILES_TO_CHECKOUT
+echo '/boost/date_time/*' >> $FILES_TO_CHECKOUT
+echo '/boost/chrono/*' >> $FILES_TO_CHECKOUT
+echo '/boost/ratio/*' >> $FILES_TO_CHECKOUT
+echo '/boost/endian/*' >> $FILES_TO_CHECKOUT
+echo '/boost/variant2/*' >> $FILES_TO_CHECKOUT
+echo '/boost/phoenix/*' >> $FILES_TO_CHECKOUT
+echo '/boost/assign/*' >> $FILES_TO_CHECKOUT
+echo '/boost/pool/*' >> $FILES_TO_CHECKOUT
+echo '/boost/statechart/*' >> $FILES_TO_CHECKOUT
 echo '/libs/*' >> $FILES_TO_CHECKOUT
 
 git config core.sparsecheckout true

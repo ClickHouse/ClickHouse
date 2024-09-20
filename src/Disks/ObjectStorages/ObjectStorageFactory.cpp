@@ -1,20 +1,29 @@
+#include <memory>
 #include <utility>
+#include <config.h>
+
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
-#include "Disks/DiskType.h"
-#include "config.h"
+
+#if USE_CEPH
+#include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
+#endif
+
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
+
 #if USE_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #endif
+
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
+
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
@@ -81,7 +90,7 @@ ObjectStoragePtr createObjectStorage(
         /// HDFS object storage currently does not support iteration and does not implement listObjects method.
         /// StaticWeb object storage is read-only and works with its dedicated metadata type.
         constexpr auto supported_object_storage_types
-            = std::array{ObjectStorageType::S3, ObjectStorageType::Local, ObjectStorageType::Azure};
+            = std::array{ObjectStorageType::S3, ObjectStorageType::Local, ObjectStorageType::Azure, ObjectStorageType::Rados};
         if (std::find(supported_object_storage_types.begin(), supported_object_storage_types.end(), type)
             == supported_object_storage_types.end())
             throw Exception(
@@ -343,6 +352,36 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
+#if USE_CEPH
+void registerRadosObjectStorage(ObjectStorageFactory & factory)
+{
+    auto creator = [](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const ContextPtr & /*context*/,
+        bool /* skip_access_check */) -> ObjectStoragePtr
+    {
+        auto settings = std::make_unique<RadosObjectStorageSettings>();
+        settings->loadFromConfig(config, config_prefix);
+        auto rados = std::make_shared<librados::Rados>();
+        rados->init(settings->global_options.user.c_str());
+        for (const auto & [key, value] : settings->global_options)
+        {
+            if (auto ec = rados->conf_set(key.c_str(), value.c_str()); ec < 0)
+                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, strerror(-ec));
+        }
+        RadosEndpoint endpoint;
+        endpoint.mon_hosts = settings->global_options["mon_host"]; /// Redundant, only for description
+        endpoint.pool = config.getString(config_prefix + ".pool");
+        endpoint.nspace = config.getString(config_prefix + ".namespace", "");
+        endpoint.path = config.getString(config_prefix + ".path", "");
+        return createObjectStorage<RadosObjectStorage>(ObjectStorageType::Rados, config, config_prefix, std::move(rados), std::move(settings), endpoint, name);
+    };
+    factory.registerObjectStorageType("rados", creator);
+}
+#endif
+
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -407,6 +446,10 @@ void registerObjectStorages()
 
 #if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
+#endif
+
+#if USE_CEPH
+    registerRadosObjectStorage(factory);
 #endif
 
     registerWebObjectStorage(factory);

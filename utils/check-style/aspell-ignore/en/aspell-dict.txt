@@ -147,6 +147,8 @@ CellAreaM
 CellAreaRads
 CellsIntersect
 CentOS
+Ceph
+CephFS
 CertificateHandler
 Chadmin
 ChannelID
@@ -713,6 +715,7 @@ PREWHERE
 PROCESSLIST
 PROXYv
 PSUN
+POSIX
 PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
@@ -790,6 +793,7 @@ QueryThread
 QuickAssist
 QuickSight
 QuoteMeta
+RADOS
 RBAC
 RClickHouse
 RHEL
@@ -800,6 +804,7 @@ RWLockActiveWriters
 RWLockWaitingReaders
 RWLockWaitingWriters
 RabbitMQ
+Rados
 RangeHashed
 RawBLOB
 ReDoS

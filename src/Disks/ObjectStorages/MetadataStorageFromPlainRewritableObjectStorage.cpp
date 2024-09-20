@@ -56,7 +56,7 @@ std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_
     settings.remote_fs_method = RemoteFSReadMethod::read;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
 
-    LOG_DEBUG(log, "Loading metadata");
+    LOG_DEBUG(log, "Loading metadata from path {}", metadata_key_prefix);
     size_t num_files = 0;
     for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
     {

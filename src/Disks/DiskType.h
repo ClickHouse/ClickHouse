@@ -16,6 +16,7 @@ enum class DataSourceType : uint8_t
 enum class ObjectStorageType : uint8_t
 {
     None,
+    Rados,
     S3,
     Azure,
     HDFS,

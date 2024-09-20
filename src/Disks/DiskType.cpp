@@ -56,6 +56,8 @@ std::string DataSourceDescription::toString() const
         {
             switch (object_storage_type)
             {
+                case ObjectStorageType::Rados:
+                    return "Rados";
                 case ObjectStorageType::S3:
                     return "s3";
                 case ObjectStorageType::HDFS:

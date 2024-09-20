@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backup_disk_rados_plain>
+                <type>rados</type>
+                <metadata_type>plain</metadata_type>
+                <user>admin</user>
+                <pool>clickhouse</pool>
+                <namespace>integration_test</namespace>
+                <path>integration_test</path>
+                <options>
+                    <mon_host>ceph1:3300</mon_host>
+                    <key>AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==</key>
+                    <osd_max_object_size>6291456</osd_max_object_size>
+                    <osd_max_write_size>4</osd_max_write_size>
+                    <objecter_inflight_ops>32</objecter_inflight_ops>
+                </options>
+                <skip_access_check>true</skip_access_check>
+            </backup_disk_rados_plain>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backup_disk_rados_plain</allowed_disk>
+    </backups>
+</clickhouse>

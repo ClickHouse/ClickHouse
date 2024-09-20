@@ -484,6 +484,8 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableLocalDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for LocalObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.") \
+    M(DiskPlainRewritableRadosDirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for RadosObjectStorage.") \
+    M(DiskPlainRewritableRadosDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for RadosObjectStorage.") \
     \
     M(S3Clients, "Number of created S3 clients.") \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \
@@ -525,6 +527,15 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.") \
     M(ReadBufferFromAzureBytes, "Bytes read from Azure.") \
     M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure") \
+    \
+    M(ReadBufferFromRadosMicroseconds, "Time spent on reading from Ceph RADOS.") \
+    M(ReadBufferFromCephInitMicroseconds, "Time spent initializing connection to Ceph RADOS.") \
+    M(ReadBufferFromRadosBytes, "Bytes read from Ceph RADOS.") \
+    M(ReadBufferFromCephRequestsErrors, "Number of exceptions while reading from Ceph RADOS") \
+      \
+    M(WriteBufferFromRadosMicroseconds, "Time spent on writing to Ceph.") \
+    M(WriteBufferFromRadosBytes, "Bytes written to Ceph.") \
+    M(WriteBufferFromCephRequestsErrors, "Number of exceptions while writing to Ceph.") \
     \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.") \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.") \

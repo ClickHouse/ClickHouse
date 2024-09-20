@@ -14,6 +14,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Error.h>
 #include <Interpreters/Context.h>
 
 
@@ -501,6 +502,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 
+    Strings paths;
+    for (const auto & object : storage_objects)
+        paths.push_back(object.local_path + ":" + object.remote_path);
+    LOG_DEBUG(log, "Reading objects ({})", fmt::join(paths, ", "));
+
     return object_storage->readObjects(
         storage_objects,
         updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName()),
@@ -638,4 +644,46 @@ DiskObjectStorageReservation::~DiskObjectStorageReservation()
     }
 }
 
+std::optional<UInt64> DiskObjectStorage::getTotalSpace() const
+{
+#if USE_CEPH
+    if (auto client = object_storage->tryGetRadosClient())
+    {
+        librados::cluster_stat_t stats;
+        if (auto ec = client->cluster_stat(stats); ec < 0)
+            LOG_ERROR(log, "Failed to get rados cluster stats: {}", Poco::Error::getMessage(ec));
+        else
+            return stats.kb * 1024;
+    }
+#endif
+    return {};
+}
+
+std::optional<UInt64> DiskObjectStorage::getAvailableSpace() const
+{
+#if USE_CEPH
+    if (auto client = object_storage->tryGetRadosClient())
+    {
+        librados::cluster_stat_t stats;
+        if (auto ec = client->cluster_stat(stats); ec < 0)
+            LOG_ERROR(log, "Failed to get rados cluster stats: {}", Poco::Error::getMessage(ec));
+        else
+            return stats.kb_avail * 1024;
+    }
+#endif
+    return {};
+}
+
+std::optional<UInt64> DiskObjectStorage::getUnreservedSpace() const
+{
+#if USE_CEPH
+    auto available_space = getAvailableSpace();
+    if (available_space)
+    {
+        std::lock_guard lock(reservation_mutex);
+        return *available_space - std::min(*available_space, reserved_bytes);
+    }
+#endif
+    return {};
+}
 }

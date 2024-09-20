@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cppkafka/topic_partition.h>
+#include <fmt/ostream.h>
 #include <boost/circular_buffer.hpp>
 
 #include <Core/Names.h>

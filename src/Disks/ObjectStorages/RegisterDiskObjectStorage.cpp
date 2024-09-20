@@ -64,6 +64,9 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 #if USE_AZURE_BLOB_STORAGE
     factory.registerDiskType("azure_blob_storage", creator); /// For compatibility
 #endif
+#if USE_CEPH
+    factory.registerDiskType("rados", creator); /// For compatibility
+#endif
     factory.registerDiskType("local_blob_storage", creator); /// For compatibility
     factory.registerDiskType("web", creator); /// For compatibility
 }
