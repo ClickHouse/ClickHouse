@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <optional>
 
@@ -276,6 +277,9 @@ public:
     {
         return false;
     }
+
+    /// TODO: comment.
+    virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
 private:
     StorageID storage_id;

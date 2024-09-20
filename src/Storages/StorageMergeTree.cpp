@@ -409,6 +409,7 @@ void StorageMergeTree::alter(
             /// Object may be added or dropped by alter.
             auto parts_lock = lockParts();
             resetObjectColumnsFromActiveParts(parts_lock);
+            resetSerializationHints(parts_lock);
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)

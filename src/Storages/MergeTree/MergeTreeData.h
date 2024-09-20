@@ -1235,6 +1235,9 @@ protected:
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
 
+    /// TODO: comment.
+    SerializationInfoByName serialization_hints;
+
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1522,6 +1525,10 @@ protected:
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
+
+    void resetSerializationHints(const DataPartsLock & lock);
+    void updateSerializationHints(const DataPartPtr & part, const DataPartsLock & lock);
+    SerializationInfoByName getSerializationHints() const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.

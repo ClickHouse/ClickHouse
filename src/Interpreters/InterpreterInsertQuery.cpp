@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
+    extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
 namespace ErrorCodes
@@ -737,10 +738,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
-        /// can execute without additional data
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
-        for (auto && buffer : owned_buffers)
+
+        for (auto & buffer : owned_buffers)
             format->addBuffer(std::move(buffer));
+
+        if (settings[Setting::enable_parsing_to_custom_serialization])
+            format->setSerializationHints(table->getSerializationHints());
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
         pipeline.complete(std::move(pipe));

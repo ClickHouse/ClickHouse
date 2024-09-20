@@ -1906,6 +1906,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (num_parts == 0 && unexpected_parts_to_load.empty())
     {
         resetObjectColumnsFromActiveParts(part_lock);
+        resetSerializationHints(part_lock);
         LOG_DEBUG(log, "There are no data parts");
         return;
     }
@@ -1952,6 +1953,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
 
     resetObjectColumnsFromActiveParts(part_lock);
+    resetSerializationHints(part_lock);
     calculateColumnAndSecondaryIndexSizesImpl();
 
     PartLoadingTreeNodes unloaded_parts;
@@ -6855,6 +6857,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 }
             }
 
+            for (const auto & part : precommitted_parts)
+                data.updateSerializationHints(part, parts_lock);
+
             if (reduce_parts == 0)
             {
                 for (const auto & part : precommitted_parts)
@@ -8516,6 +8521,33 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
         return;
 
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
+}
+
+void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
+{
+    SerializationInfo::Settings settings =
+    {
+        .ratio_of_defaults_for_sparse = getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .choose_kind = true,
+    };
+
+    auto columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
+    serialization_hints = SerializationInfoByName(columns, settings);
+    auto range = getDataPartsStateRange(DataPartState::Active);
+
+    for (const auto & part : range)
+        serialization_hints.add(part->getSerializationInfos());
+}
+
+void MergeTreeData::updateSerializationHints(const DataPartPtr & part, const DataPartsLock & /*lock*/)
+{
+    serialization_hints.add(part->getSerializationInfos());
+}
+
+SerializationInfoByName MergeTreeData::getSerializationHints() const
+{
+    auto lock = lockParts();
+    return serialization_hints;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

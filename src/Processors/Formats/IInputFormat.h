@@ -58,6 +58,9 @@ public:
     /// parallel parsing before creating this parser.
     virtual void setRowsReadBefore(size_t /*rows*/) {}
 
+    /// TODO: comment.
+    virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
+
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }

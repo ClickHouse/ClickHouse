@@ -1254,7 +1254,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
-
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
