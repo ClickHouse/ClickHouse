@@ -58,6 +58,8 @@ public:
         // Shift the thread state from Preparing to Running to allow the worker to start.
         void start(typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator& it);
 
+        void join();
+
         // Destructor to join the thread if needed (shift the state to Destructing if it was not running)
         ~ThreadFromThreadPool();
 
