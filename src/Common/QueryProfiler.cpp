@@ -33,7 +33,7 @@ namespace DB
 namespace
 {
 #if defined(OS_LINUX)
-    //thread_local size_t write_trace_iteration = 0;
+    thread_local size_t write_trace_iteration = 0;
 #endif
     /// Even after timer_delete() the signal can be delivered,
     /// since it does not do anything with pending signals.
@@ -57,7 +57,7 @@ namespace
 
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-#if defined(OS_LINUX) && false //asdqwe
+#if defined(OS_LINUX)
         if (info)
         {
             int overrun_count = info->si_overrun;
@@ -92,7 +92,7 @@ namespace
         constexpr bool sanitizer = false;
 #endif
 
-        //asdqwe asynchronous_stack_unwinding = true;
+        asynchronous_stack_unwinding = true;
         if (sanitizer || 0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
         {
             stack_trace.emplace(signal_context);
