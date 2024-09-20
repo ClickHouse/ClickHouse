@@ -64,7 +64,7 @@ static size_t calculateMinMarksPerTask(
     const Settings & settings)
 {
     size_t min_marks_per_task = pool_settings.min_marks_for_concurrent_read;
-    const size_t part_marks_count = part.getMarksCount();
+    const size_t part_marks_count = part.data_part->getMarksCount();
     if (part_marks_count && part.data_part->isStoredOnRemoteDisk())
     {
         /// We assume that most of the time prewhere does it's job good meaning that lion's share of the rows is filtered out.
