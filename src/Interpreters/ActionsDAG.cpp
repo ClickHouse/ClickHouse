@@ -396,7 +396,7 @@ const ActionsDAG::Node * ActionsDAG::tryFindInOutputs(const std::string & name) 
     return nullptr;
 }
 
-ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutpus(const Names & names) const
+ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) const
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(names.size());
@@ -524,7 +524,7 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
 
 void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
-    auto required_nodes = findInOutpus(required_names);
+    auto required_nodes = findInOutputs(required_names);
     outputs.swap(required_nodes);
     removeUnusedActions(allow_remove_inputs, allow_constant_folding);
 }
@@ -2028,8 +2028,9 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
-ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & array_joined_columns) const
 {
+    std::unordered_set<std::string_view> array_joined_columns_set(array_joined_columns.begin(), array_joined_columns.end());
     struct Frame
     {
         const Node * node = nullptr;
@@ -2072,7 +2073,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
             if (cur.next_child_to_visit == cur.node->children.size())
             {
                 bool depend_on_array_join = false;
-                if (cur.node->type == ActionType::INPUT && array_joined_columns.contains(cur.node->result_name))
+                if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
                 for (const auto * child : cur.node->children)

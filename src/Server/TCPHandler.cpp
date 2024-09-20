@@ -1270,7 +1270,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1280,7 +1280,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRanges
 void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out);
+    request.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1592,7 +1592,17 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        if (session->getAuthenticationTypeOrLogInFailure(user) != AuthenticationType::SSH_KEY)
+        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user);
+
+        bool user_supports_ssh_authentication = std::find_if(
+            authentication_types.begin(),
+            authentication_types.end(),
+            [](auto authentication_type)
+            {
+               return authentication_type ==  AuthenticationType::SSH_KEY;
+            }) != authentication_types.end();
+
+        if (!user_supports_ssh_authentication)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
@@ -1652,6 +1662,9 @@ void TCPHandler::receiveAddendum()
         readStringBinary(proto_send_chunked_cl, *in);
         readStringBinary(proto_recv_chunked_cl, *in);
     }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        readVarUInt(client_parallel_replicas_protocol_version, *in);
 }
 
 
@@ -1679,6 +1692,8 @@ void TCPHandler::sendHello()
     writeVarUInt(VERSION_MAJOR, *out);
     writeVarUInt(VERSION_MINOR, *out);
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
@@ -2133,7 +2148,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
 
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     if (last_block_in.compression == Protocol::Compression::Enable)
-        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
+        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true, /* external_data */ query_kind != ClientInfo::QueryKind::SECONDARY_QUERY);
     else
         maybe_compressed_in = in;
 
@@ -2157,7 +2172,7 @@ void TCPHandler::initBlockInput()
         /// with another codec that the rest of the data. Example: data sent by Distributed tables.
 
         if (state.compression == Protocol::Compression::Enable)
-            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
+            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true, /* external_data */ query_kind != ClientInfo::QueryKind::SECONDARY_QUERY);
         else
             state.maybe_compressed_in = in;
 

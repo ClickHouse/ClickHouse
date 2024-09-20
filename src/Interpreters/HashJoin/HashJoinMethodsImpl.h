@@ -95,7 +95,10 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     added_columns.join_on_keys.clear();
     Block remaining_block = sliceBlock(block, num_joined);
 
-    added_columns.buildOutput();
+    if (is_join_get)
+        added_columns.buildJoinGetOutput();
+    else
+        added_columns.buildOutput();
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
 
@@ -339,6 +342,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
+    if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
+        added_columns.output_by_row_list = true;
 
     Arena pool;
 
@@ -381,15 +386,15 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
                     auto row_ref = mapped->findAsof(left_asof_key, i);
-                    if (row_ref.block)
+                    if (row_ref && row_ref->block)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
                         if constexpr (flag_per_row)
-                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref.block, row_ref.row_num, 0);
+                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref->block, row_ref->row_num, 0);
                         else
                             used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
 
-                        added_columns.appendFromBlock(*row_ref.block, row_ref.row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(row_ref, join_features.add_missing);
                     }
                     else
                         addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
@@ -420,7 +425,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     if (used_once)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
-                        added_columns.appendFromBlock(*mapped.block, mapped.row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(&mapped, join_features.add_missing);
                     }
 
                     break;
@@ -438,7 +443,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 {
                     setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-                    added_columns.appendFromBlock(*mapped.block, mapped.row_num, join_features.add_missing);
+                    added_columns.appendFromBlock(&mapped, join_features.add_missing);
 
                     if (join_features.is_any_or_semi_join)
                     {
@@ -477,7 +482,7 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename AddedColumns>
 ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter(
     size_t left_start_row,
-    const std::vector<RowRef> & selected_rows,
+    const std::vector<const RowRef *> & selected_rows,
     const std::vector<size_t> & row_replicate_offset,
     AddedColumns & added_columns)
 {
@@ -489,7 +494,7 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
             result_column = ColumnUInt8::create();
             break;
         }
-        const Block & sample_right_block = *selected_rows.begin()->block;
+        const Block & sample_right_block = *((*selected_rows.begin())->block);
         if (!sample_right_block || !added_columns.additional_filter_expression)
         {
             auto filter = ColumnUInt8::create();
@@ -519,8 +524,8 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                 auto new_col = col.column->cloneEmpty();
                 for (const auto & selected_row : selected_rows)
                 {
-                    const auto & src_col = selected_row.block->getByPosition(right_col_pos);
-                    new_col->insertFrom(*src_col.column, selected_row.row_num);
+                    const auto & src_col = selected_row->block->getByPosition(right_col_pos);
+                    new_col->insertFrom(*src_col.column, selected_row->row_num);
                 }
                 executed_block.insert({std::move(new_col), col.type, col.name});
             }
@@ -700,26 +705,24 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                                 {
                                     // For inner join, we need mark each right row'flag, because we only use each right row once.
                                     auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
-                                        selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                                        (*selected_right_row_it)->block, (*selected_right_row_it)->row_num, 0);
                                     if (used_once)
                                     {
                                         any_matched = true;
                                         total_added_rows += 1;
-                                        added_columns.appendFromBlock(
-                                            *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                        added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                                     }
                                 }
                             }
                             else
                             {
                                 auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
-                                    selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                                    (*selected_right_row_it)->block, (*selected_right_row_it)->row_num, 0);
                                 if (used_once)
                                 {
                                     any_matched = true;
                                     total_added_rows += 1;
-                                    added_columns.appendFromBlock(
-                                        *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                    added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                                 }
                             }
                         }
@@ -727,16 +730,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                         {
                             any_matched = true;
                             if constexpr (join_features.right && join_features.need_flags)
-                                used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                                used_flags.template setUsed<true, true>((*selected_right_row_it)->block, (*selected_right_row_it)->row_num, 0);
                         }
                         else
                         {
                             any_matched = true;
                             total_added_rows += 1;
-                            added_columns.appendFromBlock(
-                                *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
-                            used_flags.template setUsed<join_features.need_flags, true>(
-                                selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                            used_flags.template setUsed<join_features.need_flags, true>((*selected_right_row_it)->block, (*selected_right_row_it)->row_num, 0);
                         }
                     }
 
@@ -756,8 +757,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(
-                                *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                             total_added_rows += 1;
                         }
                         ++selected_right_row_it;
@@ -767,8 +767,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(
-                                *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
                             total_added_rows += 1;
                             selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
                             break;

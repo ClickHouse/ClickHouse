@@ -147,6 +147,7 @@ ColumnDependencies getAllColumnDependencies(
 
 bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context)
@@ -154,7 +155,7 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
     bool all_commands_can_be_skipped = true;
 
     for (const auto & command : commands)
@@ -285,8 +286,13 @@ MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(st
 {
 }
 
-MutationsInterpreter::Source::Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_)
-    : data(&storage_), part(std::move(source_part_))
+MutationsInterpreter::Source::Source(
+    MergeTreeData & storage_,
+    MergeTreeData::DataPartPtr source_part_,
+    AlterConversionsPtr alter_conversions_)
+    : data(&storage_)
+    , part(std::move(source_part_))
+    , alter_conversions(std::move(alter_conversions_))
 {
 }
 
@@ -386,13 +392,14 @@ MutationsInterpreter::MutationsInterpreter(
 MutationsInterpreter::MutationsInterpreter(
     MergeTreeData & storage_,
     MergeTreeData::DataPartPtr source_part_,
+    AlterConversionsPtr alter_conversions_,
     StorageMetadataPtr metadata_snapshot_,
     MutationCommands commands_,
     Names available_columns_,
     ContextPtr context_,
     Settings settings_)
     : MutationsInterpreter(
-        Source(storage_, std::move(source_part_)),
+        Source(storage_, std::move(source_part_), std::move(alter_conversions_)),
         std::move(metadata_snapshot_), std::move(commands_),
         std::move(available_columns_), std::move(context_), std::move(settings_))
 {
@@ -499,6 +506,12 @@ static void validateUpdateColumns(
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
+        }
+        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
+        {
+            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
+                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
         }
     }
 }
@@ -1211,9 +1224,18 @@ void MutationsInterpreter::Source::read(
 
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
-            plan, *data, storage_snapshot,
-            part, required_columns,
-            apply_deleted_mask_, std::move(filter), context_,
+            plan,
+            *data,
+            storage_snapshot,
+            part,
+            alter_conversions,
+            required_columns,
+            nullptr,
+            apply_deleted_mask_,
+            std::move(filter),
+            false,
+            false,
+            context_,
             getLogger("MutationsInterpreter"));
     }
     else

@@ -246,8 +246,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    if (exchange && !supportsAtomicRename())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
+    std::string message;
+    if (exchange && !supportsAtomicRename(&message))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported because exchanging files is not supported by the OS ({})", message);
 
     waitDatabaseStarted();
 

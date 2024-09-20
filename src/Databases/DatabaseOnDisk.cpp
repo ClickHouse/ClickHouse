@@ -512,7 +512,7 @@ void DatabaseOnDisk::renameTable(
 }
 
 
-/// It returns create table statement (even if table is detached)
+/// It returns the create table statement (even if table is detached)
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     ASTPtr ast;
@@ -576,14 +576,14 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
-        (void)fs::remove_all(local_context->getPath() + getDataPath());
+        (void)fs::remove_all(std::filesystem::path(getContext()->getPath()) / data_path);
         (void)fs::remove_all(getMetadataPath());
     }
     else
     {
         try
         {
-            (void)fs::remove(local_context->getPath() + getDataPath());
+            (void)fs::remove(std::filesystem::path(getContext()->getPath()) / data_path);
             (void)fs::remove(getMetadataPath());
         }
         catch (const fs::filesystem_error & e)
@@ -621,7 +621,7 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
     }
 }
 
-void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
+void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_metadata_file) const
 {
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
@@ -629,7 +629,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 
-        if (fs::exists(local_context->getPath() + getDataPath() + '/' + object_name))
+        if (fs::exists(std::filesystem::path(getContext()->getPath()) / data_path / object_name))
         {
             fs::rename(getMetadataPath() + file_name, getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
@@ -646,7 +646,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     std::vector<std::pair<String, bool>> metadata_files;
 
     fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
+    for (fs::directory_iterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
     {
         String file_name = dir_it->path().filename();
         /// For '.svn', '.gitignore' directory and similar.

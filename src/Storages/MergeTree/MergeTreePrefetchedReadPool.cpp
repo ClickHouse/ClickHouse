@@ -85,6 +85,7 @@ MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 
 MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     RangesInDataParts && parts_,
+    MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -95,6 +96,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
+        std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
@@ -103,7 +105,6 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         column_names_,
         settings_,
         context_)
-    , WithContext(context_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger("MergeTreePrefetchedReadPool(" + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
 {
@@ -394,6 +395,10 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
         }
 
         part_stat.prefetch_step_marks = std::max(part_stat.prefetch_step_marks, per_part_infos[i]->min_marks_per_task);
+
+        if (part_stat.prefetch_step_marks == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
         LOG_DEBUG(
             log,
