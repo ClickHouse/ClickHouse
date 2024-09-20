@@ -465,6 +465,20 @@ class ClickhouseIntegrationTestsRunner:
         return list(sorted(skip_list_tests))
 
     @staticmethod
+    def _get_broken_tests_list(repo_path):
+        skip_list_file_path = f"{repo_path}/tests/integration/broken_tests.json"
+        if (
+            not os.path.isfile(skip_list_file_path)
+            or os.path.getsize(skip_list_file_path) == 0
+        ):
+            return []
+
+        skip_list_tests = []
+        with open(skip_list_file_path, "r", encoding="utf-8") as skip_list_file:
+            skip_list_tests = json.load(skip_list_file)
+        return list(sorted(skip_list_tests))
+
+    @staticmethod
     def group_test_by_file(tests):
         result = {}  # type: Dict
         for test in tests:
@@ -628,7 +642,9 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             # run in parallel only the first time, re-runs are sequential to give chance to flappy tests to pass.
-            parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 and i == 0 else ""
+            parallel_cmd = (
+                f" --parallel {num_workers} " if num_workers > 0 and i == 0 else ""
+            )
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
@@ -881,6 +897,8 @@ class ClickhouseIntegrationTestsRunner:
             " ".join(not_found_tests[:3]),
         )
 
+        known_broken_tests = self._get_broken_tests_list(repo_path)
+
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
         i = 0
         for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
@@ -911,6 +929,13 @@ class ClickhouseIntegrationTestsRunner:
             group_counters, group_test_times, log_paths = self.try_run_test_group(
                 repo_path, group, tests, MAX_RETRY, NUM_WORKERS
             )
+
+            for fail_status in ("ERROR", "FAILED"):
+                for failed_test in group_counters[fail_status]:
+                    if failed_test in known_broken_tests:
+                        group_counters[fail_status].remove(failed_test)
+                        group_counters["BROKEN"].append(failed_test)
+
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info(

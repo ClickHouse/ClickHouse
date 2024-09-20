@@ -1,0 +1,4 @@
+[
+    "test_replicated_merge_tree_replicated_db_ttl/test.py::test_replicated_db_and_ttl",
+    "test_storage_s3_queue/test.py::test_upgrade"
+]
