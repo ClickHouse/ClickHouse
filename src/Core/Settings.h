@@ -24,7 +24,12 @@ class variables_map;
 
 namespace Poco
 {
-
+namespace Util
+{
+class AbstractConfiguration;
+class LayeredConfiguration;
+}
+}
 
 using NameToNameMap = std::unordered_map<std::string, std::string>;
 
