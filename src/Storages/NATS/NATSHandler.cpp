@@ -78,6 +78,11 @@ void NATSHandler::stopLoop()
 
 NATSHandler::~NATSHandler()
 {
+    auto lock = setThreadLocalLoop();
+
+    LOG_DEBUG(log, "Blocking loop started.");
+    uv_run(loop, UV_RUN_DEFAULT);
+
     natsOptions_Destroy(opts);
 }
 
