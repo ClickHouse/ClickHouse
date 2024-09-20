@@ -23,7 +23,7 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 using VirtualFields = std::unordered_map<String, Field>;
 
 
-enum class MergeTreeReadType : uint8_t
+enum class MergeTreeReadType
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
     /// If num_streams == 1, will read without pool, in order specified in parts.
@@ -68,8 +68,6 @@ struct MergeTreeReadTaskInfo
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
     /// TODO: comment
     VirtualFields const_virtual_fields;
-    /// The amount of data to read per task based on size of the queried columns.
-    size_t min_marks_per_task = 0;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

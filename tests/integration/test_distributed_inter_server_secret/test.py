@@ -12,16 +12,12 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-def make_instance(name, *args, **kwargs):
-    main_configs = kwargs.pop("main_configs", [])
-    main_configs.append("configs/remote_servers.xml")
-    user_configs = kwargs.pop("user_configs", [])
-    user_configs.append("configs/users.xml")
+def make_instance(name, cfg, *args, **kwargs):
     return cluster.add_instance(
         name,
         with_zookeeper=True,
-        main_configs=main_configs,
-        user_configs=user_configs,
+        main_configs=["configs/remote_servers.xml", cfg],
+        user_configs=["configs/users.xml"],
         *args,
         **kwargs,
     )
@@ -44,10 +40,6 @@ users = pytest.mark.parametrize(
         ("pass", "foo"),
     ],
 )
-
-
-def generate_query_id():
-    return str(uuid.uuid4())
 
 
 def bootstrap():
@@ -102,12 +94,6 @@ def bootstrap():
         )
         """
         )
-        n.query(
-            """
-        CREATE TABLE dist_over_dist_secure AS data
-        Engine=Distributed(secure, currentDatabase(), dist_secure, key)
-        """
-        )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -120,10 +106,10 @@ def start_cluster():
         cluster.shutdown()
 
 
-# @return -- [[user, initial_user]]
+# @return -- [user, initial_user]
 def get_query_user_info(node, query_pattern):
     node.query("SYSTEM FLUSH LOGS")
-    lines = (
+    return (
         node.query(
             """
     SELECT user, initial_user
@@ -137,10 +123,8 @@ def get_query_user_info(node, query_pattern):
             )
         )
         .strip()
-        .split("\n")
+        .split("\t")
     )
-    lines = map(lambda x: x.split("\t"), lines)
-    return list(lines)
 
 
 # @return -- [user, initial_user]
@@ -272,13 +256,13 @@ def test_secure_insert_buffer_async():
     n1.query("SYSTEM RELOAD CONFIG")
     # ensure that SELECT creates new connection (we need separate table for
     # this, so that separate distributed pool will be used)
-    query_id = generate_query_id()
+    query_id = uuid.uuid4().hex
     n1.query("SELECT * FROM dist_secure_from_buffer", user="ro", query_id=query_id)
     assert n1.contains_in_log(
         "{" + query_id + "} <Trace> Connection (n2:9000): Connecting."
     )
 
-    query_id = generate_query_id()
+    query_id = uuid.uuid4().hex
     n1.query(
         "INSERT INTO dist_secure_buffer SELECT * FROM numbers(2)", query_id=query_id
     )
@@ -335,26 +319,26 @@ def test_secure_disagree_insert():
 
 @users
 def test_user_insecure_cluster(user, password):
-    id_ = "query-dist_insecure-" + user + "-" + generate_query_id()
+    id_ = "query-dist_insecure-" + user
     n1.query(f"SELECT *, '{id_}' FROM dist_insecure", user=user, password=password)
-    assert get_query_user_info(n1, id_)[0] == [
+    assert get_query_user_info(n1, id_) == [
         user,
         user,
     ]  # due to prefer_localhost_replica
-    assert get_query_user_info(n2, id_)[0] == ["default", user]
+    assert get_query_user_info(n2, id_) == ["default", user]
 
 
 @users
 def test_user_secure_cluster(user, password):
-    id_ = "query-dist_secure-" + user + "-" + generate_query_id()
+    id_ = "query-dist_secure-" + user
     n1.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
-    assert get_query_user_info(n1, id_)[0] == [user, user]
-    assert get_query_user_info(n2, id_)[0] == [user, user]
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(n2, id_) == [user, user]
 
 
 @users
 def test_per_user_inline_settings_insecure_cluster(user, password):
-    id_ = "query-ddl-settings-dist_insecure-" + user + "-" + generate_query_id()
+    id_ = "query-ddl-settings-dist_insecure-" + user
     n1.query(
         f"""
         SELECT *, '{id_}' FROM dist_insecure
@@ -371,7 +355,7 @@ def test_per_user_inline_settings_insecure_cluster(user, password):
 
 @users
 def test_per_user_inline_settings_secure_cluster(user, password):
-    id_ = "query-ddl-settings-dist_secure-" + user + "-" + generate_query_id()
+    id_ = "query-ddl-settings-dist_secure-" + user
     n1.query(
         f"""
         SELECT *, '{id_}' FROM dist_secure
@@ -390,7 +374,7 @@ def test_per_user_inline_settings_secure_cluster(user, password):
 
 @users
 def test_per_user_protocol_settings_insecure_cluster(user, password):
-    id_ = "query-protocol-settings-dist_insecure-" + user + "-" + generate_query_id()
+    id_ = "query-protocol-settings-dist_insecure-" + user
     n1.query(
         f"SELECT *, '{id_}' FROM dist_insecure",
         user=user,
@@ -406,7 +390,7 @@ def test_per_user_protocol_settings_insecure_cluster(user, password):
 
 @users
 def test_per_user_protocol_settings_secure_cluster(user, password):
-    id_ = "query-protocol-settings-dist_secure-" + user + "-" + generate_query_id()
+    id_ = "query-protocol-settings-dist_secure-" + user
     n1.query(
         f"SELECT *, '{id_}' FROM dist_secure",
         user=user,
@@ -422,7 +406,7 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     )
 
 
-def test_secure_cluster_distributed_over_distributed_different_users_remote():
+def test_secure_cluster_distributed_over_distributed_different_users():
     # This works because we will have initial_user='default'
     n1.query(
         "SELECT * FROM remote('n1', currentDatabase(), dist_secure)", user="new_user"
@@ -437,16 +421,3 @@ def test_secure_cluster_distributed_over_distributed_different_users_remote():
     # and stuff).
     with pytest.raises(QueryRuntimeException):
         n1.query("SELECT * FROM dist_over_dist_secure", user="new_user")
-
-
-def test_secure_cluster_distributed_over_distributed_different_users_cluster():
-    id_ = "cluster-user" + "-" + generate_query_id()
-    n1.query(
-        f"SELECT *, '{id_}' FROM cluster(secure, currentDatabase(), dist_secure)",
-        user="nopass",
-        settings={
-            "prefer_localhost_replica": 0,
-        },
-    )
-    assert get_query_user_info(n1, id_) == [["nopass", "nopass"]] * 4
-    assert get_query_user_info(n2, id_) == [["nopass", "nopass"]] * 3

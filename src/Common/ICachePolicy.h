@@ -48,14 +48,13 @@ public:
 
     /// HashFunction usually hashes the entire key and the found key will be equal the provided key. In such cases, use get(). It is also
     /// possible to store other, non-hashed data in the key. In that case, the found key is potentially different from the provided key.
-    /// Then use getWithKey() to also return the found key including its non-hashed data.
+    /// Then use getWithKey() to also return the found key including it's non-hashed data.
     virtual MappedPtr get(const Key & key) = 0;
     virtual std::optional<KeyMapped> getWithKey(const Key &) = 0;
 
     virtual void set(const Key & key, const MappedPtr & mapped) = 0;
 
     virtual void remove(const Key & key) = 0;
-    virtual void remove(std::function<bool(const Key & key, const MappedPtr & mapped)> predicate) = 0;
 
     virtual void clear() = 0;
     virtual std::vector<KeyMapped> dump() const = 0;

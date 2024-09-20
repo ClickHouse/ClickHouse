@@ -29,14 +29,7 @@
           -->
         <size>1000M</size>
         <count>10</count>
-
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
-        <!-- <console_log_level>trace</console_log_level> -->
-
-        <!-- <use_syslog>0</use_syslog> -->
-        <!-- <syslog_level>trace</syslog_level> -->
-
-        <!-- <stream_compress>0</stream_compress> -->
 
         <!-- Per level overrides (legacy):
 
@@ -103,7 +96,7 @@
             <to>https://{bucket}.s3.amazonaws.com</to>
         </s3>
         <gs>
-            <to>https://storage.googleapis.com/{bucket}</to>
+            <to>https://{bucket}.storage.googleapis.com</to>
         </gs>
         <oss>
             <to>https://{bucket}.oss.aliyuncs.com</to>
@@ -149,21 +142,6 @@
          See also 'tcp_port_secure' for secure connections.
     -->
     <tcp_port>9000</tcp_port>
-
-    <!-- Chunked capabilities for native protocol by server.
-         Can be enabled separately for send and receive channels.
-         Supported modes:
-         - chunked - server requires from client to have chunked enabled;
-         - chunked_optional - server supports both chunked and notchunked protocol;
-         - notchunked - server requires from client notchunked protocol (current default);
-         - notchunked_optional - server supports both chunked and notchunked protocol.
-     -->
-    <!--
-    <proto_caps>
-        <send>notchunked_optional</send>
-        <recv>notchunked_optional</recv>
-    </proto_caps>
-    -->
 
     <!-- Compatibility with MySQL protocol.
          ClickHouse will pretend to be MySQL for applications connecting to this port.
@@ -393,7 +371,7 @@
     <!-- Enables asynchronous loading of databases and tables to speedup server startup.
          Queries to not yet loaded entity will be blocked until load is finished.
       -->
-    <async_load_databases>true</async_load_databases>
+    <!-- <async_load_databases>true</async_load_databases> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -430,11 +408,13 @@
 
     <!-- Approximate size of mark cache, used in tables of MergeTree family.
          In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value. -->
-    <!-- <mark_cache_size>5368709120</mark_cache_size> -->
+         You should not lower this value.
+      -->
+    <mark_cache_size>5368709120</mark_cache_size>
 
-    <!-- For marks of secondary indices. -->
-    <!-- <index_mark_cache_size>5368709120</index_mark_cache_size> -->
+    <!-- For marks of secondary indices.
+      -->
+    <index_mark_cache_size>5368709120</index_mark_cache_size>
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -452,23 +432,13 @@
          The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
          also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
       -->
-    <!-- <mmap_cache_size>1024</mmap_cache_size> -->
+    <mmap_cache_size>1000</mmap_cache_size>
 
     <!-- Cache size in bytes for compiled expressions.-->
-    <!-- <compiled_expression_cache_size>134217728</compiled_expression_cache_size> -->
+    <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
 
     <!-- Cache size in elements for compiled expressions.-->
-    <!-- <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size> -->
-
-    <!-- Configuration for the query cache -->
-    <!--
-    <query_cache>
-        <max_size_in_bytes>1073741824</max_size_in_bytes>
-        <max_entries>1024</max_entries>
-        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
-        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
-    </query_cache>
-    -->
+    <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
     <!-- Cache path for custom (created from SQL) cached disks -->
     <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
@@ -745,7 +715,7 @@
         <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
-             By default this setting is true. -->
+             By default this setting is false for compatibility with earlier access configurations. -->
         <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
 
         <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
@@ -771,10 +741,6 @@
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
-
-        <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
-             however you can change this behaviour by setting this to true -->
-        <table_engines_require_grant>false</table_engines_require_grant>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
@@ -1145,7 +1111,8 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_views_log>
 
-    <!-- Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads). -->
+    <!-- Uncomment if use part log.
+         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
     <part_log>
         <database>system</database>
         <table>part_log</table>
@@ -1157,9 +1124,9 @@
         <flush_on_crash>false</flush_on_crash>
     </part_log>
 
-    <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
+    <!-- Uncomment to write text log into table.
+         Text log contains all information from usual server log but stores it in structured and efficient way.
          The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
-    -->
     <text_log>
         <database>system</database>
         <table>text_log</table>
@@ -1168,8 +1135,9 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
-        <level>trace</level>
+        <level></level>
     </text_log>
+    -->
 
     <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
     <metric_log>
@@ -1182,18 +1150,6 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
-
-    <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
-    <error_log>
-        <database>system</database>
-        <table>error_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
-    </error_log>
 
     <!--
         Asynchronous metric log contains values of metrics from
@@ -1325,31 +1281,6 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
 
-    <!-- Configure system.dashboards for dashboard.html.
-
-         Could have any query parameters, for which there will be an input on the page.
-         For instance an example from comments have the following:
-         - seconds
-         - rounding
-
-         NOTE: All default dashboards will be overwritten if it was set here. -->
-    <!-- Here is an example without merge() function, to make it work with readonly user -->
-    <!--
-    <dashboards>
-        <dashboard>
-            <dashboard>Overview</dashboard>
-            <title>Queries/second</title>
-            <query>
-                SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)
-                FROM system.metric_log
-                WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
-                GROUP BY t
-                ORDER BY t WITH FILL STEP {rounding:UInt32}
-            </query>
-        </dashboard>
-    </dashboards>
-    -->
-
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
@@ -1460,14 +1391,6 @@
         <!-- Host name of the current node. If specified, will only compare and not resolve hostnames inside the DDL tasks -->
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
-
-    <!-- Used to regulate how resources are utilized and shared between merges, mutations and other workloads.
-         Specified value is used as `workload` setting value for background merge or mutation.
-    -->
-    <!--
-    <merge_workload>merges_and_mutations</merge_workload>
-    <mutation_workload>merges_and_mutations</mutation_workload>
-    -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
@@ -1613,8 +1536,6 @@
         <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
         <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
-        <!-- Send LOGICAL_ERRORs as well (default: false) -->
-        <send_logical_errors>false</send_logical_errors>
     </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
@@ -1634,7 +1555,6 @@
     <rocksdb>
         <options>
             <max_background_jobs>8</max_background_jobs>
-            <info_log_level>DEBUG_LEVEL</info_log_level>
         </options>
         <column_family_options>
             <num_levels>2</num_levels>
@@ -1659,41 +1579,13 @@
     </rocksdb>
     -->
 
-    <!-- <kafka> -->
-        <!-- Global configuration properties -->
-        <!--
-        NOTE: statistics should be consumed, otherwise it creates too much
-              entries in the queue, that leads to memory leak and slow shutdown.
-        default value: 0
-        <statistics_interval_ms>3000</statistics_interval_ms>
-        -->
-
-        <!-- Topic configuration properties -->
-        <!--
-        <kafka_topic>
-              <name>football</name>
-              <request_timeout_ms>6000</request_timeout_ms>
-        </kafka_topic>
-        -->
-
-        <!-- Producer configuration -->
-        <!--
-        <producer>
-            <compression_codec>gzip</compression_codec>
-            <kafka_topic>
-                <name>football</name>
-                <request_timeout_ms>6000</request_timeout_ms>
-            </kafka_topic>
-        </producer>
-        -->
-
-        <!-- Consumer configuration -->
-        <!--
-        <consumer>
-            <enable_auto_commit>true</enable_auto_commit>
-        </consumer>
-        -->
-    <!-- </kafka> -->
+    <!-- Configuration for the query cache -->
+    <query_cache>
+        <max_size_in_bytes>1073741824</max_size_in_bytes>
+        <max_entries>1024</max_entries>
+        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    </query_cache>
 
     <backups>
         <allowed_path>backups</allowed_path>

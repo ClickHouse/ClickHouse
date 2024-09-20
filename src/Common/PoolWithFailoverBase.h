@@ -28,6 +28,7 @@ namespace ErrorCodes
 
 namespace ProfileEvents
 {
+    extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
     extern const Event DistributedConnectionSkipReadOnlyReplica;
 }
@@ -120,6 +121,20 @@ public:
     bool isTryResultInvalid(const TryResult & result, bool skip_read_only_replicas) const
     {
         return result.entry.isNull() || !result.is_usable || (skip_read_only_replicas && result.is_readonly);
+    }
+
+    TryResult getValidTryResult(const std::vector<TryResult> & results, bool skip_read_only_replicas) const
+    {
+        if (results.empty())
+            throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get any valid connection because all connection tries failed");
+
+        auto result = results.front();
+        if (isTryResultInvalid(result, skip_read_only_replicas))
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+                "Got an invalid connection result: entry.isNull {}, is_usable {}, is_up_to_date {}, delay {}, is_readonly {}, skip_read_only_replicas {}",
+                result.entry.isNull(), result.is_usable, result.is_up_to_date, result.delay, result.is_readonly, skip_read_only_replicas);
+
+        return result;
     }
 
     size_t getPoolSize() const { return nested_pools.size(); }
@@ -233,7 +248,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
 
     /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
-    max_tries = std::min(max_tries, max_error_cap);
+    if (max_tries > max_error_cap)
+        max_tries = max_error_cap;
 
     /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
@@ -290,6 +306,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             else
             {
                 LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 

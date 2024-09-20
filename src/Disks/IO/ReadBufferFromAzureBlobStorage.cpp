@@ -3,7 +3,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/logger_useful.h>
@@ -16,12 +15,6 @@ namespace ProfileEvents
 {
     extern const Event RemoteReadThrottlerBytes;
     extern const Event RemoteReadThrottlerSleepMicroseconds;
-    extern const Event ReadBufferFromAzureMicroseconds;
-    extern const Event ReadBufferFromAzureBytes;
-    extern const Event ReadBufferFromAzureRequestsErrors;
-    extern const Event AzureGetObject;
-    extern const Event DiskAzureGetObject;
-    extern const Event ReadBufferFromAzureInitMicroseconds;
 }
 
 namespace DB
@@ -75,6 +68,7 @@ void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
             initialized = false;
         }
     }
+
 }
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
@@ -107,7 +101,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureMicroseconds);
 
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
@@ -120,9 +113,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, e.Message);
-
             if (i + 1 == max_single_read_retries || !isRetryableAzureException(e))
                 throw;
 
@@ -136,7 +127,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     if (bytes_read == 0)
         return false;
 
-    ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_read);
     BufferBase::set(data_ptr, bytes_read, 0);
     offset += bytes_read;
 
@@ -218,25 +208,18 @@ void ReadBufferFromAzureBlobStorage::initialize()
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
     size_t sleep_time_with_backoff_milliseconds = 100;
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureInitMicroseconds);
 
     for (size_t i = 0; i < max_single_download_retries; ++i)
     {
         try
         {
-            ProfileEvents::increment(ProfileEvents::AzureGetObject);
-            if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
-                ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
-
             auto download_response = blob_client->Download(download_options);
             data_stream = std::move(download_response.Value.BodyStream);
             break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
-
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
 
@@ -253,34 +236,29 @@ void ReadBufferFromAzureBlobStorage::initialize()
     initialized = true;
 }
 
-std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
+size_t ReadBufferFromAzureBlobStorage::getFileSize()
 {
     if (!blob_client)
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
-    if (!file_size)
-        file_size = blob_client->GetProperties().Value.BlobSize;
+    if (file_size.has_value())
+        return *file_size;
 
-    return file_size;
+    file_size = blob_client->GetProperties().Value.BlobSize;
+    return *file_size;
 }
 
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
 {
     size_t initial_n = n;
-    size_t sleep_time_with_backoff_milliseconds = 100;
 
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureMicroseconds);
+    size_t sleep_time_with_backoff_milliseconds = 100;
 
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
-
         try
         {
-            ProfileEvents::increment(ProfileEvents::AzureGetObject);
-            if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
-                ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
-
             Azure::Storage::Blobs::DownloadBlobOptions download_options;
             download_options.Range = {static_cast<int64_t>(range_begin), n};
             auto download_response = blob_client->Download(download_options);
@@ -295,17 +273,13 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
-
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
         }
-
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_copied);
 
         range_begin += bytes_copied;
         to += bytes_copied;

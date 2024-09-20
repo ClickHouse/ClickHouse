@@ -54,7 +54,7 @@ public:
 
     String getName() const override { return "LiveViewEventsSource"; }
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         if (storage->shutdown_called)
             return;

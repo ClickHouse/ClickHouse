@@ -2,16 +2,23 @@
 
 import os, itertools, urllib.request, urllib.parse, urllib.error, urllib.request, urllib.error, urllib.parse, sys
 
-CURDIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from pure_http_client import ClickHouseClient
-
-client = ClickHouseClient()
+def get_ch_answer(query):
+    return (
+        urllib.request.urlopen(
+            os.environ.get(
+                "CLICKHOUSE_URL",
+                "http://localhost:" + os.environ.get("CLICKHOUSE_PORT_HTTP", "8123"),
+            ),
+            data=query.encode(),
+        )
+        .read()
+        .decode()
+    )
 
 
 def check_answers(query, answer):
-    ch_answer = client.query(query)
+    ch_answer = get_ch_answer(query)
     if ch_answer.strip() != answer.strip():
         print("FAIL on query:", query)
         print("Expected answer:", answer)
@@ -43,7 +50,7 @@ TYPES = {
     "UInt32": {"bits": 32, "sign": False, "float": False},
     "Int32": {"bits": 32, "sign": True, "float": False},
     "UInt64": {"bits": 64, "sign": False, "float": False},
-    "Int64": {"bits": 64, "sign": True, "float": False},
+    "Int64": {"bits": 64, "sign": True, "float": False}
     # "Float32" : { "bits" : 32, "sign" : True, "float" : True },
     # "Float64" : { "bits" : 64, "sign" : True, "float" : True }
 }

@@ -53,9 +53,7 @@ ColumnPtr executeWindowBound(const ColumnPtr & column, size_t index, const Strin
     chassert(index == 0 || index == 1);
     if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()); col_tuple)
     {
-        if (index >= col_tuple->tupleSize()
-            || (!checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index))
-                && !checkColumn<ColumnVector<UInt16>>(*col_tuple->getColumnPtr(index))))
+        if (index >= col_tuple->tupleSize() || !checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index)))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
                 "Must be a Tuple(DataTime, DataTime)", function_name);
         return col_tuple->getColumnPtr(index);
@@ -130,7 +128,7 @@ struct TimeWindowImpl
 
     static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name);
 
-    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count);
+    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name);
 };
 
 template <TimeWindowFunctionName type>
@@ -196,7 +194,7 @@ struct TimeWindowImpl<TUMBLE>
         return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
 
-    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
@@ -214,37 +212,39 @@ struct TimeWindowImpl<TUMBLE>
         {
             /// TODO: add proper support for fractional seconds
             case IntervalKind::Kind::Second:
-                return executeTumble<UInt32, IntervalKind::Kind::Second>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt32, IntervalKind::Kind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Kind::Minute:
-                return executeTumble<UInt32, IntervalKind::Kind::Minute>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt32, IntervalKind::Kind::Minute>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Kind::Hour:
-                return executeTumble<UInt32, IntervalKind::Kind::Hour>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt32, IntervalKind::Kind::Hour>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Kind::Day:
-                return executeTumble<UInt32, IntervalKind::Kind::Day>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt32, IntervalKind::Kind::Day>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Kind::Week:
-                return executeTumble<UInt16, IntervalKind::Kind::Week>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt16, IntervalKind::Kind::Week>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Kind::Month:
-                return executeTumble<UInt16, IntervalKind::Kind::Month>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt16, IntervalKind::Kind::Month>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Kind::Quarter:
-                return executeTumble<UInt16, IntervalKind::Kind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt16, IntervalKind::Kind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Kind::Year:
-                return executeTumble<UInt16, IntervalKind::Kind::Year>(*time_column_vec, std::get<1>(interval), time_zone, input_rows_count);
+                return executeTumble<UInt16, IntervalKind::Kind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
+        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind unit>
-    static ColumnPtr executeTumble(const ColumnDateTime & time_column, UInt64 num_units, const DateLUTImpl & time_zone, size_t input_rows_count)
+    static ColumnPtr executeTumble(const ColumnDateTime & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
+        size_t size = time_column.size();
         auto start = ColumnVector<ToType>::create();
         auto end = ColumnVector<ToType>::create();
         auto & start_data = start->getData();
         auto & end_data = end->getData();
-        start_data.resize(input_rows_count);
-        end_data.resize(input_rows_count);
-        for (size_t i = 0; i != input_rows_count; ++i)
+        start_data.resize(size);
+        end_data.resize(size);
+        for (size_t i = 0; i != size; ++i)
         {
             start_data[i] = ToStartOfTransform<unit>::execute(time_data[i], num_units, time_zone);
             end_data[i] = AddTime<unit>::execute(start_data[i], num_units, time_zone);
@@ -287,7 +287,7 @@ struct TimeWindowImpl<TUMBLE_START>
         }
     }
 
-    [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         const auto & time_column = arguments[0];
         const auto which_type = WhichDataType(time_column.type);
@@ -300,7 +300,7 @@ struct TimeWindowImpl<TUMBLE_START>
                 result_column = time_column.column;
         }
         else
-            result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name, input_rows_count);
+            result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 0, function_name);
     }
 };
@@ -315,7 +315,7 @@ struct TimeWindowImpl<TUMBLE_END>
         return TimeWindowImpl<TUMBLE_START>::getReturnType(arguments, function_name);
     }
 
-    [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name, size_t input_rows_count)
+    [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name)
     {
         const auto & time_column = arguments[0];
         const auto which_type = WhichDataType(time_column.type);
@@ -328,7 +328,7 @@ struct TimeWindowImpl<TUMBLE_END>
                 result_column = time_column.column;
         }
         else
-            result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name, input_rows_count);
+            result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 1, function_name);
     }
 };
@@ -376,7 +376,7 @@ struct TimeWindowImpl<HOP>
         return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
 
-    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         const auto & time_column = arguments[0];
         const auto & hop_interval_column = arguments[1];
@@ -400,46 +400,48 @@ struct TimeWindowImpl<HOP>
             /// TODO: add proper support for fractional seconds
             case IntervalKind::Kind::Second:
                 return executeHop<UInt32, IntervalKind::Kind::Second>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Minute:
                 return executeHop<UInt32, IntervalKind::Kind::Minute>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Hour:
                 return executeHop<UInt32, IntervalKind::Kind::Hour>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Day:
                 return executeHop<UInt32, IntervalKind::Kind::Day>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Week:
                 return executeHop<UInt16, IntervalKind::Kind::Week>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Month:
                 return executeHop<UInt16, IntervalKind::Kind::Month>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Quarter:
                 return executeHop<UInt16, IntervalKind::Kind::Quarter>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Year:
                 return executeHop<UInt16, IntervalKind::Kind::Year>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
+        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
-    executeHop(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone, size_t input_rows_count)
+    executeHop(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
+        size_t size = time_column.size();
         auto start = ColumnVector<ToType>::create();
         auto end = ColumnVector<ToType>::create();
         auto & start_data = start->getData();
         auto & end_data = end->getData();
-        start_data.resize(input_rows_count);
-        end_data.resize(input_rows_count);
+        start_data.resize(size);
+        end_data.resize(size);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
@@ -512,7 +514,7 @@ struct TimeWindowImpl<WINDOW_ID>
             return std::make_shared<DataTypeUInt32>();
     }
 
-    static ColumnPtr dispatchForHopColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    static ColumnPtr dispatchForHopColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         const auto & time_column = arguments[0];
         const auto & hop_interval_column = arguments[1];
@@ -536,28 +538,28 @@ struct TimeWindowImpl<WINDOW_ID>
             /// TODO: add proper support for fractional seconds
             case IntervalKind::Kind::Second:
                 return executeHopSlice<UInt32, IntervalKind::Kind::Second>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Minute:
                 return executeHopSlice<UInt32, IntervalKind::Kind::Minute>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Hour:
                 return executeHopSlice<UInt32, IntervalKind::Kind::Hour>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Day:
                 return executeHopSlice<UInt32, IntervalKind::Kind::Day>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Week:
                 return executeHopSlice<UInt16, IntervalKind::Kind::Week>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Month:
                 return executeHopSlice<UInt16, IntervalKind::Kind::Month>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Quarter:
                 return executeHopSlice<UInt16, IntervalKind::Kind::Quarter>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Kind::Year:
                 return executeHopSlice<UInt16, IntervalKind::Kind::Year>(
-                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone, input_rows_count);
+                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
@@ -566,16 +568,17 @@ struct TimeWindowImpl<WINDOW_ID>
 
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
-    executeHopSlice(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone, size_t input_rows_count)
+    executeHopSlice(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
     {
         Int64 gcd_num_units = std::gcd(hop_num_units, window_num_units);
 
         const auto & time_data = time_column.getData();
+        size_t size = time_column.size();
 
         auto end = ColumnVector<ToType>::create();
         auto & end_data = end->getData();
-        end_data.resize(input_rows_count);
-        for (size_t i = 0; i < input_rows_count; ++i)
+        end_data.resize(size);
+        for (size_t i = 0; i < size; ++i)
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
@@ -595,23 +598,23 @@ struct TimeWindowImpl<WINDOW_ID>
         return end;
     }
 
-    static ColumnPtr dispatchForTumbleColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    static ColumnPtr dispatchForTumbleColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
-        ColumnPtr column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name, input_rows_count);
+        ColumnPtr column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(column, 1, function_name);
     }
 
-    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         if (arguments.size() == 2)
-            return dispatchForTumbleColumns(arguments, function_name, input_rows_count);
+            return dispatchForTumbleColumns(arguments, function_name);
         else
         {
             const auto & third_column = arguments[2];
             if (arguments.size() == 3 && WhichDataType(third_column.type).isString())
-                return dispatchForTumbleColumns(arguments, function_name, input_rows_count);
+                return dispatchForTumbleColumns(arguments, function_name);
             else
-                return dispatchForHopColumns(arguments, function_name, input_rows_count);
+                return dispatchForHopColumns(arguments, function_name);
         }
     }
 };
@@ -646,7 +649,7 @@ struct TimeWindowImpl<HOP_START>
         }
     }
 
-    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         const auto & time_column = arguments[0];
         const auto which_type = WhichDataType(time_column.type);
@@ -659,7 +662,7 @@ struct TimeWindowImpl<HOP_START>
                 result_column = time_column.column;
         }
         else
-            result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name, input_rows_count);
+            result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 0, function_name);
     }
 };
@@ -674,7 +677,7 @@ struct TimeWindowImpl<HOP_END>
         return TimeWindowImpl<HOP_START>::getReturnType(arguments, function_name);
     }
 
-    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         const auto & time_column = arguments[0];
         const auto which_type = WhichDataType(time_column.type);
@@ -687,7 +690,7 @@ struct TimeWindowImpl<HOP_END>
                 result_column = time_column.column;
         }
         else
-            result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name, input_rows_count);
+            result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name);
 
         return executeWindowBound(result_column, 1, function_name);
     }
@@ -700,9 +703,9 @@ DataTypePtr FunctionTimeWindow<type>::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 template <TimeWindowFunctionName type>
-ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const
 {
-    return TimeWindowImpl<type>::dispatchForColumns(arguments, name, input_rows_count);
+    return TimeWindowImpl<type>::dispatchForColumns(arguments, name);
 }
 
 }

@@ -59,8 +59,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -102,7 +101,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(), arguments.size());
 
@@ -132,7 +131,7 @@ private:
 
 
 /// Hash a set of keys into a UInt128 value.
-static UInt128 hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
+static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
 {
     SipHash hash;
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
@@ -239,7 +238,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     }
 
     if (offsets_by_depth.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No arrays passed to function {}", getName());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "No arrays passed to function {}", getName());
 
     auto res_nested = ColumnUInt32::create();
 

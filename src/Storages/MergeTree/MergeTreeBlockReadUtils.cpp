@@ -71,7 +71,8 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->metadata->getColumns().getDefault(column_name);
+    auto metadata_snapshot = storage_snapshot->getMetadataForQuery();
+    const auto column_default = metadata_snapshot->getColumns().getDefault(column_name);
     if (!column_default)
         return false;
 
@@ -126,8 +127,7 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        auto available_columns = storage_snapshot->metadata->getColumns().get(options);
-        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
+        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(with_subcolumns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());
@@ -278,17 +278,17 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
+    static const NameSet columns_to_read_at_first_step = {"_part_offset"};
+
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
         Names step_column_names;
 
-        /// Virtual columns that are filled by RangeReader
-        /// must be read in the first step before any filtering.
         if (columns_from_previous_steps.empty())
         {
             for (const auto & required_column : required_columns)
-                if (MergeTreeRangeReader::virtuals_to_fill.contains(required_column))
+                if (columns_to_read_at_first_step.contains(required_column))
                     step_column_names.push_back(required_column);
         }
 
