@@ -66,6 +66,42 @@
 using namespace std::literals;
 using namespace DB;
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_query_deduplication;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool async_insert;
+    extern const SettingsUInt64 async_insert_max_data_size;
+    extern const SettingsBool calculate_text_stack_trace;
+    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsUInt64 idle_connection_timeout;
+    extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsUInt64 interactive_delay;
+    extern const SettingsBool low_cardinality_allow_in_native_format;
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
+    extern const SettingsBool partial_result_on_first_cancel;
+    extern const SettingsUInt64 poll_interval;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
+    extern const SettingsSeconds send_timeout;
+    extern const SettingsTimezone session_timezone;
+    extern const SettingsMilliseconds sleep_after_receiving_query_ms;
+    extern const SettingsMilliseconds sleep_in_send_data_ms;
+    extern const SettingsMilliseconds sleep_in_send_tables_status_ms;
+    extern const SettingsBool throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert;
+    extern const SettingsUInt64 unknown_packet_in_send_data;
+    extern const SettingsBool wait_for_async_insert;
+    extern const SettingsSeconds wait_for_async_insert_timeout;
+}
+}
 
 namespace CurrentMetrics
 {
@@ -108,19 +144,6 @@ namespace DB::ErrorCodes
 
 namespace
 {
-NameToNameMap convertToQueryParameters(const Settings & passed_params)
-{
-    NameToNameMap query_parameters;
-    for (const auto & param : passed_params)
-    {
-        std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
-        readQuoted(value, buf);
-        query_parameters.emplace(param.getName(), value);
-    }
-    return query_parameters;
-}
-
 // This function corrects the wrong client_name from the old client.
 // Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
 // "ClickHouse client" was sent with the hello message.
@@ -442,13 +465,13 @@ void TCPHandler::runImpl()
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), send_timeout, receive_timeout);
 
             /// Should we send internal logs to client?
-            const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
+            const auto client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
                 && client_logs_level != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
-                state.logs_queue->setSourceRegexp(query_context->getSettingsRef().send_logs_source_regexp);
+                state.logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
             }
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
@@ -485,7 +508,7 @@ void TCPHandler::runImpl()
 
                 /// Send ColumnsDescription for input storage.
                 if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
-                    && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+                    && query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
                 {
                     sendTableColumns(metadata_snapshot->getColumns());
                 }
@@ -815,15 +838,15 @@ void TCPHandler::runImpl()
 void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    send_exception_with_stack_trace = settings.calculate_text_stack_trace;
-    send_timeout = settings.send_timeout;
-    receive_timeout = settings.receive_timeout;
-    poll_interval = settings.poll_interval;
-    idle_connection_timeout = settings.idle_connection_timeout;
-    interactive_delay = settings.interactive_delay;
-    sleep_in_send_tables_status = settings.sleep_in_send_tables_status_ms;
-    unknown_packet_in_send_data = settings.unknown_packet_in_send_data;
-    sleep_after_receiving_query = settings.sleep_after_receiving_query_ms;
+    send_exception_with_stack_trace = settings[Setting::calculate_text_stack_trace];
+    send_timeout = settings[Setting::send_timeout];
+    receive_timeout = settings[Setting::receive_timeout];
+    poll_interval = settings[Setting::poll_interval];
+    idle_connection_timeout = settings[Setting::idle_connection_timeout];
+    interactive_delay = settings[Setting::interactive_delay];
+    sleep_in_send_tables_status = settings[Setting::sleep_in_send_tables_status_ms];
+    unknown_packet_in_send_data = settings[Setting::unknown_packet_in_send_data];
+    sleep_after_receiving_query = settings[Setting::sleep_after_receiving_query_ms];
 }
 
 
@@ -833,7 +856,8 @@ bool TCPHandler::readDataNext()
 
     /// Poll interval should not be greater than receive_timeout
     constexpr UInt64 min_timeout_us = 5000; // 5 ms
-    UInt64 timeout_us = std::max(min_timeout_us, std::min(poll_interval * 1000000, static_cast<UInt64>(receive_timeout.totalMicroseconds())));
+    UInt64 timeout_us
+        = std::max(min_timeout_us, std::min(poll_interval * 1000000, static_cast<UInt64>(receive_timeout.totalMicroseconds())));
     bool read_ok = false;
 
     /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
@@ -916,7 +940,7 @@ void TCPHandler::startInsertQuery()
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
         const auto & table_id = query_context->getInsertionTable();
-        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+        if (query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
         {
             if (!table_id.empty())
             {
@@ -936,7 +960,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
+    Squashing squashing(state.input_header, 0, query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
 
     while (readDataNext())
     {
@@ -994,7 +1018,7 @@ void TCPHandler::processInsertQuery()
     auto * insert_queue = query_context->tryGetAsynchronousInsertQueue();
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
 
-    bool async_insert_enabled = settings.async_insert;
+    bool async_insert_enabled = settings[Setting::async_insert];
     if (insert_query.table_id)
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
@@ -1010,8 +1034,8 @@ void TCPHandler::processInsertQuery()
         /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
         /// block may be concatenated differently.
         /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
-        if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
-            settings.deduplicate_blocks_in_dependent_materialized_views)
+        if (settings[Setting::throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert]
+            && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Deduplication in dependent materialized view cannot work together with async inserts. "\
                     "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
@@ -1021,9 +1045,9 @@ void TCPHandler::processInsertQuery()
         {
             /// Reset pipeline because it may hold write lock for some storages.
             state.io.pipeline.reset();
-            if (settings.wait_for_async_insert)
+            if (settings[Setting::wait_for_async_insert])
             {
-                size_t timeout_ms = settings.wait_for_async_insert_timeout.totalMilliseconds();
+                size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                 auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
 
                 if (wait_status == std::future_status::deferred)
@@ -1064,7 +1088,7 @@ void TCPHandler::processOrdinaryQuery()
 {
     auto & pipeline = state.io.pipeline;
 
-    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+    if (query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
     {
         std::lock_guard lock(out_mutex);
         sendPartUUIDs();
@@ -1270,7 +1294,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1280,7 +1304,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRanges
 void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out);
+    request.serialize(*out, client_parallel_replicas_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1379,7 +1403,7 @@ void TCPHandler::sendTimezone()
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
         return;
 
-    const String & tz = query_context->getSettingsRef().session_timezone.value;
+    const String & tz = query_context->getSettingsRef()[Setting::session_timezone].value;
 
     LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
     writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
@@ -1592,7 +1616,17 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        if (session->getAuthenticationTypeOrLogInFailure(user) != AuthenticationType::SSH_KEY)
+        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user);
+
+        bool user_supports_ssh_authentication = std::find_if(
+            authentication_types.begin(),
+            authentication_types.end(),
+            [](auto authentication_type)
+            {
+               return authentication_type ==  AuthenticationType::SSH_KEY;
+            }) != authentication_types.end();
+
+        if (!user_supports_ssh_authentication)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
@@ -1652,6 +1686,9 @@ void TCPHandler::receiveAddendum()
         readStringBinary(proto_send_chunked_cl, *in);
         readStringBinary(proto_recv_chunked_cl, *in);
     }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        readVarUInt(client_parallel_replicas_protocol_version, *in);
 }
 
 
@@ -1679,6 +1716,8 @@ void TCPHandler::sendHello()
     writeVarUInt(VERSION_MAJOR, *out);
     writeVarUInt(VERSION_MINOR, *out);
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
@@ -1990,9 +2029,8 @@ void TCPHandler::receiveQuery()
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
     /// different servers.
-    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
-        && !passed_settings.allow_experimental_analyzer.changed)
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
+        && !passed_settings[Setting::allow_experimental_analyzer].changed)
         passed_settings.set("allow_experimental_analyzer", false);
 
     auto settings_changes = passed_settings.changes();
@@ -2020,7 +2058,7 @@ void TCPHandler::receiveQuery()
     /// so we have to apply the changes first.
     query_context->setCurrentQueryId(state.query_id);
 
-    query_context->addQueryParameters(convertToQueryParameters(passed_params));
+    query_context->addQueryParameters(passed_params.toNameToNameMap());
 
     /// For testing hedged requests
     if (unlikely(sleep_after_receiving_query.totalMilliseconds()))
@@ -2182,14 +2220,20 @@ void TCPHandler::initBlockOutput(const Block & block)
         const Settings & query_settings = query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
-            std::string method = Poco::toUpper(query_settings.network_compression_method.toString());
+            std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
             std::optional<int> level;
             if (method == "ZSTD")
-                level = query_settings.network_zstd_compression_level;
+                level = query_settings[Setting::network_zstd_compression_level];
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec, query_settings.enable_zstd_qat_codec);
+                CompressionCodecFactory::instance().validateCodec(
+                    method,
+                    level,
+                    !query_settings[Setting::allow_suspicious_codecs],
+                    query_settings[Setting::allow_experimental_codecs],
+                    query_settings[Setting::enable_deflate_qpl_codec],
+                    query_settings[Setting::enable_zstd_qat_codec]);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
@@ -2203,7 +2247,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             client_tcp_protocol_version,
             block.cloneEmpty(),
             std::nullopt,
-            !query_settings.low_cardinality_allow_in_native_format);
+            !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2214,11 +2258,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out,
-            client_tcp_protocol_version,
-            block.cloneEmpty(),
-            std::nullopt,
-            !query_settings.low_cardinality_allow_in_native_format);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2229,11 +2269,7 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
     {
         const Settings & query_settings = query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out,
-            client_tcp_protocol_version,
-            block.cloneEmpty(),
-            std::nullopt,
-            !query_settings.low_cardinality_allow_in_native_format);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2245,7 +2281,7 @@ void TCPHandler::decreaseCancellationStatus(const std::string & log_message)
     if (query_context)
     {
         const auto & settings = query_context->getSettingsRef();
-        partial_result_on_first_cancel = settings.partial_result_on_first_cancel;
+        partial_result_on_first_cancel = settings[Setting::partial_result_on_first_cancel];
     }
 
     if (partial_result_on_first_cancel && state.cancellation_status == CancellationStatus::NOT_CANCELLED)
@@ -2325,7 +2361,7 @@ void TCPHandler::sendData(const Block & block)
         writeVarUInt(Protocol::Server::Data, *out);
 
         /// For testing hedged requests
-        if (block.rows() > 0 && query_context->getSettingsRef().sleep_in_send_data_ms.totalMilliseconds())
+        if (block.rows() > 0 && query_context->getSettingsRef()[Setting::sleep_in_send_data_ms].totalMilliseconds())
         {
             /// This strange sequence is needed in case of chunked protocol is enabled, in order for client not to
             /// hang on receiving of at least packet type - chunk will not be processed unless either chunk footer
@@ -2335,7 +2371,7 @@ void TCPHandler::sendData(const Block & block)
             /// Send external table name (empty name is the main table)
             writeStringBinary("", *out);
             out->next();
-            std::chrono::milliseconds ms(query_context->getSettingsRef().sleep_in_send_data_ms.totalMilliseconds());
+            std::chrono::milliseconds ms(query_context->getSettingsRef()[Setting::sleep_in_send_data_ms].totalMilliseconds());
             std::this_thread::sleep_for(ms);
         }
         else

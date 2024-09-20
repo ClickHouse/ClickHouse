@@ -153,6 +153,30 @@ namespace
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool allow_experimental_inverted_index;
+    extern const SettingsBool allow_experimental_vector_similarity_index;
+    extern const SettingsBool allow_non_metadata_alters;
+    extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool allow_suspicious_indices;
+    extern const SettingsBool alter_move_to_space_execute_async;
+    extern const SettingsBool alter_partition_verbose_result;
+    extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsBool fsync_metadata;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool materialize_ttl_after_modify;
+    extern const SettingsUInt64 max_partition_size_to_drop;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 number_of_mutations_to_delay;
+    extern const SettingsUInt64 number_of_mutations_to_throw;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsUInt64 parts_to_delay_insert;
+    extern const SettingsUInt64 parts_to_throw_insert;
+}
 
 namespace ErrorCodes
 {
@@ -306,7 +330,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
                 auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
                 writeIntText(format_version.toUnderType(), *buf);
                 buf->finalize();
-                if (getContext()->getSettingsRef().fsync_metadata)
+                if (getContext()->getSettingsRef()[Setting::fsync_metadata])
                     buf->sync();
             }
 
@@ -476,7 +500,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
     const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
-    if (!local_context->getSettingsRef().allow_statistics_optimize)
+    if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
         return {};
 
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
@@ -591,7 +615,7 @@ void MergeTreeData::checkProperties(
 
     bool allow_suspicious_indices = getSettings()->allow_suspicious_indices;
     if (local_context)
-        allow_suspicious_indices = local_context->getSettingsRef().allow_suspicious_indices;
+        allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
 
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
@@ -3202,9 +3226,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
 
-    if (!settings.allow_non_metadata_alters)
+    if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, local_context);
+        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -3226,11 +3250,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
-    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_full_text_index)
+    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
 
-    if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings.allow_experimental_vector_similarity_index)
+    if (AlterCommands::hasLegacyInvertedIndex(new_metadata) && !settings[Setting::allow_experimental_inverted_index])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Experimental inverted index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+
+    if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings[Setting::allow_experimental_vector_similarity_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Experimental vector similarity index is disabled (turn on setting 'allow_experimental_vector_similarity_index')");
 
@@ -4562,9 +4590,9 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     const auto active_parts_to_delay_insert
-        = query_settings.parts_to_delay_insert ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
+        = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : settings->parts_to_delay_insert;
     const auto active_parts_to_throw_insert
-        = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
+        = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : settings->parts_to_throw_insert;
     size_t active_parts_over_threshold = 0;
 
     {
@@ -4641,13 +4669,11 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
 
-    size_t num_mutations_to_delay = query_settings.number_of_mutations_to_delay
-        ? query_settings.number_of_mutations_to_delay
-        : settings->number_of_mutations_to_delay;
+    size_t num_mutations_to_delay = query_settings[Setting::number_of_mutations_to_delay] ? query_settings[Setting::number_of_mutations_to_delay]
+                                                                                 : settings->number_of_mutations_to_delay;
 
-    size_t num_mutations_to_throw = query_settings.number_of_mutations_to_throw
-        ? query_settings.number_of_mutations_to_throw
-        : settings->number_of_mutations_to_throw;
+    size_t num_mutations_to_throw = query_settings[Setting::number_of_mutations_to_throw] ? query_settings[Setting::number_of_mutations_to_throw]
+                                                                                 : settings->number_of_mutations_to_throw;
 
     if (!num_mutations_to_delay && !num_mutations_to_throw)
         return;
@@ -4993,8 +5019,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
 
     for (const auto & command : commands)
     {
-        if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
-            && !settings.allow_drop_detached)
+        if (command.type == PartitionCommand::DROP_DETACHED_PARTITION && !settings[Setting::allow_drop_detached])
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                 "Cannot execute query: DROP DETACHED PART "
                                 "is disabled (see allow_drop_detached setting)");
@@ -5054,9 +5079,10 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, Context
     auto table_id = getStorageID();
 
     const auto & query_settings = local_context->getSettingsRef();
-    if (query_settings.max_partition_size_to_drop.changed)
+    if (query_settings[Setting::max_partition_size_to_drop].changed)
     {
-        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size, query_settings.max_partition_size_to_drop);
+        getContext()->checkPartitionCanBeDropped(
+            table_id.database_name, table_id.table_name, partition_size, query_settings[Setting::max_partition_size_to_drop]);
         return;
     }
 
@@ -5075,9 +5101,10 @@ void MergeTreeData::checkPartCanBeDropped(const String & part_name, ContextPtr l
     auto table_id = getStorageID();
 
     const auto & query_settings = local_context->getSettingsRef();
-    if (query_settings.max_partition_size_to_drop.changed)
+    if (query_settings[Setting::max_partition_size_to_drop].changed)
     {
-        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk(), query_settings.max_partition_size_to_drop);
+        getContext()->checkPartitionCanBeDropped(
+            table_id.database_name, table_id.table_name, part->getBytesOnDisk(), query_settings[Setting::max_partition_size_to_drop]);
         return;
     }
 
@@ -5126,9 +5153,13 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
 
     const auto & query_settings = local_context->getSettingsRef();
-    std::future<MovePartsOutcome> moves_future = movePartsToSpace(moving_tagger, local_context->getReadSettings(), local_context->getWriteSettings(), query_settings.alter_move_to_space_execute_async);
+    std::future<MovePartsOutcome> moves_future = movePartsToSpace(
+        moving_tagger,
+        local_context->getReadSettings(),
+        local_context->getWriteSettings(),
+        query_settings[Setting::alter_move_to_space_execute_async]);
 
-    if (query_settings.alter_move_to_space_execute_async && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    if (query_settings[Setting::alter_move_to_space_execute_async] && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
         return;
     }
@@ -5207,9 +5238,13 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
 
     const auto & query_settings = local_context->getSettingsRef();
-    std::future<MovePartsOutcome> moves_future = movePartsToSpace(moving_tagger, local_context->getReadSettings(), local_context->getWriteSettings(), query_settings.alter_move_to_space_execute_async);
+    std::future<MovePartsOutcome> moves_future = movePartsToSpace(
+        moving_tagger,
+        local_context->getReadSettings(),
+        local_context->getWriteSettings(),
+        query_settings[Setting::alter_move_to_space_execute_async]);
 
-    if (query_settings.alter_move_to_space_execute_async && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    if (query_settings[Setting::alter_move_to_space_execute_async] && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
         return;
     }
@@ -5368,28 +5403,28 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
                 current_command_results = freezePartition(command.partition, command.with_name, query_context, lock);
             }
             break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
                 current_command_results = freezeAll(command.with_name, query_context, lock);
             }
             break;
 
             case PartitionCommand::UNFREEZE_PARTITION:
             {
-                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
                 current_command_results = unfreezePartition(command.partition, command.with_name, query_context, lock);
             }
             break;
 
             case PartitionCommand::UNFREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
                 current_command_results = unfreezeAll(command.with_name, query_context, lock);
             }
 
@@ -5403,7 +5438,7 @@ Pipe MergeTreeData::alterPartition(
         result.insert(result.end(), current_command_results.begin(), current_command_results.end());
     }
 
-    if (query_context->getSettingsRef().alter_partition_verbose_result)
+    if (query_context->getSettingsRef()[Setting::alter_partition_verbose_result])
         return convertCommandsResultToSource(result);
 
     return {};
@@ -5444,7 +5479,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         }
 
         if (hold_table_lock && !table_lock)
-            table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+            table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         if (backup_settings.check_projection_parts)
             part->checkConsistencyWithProjections(/* require_part_metadata= */ true);
@@ -7120,7 +7155,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     SelectQueryInfo &) const
 {
     /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
-    if (!query_context->getSettingsRef().allow_experimental_analyzer)
+    if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         const auto & settings = query_context->getSettingsRef();
         if (query_context->canUseParallelReplicasCustomKey())
@@ -7128,7 +7163,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
             if (query_context->getClientInfo().distributed_depth > 0)
                 return QueryProcessingStage::FetchColumns;
 
-            if (!supportsReplication() && !settings.parallel_replicas_for_non_replicated_merge_tree)
+            if (!supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
                 return QueryProcessingStage::Enum::FetchColumns;
 
             if (to_stage >= QueryProcessingStage::WithMergeableState
@@ -7147,7 +7182,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
                 return QueryProcessingStage::Enum::WithMergeableState;
 
             /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-            if (settings.parallel_replicas_for_non_replicated_merge_tree)
+            if (settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }
@@ -7169,7 +7204,7 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         storage_snapshot->metadata,
         query_info,
         query_context,
-        query_context->getSettingsRef().max_threads);
+        query_context->getSettingsRef()[Setting::max_threads]);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -8489,7 +8524,7 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
         return false;
 
     if (!storage_snapshot)
-        return !query_context->getSettingsRef().apply_mutations_on_fly;
+        return !query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     return !snapshot_data.mutations_snapshot->hasDataMutations();
@@ -8522,7 +8557,7 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = getMinMetadataVersion(snapshot_data->parts),
-        .need_data_mutations = query_context->getSettingsRef().apply_mutations_on_fly,
+        .need_data_mutations = query_context->getSettingsRef()[Setting::apply_mutations_on_fly],
     };
 
     snapshot_data->mutations_snapshot = getMutationsSnapshot(params);
@@ -8686,7 +8721,7 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
             auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
             writeIntText(format_version.toUnderType(), *buf);
             buf->finalize();
-            if (getContext()->getSettingsRef().fsync_metadata)
+            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
                 buf->sync();
         }
     }

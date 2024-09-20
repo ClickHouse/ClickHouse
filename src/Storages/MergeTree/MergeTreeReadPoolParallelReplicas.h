@@ -31,12 +31,13 @@ public:
 private:
     mutable std::mutex mutex;
 
+    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
     size_t min_marks_per_task{0};
+    size_t mark_segment_size{0};
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
-    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
 };
 
 }
