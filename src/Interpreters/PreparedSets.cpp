@@ -292,7 +292,7 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, 
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
         key, std::move(block),
-        settings.transform_null_in, size_limits);
+        settings[Setting::transform_null_in], size_limits);
 
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];
@@ -326,7 +326,7 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(source), std::move(external_table), std::move(external_table_set),
-        settings.transform_null_in, size_limits, settings.use_index_for_in_with_subqueries_max_values);
+        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -344,7 +344,7 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(query_tree),
-        settings.transform_null_in, size_limits, settings.use_index_for_in_with_subqueries_max_values);
+        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 

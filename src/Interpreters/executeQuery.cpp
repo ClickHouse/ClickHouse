@@ -1492,7 +1492,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
     String query_for_logging;
     ASTPtr ast;
     const bool internal = flags.internal;
-    size_t log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
+    size_t log_queries_cut_to_length = context->getSettingsRef()[Setting::log_queries_cut_to_length];
 
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
@@ -1506,9 +1506,9 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
-        ParserQuery parser(query.data() + query.size(), settings.allow_settings_after_format_in_insert);
+        ParserQuery parser(query.data() + query.size(), settings[Setting::allow_settings_after_format_in_insert]);
         /// TODO: parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
         /// Wipe any sensitive information (e.g. passwords) from the query.
         /// MUST go before any modification (except for prepared statements,
@@ -1614,7 +1614,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
             if (true)
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings.implicit_transaction)
+                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction])
                 {
                     try
                     {
@@ -1631,7 +1631,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 const auto & query_settings = context->getSettingsRef();
-                if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
+                if (context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {
                     //if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query (QueryPlan)");
@@ -1659,7 +1659,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
                 if (true)
                 {
                     limits.mode = LimitsMode::LIMITS_CURRENT;
-                    limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+                    limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
                 }
 
                 {

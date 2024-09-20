@@ -42,6 +42,8 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool distributed_group_by_no_merge;
 }
 
 namespace ErrorCodes
@@ -178,7 +180,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColums,
         /// But distributed_group_by_no_merge requires Complete.
-        if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge]
+        if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
                 query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true);

@@ -37,6 +37,16 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool transform_null_in;
+    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsMaxThreads max_threads;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -394,7 +404,7 @@ static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, co
     for (auto & set : sets)
     {
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
-        bool transform_null_in = settings.transform_null_in;
+        bool transform_null_in = settings[Setting::transform_null_in];
 
         auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, std::move(set.set_columns), transform_null_in, size_limits);
         for (auto * column : set.columns)
@@ -417,8 +427,8 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         makeSetsFromSubqueries(*set.plan, std::move(set.sets), context);
 
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
-        bool transform_null_in = settings.transform_null_in;
-        size_t max_size_for_index = settings.use_index_for_in_with_subqueries_max_values;
+        bool transform_null_in = settings[Setting::transform_null_in];
+        size_t max_size_for_index = settings[Setting::use_index_for_in_with_subqueries_max_values];
 
         auto future_set = std::make_shared<FutureSetFromSubquery>(
             set.hash, std::move(set.plan), nullptr, nullptr,
@@ -500,8 +510,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         table_function_ast = parseQuery(
             parser,
             serialized_ast,
-            settings.max_query_size,
-            settings.max_parser_depth,
+            settings[Setting::max_query_size],
+            settings[Setting::max_parser_depth],
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto query_tree_node = resolveTableFunction(table_function_ast, context);
@@ -570,8 +580,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             select_query_info,
             context,
             QueryProcessingStage::FetchColumns,
-            context->getSettingsRef().max_block_size,
-            context->getSettingsRef().max_threads
+            context->getSettingsRef()[Setting::max_block_size],
+            context->getSettingsRef()[Setting::max_threads]
         );
     }
 
