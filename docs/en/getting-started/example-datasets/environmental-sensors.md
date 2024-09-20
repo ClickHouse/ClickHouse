@@ -115,7 +115,7 @@ SETTINGS
     input_format_allow_errors_ratio = '0.5',
     input_format_allow_errors_num = 10000,
     date_time_input_format = 'best_effort',
-    s3queue_processing_threads_num = 32;
+    s3queue_processing_threads_num = 3;
 ```
 
 You can select the count of rows in `sensors` to see how the ingestion is progressing, and of course you can start viewing the rows as well. You should see at least 10M rows per second being ingested, depending on the region of your ClickHouse Cloud service.
