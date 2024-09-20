@@ -173,7 +173,12 @@ void SelectStreamFactory::createForShardImpl(
     {
         Block shard_header;
         std::unique_ptr<QueryPlan> query_plan;
-        if (context->getSettingsRef()[Setting::serialize_query_plan])
+
+        const auto & settings = context->getSettingsRef();
+
+        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColums,
+        /// But distributed_group_by_no_merge requires Complete.
+        if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge]
         {
             query_plan = createLocalPlan(
                 query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true);

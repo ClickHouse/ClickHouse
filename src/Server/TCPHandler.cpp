@@ -2111,8 +2111,9 @@ void TCPHandler::receiveQueryPlan()
     auto context = unexpected_packet ? Context::getGlobalContextInstance() : query_context;
 
     auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    LOG_TRACE(log, "Received query plan");
 
-    if (unexpected_packet)
+    if (!state.skipping_data && unexpected_packet)
         throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
 
     state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
