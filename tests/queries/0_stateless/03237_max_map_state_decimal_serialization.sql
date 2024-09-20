@@ -1,1 +1,1 @@
-select maxMapState([0], [toDateTime64(0, 0)]) format JSONEachRow;
+select maxMapState([0], [toDateTime64(0, 0)]) as x format JSONEachRow;
