@@ -191,8 +191,8 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
     }
     else
     {
-        granted_role_names.erase(role_id);
         granted_role_ids.erase(role_name);
+        granted_role_names.erase(role_id);
     }
 }
 

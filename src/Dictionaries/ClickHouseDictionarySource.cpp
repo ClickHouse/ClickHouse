@@ -1,6 +1,7 @@
 #include "ClickHouseDictionarySource.h"
 #include <memory>
 #include <Client/ConnectionPool.h>
+#include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/ActionsDAG.h>

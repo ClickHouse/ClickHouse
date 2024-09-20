@@ -23,10 +23,11 @@ struct ObjectStorageQueueTableMetadata
     const String after_processing;
     const String mode;
     const UInt64 tracked_files_limit;
-    const UInt64 tracked_file_ttl_sec;
+    const UInt64 tracked_files_ttl_sec;
     const UInt64 buckets;
     const UInt64 processing_threads_num;
     const String last_processed_path;
+    const UInt64 loading_retries;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
@@ -38,6 +39,8 @@ struct ObjectStorageQueueTableMetadata
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
 
     String toString() const;
+
+    ObjectStorageQueueMode getMode() const;
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 

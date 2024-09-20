@@ -4100,7 +4100,7 @@ class ClickHouseInstance:
         exclusion_substring="",
     ):
         if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
+            # We check first file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
@@ -4726,6 +4726,9 @@ class ClickHouseInstance:
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")
+
+        if self.with_ldap:
+            depends_on.append("openldap")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")

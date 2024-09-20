@@ -52,6 +52,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
+}
 
 namespace FailPoints
 {
@@ -456,6 +465,9 @@ void Connection::sendAddendum()
         writeStringBinary(proto_recv_chunked, *out);
     }
 
+    if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+        writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
+
     out->next();
 }
 
@@ -526,6 +538,8 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+            readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
             readStringBinary(server_timezone, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
@@ -787,19 +801,19 @@ void Connection::sendQuery(
     if (settings)
     {
         std::optional<int> level;
-        std::string method = Poco::toUpper(settings->network_compression_method.toString());
+        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
 
         /// Bad custom logic
         if (method == "ZSTD")
-            level = settings->network_zstd_compression_level;
+            level = (*settings)[Setting::network_zstd_compression_level];
 
         CompressionCodecFactory::instance().validateCodec(
             method,
             level,
-            !settings->allow_suspicious_codecs,
-            settings->allow_experimental_codecs,
-            settings->enable_deflate_qpl_codec,
-            settings->enable_zstd_qat_codec);
+            !(*settings)[Setting::allow_suspicious_codecs],
+            (*settings)[Setting::allow_experimental_codecs],
+            (*settings)[Setting::enable_deflate_qpl_codec],
+            (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -966,7 +980,7 @@ void Connection::sendReadTaskResponse(const String & response)
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out);
+    response.serialize(*out, server_parallel_replicas_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1420,7 +1434,7 @@ ParallelReadRequest Connection::receiveParallelReadRequest() const
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in);
+    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
 }
 
 
