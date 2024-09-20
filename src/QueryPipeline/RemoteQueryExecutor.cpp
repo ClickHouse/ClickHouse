@@ -74,6 +74,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , extension(extension_)
     , priority_func(priority_func_)
 {
+    if (stage == QueryProcessingStage::QueryPlan && !query_plan)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan is not passed for QueryPlan processing stage");
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
