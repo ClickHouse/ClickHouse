@@ -481,6 +481,11 @@ if (ARCH_S390X)
 else()
     set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75l_dat.S" )
 endif()
+# ^^ you might be confused how for different little endian platforms (x86, ARM) the same assembly files can be used.
+# These files are indeed assembly but they only contain data ('.long' directive), which makes them portable accross CPUs.
+# Only the endianness and the character set (ASCII, EBCDIC) makes a difference, also see
+# https://unicode-org.github.io/icu/userguide/icu_data/#sharing-icu-data-between-platforms, 'Sharing ICU Data Between Platforms')
+# (and as an experiment, try re-generating the data files on x86 vs. ARM, ... you'll get exactly the same files)
 
 set(ICUDATA_SOURCES
     "${ICUDATA_SOURCE_FILE}"

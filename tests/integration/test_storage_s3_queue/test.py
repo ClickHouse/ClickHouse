@@ -662,10 +662,7 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             },
         )
     except QueryRuntimeException as e:
-        assert (
-            "Table columns structure in ZooKeeper is different from local table structure"
-            in str(e)
-        )
+        assert "Existing table metadata in ZooKeeper differs in columns" in str(e)
         failed = True
 
     assert failed is True
@@ -977,6 +974,14 @@ def test_max_set_age(started_cluster):
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
+    )
+
+    node.restart_clickhouse()
+
+    expected_rows *= 2
+    wait_for_condition(lambda: get_count() == expected_rows)
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
     )
 
 
