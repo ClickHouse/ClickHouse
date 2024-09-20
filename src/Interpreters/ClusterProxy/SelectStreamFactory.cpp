@@ -43,7 +43,7 @@ namespace Setting
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool serialize_query_plan;
-    extern const SettingsBool distributed_group_by_no_merge;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
 namespace ErrorCodes
