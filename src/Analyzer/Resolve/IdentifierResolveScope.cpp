@@ -7,6 +7,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool join_use_nulls;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -32,12 +38,12 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
         context = query_node->getContext();
-        group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
-            (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
+            && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
     }
 
     if (context)
-        join_use_nulls = context->getSettingsRef().join_use_nulls;
+        join_use_nulls = context->getSettingsRef()[Setting::join_use_nulls];
     else if (parent_scope)
         join_use_nulls = parent_scope->join_use_nulls;
 

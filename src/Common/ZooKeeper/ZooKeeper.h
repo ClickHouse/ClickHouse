@@ -47,6 +47,10 @@ namespace zkutil
 /// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
+/// Path "default:/foo" refers to znode "/foo" in the default zookeeper,
+/// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
+constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
+
 struct ShuffleHost
 {
     enum AvailabilityZoneInfo
