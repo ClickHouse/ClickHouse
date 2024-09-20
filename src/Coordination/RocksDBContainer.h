@@ -226,6 +226,8 @@ public:
         std::vector<std::pair<std::string, Node>> result;
         auto is_direct_child = [](rocksdb::Slice iter_key, rocksdb::Slice seek_key)
         {
+            if (iter_key.size() <= 1)
+                return false;
             size_t rslash_pos = 0;
             for (size_t i = iter_key.size() - 1; i > 0; --i)
             {
