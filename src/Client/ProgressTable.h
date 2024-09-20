@@ -9,8 +9,8 @@
 #include <mutex>
 #include <ostream>
 #include <string_view>
-#include <unistd.h>
 #include <unordered_map>
+#include <unistd.h>
 
 namespace DB
 {
@@ -23,7 +23,8 @@ class ProgressTable
 public:
     explicit ProgressTable(std::ostream & output_stream_, int in_fd_ = STDIN_FILENO, int err_fd_ = STDERR_FILENO)
         : output_stream(output_stream_), in_fd(in_fd_), err_fd(err_fd_)
-    {}
+    {
+    }
 
     /// Write progress table with metrics.
     void writeTable(WriteBufferFromFileDescriptor & message, bool show_table, bool toggle_enabled);
@@ -57,11 +58,11 @@ private:
             double time = 0;
         };
 
-        /// The previous and current snapshots are used to calculateProgress.
-        /// They contain outdated by about a second information.
-        /// The new snapshot is used to updateValue and getValue.
-        /// If you use a new snapshot to calculate progress, then the time difference between
-        /// the previous update will be very small, so progress will jitter.
+        /// The previous and current snapshots are used by `calculateProgress`.
+        /// They contain information that is outdated by about a second.
+        /// The new snapshot is used by `updateValue` and `getValue`.
+        /// We don't use a new snapshot in `calculateProgress` because the time elapsed since
+        /// the previous update may be very small, causing jitter.
         Snapshot prev_shapshot;
         Snapshot cur_shapshot;
         Snapshot new_snapshot;

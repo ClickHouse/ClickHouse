@@ -22,7 +22,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -109,7 +109,7 @@ std::string_view setColorForBytesBasedMetricsProgress(double progress)
         "\033[38;5;226m", /// Yellow
         "\033[38;5;208m", /// Orange
         "\033[1;33m", /// Bold
-        "\033[38;5;160m", /// Red: corresponds to >= 1T/s. Not realistic, unless there is a bug.
+        "\033[38;5;160m", /// Red: corresponds to >= 1T/s. Not a practical scenario.
     };
 
     /// Bytes.
@@ -382,8 +382,8 @@ ProgressTable::MetricInfo::MetricInfo(ProfileEvents::Type t) : type(t)
 
 void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
 {
-    /// If the value has not been updated for a long time
-    /// reset the time in snapshots to a second ago.
+    /// If the value has not been updated for a long time,
+    /// reset the time in snapshots to one second ago.
     if (new_time - new_snapshot.time >= 0.5 || new_snapshot.time == 0)
     {
         prev_shapshot = {new_snapshot.value, new_time - 1.0};

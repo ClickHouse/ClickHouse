@@ -197,7 +197,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--jwt` – If specified, enables authorization via JSON Web Token. Server JWT authorization is available only in ClickHouse Cloud.
 - `--progress` – Print progress of query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress printing. Default: TTY in interactive mode, disabled in non-interactive.
 - `--progress-table` – Print a progress table with changing metrics during query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress table. Default: TTY in interactive mode, disabled in non-interactive.
-- `--enable-progress-table-toggle` – Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.
+- `--enable-progress-table-toggle` – Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table printing enabled. Default: 'true'.
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
 

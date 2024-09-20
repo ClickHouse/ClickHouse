@@ -62,7 +62,7 @@ void TerminalKeystrokeInterceptor::startIntercept()
     raw.c_cc[VTIME] = 1;
     if (tcsetattr(fd, TCSAFLUSH, &raw))
         throw DB::ErrnoException(
-            DB::ErrorCodes::SYSTEM_ERROR, "Cannot set terminal to the raw mode for the terminal referred to by file desciptor '{}'", fd);
+            DB::ErrorCodes::SYSTEM_ERROR, "Cannot set terminal to the raw mode for the terminal referred to by file descriptor '{}'", fd);
 
     intercept_thread = std::make_unique<std::thread>(&TerminalKeystrokeInterceptor::run, this, callbacks);
 }
@@ -85,7 +85,7 @@ void TerminalKeystrokeInterceptor::stopIntercept()
         if (tcsetattr(fd, TCSAFLUSH, orig_termios.get()))
             throw DB::ErrnoException(
                 DB::ErrorCodes::SYSTEM_ERROR,
-                "Cannot set terminal to the original (canonical) mode for the terminal referred to by file desciptor '{}'",
+                "Cannot set terminal to the original (canonical) mode for the terminal referred to by file descriptor '{}'",
                 fd);
 
         orig_termios.reset();
