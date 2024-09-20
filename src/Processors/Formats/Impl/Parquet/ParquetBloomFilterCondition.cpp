@@ -325,9 +325,6 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
     using RPNElement = KeyCondition::RPNElement;
     using Function = ParquetBloomFilterCondition::ConditionElement::Function;
 
-    // todo arthur
-    // where toIPv4(uint32_col) = ...
-    // results in function unknown..
     for (const auto & rpn_element : rpn)
     {
         Columns columns;
@@ -353,7 +350,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
             if (parquet_indexes.empty())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Abcde");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Something bad happened, raise an issue and try the query with `input_format_parquet_bloom_filter_push_down=false`");
             }
 
             auto parquet_column_index = parquet_indexes[0];
@@ -374,6 +371,14 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             const DataTypePtr actual_type = removeNullable(data_types[rpn_element.key_column]);
 
             if (!isColumnSupported(actual_type, parquet_rg_metadata->schema()->Column(parquet_column_index)))
+            {
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
+                continue;
+            }
+
+            auto field = tryConvertFieldToType(rpn_element.range.left, *actual_type);
+
+            if (field.isNull())
             {
                 condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
                 continue;
@@ -418,7 +423,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
                 if (parquet_indexes.empty())
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Abcde");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Something bad happened, raise an issue and try the query with `input_format_parquet_bloom_filter_push_down=false`");
                 }
 
                 auto parquet_column_index = parquet_indexes[0];
