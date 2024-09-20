@@ -69,51 +69,56 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. ClickHouse Cloud services have a cluster named `default`. We will use the `s3Cluster` table function, which reads S3 files in parallel from the nodes in your cluster. (If you do not have a cluster, just use the `s3` function and remove the cluster name.)
-
-This query will take a while - it's about 1.67T of data uncompressed:
+3. The `S3Queue` table engine works great for reading a bucket of files in S3. We will need a materialized view to capture the rows coming in from the `S3Queue` table and insert them into our `sensors` table. Here is how to put it all together:
 
 ```sql
-INSERT INTO sensors
+CREATE TABLE sensors_queue (
+    temp Int8
+)
+ENGINE = Null;
+
+CREATE MATERIALIZED VIEW sensors_queue_view 
+TO sensors
+AS
     SELECT *
-    FROM s3Cluster(
-        'default',
-        'https://clickhouse-public-datasets.s3.amazonaws.com/sensors/monthly/*.csv.zst',
-        'CSVWithNames',
-        $$ sensor_id UInt16,
-        sensor_type String,
-        location UInt32,
-        lat Float32,
-        lon Float32,
-        timestamp DateTime,
-        P1 Float32,
-        P2 Float32,
-        P0 Float32,
-        durP1 Float32,
-        ratioP1 Float32,
-        durP2 Float32,
-        ratioP2 Float32,
-        pressure Float32,
-        altitude Float32,
-        pressure_sealevel Float32,
-        temperature Float32,
-        humidity Float32 $$
+    FROM sensors_queue;
+
+CREATE OR REPLACE TABLE sensors_queue
+(
+    sensor_id UInt16,
+    sensor_type Enum('BME280', 'BMP180', 'BMP280', 'DHT22', 'DS18B20', 'HPM', 'HTU21D', 'PMS1003', 'PMS3003', 'PMS5003', 'PMS6003', 'PMS7003', 'PPD42NS', 'SDS011'),
+    location UInt32,
+    lat Float32,
+    lon Float32,
+    timestamp DateTime,
+    P1 Float32,
+    P2 Float32,
+    P0 Float32,
+    durP1 Float32,
+    ratioP1 Float32,
+    durP2 Float32,
+    ratioP2 Float32,
+    pressure Float32,
+    altitude Float32,
+    pressure_sealevel Float32,
+    temperature Float32,
+    humidity Float32,
+    date Date MATERIALIZED toDate(timestamp)
+)
+ENGINE = S3Queue(
+    'https://clickhouse-public-datasets.s3.amazonaws.com/sensors/monthly/*.csv.zst',
+    'CSVWithNames'
     )
 SETTINGS
+    mode = 'unordered',
     format_csv_delimiter = ';',
     input_format_allow_errors_ratio = '0.5',
     input_format_allow_errors_num = 10000,
-    input_format_parallel_parsing = 0,
     date_time_input_format = 'best_effort',
-    max_insert_threads = 32,
-    parallel_distributed_insert_select = 1;
+    s3queue_processing_threads_num = 32;
 ```
 
-Here is the response - showing the number of rows and the speed of processing. It is input at a rate of over 6M rows per second!
-
-```response
-0 rows in set. Elapsed: 3419.330 sec. Processed 20.69 billion rows, 1.67 TB (6.05 million rows/s., 488.52 MB/s.)
-```
+You can select the count of rows in `sensors` to see how the ingestion is progressing, and of course you can start viewing the rows as well. You should see at least 10M rows per second being ingested, depending on the region of your ClickHouse Cloud service.
 
 4. Let's see how much storage disk is needed for the `sensors` table:
 
