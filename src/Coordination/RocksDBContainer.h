@@ -211,7 +211,7 @@ public:
         }
     }
 
-    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key_, bool read_data = false)
+    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key_, bool read_meta = true, bool read_data = false)
     {
         rocksdb::ReadOptions read_options;
         read_options.total_order_seek = true;
@@ -246,17 +246,20 @@ public:
             if (!is_direct_child(iter->key(), rocksdb::Slice(key_)))
                 continue;
             Node node;
-            ReadBufferFromOwnString buffer(iter->value().ToStringView());
-            typename Node::Meta & meta = node;
-            /// We do not read data here
-            readPODBinary(meta, buffer);
-            if (read_data)
+            if (read_meta)
             {
-                readVarUInt(meta.stats.data_size, buffer);
-                if (meta.stats.data_size)
+                ReadBufferFromOwnString buffer(iter->value().ToStringView());
+                typename Node::Meta & meta = node;
+                /// We do not read data here
+                readPODBinary(meta, buffer);
+                if (read_data)
                 {
-                    node.data = std::unique_ptr<char[]>(new char[meta.stats.data_size]);
-                    buffer.readStrict(node.data.get(), meta.stats.data_size);
+                    readVarUInt(meta.stats.data_size, buffer);
+                    if (meta.stats.data_size)
+                    {
+                        node.data = std::unique_ptr<char[]>(new char[meta.stats.data_size]);
+                        buffer.readStrict(node.data.get(), meta.stats.data_size);
+                    }
                 }
             }
             std::string real_key(iter->key().data() + len, iter->key().size() - len);
