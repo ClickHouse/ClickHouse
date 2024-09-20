@@ -155,10 +155,11 @@ private:
 
     CurrentMetrics::Increment metric_pending_bytes;
     CurrentMetrics::Increment metric_pending_files;
-    CurrentMetrics::Increment metric_remove_bytes;
-    CurrentMetrics::Increment metric_remove_files;
     CurrentMetrics::Increment metric_broken_bytes;
     CurrentMetrics::Increment metric_broken_files;
+    CurrentMetrics::Increment metric_remove_bytes;
+    CurrentMetrics::Increment metric_remove_files;
+
 };
 
 }

@@ -35,10 +35,10 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
     extern const Metric DistributedFilesToInsert;
     extern const Metric BrokenDistributedFilesToInsert;
-    extern const Metric ReomveDistributedFilesToInsert;
+    extern const Metric RemoveDistributedFilesToInsert;
     extern const Metric DistributedBytesToInsert;
     extern const Metric BrokenDistributedBytesToInsert;
-    extern const Metric ReomveDistributedBytesToInsert;
+    extern const Metric RemoveDistributedBytesToInsert;
 }
 
 namespace ProfileEvents
