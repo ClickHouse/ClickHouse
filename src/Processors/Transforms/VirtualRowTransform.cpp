@@ -9,14 +9,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-VirtualRowTransform::VirtualRowTransform(const Block & header_,
-    const KeyDescription & primary_key_,
-    const IMergeTreeDataPart::Index & index_,
-    size_t mark_range_begin_)
+VirtualRowTransform::VirtualRowTransform(const Block & header_, const Block & pk_block_)
     : IProcessor({header_}, {header_})
     , input(inputs.front()), output(outputs.front())
-    , header(header_), primary_key(primary_key_)
-    , index(index_), mark_range_begin(mark_range_begin_)
+    , header(header_), pk_block(pk_block_)
 {
 }
 
@@ -89,29 +85,16 @@ void VirtualRowTransform::work()
 
         is_first = false;
 
-        /// Reorder the columns according to result_header
-        Columns ordered_columns;
-        ordered_columns.reserve(header.columns());
-        for (size_t i = 0, j = 0; i < header.columns(); ++i)
+        Columns empty_columns;
+        empty_columns.reserve(header.columns());
+        for (size_t i = 0; i < header.columns(); ++i)
         {
             const ColumnWithTypeAndName & type_and_name = header.getByPosition(i);
-            ColumnPtr current_column = type_and_name.type->createColumn();
-            // ordered_columns.push_back(current_column->cloneResized(1));
-
-            if (j < index->size() && type_and_name.name == primary_key.column_names[j]
-                && type_and_name.type == primary_key.data_types[j])
-            {
-                auto column = current_column->cloneEmpty();
-                column->insert((*(*index)[j])[mark_range_begin]);
-                ordered_columns.push_back(std::move(column));
-                ++j;
-            }
-            else
-                ordered_columns.push_back(current_column->cloneResized(1));
+            empty_columns.push_back(type_and_name.type->createColumn()->cloneEmpty());
         }
 
-        current_chunk.setColumns(ordered_columns, 1);
-        current_chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(0, true));
+        current_chunk.setColumns(empty_columns, 0);
+        current_chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(0, pk_block));
     }
     else
     {

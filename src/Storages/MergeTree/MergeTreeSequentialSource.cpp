@@ -267,7 +267,7 @@ try
 
             auto result = Chunk(std::move(res_columns), rows_read);
             if (add_part_level)
-                result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level, false));
+                result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
             return result;
         }
     }

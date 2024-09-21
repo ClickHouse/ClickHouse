@@ -104,14 +104,14 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// we won't have to read any chunks anymore;
         /// If virtual row exists, let it pass through, so don't read more chunks.
         auto chunk = input.pull(true);
-        bool virtual_row = getVirtualRowFromChunk(chunk);
+        bool virtual_row = isVirtualRow(chunk);
         if (limit_hint == 0 && !virtual_row)
             input.setNeeded();
 
         if (!virtual_row && ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end))
             input.setNeeded();
 
-        if (!chunk.hasRows())
+        if (!virtual_row && !chunk.hasRows())
         {
             if (!input.isFinished())
             {

@@ -55,6 +55,14 @@ void MergingSortedAlgorithm::addInput()
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
+    for (auto & input : inputs)
+    {
+        if (!isVirtualRow(input.chunk))
+            continue;
+
+        setVirtualRow(input.chunk, header);
+    }
+
     removeConstAndSparse(inputs);
     merged_data.initialize(header, inputs);
     current_inputs = std::move(inputs);
@@ -139,7 +147,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         auto current = queue.current();
 
-        if (getVirtualRowFromChunk(current_inputs[current.impl->order].chunk))
+        if (isVirtualRow(current_inputs[current.impl->order].chunk))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual row is not implemented for Non-batch mode.");
 
         if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
@@ -238,7 +246,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         auto [current_ptr, initial_batch_size] = queue.current();
         auto current = *current_ptr;
 
-        if (getVirtualRowFromChunk(current_inputs[current.impl->order].chunk))
+        if (isVirtualRow(current_inputs[current.impl->order].chunk))
         {
             /// If virtual row is detected, there should be only one row as a single chunk,
             /// and always skip this chunk to pull the next one.

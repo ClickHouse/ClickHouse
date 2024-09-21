@@ -88,7 +88,7 @@ IProcessor::Status BufferChunksTransform::prepare()
 Chunk BufferChunksTransform::pullChunk(bool & virtual_row)
 {
     auto chunk = input.pull();
-    virtual_row = getVirtualRowFromChunk(chunk);
+    virtual_row = isVirtualRow(chunk);
     if (!virtual_row)
         num_processed_rows += chunk.getNumRows();
 

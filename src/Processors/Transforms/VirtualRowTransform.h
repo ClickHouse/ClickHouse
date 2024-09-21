@@ -11,10 +11,7 @@ namespace DB
 class VirtualRowTransform : public IProcessor
 {
 public:
-    explicit VirtualRowTransform(const Block & header_,
-        const KeyDescription & primary_key_,
-        const IMergeTreeDataPart::Index & index_,
-        size_t mark_range_begin_);
+    explicit VirtualRowTransform(const Block & header_, const Block & pk_block_);
 
     String getName() const override { return "VirtualRowTransform"; }
 
@@ -32,11 +29,7 @@ private:
     bool is_first = true;
 
     Block header;
-    KeyDescription primary_key;
-    /// PK index used in virtual row.
-    IMergeTreeDataPart::Index index;
-    /// The first range that might contain the candidate.
-    size_t mark_range_begin;
+    Block pk_block;
 };
 
 }

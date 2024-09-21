@@ -663,12 +663,25 @@ Pipe ReadFromMergeTree::readInOrder(
 
         if (enable_current_virtual_row && (read_type == ReadType::InOrder))
         {
+            const auto & index = part_with_ranges.data_part->getIndex();
+            const auto & primary_key = storage_snapshot->metadata->primary_key;
+            size_t mark_range_begin = part_with_ranges.ranges.front().begin;
+
+            ColumnsWithTypeAndName pk_columns;
+            pk_columns.reserve(index->size());
+
+            for (size_t j = 0; j < index->size(); ++j)
+            {
+                auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
+                column->insert((*(*index)[j])[mark_range_begin]);
+                pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+            }
+
+            Block pk_block(std::move(pk_columns));
+
             pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<VirtualRowTransform>(header,
-                    storage_snapshot->metadata->primary_key,
-                    part_with_ranges.data_part->getIndex(),
-                    part_with_ranges.ranges.front().begin);
+                return std::make_shared<VirtualRowTransform>(header, pk_block);
             });
         }
 
