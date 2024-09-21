@@ -122,6 +122,7 @@ class IOResourceManager : public IResourceManager
 {
 public:
     explicit IOResourceManager(IWorkloadEntityStorage & storage_);
+    ~IOResourceManager() override;
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     ClassifierPtr acquire(const String & workload_name) override;
     void forEachNode(VisitorFunc visitor) override;

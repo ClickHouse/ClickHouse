@@ -197,6 +197,7 @@ void IOResourceManager::Resource::updateCurrentVersion()
         previous_version->newer_version = current_version;
         // TODO(serxa): Node activations might be in event queue on destruction. How to process them? should we just process all events in queue on important updates? add a separate queue for hierarchy modifications? Or maybe everything works as expected, we need unit tests for this.
         // Looks like the problem of activations could be solved just by unliking activation from intrusive list on destruction, but we must make sure all destruction are done under event_queue::mutex (which seems imposible)
+        // Another possible solution is to remove activations from queue on detachChild. It is good because activations are created on attachChild.
         previous_version.reset(); // Destroys previous version nodes if there are no classifiers referencing it
     }
 }
@@ -264,6 +265,14 @@ IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
                 // TODO(serxa): handle CRUD errors
             }
         });
+}
+
+IOResourceManager::~IOResourceManager()
+{
+    resource_change_subscription.reset();
+    workload_change_subscription.reset();
+    resources.clear();
+    workloads.clear();
 }
 
 void IOResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration &)
