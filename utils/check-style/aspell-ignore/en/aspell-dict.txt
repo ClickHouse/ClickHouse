@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2983
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -24,6 +24,7 @@ Aggregatefunction
 AggregatingMergeTree
 AggregatorThreads
 AggregatorThreadsActive
+AzureQueue
 Akka
 AlertManager
 Alexey
@@ -1212,6 +1213,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip
