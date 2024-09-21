@@ -1,6 +1,7 @@
 #include <Databases/DatabaseLazy.h>
 
 #include <base/sort.h>
+#include <base/isSharedPtrUnique.h>
 #include <iomanip>
 #include <filesystem>
 #include <Common/CurrentMetrics.h>
@@ -43,7 +44,7 @@ namespace ErrorCodes
 
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseLazy (" + name_ + ")", context_)
+    : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
 }
@@ -51,7 +52,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
+    iterateMetadataFiles([this, &local_context](const String & file_name)
     {
         const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
@@ -187,7 +188,14 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
 
-    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
+    LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
+    if (snapshot_detached_tables.contains(table_name))
+    {
+        LOG_DEBUG(log, "Clean info about detached table {} from snapshot.", backQuote(table_name));
+        snapshot_detached_tables.erase(table_name);
+    }
+
+    CurrentMetrics::add(CurrentMetrics::AttachedTable);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -203,8 +211,17 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
+        LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
+        snapshot_detached_tables.emplace(
+            table_name,
+            SnapshotDetachedTable{
+                .database = res->getStorageID().database_name,
+                .table = res->getStorageID().table_name,
+                .uuid = res->getStorageID().uuid,
+                .metadata_path = getObjectMetadataPath(table_name),
+                .is_permanently = false});
 
-        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable);
     }
     return res;
 }
@@ -305,7 +322,7 @@ try
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table || it->second.table.unique())
+        if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
             LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
             it->second.table.reset();
@@ -381,6 +398,6 @@ void registerDatabaseLazy(DatabaseFactory & factory)
             cache_expiration_time_seconds,
             args.context);
     };
-    factory.registerDatabase("Lazy", create_fn);
+    factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});
 }
 }

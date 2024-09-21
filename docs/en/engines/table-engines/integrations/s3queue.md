@@ -5,6 +5,7 @@ sidebar_label: S3Queue
 ---
 
 # S3Queue Table Engine
+
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
 
 ## Create Table {#creating-a-table}
@@ -16,27 +17,25 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [mode = '',]
     [after_processing = 'keep',]
     [keeper_path = '',]
-    [s3queue_loading_retries = 0,]
-    [s3queue_processing_threads_num = 1,]
-    [s3queue_enable_logging_to_s3queue_log = 0,]
-    [s3queue_polling_min_timeout_ms = 1000,]
-    [s3queue_polling_max_timeout_ms = 10000,]
-    [s3queue_polling_backoff_ms = 0,]
-    [s3queue_tracked_file_ttl_sec = 0,]
-    [s3queue_tracked_files_limit = 1000,]
-    [s3queue_cleanup_interval_min_ms = 10000,]
-    [s3queue_cleanup_interval_max_ms = 30000,]
+    [loading_retries = 0,]
+    [processing_threads_num = 1,]
+    [enable_logging_to_s3queue_log = 0,]
+    [polling_min_timeout_ms = 1000,]
+    [polling_max_timeout_ms = 10000,]
+    [polling_backoff_ms = 0,]
+    [tracked_file_ttl_sec = 0,]
+    [tracked_files_limit = 1000,]
+    [cleanup_interval_min_ms = 10000,]
+    [cleanup_interval_max_ms = 30000,]
 ```
 
-Starting with `24.7` settings without `s3queue_` prefix are also supported.
+:::warning
+Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
+:::
 
 **Engine parameters**
 
-- `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
-- `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](../../../interfaces/formats.md#formats) of the file.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
-- `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will autodetect compression by file extension.
+`S3Queue` parameters are the same as `S3` table engine supports. See parameters section [here](../../../engines/table-engines/integrations/s3.md#parameters).
 
 **Example**
 
@@ -75,7 +74,7 @@ SETTINGS
 Possible values:
 
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
-- ordered — With ordered mode, only the max name of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
+- ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
 
@@ -191,6 +190,15 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
+
+## S3Queue Ordered mode {#ordered-mode}
+
+`S3Queue` processing mode allows to store less metadata in ZooKeeper, but has a limitation that files, which added later by time, are required to have alphanumerically bigger names.
+
+`S3Queue` `ordered` mode, as well as `unordered`, supports `(s3queue_)processing_threads_num` setting (`s3queue_` prefix is optional), which allows to control number of threads, which would do processing of `S3` files locally on the server.
+In addition, `ordered` mode also introduces another setting called `(s3queue_)buckets` which means "logical threads". It means that in distributed scenario, when there are several servers with `S3Queue` table replicas, where this setting defines the number of processing units. E.g. each processing thread on each `S3Queue` replica will try to lock a certain `bucket` for processing, each `bucket` is attributed to certain files by hash of the file name. Therefore, in distributed scenario it is highly recommended to have `(s3queue_)buckets` setting to be at least equal to the number of replicas or bigger. This is fine to have the number of buckets bigger than the number of replicas. The most optimal scenario would be for `(s3queue_)buckets` setting to equal a multiplication of `number_of_replicas` and `(s3queue_)processing_threads_num`.
+The setting `(s3queue_)processing_threads_num` is not recommended for usage before version `24.6`.
+The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
 ## Description {#description}
 

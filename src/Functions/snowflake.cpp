@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_snowflake_conversion_functions;
+    extern const SettingsBool allow_nonconst_timezone_arguments;
+}
 
 namespace ErrorCodes
 {
@@ -51,7 +57,7 @@ public:
     }
 
     explicit FunctionDateTimeToSnowflake(ContextPtr context)
-        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
+        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
     {}
 
     String getName() const override { return name; }
@@ -64,7 +70,7 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -103,8 +109,8 @@ public:
     }
 
     explicit FunctionSnowflakeToDateTime(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
-        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
+        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
     {}
 
     String getName() const override { return name; }
@@ -121,7 +127,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         String timezone;
         if (arguments.size() == 2)
@@ -177,7 +183,7 @@ public:
     }
 
     explicit FunctionDateTime64ToSnowflake(ContextPtr context)
-        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
+        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
     {}
 
     String getName() const override { return name; }
@@ -190,7 +196,7 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -237,8 +243,8 @@ public:
     }
 
     explicit FunctionSnowflakeToDateTime64(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
-        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
+        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
     {}
 
     String getName() const override { return name; }
@@ -255,7 +261,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         String timezone;
         if (arguments.size() == 2)

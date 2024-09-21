@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
@@ -182,7 +183,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (name->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.safeGet<String>());
         if (!maybe_qualified_name)
             return;
 
@@ -193,7 +194,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (literal->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
         /// Just return if name if invalid
         if (!maybe_qualified_name)
             return;
@@ -210,6 +211,13 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
         qualified_name.database = table_identifier->getDatabaseName();
         qualified_name.table = table_identifier->shortName();
+    }
+    else if (arg->as<ASTSubquery>())
+    {
+        /// Allow IN subquery.
+        /// Do not add tables from the subquery into dependencies,
+        /// because CREATE will succeed anyway.
+        return;
     }
     else
     {

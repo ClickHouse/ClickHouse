@@ -1,9 +1,11 @@
+#include <Core/FormatFactorySettings.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
-#include <Formats/FormatFactory.h>
 
 namespace DB
 {
@@ -32,20 +34,12 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
-        FormatFactorySettings user_format_settings;
-
-        // Apply changed settings from global context, but ignore the
-        // unknown ones, because we only have the format settings here.
-        const auto & changes = context->getSettingsRef().changes();
-        for (const auto & change : changes)
-        {
-            if (user_format_settings.has(change.name))
-                user_format_settings.set(change.name, change.value);
-        }
+        Settings settings = context->getSettingsCopy();
 
         // Apply changes from SETTINGS clause, with validation.
-        user_format_settings.applyChanges(args.storage_def->settings->changes);
-        format_settings = getFormatSettings(context, user_format_settings);
+        settings.applyChanges(args.storage_def->settings->changes);
+
+        format_settings = getFormatSettings(context, settings);
     }
     else
     {

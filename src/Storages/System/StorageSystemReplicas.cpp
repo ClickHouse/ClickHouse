@@ -285,7 +285,7 @@ private:
     const bool with_zk_fields;
     const size_t max_block_size;
     std::shared_ptr<StorageSystemReplicasImpl> impl;
-    const ActionsDAG::Node * predicate = nullptr;
+    ExpressionActionsPtr virtual_columns_filter;
 };
 
 void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -293,7 +293,18 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        Block block_to_filter
+        {
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
+        };
+
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        if (dag)
+            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
 }
 
 void StorageSystemReplicas::read(
@@ -430,7 +441,8 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+        if (virtual_columns_filter)
+            VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
 
         if (!filtered_block.rows())
         {
@@ -518,9 +530,9 @@ Chunk SystemReplicasSource::generate()
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
-        res_columns[col_num++]->insert(status.zookeeper_name);
-        res_columns[col_num++]->insert(status.zookeeper_path);
-        res_columns[col_num++]->insert(status.replica_name);
+        res_columns[col_num++]->insert(status.zookeeper_info.zookeeper_name);
+        res_columns[col_num++]->insert(status.zookeeper_info.path);
+        res_columns[col_num++]->insert(status.zookeeper_info.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
         res_columns[col_num++]->insert(status.columns_version);
         res_columns[col_num++]->insert(status.queue.queue_size);

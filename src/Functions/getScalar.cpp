@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <Core/Block.h>
 #include <Core/Field.h>
 
 
@@ -48,6 +49,8 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isServerConstant() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -104,6 +107,8 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+
+    bool isServerConstant() const override { return true; }
 
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 

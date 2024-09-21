@@ -2,8 +2,10 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -24,11 +26,16 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <TableFunctions/TableFunctionFactory.h>
+
 #include <unordered_map>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool normalize_function_names;
+}
 
 namespace ErrorCodes
 {
@@ -72,7 +79,8 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
-    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getSettingsRef()[Setting::normalize_function_names])
         FunctionNameNormalizer::visit(ast.get());
 
     auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
@@ -89,7 +97,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     ColumnPtr result_column;
     DataTypePtr result_type;
     String result_name = ast->getColumnName();
-    for (const auto & action_node : actions->getOutputs())
+    for (const auto & action_node : actions.getOutputs())
     {
         if ((action_node->result_name == result_name) && action_node->column)
         {
@@ -295,7 +303,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -677,9 +685,9 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     size_t max_elements)
 {
     auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    auto matches = matchTrees(expr, *inverted_dag, false);
+    auto matches = matchTrees(expr, inverted_dag, false);
 
-    auto predicates = analyze(inverted_dag->getOutputs().at(0), matches, context, max_elements);
+    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
 
     if (!predicates)
         return {};
@@ -790,7 +798,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
     else if (const auto * literal = node->as<ASTLiteral>())
     {
         // Check if it's always true or false.
-        if (literal->value.getType() == Field::Types::UInt64 && literal->value.get<UInt64>() == 0)
+        if (literal->value.getType() == Field::Types::UInt64 && literal->value.safeGet<UInt64>() == 0)
             return {result};
         else
             return {};

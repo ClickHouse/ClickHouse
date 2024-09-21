@@ -16,8 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 #define EXTRACT_VECTOR(INDEX) \
@@ -130,7 +130,7 @@ namespace ErrorCodes
            MASK(8, 6, col6->getUInt(i)), \
            MASK(8, 7, col7->getUInt(i))) \
      \
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, \
+    throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, \
                     "Illegal number of UInt arguments of function {}, max: 8", \
                     getName()); \
 

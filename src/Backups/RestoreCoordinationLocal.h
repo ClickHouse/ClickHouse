@@ -1,16 +1,17 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/CreateQueryUUIDs.h>
+#include <Common/Logger.h>
 #include <mutex>
 #include <set>
 #include <unordered_set>
 
-namespace Poco { class Logger; }
-
 
 namespace DB
 {
+class ASTCreateQuery;
+
 
 /// Implementation of the IRestoreCoordination interface performing coordination in memory.
 class RestoreCoordinationLocal : public IRestoreCoordination
@@ -55,7 +56,7 @@ private:
 
     std::set<std::pair<String /* database_zk_path */, String /* table_name */>> acquired_tables_in_replicated_databases;
     std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables;
-    std::unordered_map<String, ASTCreateQuery::UUIDs> create_query_uuids;
+    std::unordered_map<String, CreateQueryUUIDs> create_query_uuids;
     std::unordered_set<String /* root_zk_path */> acquired_data_in_keeper_map_tables;
 
     mutable std::mutex mutex;

@@ -89,6 +89,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -346,7 +348,7 @@ void AggregatingInOrderTransform::generate()
     variants.aggregates_pool = variants.aggregates_pools.at(0).get();
 
     /// Pass info about used memory by aggregate functions further.
-    to_push_chunk.setChunkInfo(std::make_shared<ChunkInfoWithAllocatedBytes>(cur_block_bytes));
+    to_push_chunk.getChunkInfos().add(std::make_shared<ChunkInfoWithAllocatedBytes>(cur_block_bytes));
 
     cur_block_bytes = 0;
     cur_block_size = 0;
@@ -365,11 +367,12 @@ FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, Aggregati
 void FinalizeAggregatedTransform::transform(Chunk & chunk)
 {
     if (params->final)
-        finalizeChunk(chunk, aggregates_mask);
-    else if (!chunk.getChunkInfo())
     {
-        auto info = std::make_shared<AggregatedChunkInfo>();
-        chunk.setChunkInfo(std::move(info));
+        finalizeChunk(chunk, aggregates_mask);
+    }
+    else if (!chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    {
+        chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
     }
 }
 

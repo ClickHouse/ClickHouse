@@ -144,6 +144,16 @@ protected:
 };
 
 
+/** Similar to ParserFunction (and yields ASTFunction), but can also parse identifiers without braces.
+  */
+class ParserExpressionWithOptionalArguments : public IParserBase
+{
+protected:
+    const char * getName() const override { return "expression with optional parameters"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** An expression with an infix binary left-associative operator.
   * For example, a + b - c + d.
   */
