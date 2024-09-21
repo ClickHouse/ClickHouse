@@ -38,7 +38,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         }
 
         auto metadata_storage = MetadataStorageFactory::instance().create(
-            name, config, config_prefix, object_storage, compatibility_metadata_type_hint);
+            name, config, config_prefix, object_storage, compatibility_metadata_type_hint, true);
 
         DiskObjectStoragePtr disk = std::make_shared<DiskObjectStorage>(
             name,
