@@ -50,7 +50,8 @@ WorkloadEntityType getEntityType(const ASTPtr & ptr)
 }
 
 WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_)
-    : global_context(std::move(global_context_))
+    : handlers(std::make_shared<Handlers>())
+    , global_context(std::move(global_context_))
 {}
 
 ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
