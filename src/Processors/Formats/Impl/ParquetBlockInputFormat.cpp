@@ -344,8 +344,8 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
                 /// Allow conversion in some simple cases, otherwise ignore the min/max values.
                 auto min_type = min.getType();
                 auto max_type = max.getType();
-                min = convertFieldToType(min, *type);
-                max = convertFieldToType(max, *type);
+                min = tryConvertFieldToType(min, *type);
+                max = tryConvertFieldToType(max, *type);
                 auto ok_cast = [&](Field::Types::Which from, Field::Types::Which to) -> bool
                 {
                     if (from == to)

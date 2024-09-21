@@ -10,6 +10,8 @@ http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny	2014-03-18	http:/
 http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny	2014-03-19	http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny
 http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny	2014-03-20	http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny
 1
-SortingAggregatedTransform
 MergingAggregatedBucketTransform
-GroupingAggregatedTransform
+FinishAggregatingInOrderTransform
+FinalizeAggregatedTransform
+AggregatingInOrderTransform
+MergeTreeSelect

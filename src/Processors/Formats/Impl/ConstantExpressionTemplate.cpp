@@ -32,6 +32,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -543,7 +548,8 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
+        IParser::Pos iterator(
+            token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;

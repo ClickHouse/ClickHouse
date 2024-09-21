@@ -506,14 +506,23 @@ bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
         return false;
     node->args.push_back(std::move(path));
 
+    ASTPtr remove_nodes_limit;
+    if (ParserUnsignedInteger{}.parse(pos, remove_nodes_limit, expected))
+        node->args.push_back(remove_nodes_limit->as<ASTLiteral &>().value);
+    else
+        node->args.push_back(UInt64(100));
+
     return true;
 }
 
 void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    UInt64 remove_nodes_limit = query->args[1].safeGet<UInt64>();
+
     client->askConfirmation(
-        "You are going to recursively delete path " + path, [client, path] { client->zookeeper->removeRecursive(path); });
+        "You are going to recursively delete path " + path,
+        [client, path, remove_nodes_limit] { client->zookeeper->removeRecursive(path, static_cast<UInt32>(remove_nodes_limit)); });
 }
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
