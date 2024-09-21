@@ -99,6 +99,7 @@ namespace Setting
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
 namespace ErrorCodes
@@ -1134,8 +1135,32 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
     setInMemoryMetadata(storage_metadata);
+    setSerializationHints(args.getContext());
 }
 
+void StorageFile::setSerializationHints(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])
+        return;
+
+    auto insertion_table = context->getInsertionTable();
+    if (!insertion_table)
+        return;
+
+    auto storage_ptr = DatabaseCatalog::instance().tryGetTable(insertion_table, context);
+    if (!storage_ptr)
+        return;
+
+    const auto & our_columns = getInMemoryMetadataPtr()->getColumns();
+    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+    auto storage_hints = storage_ptr->getSerializationHints();
+
+    for (const auto & hint : storage_hints)
+    {
+        if (our_columns.tryGetPhysical(hint.first) == storage_columns.tryGetPhysical(hint.first))
+            serialization_hints.insert(hint);
+    }
+}
 
 static std::chrono::seconds getLockTimeout(const ContextPtr & context)
 {
@@ -1438,6 +1463,8 @@ Chunk StorageFileSource::generate()
             input_format = FormatFactory::instance().getInput(
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
+
+            input_format->setSerializationHints(storage->serialization_hints);
 
             if (key_condition)
                 input_format->setKeyCondition(key_condition);

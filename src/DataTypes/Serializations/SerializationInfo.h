@@ -99,6 +99,7 @@ public:
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
+    ISerialization::Kind getKind(const String & column_name) const;
 
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,

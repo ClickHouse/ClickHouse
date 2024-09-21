@@ -10,6 +10,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
+#include "DataTypes/Serializations/ISerialization.h"
 
 
 namespace DB
@@ -222,6 +223,12 @@ void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
         else
             old_info = new_info->clone();
     }
+}
+
+ISerialization::Kind SerializationInfoByName::getKind(const String & column_name) const
+{
+    auto it = find(column_name);
+    return it != end() ? it->second->getKind() : ISerialization::Kind::DEFAULT;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
