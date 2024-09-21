@@ -22,6 +22,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_lightweight_delete;
+    extern const SettingsUInt64 lightweight_deletes_sync;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -64,7 +70,7 @@ BlockIO InterpreterDeleteQuery::execute()
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     if (table->supportsDelete())
@@ -86,7 +92,7 @@ BlockIO InterpreterDeleteQuery::execute()
     }
     else if (table->supportsLightweightDelete())
     {
-        if (!getContext()->getSettingsRef().enable_lightweight_delete)
+        if (!getContext()->getSettingsRef()[Setting::enable_lightweight_delete])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Lightweight delete mutate is disabled. "
                             "Set `enable_lightweight_delete` setting to enable it");
@@ -107,7 +113,9 @@ BlockIO InterpreterDeleteQuery::execute()
         String alter_query =
             "ALTER TABLE " + table->getStorageID().getFullTableName()
             + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-            + " UPDATE `_row_exists` = 0 WHERE " + serializeAST(*delete_query.predicate);
+            + " UPDATE `_row_exists` = 0"
+            + (delete_query.partition ? " IN PARTITION " + serializeAST(*delete_query.partition) : "")
+            + " WHERE " + serializeAST(*delete_query.predicate);
 
         ParserAlterQuery parser;
         ASTPtr alter_ast = parseQuery(
@@ -120,7 +128,7 @@ BlockIO InterpreterDeleteQuery::execute()
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto context = Context::createCopy(getContext());
-        context->setSetting("mutations_sync", Field(context->getSettingsRef().lightweight_deletes_sync));
+        context->setSetting("mutations_sync", Field(context->getSettingsRef()[Setting::lightweight_deletes_sync]));
         InterpreterAlterQuery alter_interpreter(alter_ast, context);
         return alter_interpreter.execute();
     }

@@ -1,24 +1,36 @@
-#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
+#include <filesystem>
+#include <Core/Settings.h>
+#include <IO/FileEncryptionCommon.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <boost/algorithm/hex.hpp>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/Settings.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
-#include <Interpreters/Context.h>
-#include <filesystem>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
+
 namespace ErrorCodes
 {
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
@@ -26,6 +38,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static const std::string named_collections_storage_config_path = "named_collections_storage";
@@ -74,9 +87,9 @@ public:
 };
 
 
-class NamedCollectionsMetadataStorage::LocalStorage : public INamedCollectionsStorage, private WithContext
+class NamedCollectionsMetadataStorage::LocalStorage : public INamedCollectionsStorage, protected WithContext
 {
-private:
+protected:
     std::string root_path;
 
 public:
@@ -126,6 +139,11 @@ public:
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
         readStringUntilEOF(data, in);
+        return readHook(data);
+    }
+
+    virtual std::string readHook(const std::string & data) const
+    {
         return data;
     }
 
@@ -142,15 +160,21 @@ public:
         fs::create_directories(root_path);
 
         auto tmp_path = getPath(file_name + ".tmp");
-        WriteBufferFromFile out(tmp_path, data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(data, out);
+        auto write_data = writeHook(data);
+        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(write_data, out);
 
         out.next();
-        if (getContext()->getSettingsRef().fsync_metadata)
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
             out.sync();
         out.close();
 
         fs::rename(tmp_path, getPath(file_name));
+    }
+
+    virtual std::string writeHook(const std::string & data) const
+    {
+        return data;
     }
 
     void remove(const std::string & file_name) override
@@ -168,7 +192,7 @@ public:
         return fs::remove(getPath(file_name));
     }
 
-private:
+protected:
     std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
@@ -178,6 +202,7 @@ private:
         return fs::path(root_path) / file_name_as_path;
     }
 
+private:
     /// Delete .tmp files. They could be left undeleted in case of
     /// some exception or abrupt server restart.
     void cleanup()
@@ -194,8 +219,7 @@ private:
     }
 };
 
-
-class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectionsStorage, private WithContext
+class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectionsStorage, protected WithContext
 {
 private:
     std::string root_path;
@@ -275,18 +299,25 @@ public:
 
     std::string read(const std::string & file_name) const override
     {
-        return getClient()->get(getPath(file_name));
+        auto data = getClient()->get(getPath(file_name));
+        return readHook(data);
+    }
+
+    virtual std::string readHook(const std::string & data) const
+    {
+        return data;
     }
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
+        auto write_data = writeHook(data);
         if (replace)
         {
-            getClient()->createOrUpdate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            getClient()->createOrUpdate(getPath(file_name), write_data, zkutil::CreateMode::Persistent);
         }
         else
         {
-            auto code = getClient()->tryCreate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            auto code = getClient()->tryCreate(getPath(file_name), write_data, zkutil::CreateMode::Persistent);
 
             if (code == Coordination::Error::ZNODEEXISTS)
             {
@@ -296,6 +327,11 @@ public:
                     file_name);
             }
         }
+    }
+
+    virtual std::string writeHook(const std::string & data) const
+    {
+        return data;
     }
 
     void remove(const std::string & file_name) override
@@ -333,6 +369,93 @@ private:
         return fs::path(root_path) / file_name_as_path;
     }
 };
+
+#if USE_SSL
+
+template <typename BaseMetadataStorage>
+class NamedCollectionsMetadataStorageEncrypted : public BaseMetadataStorage
+{
+public:
+    NamedCollectionsMetadataStorageEncrypted(ContextPtr context_, const std::string & path_)
+        : BaseMetadataStorage(context_, path_)
+    {
+        const auto & config = BaseMetadataStorage::getContext()->getConfigRef();
+        auto key_hex = config.getRawString("named_collections_storage.key_hex", "");
+        try
+        {
+            key = boost::algorithm::unhex(key_hex);
+            key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
+        }
+        catch (const std::exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
+        }
+
+        algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
+    }
+
+    std::string readHook(const std::string & data) const override
+    {
+        ReadBufferFromString in(data);
+        Memory<> encrypted_buffer(data.length());
+
+        FileEncryption::Header header;
+        try
+        {
+            header.read(in);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While reading the header of encrypted data");
+            throw;
+        }
+
+        size_t bytes_read = 0;
+        while (bytes_read < encrypted_buffer.size() && !in.eof())
+        {
+            bytes_read += in.read(encrypted_buffer.data() + bytes_read, encrypted_buffer.size() - bytes_read);
+        }
+
+        std::string decrypted_buffer;
+        decrypted_buffer.resize(bytes_read);
+        FileEncryption::Encryptor encryptor(header.algorithm, key, header.init_vector);
+        encryptor.decrypt(encrypted_buffer.data(), bytes_read, decrypted_buffer.data());
+
+        return decrypted_buffer;
+    }
+
+    std::string writeHook(const std::string & data) const override
+    {
+        FileEncryption::Header header{
+            .algorithm = algorithm,
+            .key_fingerprint = key_fingerprint,
+            .init_vector = FileEncryption::InitVector::random()
+        };
+
+        FileEncryption::Encryptor encryptor(header.algorithm, key, header.init_vector);
+        WriteBufferFromOwnString out;
+        header.write(out);
+        encryptor.encrypt(data.data(), data.size(), out);
+        return std::string(out.str());
+    }
+
+private:
+    std::string key;
+    UInt128 key_fingerprint;
+    FileEncryption::Algorithm algorithm;
+};
+
+class NamedCollectionsMetadataStorage::LocalStorageEncrypted : public NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::LocalStorage>
+{
+    using NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::LocalStorage>::NamedCollectionsMetadataStorageEncrypted;
+};
+
+class NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted : public NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::ZooKeeperStorage>
+{
+    using NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::ZooKeeperStorage>::NamedCollectionsMetadataStorageEncrypted;
+};
+
+#endif
 
 NamedCollectionsMetadataStorage::NamedCollectionsMetadataStorage(
     std::shared_ptr<INamedCollectionsStorage> storage_,
@@ -458,7 +581,7 @@ ASTCreateNamedCollectionQuery NamedCollectionsMetadataStorage::readCreateQuery(c
     const auto & settings = getContext()->getSettingsRef();
 
     ParserCreateNamedCollectionQuery parser;
-    auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    auto ast = parseQuery(parser, query, "in file " + path, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     const auto & create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
     return create_query;
 }
@@ -495,7 +618,7 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
     const auto & config = context_->getConfigRef();
     const auto storage_type = config.getString(named_collections_storage_config_path + ".type", "local");
 
-    if (storage_type == "local")
+    if (storage_type == "local" || storage_type == "local_encrypted")
     {
         const auto path = config.getString(
             named_collections_storage_config_path + ".path",
@@ -504,14 +627,36 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
                   "Using local storage for named collections at path: {}", path);
 
-        auto local_storage = std::make_unique<NamedCollectionsMetadataStorage::LocalStorage>(context_, path);
+        std::unique_ptr<INamedCollectionsStorage> local_storage;
+        if (storage_type == "local")
+            local_storage = std::make_unique<NamedCollectionsMetadataStorage::LocalStorage>(context_, path);
+        else if (storage_type == "local_encrypted")
+        {
+#if USE_SSL
+            local_storage = std::make_unique<NamedCollectionsMetadataStorage::LocalStorageEncrypted>(context_, path);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Named collections encryption requires building with SSL support");
+#endif
+        }
+
         return std::unique_ptr<NamedCollectionsMetadataStorage>(
             new NamedCollectionsMetadataStorage(std::move(local_storage), context_));
     }
-    if (storage_type == "zookeeper" || storage_type == "keeper")
+    if (storage_type == "zookeeper" || storage_type == "keeper" || storage_type == "zookeeper_encrypted" || storage_type == "keeper_encrypted")
     {
         const auto path = config.getString(named_collections_storage_config_path + ".path");
-        auto zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorage>(context_, path);
+
+        std::unique_ptr<INamedCollectionsStorage> zk_storage;
+        if (!storage_type.ends_with("_encrypted"))
+            zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorage>(context_, path);
+        else
+        {
+#if USE_SSL
+            zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted>(context_, path);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Named collections encryption requires building with SSL support");
+#endif
+        }
 
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
                   "Using zookeeper storage for named collections at path: {}", path);
