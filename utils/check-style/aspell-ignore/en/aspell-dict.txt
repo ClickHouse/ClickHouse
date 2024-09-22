@@ -583,9 +583,6 @@ MinHash
 MinIO
 MinMax
 MindsDB
-mongoc
-mongocxx
-Mongo
 Mongodb
 Monotonicity
 MsgPack
@@ -2086,7 +2083,6 @@ minimalistic
 mininum
 miniselect
 minmap
-mflix
 minmax
 mins
 misconfiguration
