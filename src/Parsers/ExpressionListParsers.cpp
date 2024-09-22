@@ -1667,13 +1667,17 @@ public:
                 if (!mergeElement())
                     return false;
 
-                /// Skip replaceRegex if trying to TRIM an empty string to avoid exception
+                /// Trimming an empty string is a no-op.
                 ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
-                if (ast_literal && ast_literal->value.safeGet<String>().empty()) {
+                if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
+                {
                     char_override = false;
-               }
-
-                to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
+                }
+                else
+                {
+                    to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
+                }
+                
                 elements.clear();
                 state = 2;
             }
@@ -1707,7 +1711,8 @@ public:
                     {
                         if (trim_left)
                         {
-                            pattern_list_args->children = {
+                            pattern_list_args->children =
+                            {
                                 std::make_shared<ASTLiteral>("^["),
                                 to_remove,
                                 std::make_shared<ASTLiteral>("]+")
@@ -1716,7 +1721,8 @@ public:
                         else
                         {
                             /// trim_right == false not possible
-                            pattern_list_args->children = {
+                            pattern_list_args->children =
+                            {
                                 std::make_shared<ASTLiteral>("["),
                                 to_remove,
                                 std::make_shared<ASTLiteral>("]+$")
