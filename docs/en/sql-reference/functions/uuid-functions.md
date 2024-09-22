@@ -493,7 +493,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Arguments**
 
 - `uuid` — [UUID](../data-types/uuid.md) of version 7.
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -637,7 +637,7 @@ snowflakeToDateTime(value[, time_zone])
 **Arguments**
 
 - `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -678,7 +678,7 @@ snowflakeToDateTime64(value[, time_zone])
 **Arguments**
 
 - `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -793,7 +793,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 - `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
 - `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -829,7 +829,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 - `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
 - `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 

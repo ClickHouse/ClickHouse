@@ -4773,7 +4773,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
 The setting takes precedence over the globally configured (server-level) implicit time zone.
-A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#timezone).
 
 You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
 
@@ -4829,7 +4829,7 @@ This happens due to different parsing pipelines:
 
 **See also**
 
-- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [timezone](../server-configuration-parameters/settings.md#timezone)
 
 ## final {#final}
 
