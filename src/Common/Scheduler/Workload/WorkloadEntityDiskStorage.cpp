@@ -126,13 +126,6 @@ void WorkloadEntityDiskStorage::loadEntities()
 }
 
 
-void WorkloadEntityDiskStorage::reloadEntities()
-{
-    // TODO(serxa): it does not send notifications, maybe better to remove this method completely
-    loadEntitiesImpl();
-}
-
-
 void WorkloadEntityDiskStorage::loadEntitiesImpl()
 {
     LOG_INFO(log, "Loading workload entities from {}", dir_path);

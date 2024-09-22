@@ -13,10 +13,7 @@ class WorkloadEntityDiskStorage : public WorkloadEntityStorageBase
 {
 public:
     WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_);
-
     void loadEntities() override;
-
-    void reloadEntities() override;
 
 private:
     bool storeEntityImpl(

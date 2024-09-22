@@ -1,4 +1,3 @@
-#include "Common/Scheduler/IResourceManager.h"
 #include <Common/Scheduler/Nodes/IOResourceManager.h>
 
 #include <Common/Scheduler/Nodes/FifoQueue.h>
@@ -231,34 +230,34 @@ String IOResourceManager::Workload::getParent() const
 IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
     : storage(storage_)
 {
-    workload_change_subscription = storage.subscribeForChanges(WorkloadEntityType::Workload, [this] (
-            WorkloadEntityType,
-            const String & entity_name,
-            const ASTPtr & entity)
+    subscription = storage.getAllEntitiesAndSubscribe(
+        [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
             try
             {
-                if (entity)
-                    createOrUpdateWorkload(entity_name, entity);
-                else
-                    deleteWorkload(entity_name);
-            }
-            catch (...)
-            {
-                // TODO(serxa): handle CRUD errors
-            }
-        });
-    resource_change_subscription = storage.subscribeForChanges(WorkloadEntityType::Resource, [this] (
-            WorkloadEntityType,
-            const String & entity_name,
-            const ASTPtr & entity /* new or changed entity, null if removed */)
-        {
-            try
-            {
-                if (entity)
-                    createResource(entity_name, entity);
-                else
-                    deleteResource(entity_name);
+                for (auto [entity_type, entity_name, entity] : events)
+                {
+                    switch (entity_type)
+                    {
+                        case WorkloadEntityType::Workload:
+                        {
+                            if (entity)
+                                createOrUpdateWorkload(entity_name, entity);
+                            else
+                                deleteWorkload(entity_name);
+                            break;
+                        }
+                        case WorkloadEntityType::Resource:
+                        {
+                            if (entity)
+                                createResource(entity_name, entity);
+                            else
+                                deleteResource(entity_name);
+                            break;
+                        }
+                        case WorkloadEntityType::MAX: break;
+                    }
+                }
             }
             catch (...)
             {
@@ -269,8 +268,7 @@ IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
 
 IOResourceManager::~IOResourceManager()
 {
-    resource_change_subscription.reset();
-    workload_change_subscription.reset();
+    subscription.reset();
     resources.clear();
     workloads.clear();
 }

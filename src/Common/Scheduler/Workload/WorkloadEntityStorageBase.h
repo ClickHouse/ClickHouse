@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <list>
 #include <mutex>
-#include <queue>
 
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
@@ -45,8 +44,7 @@ public:
         const String & entity_name,
         bool throw_if_not_exists) override;
 
-    virtual scope_guard subscribeForChanges(
-        WorkloadEntityType entity_type,
+    virtual scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
 
 protected:
@@ -66,7 +64,9 @@ protected:
         bool throw_if_not_exists) = 0;
 
     std::unique_lock<std::recursive_mutex> getLock() const;
+
     void setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
+    void makeEventsForAllEntities(std::unique_lock<std::recursive_mutex> & lock);
     void removeAllEntitiesExcept(const Strings & entity_names_to_keep);
 
     /// Called by derived class after a new workload entity has been added.
@@ -80,25 +80,17 @@ protected:
 
     /// Sends notifications to subscribers about changes in workload entities
     /// (added with previous calls onEntityAdded(), onEntityUpdated(), onEntityRemoved()).
-    void sendNotifications();
+    void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock);
 
     struct Handlers
     {
         std::mutex mutex;
-        std::list<OnChangedHandler> by_type[static_cast<size_t>(WorkloadEntityType::MAX)];
+        std::list<OnChangedHandler> list;
     };
     /// shared_ptr is here for safety because WorkloadEntityStorageBase can be destroyed before all subscriptions are removed.
     std::shared_ptr<Handlers> handlers;
 
-    struct Event
-    {
-        WorkloadEntityType type;
-        String name;
-        ASTPtr entity;
-    };
-    std::queue<Event> queue;
-    std::mutex queue_mutex;
-    std::mutex sending_notifications;
+    std::vector<Event> queue;
 
     mutable std::recursive_mutex mutex;
     std::unordered_map<String, ASTPtr> entities; // Maps entity name into CREATE entity query

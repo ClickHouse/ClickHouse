@@ -262,8 +262,7 @@ private:
     std::vector<Workload *> topologicallySortedWorkloads();
 
     IWorkloadEntityStorage & storage;
-    scope_guard workload_change_subscription;
-    scope_guard resource_change_subscription;
+    scope_guard subscription;
 
     std::mutex mutex;
     std::unordered_map<String, WorkloadPtr> workloads; // TSA_GUARDED_BY(mutex);

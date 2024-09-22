@@ -59,9 +59,6 @@ public:
     /// Stops watching.
     virtual void stopWatching() {}
 
-    /// Immediately reloads all entities, throws an exception if failed.
-    virtual void reloadEntities() = 0;
-
     /// Stores an entity.
     virtual bool storeEntity(
         const ContextPtr & current_context,
@@ -79,15 +76,16 @@ public:
         const String & entity_name,
         bool throw_if_not_exists) = 0;
 
-    using OnChangedHandler = std::function<void(
-        WorkloadEntityType /* entity_type */,
-        const String & /* entity_name */,
-        const ASTPtr & /* new or changed entity, null if removed */)>;
+    struct Event
+    {
+        WorkloadEntityType type;
+        String name;
+        ASTPtr entity; /// new or changed entity, null if removed
+    };
+    using OnChangedHandler = std::function<void(const std::vector<Event> &)>;
 
-    /// Subscribes for all changes.
-    virtual scope_guard subscribeForChanges(
-        WorkloadEntityType entity_type,
-        const OnChangedHandler & handler) = 0;
+    /// Gets all current entries, pass them through `handler` and subscribes for all later changes.
+    virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
 };
 
 }
