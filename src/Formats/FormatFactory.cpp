@@ -313,7 +313,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
-    format_settings.enum_input_format_interpret_strings_with_integers = settings[Settings::enum_input_format_interpret_strings_with_integers];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context

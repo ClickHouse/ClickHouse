@@ -49,7 +49,6 @@ struct FormatSettings
     bool try_infer_datetimes = true;
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
-    bool cast_keys_to_string_from_json = true;
 
     enum class DateTimeInputFormat : uint8_t
     {

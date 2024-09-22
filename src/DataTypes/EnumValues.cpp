@@ -54,34 +54,20 @@ void EnumValues<T>::fillMaps()
 }
 
 template <typename T>
-T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id, bool cast_keys_to_string_from_json) const
+T EnumValues<T>::getValue(StringRef field_name) const
 {
     auto it = name_to_value_map.find(field_name);
-    if (!it && cast_keys_to_string_from_json)
+    if (it == name_to_value_map.end())
     {
-        for (const auto& item : name_to_value_map)
-        {
-            if (item.getValue().second == parseFromString<int>(field_name.toView()))
-            {
-                it = name_to_value_map.find(item.getKey());
-            }
-        }
-    }
+        /// If we fail to find given string in enum names, we will try to treat it as enum id.
+        T x;
+        ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
+        readText(x, tmp_buf);
+        /// Check if we reached end of the tmp_buf (otherwise field_name is not a number)
+        /// and try to find it in enum ids
+        if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
+            return x;
 
-    if (!it)
-    {
-        /// It is used in CSV and TSV input formats. If we fail to find given string in
-        /// enum names, we will try to treat it as enum id.
-        if (try_treat_as_id)
-        {
-            T x;
-            ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
-            readText(x, tmp_buf);
-            /// Check if we reached end of the tmp_buf (otherwise field_name is not a number)
-            /// and try to find it in enum ids
-            if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
-                return x;
-        }
         auto hints = this->getHints(field_name.toString());
         auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element '{}' for enum{}", field_name.toString(), hints_string);
@@ -90,30 +76,14 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id, bool cast_
 }
 
 template <typename T>
-bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_id, bool cast_keys_to_string_from_json) const
+bool EnumValues<T>::tryGetValue(T & x, StringRef field_name) const
 {
     auto it = name_to_value_map.find(field_name);
-    if (cast_keys_to_string_from_json)
+    if (it == name_to_value_map.end())
     {
-        for (const auto& item : name_to_value_map)
-        {
-            if (item.getValue().second == parseFromString<int>(field_name.toView()))
-            {
-                it = name_to_value_map.find(item.getKey());
-            }
-        }
-    }
-
-    if (!it)
-    {
-        /// It is used in CSV and TSV input formats. If we fail to find given string in
-        /// enum names, we will try to treat it as enum id.
-        if (try_treat_as_id)
-        {
-            ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
-            return tryReadText(x, tmp_buf) && tmp_buf.eof() && value_to_name_map.contains(x);
-        }
-        return false;
+        /// If we fail to find given string in enum names, we will try to treat it as enum id.
+        ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
+        return tryReadText(x, tmp_buf) && tmp_buf.eof() && value_to_name_map.contains(x);
     }
     x = it->getMapped();
     return true;
