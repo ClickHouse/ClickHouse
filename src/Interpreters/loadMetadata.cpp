@@ -382,7 +382,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
 
 /// Converts database with Ordinary engine to Atomic. Does nothing if database is not Ordinary.
 /// Can be called only during server startup when there are no queries from users.
-static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, LoadTaskPtrs * startup_tasks = nullptr)
+static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, const LoadTaskPtrs & load_system_metadata_tasks = {})
 {
     LoggerPtr log = getLogger("loadMetadata");
 
@@ -409,12 +409,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
     try
     {
-        if (startup_tasks) // NOTE: only for system database
-        {
-            /// It's not quite correct to run DDL queries while database is not started up.
-            waitLoad(TablesLoaderForegroundPoolId, *startup_tasks);
-            startup_tasks->clear();
-        }
+        /// It's not quite correct to run DDL queries while database is not started up.
+        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
         auto local_context = Context::createCopy(context);
 
@@ -464,13 +460,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
         waitLoad(TablesLoaderForegroundPoolId, loader.loadTablesAsync());
-
-        /// Startup tables if they were started before conversion and detach/attach
-        if (startup_tasks) // NOTE: only for system database
-            *startup_tasks = loader.startupTablesAsync(); // We have loaded old database(s), replace tasks to startup new database
-        else
-            // An old database was already loaded, so we should load new one as well
-            waitLoad(TablesLoaderForegroundPoolId, loader.startupTablesAsync());
+        waitLoad(TablesLoaderForegroundPoolId, loader.startupTablesAsync());
     }
     catch (Exception & e)
     {
@@ -482,13 +472,13 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     }
 }
 
-void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks)
+void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & load_system_metadata_tasks)
 {
     /// TODO remove this check, convert system database unconditionally
     if (context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
         return;
 
-    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, &system_startup_tasks);
+    maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, load_system_metadata_tasks);
 }
 
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
@@ -511,7 +501,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     fs::remove(convert_flag_path);
 }
 
-LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
 {
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
@@ -524,11 +514,28 @@ LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)
         {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-    auto tasks = loader.loadTablesAsync();
-    waitLoad(TablesLoaderForegroundPoolId, tasks);
 
-    /// Will startup tables in system database after all databases are loaded.
-    return loader.startupTablesAsync();
+    auto load_tasks = loader.loadTablesAsync();
+    auto startup_tasks = loader.startupTablesAsync();
+
+    if (async_load_system_database)
+    {
+        scheduleLoad(load_tasks);
+        scheduleLoad(startup_tasks);
+
+        // Do NOT wait, just return tasks for continuation or later wait.
+        return joinTasks(load_tasks, startup_tasks);
+    }
+    else
+    {
+        waitLoad(TablesLoaderForegroundPoolId, load_tasks);
+
+        /// This has to be done before the initialization of system logs `initializeSystemLogs()`,
+        /// otherwise there is a race condition between the system database initialization
+        /// and creation of new tables in the database.
+        waitLoad(TablesLoaderForegroundPoolId, startup_tasks);
+        return {};
+    }
 }
 
 }
