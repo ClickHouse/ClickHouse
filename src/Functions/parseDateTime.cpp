@@ -24,6 +24,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+    extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -565,8 +571,8 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
 
         explicit FunctionParseDateTimeImpl(ContextPtr context)
-            : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
-            , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef().parsedatetime_parse_without_leading_zeros)
+            : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
+            , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
         {
         }
 

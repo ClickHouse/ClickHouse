@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 extract_key_value_pairs_max_pairs_per_row;
+}
+
 template <typename Name, bool WITH_ESCAPING>
 class ExtractKeyValuePairs : public IFunction
 {
@@ -44,11 +49,11 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row == 0;
+        bool is_number_of_pairs_unlimited = context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row] == 0;
 
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row);
+            builder.withMaxNumberOfPairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row]);
         }
 
         return builder.build();

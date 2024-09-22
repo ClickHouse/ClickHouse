@@ -7,6 +7,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_sharing_sets_for_mutations;
+}
 
 namespace ErrorCodes
 {
@@ -52,7 +56,7 @@ void MutatePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
-    if (task_context->getSettingsRef().enable_sharing_sets_for_mutations)
+    if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
     {
         /// If we have a prepared sets cache for this mutations, we will use it.
         auto mutation_id = future_part->part_info.mutation;
@@ -98,7 +102,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction);
+                storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
+                transaction.renameParts();
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");
