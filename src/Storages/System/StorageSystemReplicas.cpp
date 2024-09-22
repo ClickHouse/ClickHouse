@@ -530,9 +530,9 @@ Chunk SystemReplicasSource::generate()
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
-        res_columns[col_num++]->insert(status.zookeeper_name);
-        res_columns[col_num++]->insert(status.zookeeper_path);
-        res_columns[col_num++]->insert(status.replica_name);
+        res_columns[col_num++]->insert(status.zookeeper_info.zookeeper_name);
+        res_columns[col_num++]->insert(status.zookeeper_info.path);
+        res_columns[col_num++]->insert(status.zookeeper_info.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
         res_columns[col_num++]->insert(status.columns_version);
         res_columns[col_num++]->insert(status.queue.queue_size);
