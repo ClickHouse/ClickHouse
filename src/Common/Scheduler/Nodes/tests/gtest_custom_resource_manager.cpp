@@ -2,15 +2,15 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/DynamicResourceManager.h>
+#include <Common/Scheduler/Nodes/CustomResourceManager.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 using namespace DB;
 
-using ResourceTest = ResourceTestManager<DynamicResourceManager>;
+using ResourceTest = ResourceTestManager<CustomResourceManager>;
 using TestGuard = ResourceTest::Guard;
 
-TEST(SchedulerDynamicResourceManager, Smoke)
+TEST(SchedulerCustomResourceManager, Smoke)
 {
     ResourceTest t;
 
@@ -49,7 +49,7 @@ TEST(SchedulerDynamicResourceManager, Smoke)
     }
 }
 
-TEST(SchedulerDynamicResourceManager, Fairness)
+TEST(SchedulerCustomResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
     // Requests from A use `value = 1` and from B `value = -1` is used.
