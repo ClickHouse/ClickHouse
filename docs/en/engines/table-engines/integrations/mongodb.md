@@ -42,8 +42,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 - `options` — MongoDB connection string options (optional parameter).
 
 :::tip
-If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
-Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
+If you are using the MongoDB Atlas cloud offering:
+
+```
+- connection url can be obtained from 'Atlas SQL' option
+- use options: 'connectTimeoutMS=10000&ssl=true&authSource=admin'
+```
 :::
 
 Also, you can simply pass a URI:
@@ -120,7 +124,7 @@ CREATE TABLE sample_mflix_table
     released Date,
     imdb String,
     year String,
-) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
+) ENGINE = MongoDB('mongodb+srv://<USERNAME>:<PASSWORD>@cluster0.cdojylq.mongodb.net/sample_mflix', 'movies');
 ```
 
 Query:
