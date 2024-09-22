@@ -62,6 +62,14 @@ ColumnsDescription StorageSystemReplicationQueue::getColumnsDescription()
 }
 
 
+Block StorageSystemReplicationQueue::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
+
 void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();

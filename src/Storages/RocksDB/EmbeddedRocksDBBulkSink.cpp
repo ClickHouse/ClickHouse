@@ -30,6 +30,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 min_insert_block_size_rows;
+}
 
 namespace ErrorCodes
 {
@@ -86,7 +90,8 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     }
 
     serializations = getHeader().getSerializations();
-    min_block_size_rows = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef().min_insert_block_size_rows);
+    min_block_size_rows
+        = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef()[Setting::min_insert_block_size_rows]);
 
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable
@@ -219,7 +224,7 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
     return {std::move(serialized_key_column), std::move(serialized_value_column)};
 }
 
-void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
+void EmbeddedRocksDBBulkSink::consume(Chunk & chunk_)
 {
     std::vector<Chunk> chunks_to_write = squash(std::move(chunk_));
 
@@ -249,7 +254,10 @@ void EmbeddedRocksDBBulkSink::onFinish()
 {
     /// If there is any data left, write it.
     if (!chunks.empty())
-        consume({});
+    {
+        Chunk empty;
+        consume(empty);
+    }
 }
 
 String EmbeddedRocksDBBulkSink::getTemporarySSTFilePath()

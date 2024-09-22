@@ -1,8 +1,11 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
 
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
+
+set(MAX_LINKER_MEMORY 3500)
+include(../cmake/limit_jobs.cmake)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 

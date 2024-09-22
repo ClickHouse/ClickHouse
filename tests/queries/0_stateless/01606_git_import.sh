@@ -19,7 +19,7 @@ done
 
 ${CLICKHOUSE_GIT_IMPORT} 2>&1 | wc -l
 
-${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
+${CLICKHOUSE_CLIENT} --multiline --query "
 
 DROP TABLE IF EXISTS commits;
 DROP TABLE IF EXISTS file_changes;
@@ -122,7 +122,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM commits"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM file_changes"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), round(avg(indent), 1) FROM line_changes"
 
-${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
+${CLICKHOUSE_CLIENT} --multiline --query "
 DROP TABLE commits;
 DROP TABLE file_changes;
 DROP TABLE line_changes;

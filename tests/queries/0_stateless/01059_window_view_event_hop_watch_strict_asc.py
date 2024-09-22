@@ -20,13 +20,13 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.expect(prompt)
 
-    client1.send("SET allow_experimental_analyzer = 0")
+    client1.send("SET enable_analyzer = 0")
     client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
     client1.send("SET window_view_heartbeat_interval = 1")
     client1.expect(prompt)
-    client2.send("SET allow_experimental_analyzer = 0")
+    client2.send("SET enable_analyzer = 0")
     client2.expect(prompt)
 
     client1.send("CREATE DATABASE IF NOT EXISTS db_01059_event_hop_watch_strict_asc")

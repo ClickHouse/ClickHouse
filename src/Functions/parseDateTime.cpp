@@ -24,6 +24,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+    extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -565,8 +571,8 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
 
         explicit FunctionParseDateTimeImpl(ContextPtr context)
-            : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
-            , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef().parsedatetime_parse_without_leading_zeros)
+            : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
+            , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
         {
         }
 
@@ -582,11 +588,11 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
-                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
             };
 
             FunctionArgumentDescriptors optional_args{
+                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
                 {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
             };
 
@@ -2029,14 +2035,24 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            if (!format_column)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                    arguments[1].column->getName(),
-                    getName());
-            return format_column->getValue<String>();
+            if (arguments.size() == 1)
+            {
+                if constexpr (parse_syntax == ParseSyntax::MySQL)
+                    return "%Y-%m-%d %H:%i:%s";
+                else
+                    return "yyyy-MM-dd HH:mm:ss";
+            }
+            else
+            {
+                const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+                if (!col_format)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
+                        arguments[1].column->getName(),
+                        getName());
+                return col_format->getValue<String>();
+            }
         }
 
         const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
@@ -2098,10 +2114,10 @@ namespace
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
-    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionParseDateTimeOrZero>();
     factory.registerFunction<FunctionParseDateTimeOrNull>();
-    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();

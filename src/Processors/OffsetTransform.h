@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
 #include <Core/SortDescription.h>
+#include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeStepCounter.h>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ private:
     UInt64 offset;
     UInt64 rows_read = 0; /// including the last read block
 
-    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
+    RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
     /// Chunks from different port pairs are not mixed for better cache locality.
@@ -45,7 +45,7 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
 };
 
 }

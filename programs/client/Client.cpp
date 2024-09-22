@@ -56,6 +56,12 @@ using namespace std::literals;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsDialect dialect;
+    extern const SettingsBool use_client_time_zone;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -186,6 +192,8 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
+        if (config.has(prefix + ".accept-invalid-certificate"))
+            config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -207,8 +215,8 @@ std::vector<String> Client::loadWarningMessages()
                           {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
-                          &global_context->getSettingsRef(),
-                          &global_context->getClientInfo(), false, {});
+                          &client_context->getSettingsRef(),
+                          &client_context->getClientInfo(), false, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -221,7 +229,7 @@ std::vector<String> Client::loadWarningMessages()
 
                     size_t rows = packet.block.rows();
                     for (size_t i = 0; i < rows; ++i)
-                        messages.emplace_back(column[i].get<String>());
+                        messages.emplace_back(column[i].safeGet<String>());
                 }
                 continue;
 
@@ -277,6 +285,12 @@ void Client::initialize(Poco::Util::Application & self)
     else if (config().has("connection"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
 
+    if (config().has("accept-invalid-certificate"))
+    {
+        config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
+        config().setString("openSSL.client.verificationMode", "none");
+    }
+
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
       *
@@ -298,13 +312,10 @@ void Client::initialize(Poco::Util::Application & self)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
 
-    // global_context->setApplicationType(Context::ApplicationType::CLIENT);
-    global_context->setQueryParameters(query_parameters);
-
     /// settings and limits could be specified in config file, but passed settings has higher priority
-    for (const auto & setting : global_context->getSettingsRef().allUnchanged())
+    for (const auto & setting : global_context->getSettingsRef().getUnchangedNames())
     {
-        const auto & name = setting.getName();
+        String name{setting};
         if (config().has(name))
             global_context->setSetting(name, config().getString(name));
     }
@@ -374,7 +385,7 @@ try
         showWarnings();
 
     /// Set user password complexity rules
-    auto & access_control = global_context->getAccessControl();
+    auto & access_control = client_context->getAccessControl();
     access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
     if (is_interactive && !delayed_interactive)
@@ -451,7 +462,7 @@ void Client::connect()
                           << connection_parameters.host << ":" << connection_parameters.port
                           << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
-            connection = Connection::createConnection(connection_parameters, global_context);
+            connection = Connection::createConnection(connection_parameters, client_context);
 
             if (max_client_network_bandwidth)
             {
@@ -520,7 +531,7 @@ void Client::connect()
         }
     }
 
-    if (!global_context->getSettingsRef().use_client_time_zone)
+    if (!client_context->getSettingsRef()[Setting::use_client_time_zone])
     {
         const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
         if (!time_zone.empty())
@@ -603,7 +614,7 @@ void Client::printChangedSettings() const
         }
     };
 
-    print_changes(global_context->getSettingsRef().changes(), "settings");
+    print_changes(client_context->getSettingsRef().changes(), "settings");
     print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
 }
 
@@ -701,7 +712,7 @@ bool Client::processWithFuzzing(const String & full_query)
     {
         const char * begin = full_query.data();
         orig_ast = parseQuery(begin, begin + full_query.size(),
-            global_context->getSettingsRef(),
+            client_context->getSettingsRef(),
             /*allow_multi_statements=*/ true);
     }
     catch (const Exception & e)
@@ -725,13 +736,13 @@ bool Client::processWithFuzzing(const String & full_query)
     }
 
     // Kusto is not a subject for fuzzing (yet)
-    if (global_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    if (client_context->getSettingsRef()[Setting::dialect] == DB::Dialect::kusto)
     {
         return true;
     }
     if (auto *q = orig_ast->as<ASTSetQuery>())
     {
-        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
+        if (auto *set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
             return true;
     }
 
@@ -1068,17 +1079,7 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
-    for (const auto & setting : global_context->getSettingsRef().all())
-    {
-        const auto & name = setting.getName();
-        if (options.count(name))
-        {
-            if (allow_repeated_settings)
-                config().setString(name, options[name].as<Strings>().back());
-            else
-                config().setString(name, options[name].as<String>());
-        }
-    }
+    global_context->getSettingsRef().addToClientOptions(config(), options, allow_repeated_settings);
 
     if (options.count("config-file") && options.count("config"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
@@ -1130,8 +1131,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {
-        // Fuzzer implies multiquery.
-        config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
@@ -1139,8 +1138,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
     {
-        // Fuzzer implies multiquery.
-        config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
 
@@ -1158,6 +1155,11 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
+
+    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
+    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
+    client_context = global_context;
+    initClientContext();
 }
 
 
@@ -1191,17 +1193,9 @@ void Client::processConfig()
     }
     print_stack_trace = config().getBool("stacktrace", false);
 
-    if (config().has("multiquery"))
-        is_multiquery = true;
-
     pager = config().getString("pager", "");
 
     setDefaultFormatsAndCompressionFromConfiguration();
-
-    global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
-    global_context->setQueryKindInitial();
-    global_context->setQuotaClientKey(config().getString("quota_key", ""));
-    global_context->setQueryKind(query_kind);
 }
 
 
@@ -1354,13 +1348,6 @@ void Client::readArguments(
                 allow_repeated_settings = true;
             else if (arg == "--allow_merge_tree_settings")
                 allow_merge_tree_settings = true;
-            else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-            {
-                /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
-                ++arg_num;
-                arg = argv[arg_num];
-                addMultiquery(arg, common_arguments);
-            }
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);

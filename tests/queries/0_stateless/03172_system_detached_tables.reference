@@ -1,0 +1,11 @@
+database atomic tests
+default_atomic	test_table	0
+default_atomic	test_table_perm	1
+default_atomic	test_table	0
+default_atomic	test_table_perm	1
+default_atomic	test_table	0
+-----------------------
+database lazy tests
+before attach	default_lazy	test_table	0
+before attach	default_lazy	test_table_perm	1
+DROP TABLE

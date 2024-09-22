@@ -141,9 +141,9 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
-arrayZip
 asinh
 assumeNotNull
 atan
@@ -416,7 +416,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-lowerUTF8
 makeDate
 makeDate32
 makeDateTime
@@ -896,7 +895,6 @@ tupleToNameValuePairs
 unbin
 unhex
 upper
-upperUTF8
 uptime
 validateNestedArraySizes
 version

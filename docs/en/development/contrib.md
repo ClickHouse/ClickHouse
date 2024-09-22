@@ -27,23 +27,23 @@ Avoid dumping copies of external code into the library directory.
 Instead create a Git submodule to pull third-party code from an external upstream repository.
 
 All submodules used by ClickHouse are listed in the `.gitmodule` file.
-If the library can be used as-is (the default case), you can reference the upstream repository directly.
-If the library needs patching, create a fork of the upstream repository in the [ClickHouse organization on GitHub](https://github.com/ClickHouse).
+- If the library can be used as-is (the default case), you can reference the upstream repository directly.
+- If the library needs patching, create a fork of the upstream repository in the [ClickHouse organization on GitHub](https://github.com/ClickHouse).
 
 In the latter case, we aim to isolate custom patches as much as possible from upstream commits.
-To that end, create a branch with prefix `clickhouse/` from the branch or tag you want to integrate, e.g. `clickhouse/master` (for branch `master`) or `clickhouse/release/vX.Y.Z` (for tag `release/vX.Y.Z`).
-This ensures that pulls from the upstream repository into the fork will leave custom `clickhouse/` branches unaffected.
-Submodules in `contrib/` must only track `clickhouse/` branches of forked third-party repositories.
+To that end, create a branch with prefix `ClickHouse/` from the branch or tag you want to integrate, e.g. `ClickHouse/2024_2` (for branch `2024_2`) or `ClickHouse/release/vX.Y.Z` (for tag `release/vX.Y.Z`).
+Avoid following upstream development branches `master`/ `main` / `dev` (i.e., prefix branches `ClickHouse/master` / `ClickHouse/main` / `ClickHouse/dev` in the fork repository).
+Such branches are moving targets which make proper versioning harder.
+"Prefix branches" ensure that pulls from the upstream repository into the fork will leave custom `ClickHouse/` branches unaffected.
+Submodules in `contrib/` must only track `ClickHouse/` branches of forked third-party repositories.
 
-Patches are only applied against `clickhouse/` branches of external libraries.
-For that, push the patch as a branch with `clickhouse/`, e.g. `clickhouse/fix-some-desaster`.
-Then create a PR from the new branch against the custom tracking branch with `clickhouse/` prefix, (e.g. `clickhouse/master` or `clickhouse/release/vX.Y.Z`) and merge the patch.
+Patches are only applied against `ClickHouse/` branches of external libraries.
+
+There are two ways to do that:
+- you like to make a new fix against a `ClickHouse/`-prefix branch in the forked repository, e.g. a sanitizer fix. In that case, push the fix as a branch with `ClickHouse/` prefix, e.g. `ClickHouse/fix-sanitizer-disaster`. Then create a PR from the new branch against the custom tracking branch, e.g. `ClickHouse/2024_2 <-- ClickHouse/fix-sanitizer-disaster` and merge the PR.
+- you update the submodule and need to re-apply earlier patches. In this case, re-creating old PRs is overkill. Instead, simply cherry-pick older commits into the new `ClickHouse/` branch (corresponding to the new version). Feel free to squash commits of PRs that had multiple commits. In the best case, we did contribute custom patches back to upstream and can omit patches in the new version.
+
+Once the submodule has been updated, bump the submodule in ClickHouse to point to the new hash in the fork.
 
 Create patches of third-party libraries with the official repository in mind and consider contributing the patch back to the upstream repository.
 This makes sure that others will also benefit from the patch and it will not be a maintenance burden for the ClickHouse team.
-
-To pull upstream changes into the submodule, you can use two methods:
-- (less work but less clean): merge upstream `master` into the corresponding `clickhouse/` tracking branch in the forked repository. You will need to resolve merge conflicts with previous custom patches. This method can be used when the `clickhouse/` branch tracks an upstream development branch like `master`, `main`, `dev`, etc.
-- (more work but cleaner): create a new branch with `clickhouse/` prefix from the upstream commit or tag you like to integrate. Then re-apply all existing patches using new PRs (or squash them into a single PR). This method can be used when the `clickhouse/` branch tracks a specific upstream version branch or tag. It is cleaner in the sense that custom patches and upstream changes are better isolated from each other.
-
-Once the submodule has been updated, bump the submodule in ClickHouse to point to the new hash in the fork.

@@ -2,7 +2,6 @@ import argparse
 import dataclasses
 import json
 import os
-import subprocess
 
 from contextlib import contextmanager
 from copy import copy
@@ -11,10 +10,9 @@ from typing import Iterator, List
 
 from git_helper import Git, GIT_PREFIX
 from ssh import SSHAgent
-from env_helper import GITHUB_REPOSITORY, S3_BUILDS_BUCKET
 from s3_helper import S3Helper
-from autoscale_runners_lambda.lambda_shared.pr import Labels
-from ci_utils import Shell
+from ci_utils import Shell, GH
+from ci_buddy import CIBuddy
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -28,92 +26,151 @@ from ci_config import CI
 
 CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
 CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
+RELEASE_INFO_FILE = "/tmp/release_info.json"
 
 
-class ShellRunner:
+class ReleaseProgress:
+    STARTED = "started"
+    DOWNLOAD_PACKAGES = "download packages"
+    PUSH_RELEASE_TAG = "push release tag"
+    PUSH_NEW_RELEASE_BRANCH = "push new release branch"
+    BUMP_VERSION = "bump version"
+    CREATE_GH_RELEASE = "create GH release"
+    EXPORT_TGZ = "export TGZ packages"
+    EXPORT_RPM = "export RPM packages"
+    EXPORT_DEB = "export DEB packages"
+    TEST_TGZ = "test TGZ packages"
+    TEST_RPM = "test RPM packages"
+    TEST_DEB = "test DEB packages"
+    MERGE_CREATED_PRS = "merge created PRs"
+    COMPLETED = "completed"
 
-    @classmethod
-    def run(
-        cls, command, check_retcode=True, print_output=True, async_=False, dry_run=False
-    ):
-        if dry_run:
-            print(f"Dry-run: Would run shell command: [{command}]")
-            return 0, ""
-        print(f"Running shell command: [{command}]")
-        if async_:
-            subprocess.Popen(command.split(" "))  # pylint:disable=consider-using-with
-            return 0, ""
-        result = subprocess.run(
-            command + " 2>&1",
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True,
-        )
-        if print_output:
-            print(result.stdout)
-        if check_retcode:
-            assert result.returncode == 0, f"Return code [{result.returncode}]"
-        return result.returncode, result.stdout
+
+class ReleaseProgressDescription:
+    OK = "OK"
+    FAILED = "FAILED"
+
+
+class ReleaseContextManager:
+    def __init__(self, release_progress):
+        self.release_progress = release_progress
+        self.release_info = None
+
+    def __enter__(self):
+        if self.release_progress == ReleaseProgress.STARTED:
+            # create initial release info
+            self.release_info = ReleaseInfo(
+                release_branch="NA",
+                release_type="NA",
+                commit_sha=args.ref,
+                release_tag="NA",
+                version="NA",
+                codename="NA",
+                previous_release_tag="NA",
+                previous_release_sha="NA",
+                release_progress=ReleaseProgress.STARTED,
+                latest=False,
+            ).dump()
+        else:
+            # fetch release info from fs and update
+            self.release_info = ReleaseInfo.from_file()
+            assert self.release_info
+            assert (
+                self.release_info.progress_status == ReleaseProgressDescription.OK
+            ), "Must be OK on the start of new context"
+            self.release_info.release_progress = self.release_progress
+            self.release_info.dump()
+        return self.release_info
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        assert self.release_info
+        if exc_type is not None:
+            self.release_info.progress_status = ReleaseProgressDescription.FAILED
+        else:
+            self.release_info.progress_status = ReleaseProgressDescription.OK
+        self.release_info.dump()
 
 
 @dataclasses.dataclass
 class ReleaseInfo:
     version: str
+    release_type: str
     release_tag: str
     release_branch: str
     commit_sha: str
+    latest: bool
     # lts or stable
     codename: str
     previous_release_tag: str
     previous_release_sha: str
+    changelog_pr: str = ""
+    version_bump_pr: str = ""
+    prs_merged: bool = False
+    release_url: str = ""
+    debian: str = ""
+    rpm: str = ""
+    tgz: str = ""
+    docker: str = ""
+    release_progress: str = ""
+    progress_status: str = ""
+
+    def is_patch(self):
+        return self.release_branch != "master"
+
+    def is_new_release_branch(self):
+        return self.release_branch == "master"
 
     @staticmethod
-    def from_file(file_path: str) -> "ReleaseInfo":
-        with open(file_path, "r", encoding="utf-8") as json_file:
+    def from_file() -> "ReleaseInfo":
+        with open(RELEASE_INFO_FILE, "r", encoding="utf-8") as json_file:
             res = json.load(json_file)
         return ReleaseInfo(**res)
 
-    @staticmethod
-    def prepare(commit_ref: str, release_type: str, outfile: str) -> None:
-        Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-        Path(outfile).unlink(missing_ok=True)
+    def dump(self):
+        print(f"Dump release info into [{RELEASE_INFO_FILE}]")
+        with open(RELEASE_INFO_FILE, "w", encoding="utf-8") as f:
+            print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
+        return self
+
+    def prepare(
+        self, commit_ref: str, release_type: str, _skip_tag_check: bool
+    ) -> "ReleaseInfo":
         version = None
         release_branch = None
         release_tag = None
         previous_release_tag = None
         previous_release_sha = None
-        codename = None
+        latest_release = False
+        codename = ""
         assert release_type in ("patch", "new")
         if release_type == "new":
             # check commit_ref is right and on a right branch
-            ShellRunner.run(
-                f"git merge-base --is-ancestor origin/{commit_ref} origin/master"
-            )
+            if commit_ref != "master":
+                Shell.check(
+                    f"git merge-base --is-ancestor {commit_ref} origin/master",
+                    strict=True,
+                    verbose=True,
+                )
             with checkout(commit_ref):
-                _, commit_sha = ShellRunner.run(f"git rev-parse {commit_ref}")
+                commit_sha = Shell.get_output_or_raise(f"git rev-list -n1 {commit_ref}")
                 # Git() must be inside "with checkout" contextmanager
                 git = Git()
                 version = get_version_from_repo(git=git)
-                release_branch = "master"
+                release_branch = f"{version.major}.{version.minor}"
                 expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
                 version.bump().with_description(VersionType.NEW)
                 assert (
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
                 release_tag = version.describe
-                codename = (
-                    VersionType.STABLE
-                )  # dummy value (artifactory won't be updated for new release)
                 previous_release_tag = expected_prev_tag
-                previous_release_sha = Shell.run_strict(
-                    f"git rev-parse {previous_release_tag}"
+                previous_release_sha = Shell.get_output_or_raise(
+                    f"git rev-list -n1 {previous_release_tag}"
                 )
                 assert previous_release_sha
         if release_type == "patch":
             with checkout(commit_ref):
-                _, commit_sha = ShellRunner.run(f"git rev-parse {commit_ref}")
+                commit_sha = Shell.get_output_or_raise(f"git rev-list -n1 {commit_ref}")
                 # Git() must be inside "with checkout" contextmanager
                 git = Git()
                 version = get_version_from_repo(git=git)
@@ -121,10 +178,16 @@ class ReleaseInfo:
                 version.with_description(codename)
                 release_branch = f"{version.major}.{version.minor}"
                 release_tag = version.describe
-            ShellRunner.run(f"{GIT_PREFIX} fetch origin {release_branch} --tags")
+            Shell.check(
+                f"{GIT_PREFIX} fetch origin {release_branch} --tags",
+                strict=True,
+                verbose=True,
+            )
             # check commit is right and on a right branch
-            ShellRunner.run(
-                f"git merge-base --is-ancestor {commit_ref} origin/{release_branch}"
+            Shell.check(
+                f"git merge-base --is-ancestor {commit_ref} origin/{release_branch}",
+                strict=True,
+                verbose=True,
             )
             if version.patch == 1:
                 expected_version = copy(version)
@@ -144,15 +207,20 @@ class ReleaseInfo:
                 expected_tag_prefix
             ) and git.latest_tag.endswith(expected_tag_suffix):
                 pass
-            else:
-                assert (
-                    False
-                ), f"BUG: Unexpected latest tag [{git.latest_tag}] expected [{expected_tag_prefix}*{expected_tag_suffix}]"
+            # TODO: uncomment and check with dry-run
+            # elif not skip_tag_check:
+            #     assert (
+            #         False
+            #     ), f"BUG: Unexpected latest tag [{git.latest_tag}] expected [{expected_tag_prefix}*{expected_tag_suffix}]. Already Released?"
 
-            previous_release_sha = Shell.run_strict(
-                f"git rev-parse {previous_release_tag}"
+            previous_release_sha = Shell.get_output_or_raise(
+                f"git rev-list -n1 {previous_release_tag}"
             )
             assert previous_release_sha
+
+            if CI.GH.is_latest_release_branch(release_branch):
+                print("This is going to be the latest release!")
+                latest_release = True
 
         assert (
             release_branch
@@ -161,50 +229,53 @@ class ReleaseInfo:
             and commit_sha
             and release_tag
             and version
-            and codename in ("lts", "stable")
-        )
-        res = ReleaseInfo(
-            release_branch=release_branch,
-            commit_sha=commit_sha,
-            release_tag=release_tag,
-            version=version.string,
-            codename=codename,
-            previous_release_tag=previous_release_tag,
-            previous_release_sha=previous_release_sha,
-        )
-        with open(outfile, "w", encoding="utf-8") as f:
-            print(json.dumps(dataclasses.asdict(res), indent=2), file=f)
+            and (codename in ("lts", "stable") or release_type == "new")
+        ), f"Check: {release_branch}, {previous_release_tag}, {previous_release_sha}, {commit_sha}, {release_tag}, {version}"
+
+        self.release_branch = release_branch
+        self.commit_sha = commit_sha
+        self.release_tag = release_tag
+        self.version = version.string
+        self.codename = codename
+        self.previous_release_tag = previous_release_tag
+        self.previous_release_sha = previous_release_sha
+        self.release_progress = ReleaseProgress.STARTED
+        self.progress_status = ReleaseProgressDescription.OK
+        self.latest = latest_release
+        self.release_type = release_type
+        return self
 
     def push_release_tag(self, dry_run: bool) -> None:
         if dry_run:
             # remove locally created tag from prev run
-            ShellRunner.run(
-                f"{GIT_PREFIX} tag -l | grep -q {self.release_tag} && git tag -d {self.release_tag} ||:"
+            Shell.check(
+                f"{GIT_PREFIX} tag -l | grep -q {self.release_tag} && git tag -d {self.release_tag}"
             )
         # Create release tag
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
         tag_message = f"Release {self.release_tag}"
-        ShellRunner.run(
-            f"{GIT_PREFIX} tag -a -m '{tag_message}' {self.release_tag} {self.commit_sha}"
+        Shell.check(
+            f"{GIT_PREFIX} tag -a -m '{tag_message}' {self.release_tag} {self.commit_sha}",
+            strict=True,
+            verbose=True,
         )
         cmd_push_tag = f"{GIT_PREFIX} push origin {self.release_tag}:{self.release_tag}"
-        ShellRunner.run(cmd_push_tag, dry_run=dry_run)
+        Shell.check(cmd_push_tag, dry_run=dry_run, strict=True, verbose=True)
 
     @staticmethod
     def _create_gh_label(label: str, color_hex: str, dry_run: bool) -> None:
-        cmd = f"gh api repos/{GITHUB_REPOSITORY}/labels -f name={label} -f color={color_hex}"
-        ShellRunner.run(cmd, dry_run=dry_run)
+        cmd = f"gh api repos/{CI.Envs.GITHUB_REPOSITORY}/labels -f name={label} -f color={color_hex}"
+        res = Shell.check(cmd, dry_run=dry_run, verbose=True)
+        if not res:
+            # not a critical error - do not fail. branch might be created already (recovery case)
+            print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
-        assert (
-            self.release_branch == "master"
-        ), "New release branch can be created only for release type [new]"
         git = Git()
         version = get_version_from_repo(git=git)
-        new_release_branch = f"{version.major}.{version.minor}"
-        stable_release_type = version.get_stable_release_type()
+        new_release_branch = self.release_branch
         version_after_release = copy(version)
         version_after_release.bump()
         assert (
@@ -212,21 +283,18 @@ class ReleaseInfo:
         ), f"Unexpected current version in git, must precede [{self.version}] by one step, actual [{version.string}]"
         if dry_run:
             # remove locally created branch from prev run
-            ShellRunner.run(
-                f"{GIT_PREFIX} branch -l | grep -q {new_release_branch} && git branch -d {new_release_branch} ||:"
+            Shell.check(
+                f"{GIT_PREFIX} branch -l | grep -q {new_release_branch} && git branch -d {new_release_branch}"
             )
         print(
             f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
         )
-        with checkout(self.release_branch):
+        with checkout("master"):
             with checkout_new(new_release_branch):
-                pr_labels = f"--label {Labels.RELEASE}"
-                if stable_release_type == VersionType.LTS:
-                    pr_labels += f" --label {Labels.RELEASE_LTS}"
                 cmd_push_branch = (
                     f"{GIT_PREFIX} push --set-upstream origin {new_release_branch}"
                 )
-                ShellRunner.run(cmd_push_branch, dry_run=dry_run)
+                Shell.check(cmd_push_branch, dry_run=dry_run, strict=True, verbose=True)
 
         print("Create and push backport tags for new release branch")
         ReleaseInfo._create_gh_label(
@@ -235,63 +303,190 @@ class ReleaseInfo:
         ReleaseInfo._create_gh_label(
             f"v{new_release_branch}-affected", "c2bfff", dry_run=dry_run
         )
-        ShellRunner.run(
-            f"""gh pr create --repo {GITHUB_REPOSITORY} --title 'Release pull request for branch {new_release_branch}'
-            --head {new_release_branch} {pr_labels}
-            --body 'This PullRequest is a part of ClickHouse release cycle. It is used by CI system only. Do not perform any changes with it.'
-            """,
-            dry_run=dry_run,
-        )
+
+    def get_version_bump_branch(self):
+        return f"bump_version_{self.version}"
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
-        # Bump version, update contributors list, create PR
-        branch_upd_version_contributors = f"bump_version_{self.version}"
+        # Bump version, update contributors list, create on release branch
         with checkout(self.commit_sha):
             git = Git()
             version = get_version_from_repo(git=git)
-            if self.release_branch == "master":
+            if self.release_type == "patch":
+                assert (
+                    version.string == self.version
+                ), f"BUG: version in release info does not match version in git commit, expected [{self.version}], got [{version.string}]"
+                version.bump_patch()
+            else:
+                version.reset_tweak()
+            version.with_description(version.get_stable_release_type())
+
+        with checkout(self.release_branch):
+            update_cmake_version(version)
+            update_contributors(raise_error=True)
+            cmd_commit_version_upd = f"{GIT_PREFIX} commit '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}' -m 'Update autogenerated version to {self.version} and contributors'"
+            cmd_push_branch = f"{GIT_PREFIX} push"
+            Shell.check(
+                cmd_commit_version_upd, strict=True, dry_run=dry_run, verbose=True
+            )
+            Shell.check(cmd_push_branch, strict=True, dry_run=dry_run, verbose=True)
+            if dry_run:
+                Shell.check(
+                    f"{GIT_PREFIX} diff '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}'",
+                    verbose=True,
+                )
+                Shell.check(
+                    f"{GIT_PREFIX} checkout '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}'",
+                    verbose=True,
+                )
+
+        # TODO: move to new GH step?
+        if self.release_type == "new":
+            print("Update version on master branch")
+            branch_upd_version_contributors = self.get_version_bump_branch()
+            with checkout(self.commit_sha):
+                git = Git()
+                version = get_version_from_repo(git=git)
                 version.bump()
                 version.with_description(VersionType.TESTING)
+            with checkout("master"):
+                with checkout_new(branch_upd_version_contributors):
+                    update_cmake_version(version)
+                    update_contributors(raise_error=True)
+                    cmd_commit_version_upd = f"{GIT_PREFIX} commit '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}' -m 'Update autogenerated version to {self.version} and contributors'"
+                    cmd_push_branch = f"{GIT_PREFIX} push --set-upstream origin {branch_upd_version_contributors}"
+                    actor = os.getenv("GITHUB_ACTOR", "") or "me"
+                    body = f"Automatic version bump after release {self.release_tag}\n### Changelog category (leave one):\n- Not for changelog (changelog entry is not required)\n"
+                    cmd_create_pr = f"gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Update version after release' --head {branch_upd_version_contributors} --base master --body \"{body}\" --assignee {actor}"
+                    Shell.check(
+                        cmd_commit_version_upd,
+                        strict=True,
+                        dry_run=dry_run,
+                        verbose=True,
+                    )
+                    Shell.check(
+                        cmd_push_branch, strict=True, dry_run=dry_run, verbose=True
+                    )
+                    Shell.check(
+                        cmd_create_pr, strict=True, dry_run=dry_run, verbose=True
+                    )
+                    if dry_run:
+                        Shell.check(
+                            f"{GIT_PREFIX} diff '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}'",
+                            verbose=True,
+                        )
+                        Shell.check(
+                            f"{GIT_PREFIX} checkout '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}'",
+                            verbose=True,
+                        )
+                        self.version_bump_pr = "dry-run"
+                    else:
+                        self.version_bump_pr = GH.get_pr_url_by_branch(
+                            branch=branch_upd_version_contributors
+                        )
+
+            # TODO: move to new GH step?
+            print("Create Release PR")
+            with checkout(self.release_branch):
+                pr_labels = f"--label {CI.Labels.RELEASE}"
+                if version.get_stable_release_type() == VersionType.LTS:
+                    pr_labels += f" --label {CI.Labels.RELEASE_LTS}"
+                Shell.check(
+                    f"""gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Release pull request for branch {self.release_branch}' \
+                                --head {self.release_branch} {pr_labels} \
+                                --body 'This PullRequest is a part of ClickHouse release cycle. It is used by CI system only. Do not perform any changes with it.'""",
+                    dry_run=dry_run,
+                    strict=True,
+                    verbose=True,
+                )
+
+    def get_change_log_branch(self):
+        return f"auto/{self.release_tag}"
+
+    def update_release_info(self, dry_run: bool) -> "ReleaseInfo":
+        if self.release_type == "patch":
+            if not self.changelog_pr:
+                branch = self.get_change_log_branch()
+                if not dry_run:
+                    url = GH.get_pr_url_by_branch(branch=branch)
+                else:
+                    url = "dry-run"
+                print(f"ChangeLog PR url [{url}]")
+                self.changelog_pr = url
+            self.docker = f"docker run --rm clickhouse/clickhouse:{self.version} clickhouse --version"
+        else:
+            # new release branch - find version bump pr on a master branch
+            branch = self.get_version_bump_branch()
+            if not dry_run:
+                url = GH.get_pr_url_by_branch(branch=branch)
             else:
-                version.with_description(version.get_stable_release_type())
-            assert (
-                version.string == self.version
-            ), f"BUG: version in release info does not match version in git commit, expected [{self.version}], got [{version.string}]"
-        with checkout(self.release_branch):
-            with checkout_new(branch_upd_version_contributors):
-                update_cmake_version(version)
-                update_contributors(raise_error=True)
-                cmd_commit_version_upd = f"{GIT_PREFIX} commit '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}' -m 'Update autogenerated version to {self.version} and contributors'"
-                cmd_push_branch = f"{GIT_PREFIX} push --set-upstream origin {branch_upd_version_contributors}"
-                body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
-                actor = os.getenv("GITHUB_ACTOR", "") or "me"
-                cmd_create_pr = f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' --head {branch_upd_version_contributors} --base {self.release_branch} --body-file '{body_file} --label 'do not test' --assignee @{actor}"
-                ShellRunner.run(cmd_commit_version_upd, dry_run=dry_run)
-                ShellRunner.run(cmd_push_branch, dry_run=dry_run)
-                ShellRunner.run(cmd_create_pr, dry_run=dry_run)
-                if dry_run:
-                    ShellRunner.run(
-                        f"{GIT_PREFIX} diff '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}'"
-                    )
-                    ShellRunner.run(
-                        f"{GIT_PREFIX} checkout '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}'"
-                    )
+                url = "dry-run"
+            print(f"Version bump PR url [{url}]")
+            self.version_bump_pr = url
+
+        self.release_url = f"https://github.com/{CI.Envs.GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
+        print(f"Release url [{self.release_url}]")
+
+        self.dump()
+
+        return self
 
     def create_gh_release(self, packages_files: List[str], dry_run: bool) -> None:
-        repo = os.getenv("GITHUB_REPOSITORY")
+        repo = CI.Envs.GITHUB_REPOSITORY
         assert repo
-        cmds = []
-        cmds.append(
+        cmds = [
             f"gh release create --repo {repo} --title 'Release {self.release_tag}' {self.release_tag}"
-        )
+        ]
         for file in packages_files:
             cmds.append(f"gh release upload {self.release_tag} {file}")
         if not dry_run:
             for cmd in cmds:
-                ShellRunner.run(cmd)
+                Shell.check(cmd, strict=True, verbose=True)
+            self.release_url = (
+                f"https://github.com/{repo}/releases/tag/{self.release_tag}"
+            )
         else:
             print("Dry-run, would run commands:")
             print("\n  * ".join(cmds))
+            self.release_url = f"dry-run"
+        self.dump()
+
+    def merge_prs(self, dry_run: bool) -> None:
+        repo = CI.Envs.GITHUB_REPOSITORY
+        if self.release_type == "patch":
+            assert self.changelog_pr
+            print("Merging ChangeLog PR")
+            if dry_run:
+                changelog_pr_num = 23456
+            else:
+                changelog_pr_num = int(self.changelog_pr.split("/")[-1])
+            res = Shell.check(
+                f"gh pr merge {changelog_pr_num} --repo {repo} --merge --auto",
+                verbose=True,
+                dry_run=dry_run,
+            )
+        else:
+            if not dry_run:
+                assert not self.changelog_pr
+            res = True
+
+        if self.release_type == "new":
+            assert self.version_bump_pr
+            print("Merging Version Bump PR")
+            if dry_run:
+                version_bump_pr = 23456
+            else:
+                version_bump_pr = int(self.version_bump_pr.split("/")[-1])
+            res = res and Shell.check(
+                f"gh pr merge {version_bump_pr} --repo {repo} --merge --auto",
+                verbose=True,
+                dry_run=dry_run,
+            )
+        else:
+            if not dry_run:
+                assert not self.version_bump_pr
+
+        self.prs_merged = res
 
 
 class RepoTypes:
@@ -351,7 +546,7 @@ class PackageDownloader:
         self.macos_package_files = ["clickhouse-macos", "clickhouse-macos-aarch64"]
         self.file_to_type = {}
 
-        ShellRunner.run(f"mkdir -p {self.LOCAL_DIR}")
+        Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
         for package_type in self.PACKAGE_TYPES:
             for package in self.package_names:
@@ -401,7 +596,7 @@ class PackageDownloader:
         return res
 
     def run(self):
-        ShellRunner.run(f"rm -rf {self.LOCAL_DIR}/*")
+        Shell.check(f"rm -rf {self.LOCAL_DIR}/*")
         for package_file in (
             self.deb_package_files + self.rpm_package_files + self.tgz_package_files
         ):
@@ -415,7 +610,7 @@ class PackageDownloader:
                 ]
             )
             self.s3.download_file(
-                bucket=S3_BUILDS_BUCKET,
+                bucket=CI.Envs.S3_BUILDS_BUCKET,
                 s3_path=s3_path,
                 local_file_path="/".join([self.LOCAL_DIR, package_file]),
             )
@@ -436,7 +631,7 @@ class PackageDownloader:
                 ]
             )
             self.s3.download_file(
-                bucket=S3_BUILDS_BUCKET,
+                bucket=CI.Envs.S3_BUILDS_BUCKET,
                 s3_path=s3_path,
                 local_file_path="/".join([self.LOCAL_DIR, destination_binary_name]),
             )
@@ -474,6 +669,37 @@ class PackageDownloader:
         return True
 
 
+@contextmanager
+def checkout(ref: str) -> Iterator[None]:
+    orig_ref = Shell.get_output_or_raise(f"{GIT_PREFIX} symbolic-ref --short HEAD")
+    rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
+    assert orig_ref
+    if ref not in (orig_ref,):
+        Shell.check(f"{GIT_PREFIX} checkout {ref}", strict=True, verbose=True)
+    try:
+        yield
+    except (Exception, KeyboardInterrupt) as e:
+        print(f"ERROR: Exception [{e}]")
+        Shell.check(rollback_cmd, verbose=True)
+        raise
+    Shell.check(rollback_cmd, verbose=True)
+
+
+@contextmanager
+def checkout_new(ref: str) -> Iterator[None]:
+    orig_ref = Shell.get_output_or_raise(f"{GIT_PREFIX} symbolic-ref --short HEAD")
+    rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
+    assert orig_ref
+    Shell.check(f"{GIT_PREFIX} checkout -b {ref}", strict=True, verbose=True)
+    try:
+        yield
+    except (Exception, KeyboardInterrupt) as e:
+        print(f"ERROR: Exception [{e}]")
+        Shell.check(rollback_cmd, verbose=True)
+        raise
+    Shell.check(rollback_cmd, verbose=True)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -483,6 +709,11 @@ def parse_args() -> argparse.Namespace:
         "--prepare-release-info",
         action="store_true",
         help="Initial step to prepare info like release branch, release tag, etc.",
+    )
+    parser.add_argument(
+        "--skip-tag-check",
+        action="store_true",
+        help="To skip check against latest git tag on a release branch",
     )
     parser.add_argument(
         "--push-release-tag",
@@ -510,6 +741,16 @@ def parse_args() -> argparse.Namespace:
         help="Create GH Release object and attach all packages",
     )
     parser.add_argument(
+        "--merge-prs",
+        action="store_true",
+        help="Merge PRs with version, changelog updates",
+    )
+    parser.add_argument(
+        "--post-status",
+        action="store_true",
+        help="Post release status into Slack",
+    )
+    parser.add_argument(
         "--ref",
         type=str,
         help="the commit hash or branch",
@@ -527,55 +768,25 @@ def parse_args() -> argparse.Namespace:
         help="do not make any actual changes in the repo, just show what will be done",
     )
     parser.add_argument(
-        "--outfile",
-        default="",
-        type=str,
-        help="output file to write json result to, if not set - stdout",
+        "--set-progress-started",
+        action="store_true",
+        help="Set new progress step, --progress <PROGRESS STEP> must be set",
     )
     parser.add_argument(
-        "--infile",
-        default="",
+        "--progress",
         type=str,
-        help="input file with release info",
+        help="Progress step name, see @ReleaseProgress",
     )
-
+    parser.add_argument(
+        "--set-progress-completed",
+        action="store_true",
+        help="Set current progress step to OK (completed)",
+    )
     return parser.parse_args()
-
-
-@contextmanager
-def checkout(ref: str) -> Iterator[None]:
-    _, orig_ref = ShellRunner.run(f"{GIT_PREFIX} symbolic-ref --short HEAD")
-    rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
-    assert orig_ref
-    if ref not in (orig_ref,):
-        ShellRunner.run(f"{GIT_PREFIX} checkout {ref}")
-    try:
-        yield
-    except (Exception, KeyboardInterrupt) as e:
-        print(f"ERROR: Exception [{e}]")
-        ShellRunner.run(rollback_cmd)
-        raise
-    ShellRunner.run(rollback_cmd)
-
-
-@contextmanager
-def checkout_new(ref: str) -> Iterator[None]:
-    _, orig_ref = ShellRunner.run(f"{GIT_PREFIX} symbolic-ref --short HEAD")
-    rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
-    assert orig_ref
-    ShellRunner.run(f"{GIT_PREFIX} checkout -b {ref}")
-    try:
-        yield
-    except (Exception, KeyboardInterrupt) as e:
-        print(f"ERROR: Exception [{e}]")
-        ShellRunner.run(rollback_cmd)
-        raise
-    ShellRunner.run(rollback_cmd)
 
 
 if __name__ == "__main__":
     args = parse_args()
-    assert args.dry_run
 
     # prepare ssh for git if needed
     _ssh_agent = None
@@ -587,43 +798,103 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        assert (
-            args.ref and args.release_type and args.outfile
-        ), "--ref, --release-type and --outfile must be provided with --prepare-release-info"
-        ReleaseInfo.prepare(
-            commit_ref=args.ref, release_type=args.release_type, outfile=args.outfile
-        )
-    if args.push_release_tag:
-        assert args.infile, "--infile <release info file path> must be provided"
-        release_info = ReleaseInfo.from_file(args.infile)
-        release_info.push_release_tag(dry_run=args.dry_run)
-    if args.push_new_release_branch:
-        assert args.infile, "--infile <release info file path> must be provided"
-        release_info = ReleaseInfo.from_file(args.infile)
-        release_info.push_new_release_branch(dry_run=args.dry_run)
-    if args.create_bump_version_pr:
-        # TODO: store link to PR in release info
-        assert args.infile, "--infile <release info file path> must be provided"
-        release_info = ReleaseInfo.from_file(args.infile)
-        release_info.update_version_and_contributors_list(dry_run=args.dry_run)
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED
+        ) as release_info:
+            assert (
+                args.ref and args.release_type
+            ), "--ref and --release-type must be provided with --prepare-release-info"
+            release_info.prepare(
+                commit_ref=args.ref,
+                release_type=args.release_type,
+                _skip_tag_check=args.skip_tag_check,
+            )
+
     if args.download_packages:
-        assert args.infile, "--infile <release info file path> must be provided"
-        release_info = ReleaseInfo.from_file(args.infile)
-        p = PackageDownloader(
-            release=release_info.release_branch,
-            commit_sha=release_info.commit_sha,
-            version=release_info.version,
-        )
-        p.run()
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
+        ) as release_info:
+            p = PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            )
+            p.run()
+
+    if args.push_release_tag:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
+        ) as release_info:
+            release_info.push_release_tag(dry_run=args.dry_run)
+
+    if args.push_new_release_branch:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
+        ) as release_info:
+            release_info.push_new_release_branch(dry_run=args.dry_run)
+
+    if args.create_bump_version_pr:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.BUMP_VERSION
+        ) as release_info:
+            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
+
     if args.create_gh_release:
-        assert args.infile, "--infile <release info file path> must be provided"
-        release_info = ReleaseInfo.from_file(args.infile)
-        p = PackageDownloader(
-            release=release_info.release_branch,
-            commit_sha=release_info.commit_sha,
-            version=release_info.version,
-        )
-        release_info.create_gh_release(p.get_all_packages_files(), args.dry_run)
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.CREATE_GH_RELEASE
+        ) as release_info:
+            p = PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            )
+            release_info.create_gh_release(
+                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
+            )
+
+    if args.post_status:
+        release_info = ReleaseInfo.from_file()
+        if release_info.is_new_release_branch():
+            title = "New release branch"
+        else:
+            title = "New release"
+        if (
+            release_info.progress_status == ReleaseProgressDescription.OK
+            and release_info.release_progress == ReleaseProgress.COMPLETED
+        ):
+            title = "Completed: " + title
+            CIBuddy(dry_run=args.dry_run).post_done(
+                title, dataclasses.asdict(release_info)
+            )
+        else:
+            title = "Failed: " + title
+            CIBuddy(dry_run=args.dry_run).post_critical(
+                title,
+                dataclasses.asdict(release_info),
+                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
+            )
+
+    if args.set_progress_started:
+        ri = ReleaseInfo.from_file()
+        ri.release_progress = args.progress
+        ri.progress_status = ReleaseProgressDescription.FAILED
+        ri.dump()
+        assert args.progress, "Progress step name must be provided"
+
+    if args.set_progress_completed:
+        ri = ReleaseInfo.from_file()
+        assert (
+            ri.progress_status == ReleaseProgressDescription.FAILED
+        ), "Must be FAILED before set to OK"
+        ri.progress_status = ReleaseProgressDescription.OK
+        ri.dump()
+
+    if args.merge_prs:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.MERGE_CREATED_PRS
+        ) as release_info:
+            release_info.update_release_info(dry_run=args.dry_run)
+            release_info.merge_prs(dry_run=args.dry_run)
 
     # tear down ssh
     if _ssh_agent and _key_pub:
