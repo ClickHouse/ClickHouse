@@ -178,7 +178,7 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Temporary:
+        case FileSegmentKind::Ephemeral:
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
@@ -198,13 +198,13 @@ String CacheMetadata::getFileSegmentPath(
 
 String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
 {
+    const auto key_str = key.toString();
     if (write_cache_per_user_directory)
     {
-        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key.toString();
+        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
     }
     else
     {
-        const auto key_str = key.toString();
         return fs::path(path) / key_str.substr(0, 3) / key_str;
     }
 }
@@ -423,6 +423,8 @@ CacheMetadata::removeEmptyKey(
             fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
         }
+
+        /// TODO: Remove empty user directories.
     }
     catch (...)
     {
