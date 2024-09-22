@@ -382,6 +382,12 @@ std::future<void> IOResourceManager::Resource::detachClassifier(VersionPtr && ve
     return future;
 }
 
+bool IOResourceManager::Classifier::has(const String & resource_name)
+{
+    std::unique_lock lock{mutex};
+    return attachments.find(resource_name) != attachments.end();
+}
+
 ResourceLink IOResourceManager::Classifier::get(const String & resource_name)
 {
     std::unique_lock lock{mutex};
@@ -402,7 +408,7 @@ std::future<void> IOResourceManager::Resource::attachClassifier(Classifier & cla
 {
     auto attach_promise = std::make_shared<std::promise<void>>(); // event queue task is std::function, which requires copy semantics
     auto future = attach_promise->get_future();
-    scheduler.event_queue->enqueue([&, this, promise = std::move(attach_promise)] mutable
+    scheduler.event_queue->enqueue([&, this, promise = std::move(attach_promise)]
     {
         try
         {
@@ -415,7 +421,10 @@ std::future<void> IOResourceManager::Resource::attachClassifier(Classifier & cla
                 classifier.attach(shared_from_this(), current_version, ResourceLink{.queue = queue.get()});
             }
             else
-                throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Unable to find workload '{}' for resource '{}'", workload_name, resource_name);
+            {
+                // This resource does not have specified workload. It is either unknown or managed by another resource manager.
+                // We leave this resource not attached to the classifier. Access denied will be thrown later on `classifier->get(resource_name)`
+            }
             promise->set_value();
         }
         catch (...)
@@ -424,6 +433,12 @@ std::future<void> IOResourceManager::Resource::attachClassifier(Classifier & cla
         }
     });
     return future;
+}
+
+bool IOResourceManager::hasResource(const String & resource_name) const
+{
+    std::unique_lock lock{mutex};
+    return resources.find(resource_name) != resources.end();
 }
 
 ClassifierPtr IOResourceManager::acquire(const String & workload_name)

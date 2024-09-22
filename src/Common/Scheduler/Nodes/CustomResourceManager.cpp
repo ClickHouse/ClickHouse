@@ -161,6 +161,11 @@ CustomResourceManager::Classifier::Classifier(const CustomResourceManager::State
     }
 }
 
+bool CustomResourceManager::Classifier::has(const String & resource_name)
+{
+    return resources.find(resource_name) != resources.end();
+}
+
 ResourceLink CustomResourceManager::Classifier::get(const String & resource_name)
 {
     if (auto iter = resources.find(resource_name); iter != resources.end())
@@ -215,6 +220,12 @@ void CustomResourceManager::updateConfiguration(const Poco::Util::AbstractConfig
     }
 
     // NOTE: after mutex unlock `state` became available for Classifier(s) and must be immutable
+}
+
+bool CustomResourceManager::hasResource(const String & resource_name) const
+{
+    std::lock_guard lock{mutex};
+    return state->resources.find(resource_name) != state->resources.end();
 }
 
 ClassifierPtr CustomResourceManager::acquire(const String & classifier_name)

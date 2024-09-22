@@ -31,6 +31,7 @@ class CustomResourceManager : public IResourceManager
 public:
     CustomResourceManager();
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
+    bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & classifier_name) override;
     void forEachNode(VisitorFunc visitor) override;
 
@@ -81,6 +82,7 @@ private:
     {
     public:
         Classifier(const StatePtr & state_, const String & classifier_name);
+        bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
     private:
         std::unordered_map<String, ResourceLink> resources; // accessible resources by names
@@ -88,7 +90,7 @@ private:
     };
 
     SchedulerRoot scheduler;
-    std::mutex mutex;
+    mutable std::mutex mutex;
     StatePtr state;
 };
 

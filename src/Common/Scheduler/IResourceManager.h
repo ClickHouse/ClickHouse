@@ -26,6 +26,9 @@ class IClassifier : private boost::noncopyable
 public:
     virtual ~IClassifier() = default;
 
+    /// Returns true iff resource access is allowed by this classifier
+    virtual bool has(const String & resource_name) = 0;
+
     /// Returns ResourceLink that should be used to access resource.
     /// Returned link is valid until classifier destruction.
     virtual ResourceLink get(const String & resource_name) = 0;
@@ -45,6 +48,9 @@ public:
 
     /// Initialize or reconfigure manager.
     virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) = 0;
+
+    /// Returns true iff given resource is controlled though this manager.
+    virtual bool hasResource(const String & resource_name) const = 0;
 
     /// Obtain a classifier instance required to get access to resources.
     /// Note that it holds resource configuration, so should be destructed when query is done.

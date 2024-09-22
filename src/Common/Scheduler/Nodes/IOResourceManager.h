@@ -124,6 +124,7 @@ public:
     explicit IOResourceManager(IWorkloadEntityStorage & storage_);
     ~IOResourceManager() override;
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
+    bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & workload_name) override;
     void forEachNode(VisitorFunc visitor) override;
 
@@ -234,6 +235,7 @@ private:
 
         /// Implements IClassifier interface
         /// NOTE: It is called from query threads (possibly multiple)
+        bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
 
         /// Attaches/detaches a specific resource
@@ -264,7 +266,7 @@ private:
     IWorkloadEntityStorage & storage;
     scope_guard subscription;
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::unordered_map<String, WorkloadPtr> workloads; // TSA_GUARDED_BY(mutex);
     std::unordered_map<String, ResourcePtr> resources; // TSA_GUARDED_BY(mutex);
 };
