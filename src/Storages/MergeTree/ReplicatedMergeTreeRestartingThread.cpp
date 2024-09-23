@@ -1,3 +1,4 @@
+#include <mutex>
 #include <IO/Operators.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -375,6 +376,13 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
     bool old_val = false;
     bool became_readonly = storage.is_readonly.compare_exchange_strong(old_val, true);
 
+    if (became_readonly)
+    {
+        std::lock_guard lock(storage.readonly_duration_timer_mutex);
+        storage.readonly_duration_timer.emplace();
+        storage.readonly_duration_timer->start();
+    }
+
     /// Do not increment the metric if replica became readonly due to shutdown.
     if (became_readonly && on_shutdown)
         return;
@@ -406,6 +414,11 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
         chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+    }
+
+    {
+        std::lock_guard lock(storage.readonly_duration_timer_mutex);
+        storage.readonly_duration_timer->reset();
     }
 }
 

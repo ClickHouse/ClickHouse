@@ -867,6 +867,7 @@ CREATE TABLE system.replicas
     `is_leader` UInt8,
     `can_become_leader` UInt8,
     `is_readonly` UInt8,
+    `readonly_duration` Nullable(UInt64),
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,

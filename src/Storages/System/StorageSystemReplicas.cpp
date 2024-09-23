@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include "DataTypes/DataTypeNullable.h"
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemReplicas.h>
@@ -212,6 +213,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "can_become_leader",                    std::make_shared<DataTypeUInt8>(),    "Whether the replica can be a leader."},
         { "is_readonly",                          std::make_shared<DataTypeUInt8>(),    "Whether the replica is in read-only mode. This mode is turned on if the config does not have sections with ClickHouse Keeper, "
                                                                                           "if an unknown error occurred when reinitializing sessions in ClickHouse Keeper, and during session reinitialization in ClickHouse Keeper."},
+        { "readonly_duration",                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Duration that the replica has been readonly for, in milliseconds." },
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>(),    "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."},
         { "future_parts",                         std::make_shared<DataTypeUInt32>(),   "The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet."},
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>(),   "The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged."},
@@ -527,6 +529,10 @@ Chunk SystemReplicasSource::generate()
         res_columns[col_num++]->insert(status.is_leader);
         res_columns[col_num++]->insert(status.can_become_leader);
         res_columns[col_num++]->insert(status.is_readonly);
+        if (status.readonly_duration != 0)
+            res_columns[col_num++]->insert(status.readonly_duration);
+        else
+            res_columns[col_num++]->insertDefault();
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);

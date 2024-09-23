@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include <optional>
 #include <ranges>
 #include <chrono>
 
@@ -7095,6 +7096,11 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
     res.active_replicas = 0;
     res.lost_part_count = 0;
     res.last_queue_update_exception = getLastQueueUpdateException();
+
+    {
+        std::lock_guard lock(readonly_duration_timer_mutex);
+        res.readonly_duration = readonly_duration_timer ? readonly_duration_timer->elapsedMilliseconds() : 0;
+    }
 
     if (with_zk_fields && !res.is_session_expired)
     {

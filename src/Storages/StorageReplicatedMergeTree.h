@@ -410,6 +410,9 @@ private:
     /// If true, the table is offline and can not be written to it.
     /// This flag is managed by RestartingThread.
     std::atomic_bool is_readonly {true};
+    std::optional<Stopwatch> readonly_duration_timer;
+    mutable std::mutex readonly_duration_timer_mutex;
+
     /// If nullopt - ZooKeeper is not available, so we don't know if there is table metadata.
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
