@@ -14,6 +14,10 @@ static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 namespace DB
 {
 struct Settings;
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -199,7 +203,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             found = *opt;
 
         out_properties = found.properties;
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
 
@@ -224,7 +228,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 "Aggregate function combinator '{}' is only for internal usage",
                 combinator_name);
 
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
 
         String nested_name = name.substr(0, name.size() - combinator_name.size());

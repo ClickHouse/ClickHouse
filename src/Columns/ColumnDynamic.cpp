@@ -816,6 +816,22 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         return;
     }
 
+    /// If it's not null we update hash with the type name and the actual value.
+
+    /// If value in this row is in shared variant, deserialize type and value and
+    /// update hash with it.
+    if (discr == getSharedVariantDiscriminator())
+    {
+        auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
+        ReadBufferFromMemory buf(value.data, value.size);
+        auto type = decodeDataType(buf);
+        hash.update(type->getName());
+        auto tmp_column = type->createColumn();
+        type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        tmp_column->updateHashWithValue(0, hash);
+        return;
+    }
+
     hash.update(variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
@@ -977,6 +993,41 @@ ColumnPtr ColumnDynamic::compress() const
         {
             return ColumnDynamic::create(my_variant_compressed->decompress(), my_variant_info, my_max_dynamic_types, my_global_max_dynamic_types, my_statistics);
         });
+}
+
+String ColumnDynamic::getTypeNameAt(size_t row_num) const
+{
+    const auto & variant_col = getVariantColumn();
+    const size_t discr = variant_col.globalDiscriminatorAt(row_num);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+        return "";
+
+    if (discr == getSharedVariantDiscriminator())
+    {
+        const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
+        ReadBufferFromMemory buf(value.data, value.size);
+        return decodeDataType(buf)->getName();
+    }
+
+    return variant_info.variant_names[discr];
+}
+
+void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
+{
+    auto shared_variant_discr = getSharedVariantDiscriminator();
+    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+    {
+        if (i != shared_variant_discr && !variant_column_ptr->getVariantByGlobalDiscriminator(i).empty())
+            names.insert(variant_info.variant_names[i]);
+    }
+
+    const auto & shared_variant = getSharedVariant();
+    for (size_t i = 0; i != shared_variant.size(); ++i)
+    {
+        const auto value = shared_variant.getDataAt(i);
+        ReadBufferFromMemory buf(value.data, value.size);
+        names.insert(decodeDataType(buf)->getName());
+    }
 }
 
 void ColumnDynamic::prepareForSquashing(const Columns & source_columns)

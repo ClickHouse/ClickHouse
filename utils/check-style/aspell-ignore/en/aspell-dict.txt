@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2983
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -47,6 +47,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AzureQueue
 BIGINT
 BIGSERIAL
 BORO
@@ -114,6 +115,7 @@ CESU
 CIDR
 CIDRToRange
 CKMAN
+CKibana
 CLOB
 CLion
 CMPLNT
@@ -183,6 +185,7 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+CountMin
 Covid
 Cramer's
 Criteo
@@ -252,6 +255,7 @@ Ecto
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
+ElasticSearch
 EmbeddedRocksDB
 Embeddings
 Encodings
@@ -419,6 +423,7 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
 JSONEachRow
@@ -437,11 +442,11 @@ JSONExtractUInt
 JSONHas
 JSONLength
 JSONObjectEachRow
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
-JSONSharedDataPaths
-JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -471,6 +476,7 @@ KeeperMap
 KeeperOutstandingRequests
 Kerberos
 Khanna
+Kibana
 KittenHouse
 Klickhouse
 Kolmogorov
@@ -728,6 +734,7 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
+PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
@@ -794,6 +801,7 @@ RWLockActiveWriters
 RWLockWaitingReaders
 RWLockWaitingWriters
 RabbitMQ
+Rabl
 RangeHashed
 RawBLOB
 ReDoS
@@ -976,6 +984,7 @@ ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
 TimeSeries
+TimescaleDB's
 Timeunit
 TinyLog
 Tkachenko
@@ -1206,9 +1215,11 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip
+arrayZipUnaligned
 ascii
 asin
 asinh
@@ -1366,6 +1377,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckibana
 ckman
 clangd
 cli
@@ -1538,6 +1550,7 @@ dequeues
 deserialization
 deserialized
 deserializing
+dest
 destructor
 destructors
 detectCharset
@@ -1563,6 +1576,11 @@ disjunction
 disjunctions
 displayName
 displaySecretsInShowAndSelect
+distinctDynamicTypes
+distinctJSONPaths
+distinctJSONPathsAndTypes
+distinctdynamictypes
+distinctjsonpaths
 distro
 divideDecimal
 dmesg
@@ -1909,6 +1927,7 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
+jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -2730,6 +2749,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault

@@ -16,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
+}
 
 namespace ErrorCodes
 {
@@ -29,9 +33,10 @@ namespace
     {
         auto query_context = CurrentThread::getQueryContext();
         if (query_context)
-            return query_context->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
+            return query_context->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
         else
-            return Context::getGlobalContextInstance()->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
+            return Context::getGlobalContextInstance()
+                ->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
     }
 }
 
@@ -87,7 +92,7 @@ void WriteBufferToFileSegment::nextImpl()
 
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: reason {}, {}(segment info: {})",
             bytes_to_write,
-            file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
+            file_segment->getKind() == FileSegmentKind::Ephemeral ? "temporary file" : "the file in cache",
             failure_reason,
             reserve_stat_msg,
             file_segment->getInfoForLog()
