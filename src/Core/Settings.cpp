@@ -790,7 +790,7 @@ namespace ErrorCodes
     M(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, "Min bytes to read per task.", 0) ALIAS(filesystem_prefetch_min_bytes_for_single_read_task) \
     M(Bool, merge_tree_use_const_size_tasks_for_remote_reading, true, "Whether to use constant size tasks for reading from a remote table.", 0) \
     M(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, "Whether to use only prewhere columns size to determine reading task size.", 0) \
-    M(UInt64, merge_tree_min_read_task_size, 1_KiB, "Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks)", 0) \
+    M(UInt64, merge_tree_min_read_task_size, 1, "Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks) (I HOPE TO REMOVE IT AFTER TESTING)", 0) \
     M(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, "Only available in ClickHouse Cloud", 0) \
     \
     M(Bool, async_insert, false, "If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table", 0) \
