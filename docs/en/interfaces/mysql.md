@@ -23,7 +23,7 @@ If your use case involves a particular tool that does not have a native ClickHou
 
 ::::note
 To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](../operations/setting/settings.md#prefer-column-name-to-alias).
-This behavior cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
+This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
 ::::
 
 ## Enabling the MySQL Interface On ClickHouse Cloud
