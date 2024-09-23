@@ -15,33 +15,49 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
     res->workload_name = workload_name->clone();
     res->children.push_back(res->workload_name);
 
-    // TODO(serxa): clone settings
+    if (workload_parent)
+    {
+        res->workload_parent = workload_parent->clone();
+        res->children.push_back(res->workload_parent);
+    }
+
+    if (settings)
+    {
+        res->settings = settings->clone();
+        res->children.push_back(res->settings);
+    }
 
     return res;
 }
 
-void ASTCreateWorkloadQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateWorkloadQuery::formatImpl(const IAST::FormatSettings & format_settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
+    format_settings.ostr << (format_settings.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
-        settings.ostr << "OR REPLACE ";
+        format_settings.ostr << "OR REPLACE ";
 
-    settings.ostr << "WORKLOAD ";
+    format_settings.ostr << "WORKLOAD ";
 
     if (if_not_exists)
-        settings.ostr << "IF NOT EXISTS ";
+        format_settings.ostr << "IF NOT EXISTS ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    format_settings.ostr << (format_settings.hilite ? hilite_none : "");
 
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (settings.hilite ? hilite_none : "");
+    format_settings.ostr << (format_settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (format_settings.hilite ? hilite_none : "");
 
-    formatOnCluster(settings);
+    formatOnCluster(format_settings);
 
     if (hasParent())
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN " << (settings.hilite ? hilite_none : "");
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (settings.hilite ? hilite_none : "");
+        format_settings.ostr << (format_settings.hilite ? hilite_keyword : "") << " IN " << (format_settings.hilite ? hilite_none : "");
+        format_settings.ostr << (format_settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format_settings.hilite ? hilite_none : "");
+    }
+
+    if (settings)
+    {
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ';
+        settings->format(format_settings);
     }
 }
 

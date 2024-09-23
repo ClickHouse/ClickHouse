@@ -43,8 +43,7 @@ IOResourceManager::NodeInfo::NodeInfo(const ASTPtr & ast, const String & resourc
     auto * create = typeid_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
     parent = create->getWorkloadParent();
-    // TODO(serxa): parse workload settings specifically for `resource_name`
-    UNUSED(resource_name);
+    settings.updateFromAST(create->settings, resource_name);
 }
 
 IOResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
@@ -205,21 +204,45 @@ IOResourceManager::Workload::Workload(IOResourceManager * resource_manager_, con
     : resource_manager(resource_manager_)
     , workload_entity(workload_entity_)
 {
-    for (auto & [resource_name, resource] : resource_manager->resources)
-        resource->createNode(NodeInfo(workload_entity, resource_name));
+    try
+    {
+        for (auto & [resource_name, resource] : resource_manager->resources)
+            resource->createNode(NodeInfo(workload_entity, resource_name));
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in IOResourceManager: {}",
+            getCurrentExceptionMessage(/* with_stacktrace = */ true));
+    }
 }
 
 IOResourceManager::Workload::~Workload()
 {
-    for (auto & [resource_name, resource] : resource_manager->resources)
-        resource->deleteNode(NodeInfo(workload_entity, resource_name));
+    try
+    {
+        for (auto & [resource_name, resource] : resource_manager->resources)
+            resource->deleteNode(NodeInfo(workload_entity, resource_name));
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in IOResourceManager: {}",
+            getCurrentExceptionMessage(/* with_stacktrace = */ true));
+    }
 }
 
 void IOResourceManager::Workload::updateWorkload(const ASTPtr & new_entity)
 {
-    for (auto & [resource_name, resource] : resource_manager->resources)
-        resource->updateNode(NodeInfo(workload_entity, resource_name), NodeInfo(new_entity, resource_name));
-    workload_entity = new_entity;
+    try
+    {
+        for (auto & [resource_name, resource] : resource_manager->resources)
+            resource->updateNode(NodeInfo(workload_entity, resource_name), NodeInfo(new_entity, resource_name));
+        workload_entity = new_entity;
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in IOResourceManager: {}",
+            getCurrentExceptionMessage(/* with_stacktrace = */ true));
+    }
 }
 
 String IOResourceManager::Workload::getParent() const
@@ -233,35 +256,28 @@ IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
     subscription = storage.getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
-            try
+            for (auto [entity_type, entity_name, entity] : events)
             {
-                for (auto [entity_type, entity_name, entity] : events)
+                switch (entity_type)
                 {
-                    switch (entity_type)
+                    case WorkloadEntityType::Workload:
                     {
-                        case WorkloadEntityType::Workload:
-                        {
-                            if (entity)
-                                createOrUpdateWorkload(entity_name, entity);
-                            else
-                                deleteWorkload(entity_name);
-                            break;
-                        }
-                        case WorkloadEntityType::Resource:
-                        {
-                            if (entity)
-                                createResource(entity_name, entity);
-                            else
-                                deleteResource(entity_name);
-                            break;
-                        }
-                        case WorkloadEntityType::MAX: break;
+                        if (entity)
+                            createOrUpdateWorkload(entity_name, entity);
+                        else
+                            deleteWorkload(entity_name);
+                        break;
                     }
+                    case WorkloadEntityType::Resource:
+                    {
+                        if (entity)
+                            createResource(entity_name, entity);
+                        else
+                            deleteResource(entity_name);
+                        break;
+                    }
+                    case WorkloadEntityType::MAX: break;
                 }
-            }
-            catch (...)
-            {
-                // TODO(serxa): handle CRUD errors
             }
         });
 }

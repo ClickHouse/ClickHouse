@@ -2,12 +2,60 @@
 
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserSetQuery.h>
 
+#include <Common/SettingsChanges.h>
 
 namespace DB
 {
+
+namespace
+{
+
+bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
+{
+    return IParserBase::wrapParseImpl(pos, [&]
+    {
+        if (!ParserKeyword(Keyword::SETTINGS).ignore(pos, expected))
+            return false;
+
+        SettingsChanges settings_changes;
+
+        auto parse_setting = [&]
+        {
+            SettingChange setting;
+            if (ParserSetQuery::parseNameValuePair(setting, pos, expected))
+            {
+                settings_changes.push_back(std::move(setting));
+                // TODO(serxa): parse optional clause: [FOR resource_name]
+                return true;
+            }
+
+            return false;
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_setting, false))
+            return false;
+
+        ASTPtr res_settings;
+        if (!settings_changes.empty())
+        {
+            auto settings_changes_ast = std::make_shared<ASTSetQuery>();
+            settings_changes_ast->changes = std::move(settings_changes);
+            settings_changes_ast->is_standalone = false;
+            res_settings = settings_changes_ast;
+        }
+
+        settings = std::move(res_settings);
+        return true;
+    });
+}
+
+}
 
 bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -18,7 +66,6 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ParserIdentifier workload_name_p;
     ParserKeyword s_on(Keyword::ON);
     ParserKeyword s_in(Keyword::IN);
-    // TODO(serxa): parse workload settings
 
     ASTPtr workload_name;
     ASTPtr workload_parent;
@@ -54,6 +101,9 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
             return false;
     }
 
+    ASTPtr settings;
+    parseSettings(pos, expected, settings);
+
     auto create_workload_query = std::make_shared<ASTCreateWorkloadQuery>();
     node = create_workload_query;
 
@@ -69,6 +119,8 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_workload_query->or_replace = or_replace;
     create_workload_query->if_not_exists = if_not_exists;
     create_workload_query->cluster = std::move(cluster_str);
+
+    create_workload_query->settings = std::move(settings);
 
     return true;
 }

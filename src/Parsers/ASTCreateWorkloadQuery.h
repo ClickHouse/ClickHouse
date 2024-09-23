@@ -12,7 +12,7 @@ class ASTCreateWorkloadQuery : public IAST, public ASTQueryWithOnCluster
 public:
     ASTPtr workload_name;
     ASTPtr workload_parent;
-    // TODO(serxa): add workload settings (weight and priority should also go inside settings, because they can differ for different resources)
+    ASTPtr settings;
 
     bool or_replace = false;
     bool if_not_exists = false;
