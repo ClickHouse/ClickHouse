@@ -16,6 +16,10 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -103,7 +107,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
-    if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
+    if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
     /// Attach database metadata

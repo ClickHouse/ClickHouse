@@ -42,7 +42,7 @@ def test_access_rights_for_function():
     function_resolution_error = instance.query_and_get_error("SELECT MySum(1, 2)")
     assert (
         "Unknown function MySum" in function_resolution_error
-        or "Function with name 'MySum' does not exist." in function_resolution_error
+        or "Function with name `MySum` does not exist." in function_resolution_error
     )
 
     instance.query("REVOKE CREATE FUNCTION ON *.* FROM A")

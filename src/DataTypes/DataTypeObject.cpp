@@ -32,6 +32,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_object_type;
+    extern const SettingsBool use_json_alias_for_old_object_type;
+}
 
 namespace ErrorCodes
 {
@@ -519,7 +524,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
     if (!context)
         context = Context::getGlobalContextInstance();
 
-    if (context->getSettingsRef().allow_experimental_object_type && context->getSettingsRef().use_json_alias_for_old_object_type)
+    if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
     {
         if (arguments && !arguments->children.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings allow_experimental_json_type = 1 and use_json_alias_for_old_object_type = 0");
