@@ -360,8 +360,8 @@ namespace ErrorCodes
     M(Int64, distributed_ddl_task_timeout, 180, "Timeout for DDL query responses from all hosts in the cluster. If a ddl request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. A negative value means infinite. Zero means async mode.", 0) \
     M(Milliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.", 0) \
     M(Milliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from/to streaming storages.", 0) \
-    M(UInt64, min_free_disk_bytes_to_throw_insert, 0, "Minimum free disk space bytes to throw an insert.", 0) \
-    M(Double, min_free_disk_ratio_to_throw_insert, 0.0, "Minimum free disk space ratio to throw an insert.", 0) \
+    M(UInt64, min_free_disk_bytes_to_perform_insert, 0, "Minimum free disk space bytes to perform an insert.", 0) \
+    M(Double, min_free_disk_ratio_to_perform_insert, 0.0, "Minimum free disk space ratio to perform an insert.", 0) \
     \
     M(Bool, final, false, "Query with the FINAL modifier by default. If the engine does not support the FINAL, it does not have any effect. On queries with multiple tables, FINAL is applied only to those that support it. It also works on distributed tables", 0) \
     \

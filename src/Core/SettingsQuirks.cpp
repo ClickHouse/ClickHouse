@@ -144,14 +144,6 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
             LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);
         current_settings.set("max_block_size", DEFAULT_BLOCK_SIZE);
     }
-
-    if (auto min_free_disk_ratio_to_throw_insert = get_current_value("min_free_disk_ratio_to_throw_insert").safeGet<Float64>();
-        min_free_disk_ratio_to_throw_insert < 0.0 || min_free_disk_ratio_to_throw_insert > 1)
-    {
-        if (log)
-            LOG_WARNING(log, "Sanity check: 'min_free_disk_ratio_to_throw_insert' must be between 0.0 and 1.0. Set to default (0.0)");
-        current_settings.set("min_free_disk_ratio_to_throw_insert", DEFAULT_MIN_FREE_DISK_RATIO);
-    }
 }
 
 }

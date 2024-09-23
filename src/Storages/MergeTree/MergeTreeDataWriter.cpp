@@ -60,8 +60,8 @@ namespace Setting
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
-    extern const SettingsUInt64 min_free_disk_bytes_to_throw_insert;
-    extern const SettingsDouble min_free_disk_ratio_to_throw_insert;
+    extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
+    extern const SettingsDouble min_free_disk_ratio_to_perform_insert;
 }
 
 namespace ErrorCodes
@@ -566,33 +566,35 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
 
-    UInt64 min_bytes = global_settings[Setting::min_free_disk_bytes_to_throw_insert];
-    if (data_settings->min_free_disk_bytes_to_throw_insert.changed)
-        min_bytes = data_settings->min_free_disk_bytes_to_throw_insert;
+    const UInt64 & min_bytes_to_perform_insert =
+        data_settings->min_free_disk_bytes_to_perform_insert.changed
+        ? data_settings->min_free_disk_bytes_to_perform_insert
+        : global_settings[Setting::min_free_disk_bytes_to_perform_insert];
 
-    Float64 min_ratio = global_settings[Setting::min_free_disk_ratio_to_throw_insert];
-    if (data_settings->min_free_disk_ratio_to_throw_insert.changed)
-        min_ratio = data_settings->min_free_disk_ratio_to_throw_insert;
+    const Float64 & min_ratio_to_perform_insert =
+        data_settings->min_free_disk_ratio_to_perform_insert.changed
+        ? data_settings->min_free_disk_ratio_to_perform_insert
+        : global_settings[Setting::min_free_disk_ratio_to_perform_insert];
 
-    if (min_bytes > 0 || min_ratio > 0.0)
+    if (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0)
     {
-        const auto disk = data_part_volume->getDisk();
-        const UInt64 total_disk_bytes = *disk->getTotalSpace();
-        const UInt64 free_disk_bytes = *disk->getAvailableSpace();
+        const auto & disk = data_part_volume->getDisk();
+        const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
+        const UInt64 & free_disk_bytes = disk->getAvailableSpace().value_or(0.0);
 
-        const UInt64 min_bytes_from_ratio = static_cast<UInt64>(min_ratio * total_disk_bytes);
-        const UInt64 needed_free_bytes = std::max(min_bytes, min_bytes_from_ratio);
+        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
+        const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
 
         if (needed_free_bytes > free_disk_bytes)
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert: less than {} free bytes in disk space ({}). "
+                "Could not perform insert: less than {} free bytes left in the disk space ({}). "
                 "Configure this limit with user settings {} or {}",
                 needed_free_bytes,
                 free_disk_bytes,
-                "min_free_disk_bytes_to_throw_insert",
-                "min_free_disk_ratio_to_throw_insert");
+                "min_free_disk_bytes_to_perform_insert",
+                "min_free_disk_ratio_to_perform_insert");
         }
     }
 
