@@ -1,9 +1,16 @@
+#include <limits>
 #include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/Scheduler/ISchedulerNode.h>
 #include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void SchedulingSettings::updateFromAST(const ASTPtr & settings, const String & resource_name)
 {
@@ -17,23 +24,68 @@ void SchedulingSettings::updateFromAST(const ASTPtr & settings, const String & r
         std::optional<Int64> new_max_requests;
         std::optional<Int64> new_max_cost;
 
+        auto get_not_negative_float64 = [] (const String & name, const Field & field) {
+            {
+                UInt64 val;
+                if (field.tryGet(val))
+                    return static_cast<Float64>(val); // We dont mind slight loss of precision
+            }
+
+            {
+                Int64 val;
+                if (field.tryGet(val))
+                {
+                    if (val < 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative Int64 value for workload setting '{}'", name);
+                    return static_cast<Float64>(val); // We dont mind slight loss of precision
+                }
+            }
+
+            return field.safeGet<Float64>();
+        };
+
+        auto get_not_negative_int64 = [] (const String & name, const Field & field) {
+            {
+                UInt64 val;
+                if (field.tryGet(val))
+                {
+                    // Saturate on overflow
+                    if (val > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                        val = std::numeric_limits<Int64>::max();
+                    return static_cast<Int64>(val);
+                }
+            }
+
+            {
+                Int64 val;
+                if (field.tryGet(val))
+                {
+                    if (val < 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative Int64 value for workload setting '{}'", name);
+                    return val;
+                }
+            }
+
+            return field.safeGet<Int64>();
+        };
+
         // Read changed setting values
         for (const auto & [name, value] : set->changes)
         {
             // TODO(serxa): we should validate workloads with this function before storing in WorkloadEntityStorage
             // TODO(serxa): and probably we should add and persist version in filename for future changes
             if (name == "weight")
-                new_weight = value.safeGet<Float64>();
+                new_weight = get_not_negative_float64(name, value);
             else if (name == "priority")
                 new_priority = Priority{value.safeGet<Priority::Value>()};
             else if (name == "max_speed")
-                new_max_speed = value.safeGet<Float64>();
+                new_max_speed = get_not_negative_float64(name, value);
             else if (name == "max_burst")
-                new_max_burst = value.safeGet<Float64>();
+                new_max_burst = get_not_negative_float64(name, value);
             else if (name == "max_requests")
-                new_max_requests = value.safeGet<Float64>();
+                new_max_requests = get_not_negative_int64(name, value);
             else if (name == "max_cost")
-                new_max_cost = value.safeGet<Float64>();
+                new_max_cost = get_not_negative_int64(name, value);
         }
 
         // Read setting to be reset to default values
@@ -56,6 +108,11 @@ void SchedulingSettings::updateFromAST(const ASTPtr & settings, const String & r
         }
         if (reset_max_burst)
             new_max_burst = default_burst_seconds * (new_max_speed ? *new_max_speed : max_speed);
+
+        // Validate we could use values we read in a scheduler node
+        {
+            SchedulerNodeInfo validating_node(new_weight ? *new_weight : weight, new_priority ? *new_priority : priority);
+        }
 
         // Save new values into the `this` object
         // Leave previous value intentionally for ALTER query to be able to skip not mentioned setting value
