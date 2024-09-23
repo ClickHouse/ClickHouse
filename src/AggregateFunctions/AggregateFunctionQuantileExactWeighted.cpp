@@ -1,12 +1,13 @@
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <AggregateFunctions/Helpers.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Core/Field.h>
-
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
+
+#include <numeric>
 
 
 namespace DB
