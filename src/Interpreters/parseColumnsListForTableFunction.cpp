@@ -14,6 +14,20 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_dynamic_type;
+    extern const SettingsBool allow_experimental_json_type;
+    extern const SettingsBool allow_experimental_object_type;
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool allow_suspicious_fixed_string_types;
+    extern const SettingsBool allow_suspicious_low_cardinality_types;
+    extern const SettingsBool allow_suspicious_variant_types;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool validate_experimental_and_suspicious_types_inside_nested_types;
+}
 
 namespace ErrorCodes
 {
@@ -23,15 +37,15 @@ extern const int ILLEGAL_COLUMN;
 
 }
 
-DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings& settings)
-        : allow_suspicious_low_cardinality_types(settings.allow_suspicious_low_cardinality_types)
-        , allow_experimental_object_type(settings.allow_experimental_object_type)
-        , allow_suspicious_fixed_string_types(settings.allow_suspicious_fixed_string_types)
-        , allow_experimental_variant_type(settings.allow_experimental_variant_type)
-        , allow_suspicious_variant_types(settings.allow_suspicious_variant_types)
-        , validate_nested_types(settings.validate_experimental_and_suspicious_types_inside_nested_types)
-        , allow_experimental_dynamic_type(settings.allow_experimental_dynamic_type)
-        , allow_experimental_json_type(settings.allow_experimental_json_type)
+DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & settings)
+    : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
+    , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
+    , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
+    , allow_experimental_variant_type(settings[Setting::allow_experimental_variant_type])
+    , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
+    , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
+    , allow_experimental_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
+    , allow_experimental_json_type(settings[Setting::allow_experimental_json_type])
 {
 }
 
@@ -159,7 +173,13 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
-    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+    ASTPtr columns_list_raw = parseQuery(
+        parser,
+        structure,
+        "columns declaration list",
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
     if (!columns_list)
@@ -180,7 +200,17 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
     ASTPtr columns_list_raw = tryParseQuery(
-        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks, true);
+        parser,
+        start,
+        end,
+        error,
+        false,
+        "columns declaration list",
+        false,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks],
+        true);
     if (!columns_list_raw)
         return false;
 
