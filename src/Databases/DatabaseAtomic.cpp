@@ -23,6 +23,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsBool check_table_dependencies;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
@@ -591,8 +597,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 
     waitDatabaseStarted();
 
-    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
-    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
+    bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
+    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         std::lock_guard lock(mutex);

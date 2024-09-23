@@ -58,11 +58,11 @@ Count the total amount of rows in all files in the cluster `cluster_simple`:
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-For production use cases it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
+For production use cases, it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
 ``` sql
 
 CREATE NAMED COLLECTION creds AS
-        access_key_id = 'minio'
+        access_key_id = 'minio',
         secret_access_key = 'minio123';
 SELECT count(*) FROM s3Cluster(
     'cluster_simple', creds, url='https://s3-object-url.csv',

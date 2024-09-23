@@ -11,6 +11,8 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 import requests
 
+from env_helper import IS_CI
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,7 +44,7 @@ def cd(path: Union[Path, str]) -> Iterator[None]:
 def kill_ci_runner(message: str) -> None:
     """The function to kill the current process with all parents when it's possible.
     Works only when run with the set `CI` environment"""
-    if not os.getenv("CI", ""):  # cycle import env_helper
+    if not IS_CI:
         logger.info("Running outside the CI, won't kill the runner")
         return
     print(f"::error::{message}")

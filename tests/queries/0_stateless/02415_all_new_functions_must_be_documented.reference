@@ -141,6 +141,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 asinh

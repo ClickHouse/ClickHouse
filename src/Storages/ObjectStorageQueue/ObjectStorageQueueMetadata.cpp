@@ -122,7 +122,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
     if (mode == ObjectStorageQueueMode::UNORDERED
-        && (table_metadata.tracked_files_limit || table_metadata.tracked_file_ttl_sec))
+        && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
             "ObjectStorageQueueCleanupFunc",
@@ -366,9 +366,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    chassert(table_metadata.tracked_files_limit || table_metadata.tracked_file_ttl_sec);
+    chassert(table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec);
     const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
-    const bool check_nodes_ttl = table_metadata.tracked_file_ttl_sec > 0;
+    const bool check_nodes_ttl = table_metadata.tracked_files_ttl_sec > 0;
 
     const bool nodes_limit_exceeded = nodes_num > table_metadata.tracked_files_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
@@ -443,7 +443,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             wb << fmt::format("Node: {}, path: {}, timestamp: {};\n", node, metadata.file_path, metadata.last_processed_timestamp);
         return wb.str();
     };
-    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}", table_metadata.tracked_files_limit, table_metadata.tracked_file_ttl_sec, get_nodes_str());
+
+    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
+             table_metadata.tracked_files_limit, table_metadata.tracked_files_ttl_sec, get_nodes_str());
 
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - table_metadata.tracked_files_limit : 0;
     for (const auto & node : sorted_nodes)
@@ -464,7 +466,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         else if (check_nodes_ttl)
         {
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
-            if (node_age >= table_metadata.tracked_file_ttl_sec)
+            if (node_age >= table_metadata.tracked_files_ttl_sec)
             {
                 LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);
