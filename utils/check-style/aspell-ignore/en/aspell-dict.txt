@@ -1734,6 +1734,7 @@ getMacro
 getOSKernelVersion
 getServerPort
 getSetting
+getSettingOrNull
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams

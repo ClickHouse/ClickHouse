@@ -19,14 +19,17 @@ namespace ErrorCodes
 namespace
 {
 
+enum class ErrorHandling : uint8_t
+{
+    Exception,
+    Null,
+};
+
 /// Get the value of a setting.
 class FunctionGetSetting : public IFunction, WithContext
 {
 public:
-    static constexpr auto name = "getSetting";
-
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
-    explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionGetSetting(ContextPtr context_, String name_, ErrorHandling error_handling_) : WithContext(context_), name(name_), error_handling(error_handling_) {}
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
@@ -60,15 +63,36 @@ private:
                             String{name});
 
         std::string_view setting_name{column->getDataAt(0).toView()};
-        return getContext()->getSettingsRef().get(setting_name);
+        Field setting_value;
+        try
+        {
+            setting_value = getContext()->getSettingsRef().get(setting_name);
+        }
+        catch(...)
+        {
+            if (error_handling == ErrorHandling::Exception)
+                throw;
+            if (error_handling == ErrorHandling::Null)
+                setting_value = Field(Null());
+        }
+        return setting_value;
     }
+    String name;
+    ErrorHandling error_handling;
 };
 
 }
 
 REGISTER_FUNCTION(GetSetting)
 {
-    factory.registerFunction<FunctionGetSetting>();
+    factory.registerFunction("getSetting",
+        [](ContextPtr context){ return std::make_shared<FunctionGetSetting>(context, "getSetting", ErrorHandling::Exception); });
+}
+
+REGISTER_FUNCTION(GetSettingOrNull)
+{
+    factory.registerFunction("getSettingOrNull",
+        [](ContextPtr context){ return std::make_shared<FunctionGetSetting>(context, "getSettingOrNull", ErrorHandling::Null); });
 }
 
 }

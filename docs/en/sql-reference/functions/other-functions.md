@@ -2789,6 +2789,39 @@ Result:
 
 - [Custom Settings](../../operations/settings/index.md#custom_settings)
 
+## getSettingOrNull
+
+Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns NULL if setting is undefined.
+
+**Syntax**
+
+```sql
+getSettingOrNull('custom_setting');
+```
+
+**Parameter**
+
+- `custom_setting` — The setting name. [String](../data-types/string.md).
+
+**Returned value**
+
+- The setting's current value or NULL if setting is undefined.
+
+**Example**
+
+```sql
+SELECT getSetting('custom_xyz');
+```
+
+Result:
+
+```
+NULL
+```
+
+**See Also**
+
+- [Custom Settings](../../operations/settings/index.md#custom_settings)
 ## isDecimalOverflow
 
 Checks whether the [Decimal](../data-types/decimal.md) value is outside its precision or outside the specified precision.

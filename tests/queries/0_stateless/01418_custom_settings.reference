@@ -37,3 +37,6 @@ custom_null	NULL
 \N	Nullable(Nothing)
 custom_null	NULL
 CREATE SETTINGS PROFILE `s2_01418` SETTINGS custom_null = NULL
+\N
+0
+1

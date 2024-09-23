@@ -61,3 +61,9 @@ SELECT name, value FROM system.settings WHERE name = 'custom_null';
 CREATE SETTINGS PROFILE s2_01418 SETTINGS custom_null = NULL;
 SHOW CREATE SETTINGS PROFILE s2_01418;
 DROP SETTINGS PROFILE s2_01418;
+
+SELECT getSetting('custom_xyz') as v; -- { serverError UNKNOWN_SETTING } -- Setting not found.
+SELECT getSettingOrNull('custom_xyz') as v;
+SELECT getSettingOrNull(1) as v; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count(*) FROM numbers(10) WHERE number = toInt64(getSettingOrNull('custom_number'));
+SELECT isNull(getSettingOrNull('custom_xyz')) as v;
