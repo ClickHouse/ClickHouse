@@ -346,6 +346,8 @@ private:
     bool possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const;
     void enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner);
     void enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment);
+
+    bool isLastReplica() const { return (replicas_count - unavailable_replicas_count - finished_replicas) == 1; }
 };
 
 
@@ -490,7 +492,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
 
     RangesInDataPartDescription result;
 
-    while (!distribution_queue.empty() && current_marks_amount < min_number_of_marks)
+    while (!distribution_queue.empty() && (current_marks_amount < min_number_of_marks || isLastReplica()))
     {
         if (result.ranges.empty() || distribution_queue.begin()->info != result.info)
         {
@@ -546,7 +548,8 @@ void DefaultCoordinator::tryToStealFromQueues(
         for (auto replica : order)
             tryToStealFromQueue(
                 distribution_by_hash_queue[replica],
-                (scan_mode == ScanMode::TakeEverythingAvailable ? -1 : replica),
+                replica,
+                // (scan_mode == ScanMode::TakeEverythingAvailable ? -1 : replica),
                 replica_num,
                 scan_mode,
                 min_number_of_marks,
@@ -645,7 +648,7 @@ void DefaultCoordinator::processPartsFurther(
 
     for (const auto & part : all_parts_to_read)
     {
-        if (current_marks_amount >= min_number_of_marks)
+        if (!isLastReplica() && current_marks_amount >= min_number_of_marks)
         {
             LOG_TEST(log, "Current mark size {} is bigger than min_number_marks {}", current_marks_amount, min_number_of_marks);
             return;
@@ -653,7 +656,7 @@ void DefaultCoordinator::processPartsFurther(
 
         RangesInDataPartDescription result{.info = part.description.info};
 
-        while (!part.description.ranges.empty() && current_marks_amount < min_number_of_marks)
+        while (!part.description.ranges.empty() && (current_marks_amount < min_number_of_marks || isLastReplica()))
         {
             auto & range = part.description.ranges.front();
 
