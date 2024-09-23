@@ -91,8 +91,6 @@ namespace
             case TypeIndex::FixedString:
                 hashString<ColumnFixedString>(data_column, hashes_internal_data);
                 break;
-//            case TypeIndex::IPv4:
-//                break;
             default:
                 break;
         }

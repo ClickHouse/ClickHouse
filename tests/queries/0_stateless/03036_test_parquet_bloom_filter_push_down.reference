@@ -1,23 +1,21 @@
-3000
+1000
 bloom filter is off, all row groups should be read
 expect rows_read = select count()
 {
   "data": [
     {
-      "f32": -64.12787,
-      "fixed_str": "BYYC",
-      "str": "LYLDL"
+      "string": "AZSR",
+      "flba": "WNMM"
     },
     {
-      "f32": -15.910733,
-      "fixed_str": "DCXV",
-      "str": "KCGEY"
+      "string": "PFJH",
+      "flba": "GKJC"
     }
   ],
   "rows": 2,
   "statistics": {
-    "rows_read": 3000,
-    "bytes_read": 99010
+    "rows_read": 1000,
+    "bytes_read": 41936
   }
 }
 bloom filter is on, some row groups should be skipped
@@ -25,37 +23,37 @@ expect rows_read much less than select count()
 {
   "data": [
     {
-      "f32": -64.12787,
-      "fixed_str": "BYYC",
-      "str": "LYLDL"
+      "string": "AZSR",
+      "flba": "WNMM"
     },
     {
-      "f32": -15.910733,
-      "fixed_str": "DCXV",
-      "str": "KCGEY"
+      "string": "PFJH",
+      "flba": "GKJC"
     }
   ],
   "rows": 2,
   "statistics": {
-    "rows_read": 1342,
-    "bytes_read": 44044
+    "rows_read": 464,
+    "bytes_read": 19112
   }
 }
 bloom filter is on, but where predicate contains data from 2 row groups out of 3.
-Rows read should be less than select count, by greater than previous selects
+Rows read should be less than select count, but greater than previous selects
 {
   "data": [
     {
-      "f32": -95.748695
+      "string": "PFJH",
+      "flba": "GKJC"
     },
     {
-      "f32": -64.12787
+      "string": "ZHZK",
+      "flba": "HRWD"
     }
   ],
   "rows": 2,
   "statistics": {
-    "rows_read": 1658,
-    "bytes_read": 55026
+    "rows_read": 536,
+    "bytes_read": 22829
   }
 }
 bloom filter is on, but where predicate contains data from all row groups
@@ -63,105 +61,108 @@ expect rows_read = select count()
 {
   "data": [
     {
-      "f32": -95.748695
+      "string": "PFJH",
+      "flba": "GKJC"
     },
     {
-      "f32": -64.12787
+      "string": "EAWV",
+      "flba": "MEVK"
     },
     {
-      "f32": -42.54674
+      "string": "PDTJ",
+      "flba": "YXSF"
+    },
+    {
+      "string": "UVVK",
+      "flba": "MIMZ"
+    },
+    {
+      "string": "CPQO",
+      "flba": "DDZM"
+    },
+    {
+      "string": "ZHZK",
+      "flba": "HRWD"
     }
   ],
-  "rows": 3,
+  "rows": 6,
   "statistics": {
-    "rows_read": 3000,
-    "bytes_read": 99010
+    "rows_read": 1000,
+    "bytes_read": 41936
   }
 }
 IN check
 {
   "data": [
     {
-      "f32": -15.910733,
-      "fixed_str": "DCXV"
-    }
-  ],
-  "rows": 1,
-  "statistics": {
-    "rows_read": 1342,
-    "bytes_read": 44044
-  }
-}
-IN check for floats
-{
-  "data": [
-    {
-      "f64": 22.89182051713945
+      "string": "PFJH",
+      "flba": "GKJC"
     },
     {
-      "f64": 68.62704389505595
+      "string": "ZHZK",
+      "flba": "HRWD"
     }
   ],
   "rows": 2,
   "statistics": {
-    "rows_read": 1342,
-    "bytes_read": 43984
+    "rows_read": 536,
+    "bytes_read": 22829
   }
 }
 tuple in case, bf is off.
 {
   "data": [
     {
-      "str": "LYLDL",
-      "fixed_str": "BYYC"
+      "string": "PFJH",
+      "flba": "GKJC"
     }
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 3000,
-    "bytes_read": 99010
+    "rows_read": 1000,
+    "bytes_read": 41936
   }
 }
 tuple in case, bf is on.
 {
   "data": [
     {
-      "str": "LYLDL",
-      "fixed_str": "BYYC"
+      "string": "PFJH",
+      "flba": "GKJC"
     }
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 1342,
-    "bytes_read": 44044
+    "rows_read": 464,
+    "bytes_read": 19112
   }
 }
 complex tuple in case, bf is off
 {
   "data": [
     {
-      "str": "LYLDL",
-      "fixed_str": "BYYC"
+      "string": "PFJH",
+      "flba": "GKJC"
     }
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 3000,
-    "bytes_read": 99010
+    "rows_read": 1000,
+    "bytes_read": 41936
   }
 }
 complex tuple in case, bf is on
 {
   "data": [
     {
-      "str": "LYLDL",
-      "fixed_str": "BYYC"
+      "string": "PFJH",
+      "flba": "GKJC"
     }
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 1342,
-    "bytes_read": 44044
+    "rows_read": 464,
+    "bytes_read": 19112
   }
 }
 complex tuple in case, bf is on. Non existent
