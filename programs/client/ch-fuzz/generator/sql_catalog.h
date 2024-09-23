@@ -35,10 +35,10 @@ public:
 struct SQLTable : SQLBase {
 public:
 	bool is_temp = false;
-	uint32_t tname, col_counter = 0, idx_counter = 0, proj_counter = 0;
+	uint32_t tname, col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0;
 	std::map<uint32_t, SQLColumn> cols, staged_cols;
 	std::map<uint32_t, SQLIndex> idxs, staged_idxs;
-	std::set<uint32_t> projs, staged_projs;
+	std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
 
 	size_t RealNumberOfColumns() const {
 		size_t res = 0;

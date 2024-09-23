@@ -342,6 +342,21 @@ int StatementGenerator::AddTableProjection(RandomGenerator &rg, SQLTable &t, con
 	return 0;
 }
 
+int StatementGenerator::AddTableConstraint(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ConstraintDef *cdef) {
+	const uint32_t crname = t.constr_counter++;
+	auto &to_add = staged ? t.staged_constrs : t.constrs;
+
+	cdef->mutable_constr()->set_constraint("c" + std::to_string(crname));
+	cdef->set_ctype(static_cast<sql_query_grammar::ConstraintDef_ConstraintType>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::ConstraintDef::ConstraintType_MAX)) + 1));
+	AddTableRelation(rg, false, "", t);
+	this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+	this->GenerateWherePredicate(rg, cdef->mutable_expr());
+	this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
+	this->levels.clear();
+	to_add.insert(crname);
+	return 0;
+}
+
 const std::vector<sql_query_grammar::TableEngineValues> like_engs = {
   sql_query_grammar::TableEngineValues::Memory,
   sql_query_grammar::TableEngineValues::MergeTree,
@@ -366,27 +381,29 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 
 	if (tables.empty() || rg.NextSmallNumber() < 9) {
 		//create table with definition
-		sql_query_grammar::ColumnsDef *colsdef = ct->mutable_table_def();
+		sql_query_grammar::TableDef *colsdef = ct->mutable_table_def();
 		std::uniform_int_distribution<uint32_t> table_engine(1, sql_query_grammar::TableEngineValues_MAX);
 		sql_query_grammar::TableEngineValues val = static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));
 
 		next.teng = val;
 		te->set_engine(val);
-		uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_sign = 0, added_version = 0;
+		uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_consts = 0, added_sign = 0, added_version = 0;
 		const uint32_t to_addcols = (rg.NextMediumNumber() % 5) + 1,
-					   to_addidxs = (rg.NextMediumNumber() % 4) * static_cast<uint32_t>(next.IsMergeTreeFamily()) * rg.NextBool(),
-					   to_addprojs = (rg.NextMediumNumber() % 4) * static_cast<uint32_t>(next.IsMergeTreeFamily()) * rg.NextBool(),
+					   to_addidxs = (rg.NextMediumNumber() % 4) * static_cast<uint32_t>(next.IsMergeTreeFamily() && rg.NextBool()),
+					   to_addprojs = (rg.NextMediumNumber() % 3) * static_cast<uint32_t>(next.IsMergeTreeFamily() && rg.NextBool()),
+					   to_addconsts = (rg.NextMediumNumber() % 3) * static_cast<uint32_t>(rg.NextBool()),
 					   to_add_sign = static_cast<uint32_t>(next.HasSignColumn()),
 					   to_add_version = static_cast<uint32_t>(next.HasVersionColumn()),
-					   total_to_add = to_addcols + to_addidxs + to_addprojs + to_add_sign + to_add_version;
+					   total_to_add = to_addcols + to_addidxs + to_addprojs + to_addconsts + to_add_sign + to_add_version;
 
 		for (uint32_t i = 0 ; i < total_to_add; i++) {
 			const uint32_t add_idx = 4 * static_cast<uint32_t>(!next.cols.empty() && added_idxs < to_addidxs),
 						   add_proj = 4 * static_cast<uint32_t>(!next.cols.empty() && added_projs < to_addprojs),
-						   add_col = 12 * static_cast<uint32_t>(added_cols < to_addcols),
+						   add_const = 4 * static_cast<uint32_t>(!next.cols.empty() && added_consts < to_addconsts),
+						   add_col = 10 * static_cast<uint32_t>(added_cols < to_addcols),
 						   add_sign = 2 * static_cast<uint32_t>(added_sign < to_add_sign),
 						   add_version = 2 * static_cast<uint32_t>(added_version < to_add_version && added_sign == to_add_sign),
-						   prob_space = add_idx + add_proj + add_col + add_sign + add_version;
+						   prob_space = add_idx + add_proj + add_const + add_col + add_sign + add_version;
 			std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
 			const uint32_t nopt = next_dist(rg.gen);
 
@@ -396,14 +413,17 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			} else if (add_proj && nopt < (add_idx + add_proj + 1)) {
 				AddTableProjection(rg, next, false, colsdef->add_other_defs()->mutable_proj_def());
 				added_projs++;
-			} else if (add_col && nopt < (add_idx + add_proj + add_col + 1)) {
+			} else if (add_const && nopt < (add_idx + add_proj + add_const + 1)) {
+				AddTableConstraint(rg, next, false, colsdef->add_other_defs()->mutable_const_def());
+				added_consts++;
+			} else if (add_col && nopt < (add_idx + add_proj + add_const + add_col + 1)) {
 				sql_query_grammar::ColumnDef *cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
 				AddTableColumn(rg, next, next.col_counter++, false, ColumnSpecial::NONE, cd);
 				added_cols++;
 			} else {
 				const uint32_t cname = next.col_counter++;
-				const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_col + add_version + 1);
+				const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
 				sql_query_grammar::ColumnDef *cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
 				AddTableColumn(rg, next, cname, false, add_version_col ? ColumnSpecial::VERSION : ColumnSpecial::SIGN, cd);
@@ -732,11 +752,14 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 						   remove_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily() && !t.projs.empty()),
 						   materialize_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily() && !t.projs.empty()),
 						   clear_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily() && !t.projs.empty()),
+						   add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4),
+						   remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty()),
 						   prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column +
 										rename_column + modify_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats +
 										mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property +
 										column_modify_setting + column_remove_setting + table_modify_setting + table_remove_setting +
-										add_projection + remove_projection + materialize_projection + clear_projection;
+										add_projection + remove_projection + materialize_projection + clear_projection + add_constraint +
+										remove_constraint;
 			sql_query_grammar::AlterTableItem *ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
 			std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
 			const uint32_t nopt = next_dist(rg.gen);
@@ -974,9 +997,24 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 														 materialize_projection + 1)) {
 				const uint32_t &proj = rg.PickRandomlyFromSet(t.projs);
 				ati->mutable_materialize_projection()->set_projection("p" + std::to_string(proj));
-			} else {
+			} else if (clear_projection && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
+												   rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+												   drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
+												   column_remove_property + column_modify_setting + column_remove_setting +
+												   table_modify_setting + table_remove_setting + add_projection + remove_projection +
+												   materialize_projection + clear_projection + 1)) {
 				const uint32_t &proj = rg.PickRandomlyFromSet(t.projs);
 				ati->mutable_clear_projection()->set_projection("p" + std::to_string(proj));
+			} else if (add_constraint && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
+												 rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+												 drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
+												 column_remove_property + column_modify_setting + column_remove_setting +
+												 table_modify_setting + table_remove_setting + add_projection + remove_projection +
+												 materialize_projection + clear_projection + add_constraint + 1)) {
+				AddTableConstraint(rg, t, true, ati->mutable_add_constraint());
+			} else {
+				const uint32_t &constr = rg.PickRandomlyFromSet(t.constrs);
+				ati->mutable_remove_constraint()->set_constraint("c" + std::to_string(constr));
 			}
 		}
 	} else {
@@ -1169,6 +1207,17 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 					const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.remove_projection().projection().substr(1)));
 
 					t.projs.erase(pname);
+				} else if (ati.has_add_constraint()) {
+					const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.add_constraint().constr().constraint().substr(1)));
+
+					if (success) {
+						t.constrs.insert(pname);
+					}
+					t.staged_constrs.erase(pname);
+				} else if (ati.has_remove_constraint() && success) {
+					const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.remove_constraint().constraint().substr(1)));
+
+					t.constrs.erase(pname);
 				}
 			}
 		}

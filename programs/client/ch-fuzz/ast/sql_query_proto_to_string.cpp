@@ -34,6 +34,10 @@ CONV_FN(Projection, proj) {
   ret += proj.projection();
 }
 
+CONV_FN(Constraint, constr) {
+  ret += constr.constraint();
+}
+
 CONV_FN(Table, table) {
   ret += table.table();
 }
@@ -1636,6 +1640,15 @@ CONV_FN(ProjectionDef, proj_def) {
   ret += ")";
 }
 
+CONV_FN(ConstraintDef, const_def) {
+  ret += "CONSTRAINT ";
+  ConstraintToString(ret, const_def.constr());
+  ret += " ";
+  ret += ConstraintDef_ConstraintType_Name(const_def.ctype());
+  ret += " ";
+  ExprToString(ret, const_def.expr());
+}
+
 CONV_FN(TableDefItem, tdef) {
   using CreateDefType = TableDefItem::CreatedefOneofCase;
   switch (tdef.createdef_oneof_case()) {
@@ -1648,12 +1661,15 @@ CONV_FN(TableDefItem, tdef) {
     case CreateDefType::kProjDef:
       ProjectionDefToString(ret, tdef.proj_def());
       break;
+    case CreateDefType::kConstDef:
+      ConstraintDefToString(ret, tdef.const_def());
+      break;
     default:
       ret += "c0 Int";
   }
 }
 
-CONV_FN(ColumnsDef, ct) {
+CONV_FN(TableDef, ct) {
   ColumnDefToString(ret, ct.col_def());
   for (int i = 0 ; i < ct.other_defs_size(); i++) {
     ret += ", ";
@@ -1715,7 +1731,7 @@ CONV_FN(CreateTable, create_table) {
   ret += " ";
   if (create_table.has_table_def()) {
     ret += "(";
-    ColumnsDefToString(ret, create_table.table_def());
+    TableDefToString(ret, create_table.table_def());
     ret += ")";
   } else if (create_table.has_table_like()) {
     ret += "AS ";
@@ -2039,6 +2055,14 @@ CONV_FN(AlterTableItem, alter) {
     case AlterType::kClearProjection:
       ret += "CLEAR PROJECTION ";
       ProjectionToString(ret, alter.clear_projection());
+      break;
+    case AlterType::kAddConstraint:
+      ret += "ADD ";
+      ConstraintDefToString(ret, alter.add_constraint());
+      break;
+    case AlterType::kRemoveConstraint:
+      ret += "DROP CONSTRAINT ";
+      ConstraintToString(ret, alter.remove_constraint());
       break;
     case AlterType::kModifyQuery:
       ret += "MODIFY QUERY ";

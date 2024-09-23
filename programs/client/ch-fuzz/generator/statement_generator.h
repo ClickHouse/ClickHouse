@@ -108,6 +108,7 @@ private:
 	int AddTableColumn(RandomGenerator &rg, SQLTable &t, const uint32_t cname, const bool staged, const ColumnSpecial special, sql_query_grammar::ColumnDef *cd);
 	int AddTableIndex(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::IndexDef *idef);
 	int AddTableProjection(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ProjectionDef *pdef);
+	int AddTableConstraint(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ConstraintDef *cdef);
 	int GenerateTableKey(RandomGenerator &rg, sql_query_grammar::TableKey *tkey);
 	int GenerateEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te);
 	int GenerateNextCreateView(RandomGenerator &rg, sql_query_grammar::CreateView *cv);

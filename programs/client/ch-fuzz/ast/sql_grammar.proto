@@ -4287,6 +4287,10 @@ message Projection {
   required string projection = 1;
 }
 
+message Constraint {
+  required string constraint = 1;
+}
+
 enum SpecialVal {
   VAL_NULL = 1;
   VAL_TRUE = 2;
@@ -5082,15 +5086,26 @@ message ProjectionDef {
   required Select select = 2;
 }
 
+message ConstraintDef {
+  enum ConstraintType {
+    CHECK = 1;
+    ASSUME = 2;
+  }
+  required Constraint constr = 1;
+  required ConstraintType ctype = 2;
+  required Expr expr = 3;
+}
+
 message TableDefItem {
   oneof createdef_oneof {
     ColumnDef col_def = 1;
     IndexDef idx_def = 2;
     ProjectionDef proj_def = 3;
+    ConstraintDef const_def = 4;
   }
 }
 
-message ColumnsDef {
+message TableDef {
   required ColumnDef col_def = 1;
   repeated TableDefItem other_defs = 2;
 }
@@ -5129,7 +5144,7 @@ message CreateTable {
   optional bool if_not_exists = 3;
   required ExprSchemaTable est = 4;
   oneof create_table_oneof {
-    ColumnsDef table_def = 5;
+    TableDef table_def = 5;
     ExprSchemaTable table_like = 6;
   }
   required TableEngine engine = 7;
@@ -5402,7 +5417,9 @@ message AlterTableItem {
     Projection remove_projection = 25;
     Projection materialize_projection = 26;
     Projection clear_projection = 27;
-    Select modify_query = 28;
+    ConstraintDef add_constraint = 28;
+    Constraint remove_constraint = 29;
+    Select modify_query = 30;
   }
 }
 
