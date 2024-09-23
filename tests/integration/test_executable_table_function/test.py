@@ -123,9 +123,7 @@ def test_executable_function_arg_eval_input_python(started_cluster):
 
     node.query("CREATE FUNCTION test_function AS () -> 'input.py';")
 
-    query = (
-        "SELECT * FROM executable(test_function(), 'TabSeparated', 'value String', {source})"
-    )
+    query = "SELECT * FROM executable(test_function(), 'TabSeparated', 'value String', {source})"
     assert node.query(query.format(source="(SELECT 1)")) == "Key 1\n"
     assert (
         node.query(query.format(source="(SELECT id FROM test_data_table)"))
