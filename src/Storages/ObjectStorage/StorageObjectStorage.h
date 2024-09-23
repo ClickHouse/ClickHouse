@@ -167,7 +167,9 @@ public:
     virtual String getNamespace() const = 0;
 
     virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;
-    virtual void addStructureAndFormatToArgs(
+
+    /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
+    virtual void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
 
     bool withPartitionWildcard() const;

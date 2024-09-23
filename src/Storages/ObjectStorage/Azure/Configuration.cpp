@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -311,12 +312,13 @@ AzureClientPtr StorageAzureConfiguration::createClient(bool is_read_only, bool a
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    if (engine_args.size() < 3 || engine_args.size() > (with_structure ? 8 : 7))
+    if (engine_args.size() < 3 || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Storage AzureBlobStorage requires 3 to 7 arguments: "
-                        "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
-                        "[account_name, account_key, format, compression, structure)])");
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage AzureBlobStorage requires 3 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -430,26 +432,30 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     blobs_paths = {blob_path};
 }
 
-void StorageAzureConfiguration::addStructureAndFormatToArgs(
+void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {
-        if (args.size() < 3 || args.size() > 8)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Azure requires 3 to 7 arguments: "
-                            "StorageObjectStorage(connection_string|storage_account_url, container_name, "
-                            "blobpath, [account_name, account_key, format, compression, structure])");
-        }
+        if (args.size() < 3 || args.size() > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 3 to {} arguments in table function azureBlobStorage, got {}", getMaxNumberOfArguments(), args.size());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
