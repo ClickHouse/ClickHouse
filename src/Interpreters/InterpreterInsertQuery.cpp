@@ -564,7 +564,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         return std::make_shared<ExpressionTransform>(in_header, actions);
     });
 
-    /// We need to convert Sparse columns to full, because its destination storage may not support it.
+    /// We need to convert Sparse columns to full if the destination storage doesn't support them.
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
     {
         return std::make_shared<MaterializingTransform>(in_header, !table->supportsSparseSerialization());
