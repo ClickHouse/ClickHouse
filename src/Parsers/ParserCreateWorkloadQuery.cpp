@@ -24,15 +24,28 @@ bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
             return false;
 
         SettingsChanges settings_changes;
+        Strings default_settings;
 
         auto parse_setting = [&]
         {
             SettingChange setting;
-            if (ParserSetQuery::parseNameValuePair(setting, pos, expected))
+            String default_setting;
+            std::pair<String, String> parameter;
+
+            if (ParserSetQuery::parseNameValuePairWithParameterOrDefault(setting, default_setting, parameter, pos, expected))
             {
-                settings_changes.push_back(std::move(setting));
+                if (!default_setting.empty())
+                {
+                    default_settings.push_back(std::move(default_setting));
+                    return true;
+                }
+                if (!setting.name.empty())
+                {
+                    settings_changes.push_back(std::move(setting));
+                    return true;
+                }
                 // TODO(serxa): parse optional clause: [FOR resource_name]
-                return true;
+                return false; // We do not support parameters
             }
 
             return false;

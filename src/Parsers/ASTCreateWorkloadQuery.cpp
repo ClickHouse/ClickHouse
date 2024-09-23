@@ -30,34 +30,34 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
     return res;
 }
 
-void ASTCreateWorkloadQuery::formatImpl(const IAST::FormatSettings & format_settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateWorkloadQuery::formatImpl(const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    format_settings.ostr << (format_settings.hilite ? hilite_keyword : "") << "CREATE ";
+    format.ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
-        format_settings.ostr << "OR REPLACE ";
+        format.ostr << "OR REPLACE ";
 
-    format_settings.ostr << "WORKLOAD ";
+    format.ostr << "WORKLOAD ";
 
     if (if_not_exists)
-        format_settings.ostr << "IF NOT EXISTS ";
+        format.ostr << "IF NOT EXISTS ";
 
-    format_settings.ostr << (format_settings.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_none : "");
 
-    format_settings.ostr << (format_settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (format_settings.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (format.hilite ? hilite_none : "");
 
-    formatOnCluster(format_settings);
+    formatOnCluster(format);
 
     if (hasParent())
     {
-        format_settings.ostr << (format_settings.hilite ? hilite_keyword : "") << " IN " << (format_settings.hilite ? hilite_none : "");
-        format_settings.ostr << (format_settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format_settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IN " << (format.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format.hilite ? hilite_none : "");
     }
 
     if (settings)
     {
-        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ';
-        settings->format(format_settings);
+        format.ostr << ' ' << (format.hilite ? hilite_keyword : "") << "SETTINGS" << (format.hilite ? hilite_none : "") << ' ';
+        settings->format(format);
     }
 }
 

@@ -15,26 +15,57 @@ ASTPtr ASTCreateResourceQuery::clone() const
     res->resource_name = resource_name->clone();
     res->children.push_back(res->resource_name);
 
+    res->operations = operations;
+
     return res;
 }
 
-void ASTCreateResourceQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateResourceQuery::formatImpl(const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
+    format.ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
-        settings.ostr << "OR REPLACE ";
+        format.ostr << "OR REPLACE ";
 
-    settings.ostr << "RESOURCE ";
+    format.ostr << "RESOURCE ";
 
     if (if_not_exists)
-        settings.ostr << "IF NOT EXISTS ";
+        format.ostr << "IF NOT EXISTS ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_none : "");
 
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getResourceName()) << (settings.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getResourceName()) << (format.hilite ? hilite_none : "");
 
-    formatOnCluster(settings);
+    formatOnCluster(format);
+
+    format.ostr << " (";
+
+    bool first = true;
+    for (const auto & operation : operations)
+    {
+        if (!first)
+            format.ostr << ", ";
+        else
+            first = false;
+
+        switch (operation.mode)
+        {
+            case AccessMode::Read:
+            {
+                format.ostr << (format.hilite ? hilite_keyword : "") << "READ DISK ";
+                break;
+            }
+            case AccessMode::Write:
+            {
+                format.ostr << (format.hilite ? hilite_keyword : "") << "WRITE DISK ";
+                break;
+            }
+        }
+        format.ostr << (format.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(operation.disk) << (format.hilite ? hilite_none : "");
+    }
+
+    format.ostr << ")";
 }
 
 String ASTCreateResourceQuery::getResourceName() const

@@ -10,8 +10,19 @@ namespace DB
 class ASTCreateResourceQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
+    enum class AccessMode {
+        Read,
+        Write
+    };
+    struct Operation {
+        AccessMode mode;
+        String disk;
+    };
+
+    using Operations = std::vector<Operation>;
+
     ASTPtr resource_name;
-    // TODO(serxa): add resource definition
+    Operations operations; /// List of operations that require this resource
 
     bool or_replace = false;
     bool if_not_exists = false;
