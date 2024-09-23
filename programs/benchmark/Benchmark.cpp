@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/clearPasswordFromCommandLine.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -36,7 +37,6 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
-#include <Core/BaseSettingsProgramOptions.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -58,8 +58,9 @@ static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_BLOCK_SIGNAL;
-    extern const int EMPTY_DATA_PASSED;
+extern const int BAD_ARGUMENTS;
+extern const int CANNOT_BLOCK_SIGNAL;
+extern const int EMPTY_DATA_PASSED;
 }
 
 class Benchmark : public Poco::Util::Application
@@ -637,7 +638,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        addProgramOptions(settings, desc);
+        settings.addToProgramOptions(desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);

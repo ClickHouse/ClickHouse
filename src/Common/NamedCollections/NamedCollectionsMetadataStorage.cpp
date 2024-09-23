@@ -1,28 +1,36 @@
-#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
-#include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <filesystem>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/parseQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
-#include <Interpreters/Context.h>
-#include <filesystem>
+#include <Parsers/parseQuery.h>
 #include <boost/algorithm/hex.hpp>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
+
 namespace ErrorCodes
 {
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
@@ -157,7 +165,7 @@ public:
         writeString(write_data, out);
 
         out.next();
-        if (getContext()->getSettingsRef().fsync_metadata)
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
             out.sync();
         out.close();
 
@@ -573,7 +581,7 @@ ASTCreateNamedCollectionQuery NamedCollectionsMetadataStorage::readCreateQuery(c
     const auto & settings = getContext()->getSettingsRef();
 
     ParserCreateNamedCollectionQuery parser;
-    auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    auto ast = parseQuery(parser, query, "in file " + path, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     const auto & create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
     return create_query;
 }

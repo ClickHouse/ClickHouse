@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2983
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -734,6 +734,7 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
+PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
@@ -1213,6 +1214,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip

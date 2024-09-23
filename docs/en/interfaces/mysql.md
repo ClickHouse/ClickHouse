@@ -96,7 +96,7 @@ In this case, ensure that the username follows the `mysql4<subdomain>_<username>
 
 ## Enabling the MySQL Interface On Self-managed ClickHouse
 
-Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
+Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
 ``` xml
 <clickhouse>

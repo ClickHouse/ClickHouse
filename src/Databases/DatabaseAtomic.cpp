@@ -23,6 +23,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsBool check_table_dependencies;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
@@ -197,8 +203,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    if (exchange && !supportsAtomicRename())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
+    std::string message;
+    if (exchange && !supportsAtomicRename(&message))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported because exchanging files is not supported by the OS ({})", message);
 
     waitDatabaseStarted();
 
@@ -590,8 +597,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 
     waitDatabaseStarted();
 
-    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
-    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
+    bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
+    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         std::lock_guard lock(mutex);
