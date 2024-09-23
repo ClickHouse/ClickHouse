@@ -28,6 +28,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_suspicious_primary_key;
+    extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool create_table_empty_primary_key_by_default;
+    extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -277,7 +286,7 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     if (has_valid_arguments)
     {
-        if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "It's not allowed to specify explicit zookeeper_path and replica_name "
@@ -285,7 +294,7 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
                             "specify them explicitly, enable setting "
                             "database_replicated_allow_replicated_engine_arguments.");
         }
-        else if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 1)
+        else if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "It's not recommended to explicitly specify "
                                                             "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
@@ -305,7 +314,7 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
 
 
-        if (is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 2)
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
                                                                      "with default arguments", zookeeper_path, replica_name);
@@ -543,7 +552,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// In new syntax argument can be literal or identifier or array/tuple of identifiers.
         evaluateEngineArgs(engine_args, args.getLocalContext());
     }
-    else if (args.mode <= LoadingStrictnessLevel::CREATE && !local_settings.allow_deprecated_syntax_for_merge_tree)
+    else if (args.mode <= LoadingStrictnessLevel::CREATE && !local_settings[Setting::allow_deprecated_syntax_for_merge_tree])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -676,7 +685,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!args.storage_def->order_by)
         {
-            if (local_settings.create_table_empty_primary_key_by_default)
+            if (local_settings[Setting::create_table_empty_primary_key_by_default])
             {
                 args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
             }
@@ -697,7 +706,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
-        if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
+        if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
@@ -723,7 +732,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
-        bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings.allow_suspicious_ttl_expressions;
+        bool allow_suspicious_ttl
+            = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
 
         if (args.storage_def->ttl_table)
         {
@@ -811,7 +821,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key
             = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
-        if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
+        if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.

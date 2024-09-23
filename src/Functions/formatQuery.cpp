@@ -12,6 +12,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool print_pretty_type_names;
+}
 
 namespace ErrorCodes
 {
@@ -40,10 +47,10 @@ public:
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
         const Settings & settings = context->getSettingsRef();
-        max_query_size = settings.max_query_size;
-        max_parser_depth = settings.max_parser_depth;
-        max_parser_backtracks = settings.max_parser_backtracks;
-        print_pretty_type_names = settings.print_pretty_type_names;
+        max_query_size = settings[Setting::max_query_size];
+        max_parser_depth = settings[Setting::max_parser_depth];
+        max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        print_pretty_type_names = settings[Setting::print_pretty_type_names];
     }
 
     String getName() const override { return name; }

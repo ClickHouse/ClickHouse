@@ -91,6 +91,12 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                     memory_delta -= remove_req.bytesSize();
                     break;
                 }
+                case Coordination::OpNum::RemoveRecursive:
+                {
+                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
+                    memory_delta -= remove_req.bytesSize();
+                    break;
+                }
                 default:
                     break;
             }
@@ -299,7 +305,7 @@ void KeeperDispatcher::requestThread()
                 if (has_read_request)
                 {
                     if (server->isLeaderAlive())
-                        server->putLocalReadRequest(request);
+                        server->putLocalReadRequest({request});
                     else
                         addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                 }

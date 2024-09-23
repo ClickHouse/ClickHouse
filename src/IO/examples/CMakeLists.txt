@@ -38,7 +38,7 @@ clickhouse_add_executable (o_direct_and_dirty_pages o_direct_and_dirty_pages.cpp
 target_link_libraries (o_direct_and_dirty_pages PRIVATE clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (io_operators io_operators.cpp)
-target_link_libraries (io_operators PRIVATE clickhouse_common_io clickhouse_common_config)
+target_link_libraries (io_operators PRIVATE dbms clickhouse_functions clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (write_int write_int.cpp)
 target_link_libraries (write_int PRIVATE clickhouse_common_io clickhouse_common_config)
@@ -56,7 +56,7 @@ clickhouse_add_executable (limit_read_buffer2 limit_read_buffer2.cpp)
 target_link_libraries (limit_read_buffer2 PRIVATE clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (parse_date_time_best_effort parse_date_time_best_effort.cpp)
-target_link_libraries (parse_date_time_best_effort PRIVATE clickhouse_common_io clickhouse_common_config)
+target_link_libraries (parse_date_time_best_effort PRIVATE dbms clickhouse_functions clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (zlib_ng_bug zlib_ng_bug.cpp)
 target_link_libraries (zlib_ng_bug PRIVATE ch_contrib::zlib clickhouse_common_io clickhouse_common_config)
@@ -75,7 +75,7 @@ target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io cl
 
 if (TARGET ch_contrib::hdfs)
     clickhouse_add_executable (read_buffer_from_hdfs read_buffer_from_hdfs.cpp)
-    target_link_libraries (read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
+    target_link_libraries (read_buffer_from_hdfs PRIVATE dbms clickhouse_functions ch_contrib::hdfs)
 endif ()
 
 
