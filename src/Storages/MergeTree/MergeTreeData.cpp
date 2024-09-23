@@ -482,13 +482,11 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
     if (parts.empty())
-    {
         return {};
-    }
 
     ASTPtr expression_ast;
 
-    ConditionSelectivityEstimator result;
+    ConditionSelectivityEstimator estimator;
     PartitionPruner partition_pruner(storage_snapshot->metadata, filter_dag, local_context);
 
     if (partition_pruner.isUseless())
@@ -499,9 +497,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         {
             auto stats = part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            result.addRows(part->rows_count);
+            estimator.incrementRowCount(part->rows_count);
             for (const auto & stat : stats)
-                result.merge(part->info.getPartNameV1(), stat);
+                estimator.addStatistics(part->info.getPartNameV1(), stat);
         }
         catch (...)
         {
@@ -516,9 +514,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             if (!partition_pruner.canBePruned(*part))
             {
                 auto stats = part->loadStatistics();
-                result.addRows(part->rows_count);
+                estimator.incrementRowCount(part->rows_count);
                 for (const auto & stat : stats)
-                    result.merge(part->info.getPartNameV1(), stat);
+                    estimator.addStatistics(part->info.getPartNameV1(), stat);
             }
         }
         catch (...)
@@ -527,7 +525,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         }
     }
 
-    return result;
+    return estimator;
 }
 
 bool MergeTreeData::supportsFinal() const

@@ -542,10 +542,10 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
+static std::set<ColumnStatisticsPartPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
 {
     const auto & stats_factory = MergeTreeStatisticsFactory::instance();
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
+    std::set<ColumnStatisticsPartPtr> stats_to_recalc;
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & col_desc : columns)
     {
@@ -665,7 +665,7 @@ static NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
     const std::set<ProjectionDescriptionRawPtr> & projections_to_skip,
-    const std::set<ColumnStatisticsPtr> & stats_to_recalc)
+    const std::set<ColumnStatisticsPartPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -1032,7 +1032,7 @@ struct MutationContext
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<ColumnStatisticsPtr> stats_to_recalc;
+    std::set<ColumnStatisticsPartPtr> stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
     NameSet files_to_skip;
