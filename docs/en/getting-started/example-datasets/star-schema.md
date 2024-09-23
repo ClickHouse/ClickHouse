@@ -1,6 +1,6 @@
 ---
 slug: /en/getting-started/example-datasets/star-schema
-sidebar_label: Star Schema Benchmark (SSB)
+sidebar_label: Star Schema Benchmark
 description:  "The Star Schema Benchmark (SSB) data set and queries"
 ---
 
