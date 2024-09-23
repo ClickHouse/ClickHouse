@@ -520,7 +520,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
 
         return object_storage->readObjects(
             *storage_objects,
-            updateResourceLink(settings, getReadResourceName()),
+            updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName()),
             read_hint,
             file_size);
     }
