@@ -114,6 +114,11 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
+    virtual bool chFuzz()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
+    }
+
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
@@ -353,6 +358,7 @@ protected:
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 
     QueryFuzzer fuzzer;
+    bool ch_fuzz = false;
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 

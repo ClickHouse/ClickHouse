@@ -432,7 +432,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
-    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
+    if (block.rows() == 0 || ((query_fuzzer_runs != 0 || ch_fuzz) && processed_rows >= 100))
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
@@ -2207,6 +2207,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
+    assert(!ch_fuzz);
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2441,6 +2442,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
+    assert(!ch_fuzz);
     if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
 
@@ -2738,7 +2740,7 @@ void ClientBase::runNonInteractive()
     if (delayed_interactive)
         initQueryIdFormats();
 
-    if (!queries_files.empty())
+    if (!ch_fuzz && !queries_files.empty())
     {
         for (const auto & queries_file : queries_files)
         {
@@ -2753,7 +2755,12 @@ void ClientBase::runNonInteractive()
         return;
     }
 
-    if (!queries.empty())
+    if (ch_fuzz)
+    {
+        if (!chFuzz())
+            return;
+    }
+    else if (!ch_fuzz && !queries.empty())
     {
         for (const auto & query : queries)
         {

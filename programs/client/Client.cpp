@@ -50,6 +50,9 @@
 
 #include <Poco/Util/Application.h>
 
+#include "ch-fuzz/ast/sql_query_proto_to_string.h"
+#include "ch-fuzz/generator/statement_generator.h"
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -388,7 +391,7 @@ try
     auto & access_control = client_context->getAccessControl();
     access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
-    if (is_interactive && !delayed_interactive)
+    if (is_interactive && !delayed_interactive && !ch_fuzz)
     {
         runInteractive();
     }
@@ -642,14 +645,14 @@ static bool queryHasWithClause(const IAST & ast)
     return false;
 }
 
-std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query)
+std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool ignore_deep_recursion)
 {
     processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
     // and TOO_DEEP_RECURSION should not fail the fuzzer check.
-    if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+    if (ignore_deep_recursion && have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
     {
         have_error = false;
         server_exception.reset();
@@ -847,7 +850,7 @@ bool Client::processWithFuzzing(const String & full_query)
             }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
-            if (auto res = processFuzzingStep(query_to_execute, ast_to_process))
+            if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;
         }
         catch (...)
@@ -917,7 +920,7 @@ bool Client::processWithFuzzing(const String & full_query)
         try
         {
             query_to_execute = query->formatForErrorMessage();
-            if (auto res = processFuzzingStep(query_to_execute, query))
+            if (auto res = processFuzzingStep(query_to_execute, query, false))
                 return *res;
         }
         catch (...)
@@ -938,6 +941,114 @@ bool Client::processWithFuzzing(const String & full_query)
     return true;
 }
 
+void Client::ProcessQueryAndLog(std::ofstream &outf, const std::string &full_query)
+{
+    processTextAsSingleQuery(full_query);
+    outf << full_query << std::endl;
+}
+
+bool Client::ProcessCHFuzzQuery(std::ofstream &outf, const std::string &full_query)
+{
+    bool server_up = true;
+    ASTPtr orig_ast;
+
+    have_error = false;
+    outf << full_query << std::endl;
+    try
+    {
+        const char * begin = full_query.data();
+
+        if ((orig_ast = parseQuery(begin, begin + full_query.size(), client_context->getSettingsRef(), false)))
+        {
+            String query_to_execute = orig_ast->formatForErrorMessage();
+            const auto res = processFuzzingStep(query_to_execute, orig_ast, false);
+            server_up &= res.value_or(true);
+        }
+        else
+        {
+            have_error = true;
+        }
+    }
+    catch (...)
+    {
+        // Some functions (e.g. protocol parsers) don't throw, but
+        // set last_exception instead, so we'll also do it here for
+        // uniformity.
+        // Surprisingly, this is a client exception, because we get the
+        // server exception w/o throwing (see onReceiveException()).
+        client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+        have_error = true;
+    }
+    if (have_error)
+    {
+        // Query completed with error, keep the previous starting AST.
+        // Also discard the exception that we now know to be non-fatal,
+        // so that it doesn't influence the exit code.
+        server_exception.reset();
+        client_exception.reset();
+    }
+    return server_up;
+}
+
+/// Returns false when server is not available.
+bool Client::chFuzz()
+{
+    bool server_up = true;
+    std::string full_query;
+    int nsuccessfull = 0, total_create_table_tries = 0;
+    chfuzz::StatementGenerator gen;
+    chfuzz::RandomGenerator rg(0);
+    sql_query_grammar::SQLQuery sq1, sq2;
+    std::ofstream outf("/tmp/out.sql", std::ios::out | std::ios::trunc);
+
+    GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+    outf << "--Session seed: " << rg.GetSeed() << std::endl;
+    ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
+    ProcessQueryAndLog(outf, "CREATE DATABASE s0;");
+    ProcessQueryAndLog(outf, "USE s0;");
+
+    full_query.reserve(8192);
+    while (server_up)
+    {
+        sq1.Clear();
+        full_query.resize(0);
+
+        if (total_create_table_tries < 30 && nsuccessfull < 10)
+        {
+            (void) gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
+            chfuzz::SQLQueryToString(full_query, sq1);
+            server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+            gen.UpdateGenerator(sq1, !have_error);
+            nsuccessfull += (have_error ? 0 : 1);
+            total_create_table_tries++;
+        }
+        else if (rg.NextSmallNumber() < 3)
+        {
+            //correctness test query
+            (void) gen.GenerateCorrectnessTestFirstQuery(rg, sq1);
+            chfuzz::SQLQueryToString(full_query, sq1);
+            server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+            sq2.Clear();
+            full_query.resize(0);
+            (void) gen.GenerateCorrectnessTestSecondQuery(sq1, sq2);
+            chfuzz::SQLQueryToString(full_query, sq2);
+            server_up &= ProcessCHFuzzQuery(outf, full_query);
+        }
+        else
+        {
+            (void) gen.GenerateNextStatement(rg, sq1);
+            chfuzz::SQLQueryToString(full_query, sq1);
+            server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+            gen.UpdateGenerator(sq1, !have_error);
+        }
+    }
+    gen.FinishGenerator();
+    return false;
+}
 
 void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
@@ -972,6 +1083,7 @@ void Client::addOptions(OptionsDescription & options_description)
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")
+        ("ch-fuzz", po::value<bool>()->default_value(false), "")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
 
@@ -1129,7 +1241,9 @@ void Client::processOptions(const OptionsDescription & options_description,
     else
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
-    if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
+    query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
+    ch_fuzz = options["ch-fuzz"].as<bool>();
+    if (query_fuzzer_runs || ch_fuzz)
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
