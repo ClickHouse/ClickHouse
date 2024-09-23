@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS subquery_cte_in;
 
 CREATE TABLE subquery_cte_in
