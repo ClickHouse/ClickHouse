@@ -57,9 +57,7 @@ private:
     NATSConfiguration configuration;
     LoggerPtr log;
 
-    UVLoop loop;
     NATSHandler event_handler;
-
 
     natsConnection * connection;
     // true if at any point successfully connected to NATS

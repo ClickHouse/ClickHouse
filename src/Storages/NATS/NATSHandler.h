@@ -8,6 +8,8 @@
 #include <base/types.h>
 #include <Common/Logger.h>
 
+#include <Storages/UVLoop.h>
+
 namespace DB
 {
 
@@ -23,7 +25,7 @@ using LockPtr = std::unique_ptr<std::lock_guard<std::mutex>>;
 class NATSHandler
 {
 public:
-    NATSHandler(uv_loop_t * loop_, LoggerPtr log_);
+    NATSHandler(LoggerPtr log_);
 
     ~NATSHandler();
 
@@ -45,7 +47,7 @@ public:
     natsOptions * getOptions() { return opts; }
 
 private:
-    uv_loop_t * loop;
+    UVLoop loop;
     natsOptions * opts = nullptr;
     LoggerPtr log;
 

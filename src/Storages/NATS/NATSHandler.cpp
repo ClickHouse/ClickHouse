@@ -13,16 +13,15 @@ namespace DB
 
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
-NATSHandler::NATSHandler(uv_loop_t * loop_, LoggerPtr log_) :
-    loop(loop_),
+NATSHandler::NATSHandler(LoggerPtr log_) :
     log(log_),
     loop_running(false),
     loop_state(Loop::STOP)
 {
     natsLibuv_Init();
-    natsLibuv_SetThreadLocalLoop(loop);
+    natsLibuv_SetThreadLocalLoop(loop.getLoop());
     natsOptions_Create(&opts);
-    natsOptions_SetEventLoop(opts, static_cast<void *>(loop),
+    natsOptions_SetEventLoop(opts, static_cast<void *>(loop.getLoop()),
                                  natsLibuv_Attach,
                                  natsLibuv_Read,
                                  natsLibuv_Write,
@@ -34,7 +33,7 @@ NATSHandler::NATSHandler(uv_loop_t * loop_, LoggerPtr log_) :
 void NATSHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
-    natsLibuv_SetThreadLocalLoop(loop);
+    natsLibuv_SetThreadLocalLoop(loop.getLoop());
 
     LOG_DEBUG(log, "Background loop started");
     loop_running.store(true);
@@ -44,7 +43,7 @@ void NATSHandler::startLoop()
 
     while (loop_state.load() == Loop::RUN && duration.count() < MAX_THREAD_WORK_DURATION_MS)
     {
-        uv_run(loop, UV_RUN_NOWAIT);
+        uv_run(loop.getLoop(), UV_RUN_NOWAIT);
         end_time = std::chrono::steady_clock::now();
         duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     }
@@ -58,22 +57,22 @@ void NATSHandler::iterateLoop()
     std::unique_lock lock(startup_mutex, std::defer_lock);
     if (lock.try_lock())
     {
-        natsLibuv_SetThreadLocalLoop(loop);
-        uv_run(loop, UV_RUN_NOWAIT);
+        natsLibuv_SetThreadLocalLoop(loop.getLoop());
+        uv_run(loop.getLoop(), UV_RUN_NOWAIT);
     }
 }
 
 LockPtr NATSHandler::setThreadLocalLoop()
 {
     auto lock = std::make_unique<std::lock_guard<std::mutex>>(startup_mutex);
-    natsLibuv_SetThreadLocalLoop(loop);
+    natsLibuv_SetThreadLocalLoop(loop.getLoop());
     return lock;
 }
 
 void NATSHandler::stopLoop()
 {
     LOG_DEBUG(log, "Implicit loop stop.");
-    uv_stop(loop);
+    uv_stop(loop.getLoop());
 }
 
 NATSHandler::~NATSHandler()
@@ -81,7 +80,7 @@ NATSHandler::~NATSHandler()
     auto lock = setThreadLocalLoop();
 
     LOG_DEBUG(log, "Blocking loop started.");
-    uv_run(loop, UV_RUN_DEFAULT);
+    uv_run(loop.getLoop(), UV_RUN_DEFAULT);
 
     natsOptions_Destroy(opts);
 }

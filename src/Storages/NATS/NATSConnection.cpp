@@ -15,7 +15,7 @@ static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configuration_, LoggerPtr log_)
     : configuration(configuration_)
     , log(log_)
-    , event_handler(loop.getLoop(), log)
+    , event_handler(log)
 {
     const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE"); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
     std::string tls_secure = val == nullptr ? std::string("1") : std::string(val);
