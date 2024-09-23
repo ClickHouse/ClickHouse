@@ -103,6 +103,7 @@ public:
         , format_settings(params.format_settings)
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
+        , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
         , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, CurrentMetrics::ParallelParsingInputFormatThreadsScheduled, params.max_threads)
     {
@@ -124,9 +125,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
-    const BlockMissingValues & getMissingValues() const final
+    const BlockMissingValues * getMissingValues() const final
     {
-        return last_block_missing_values;
+        return &last_block_missing_values;
     }
 
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
@@ -190,7 +191,7 @@ private:
             }
         }
 
-        const BlockMissingValues & getMissingValues() const { return input_format->getMissingValues(); }
+        const BlockMissingValues * getMissingValues() const { return input_format->getMissingValues(); }
 
     private:
         const InputFormatPtr & input_format;
