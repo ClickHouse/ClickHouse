@@ -6,6 +6,8 @@ DROP TABLE IF EXISTS without_deduplication;
 DROP TABLE IF EXISTS with_deduplication_mv;
 DROP TABLE IF EXISTS without_deduplication_mv;
 
+SET database_replicated_allow_explicit_uuid=3;
+SET database_replicated_allow_replicated_engine_arguments=3;
 CREATE TABLE with_deduplication(x UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00510/with_deduplication', 'r1') ORDER BY x;
 CREATE TABLE without_deduplication(x UInt32)

@@ -249,7 +249,7 @@ bool SettingsProfileElements::isBackupAllowed() const
 bool SettingsProfileElements::isAllowBackupSetting(const String & setting_name)
 {
     static constexpr std::string_view ALLOW_BACKUP_SETTING_NAME = "allow_backup";
-    return Settings::Traits::resolveName(setting_name) == ALLOW_BACKUP_SETTING_NAME;
+    return Settings::resolveName(setting_name) == ALLOW_BACKUP_SETTING_NAME;
 }
 
 }

@@ -188,8 +188,9 @@ namespace Crypto
                     pFile = fopen(keyFile.c_str(), "r");
                     if (pFile)
                     {
-                        pem_password_cb * pCB = pass.empty() ? (pem_password_cb *)0 : &passCB;
-                        void * pPassword = pass.empty() ? (void *)0 : (void *)pass.c_str();
+                        pem_password_cb * pCB = &passCB;
+                        static constexpr char * no_password = "";
+                        void * pPassword = pass.empty() ? (void *)no_password : (void *)pass.c_str();
                         if (readFunc(pFile, &pKey, pCB, pPassword))
                         {
                             fclose(pFile);
@@ -225,6 +226,13 @@ namespace Crypto
         error:
             if (pFile)
                 fclose(pFile);
+            if (*ppKey)
+            {
+                if constexpr (std::is_same_v<K, EVP_PKEY>)
+                    EVP_PKEY_free(*ppKey);
+                else
+                    EC_KEY_free(*ppKey);
+            }
             throw OpenSSLException("EVPKey::loadKey(string)");
         }
 
@@ -286,6 +294,13 @@ namespace Crypto
         error:
             if (pBIO)
                 BIO_free(pBIO);
+            if (*ppKey)
+            {
+                if constexpr (std::is_same_v<K, EVP_PKEY>)
+                    EVP_PKEY_free(*ppKey);
+                else
+                    EC_KEY_free(*ppKey);
+            }
             throw OpenSSLException("EVPKey::loadKey(stream)");
         }
 

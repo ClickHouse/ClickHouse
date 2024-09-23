@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,6 +34,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -577,20 +585,20 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
 size_t StorageFileLog::getMaxBlockSize() const
 {
     return filelog_settings->max_block_size.changed ? filelog_settings->max_block_size.value
-                                                    : getContext()->getSettingsRef().max_insert_block_size.value;
+                                                    : getContext()->getSettingsRef()[Setting::max_insert_block_size].value;
 }
 
 size_t StorageFileLog::getPollMaxBatchSize() const
 {
     size_t batch_size = filelog_settings->poll_max_batch_size.changed ? filelog_settings->poll_max_batch_size.value
-                                                                      : getContext()->getSettingsRef().max_block_size.value;
+                                                                      : getContext()->getSettingsRef()[Setting::max_block_size].value;
     return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageFileLog::getPollTimeoutMillisecond() const
 {
     return filelog_settings->poll_timeout_ms.changed ? filelog_settings->poll_timeout_ms.totalMilliseconds()
-                                                     : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+                                                     : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
@@ -777,7 +785,7 @@ bool StorageFileLog::streamToViews()
     {
         block_io.pipeline.complete(std::move(input));
         block_io.pipeline.setNumThreads(max_streams_number);
-        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef().use_concurrency_control);
+        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef()[Setting::use_concurrency_control]);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();

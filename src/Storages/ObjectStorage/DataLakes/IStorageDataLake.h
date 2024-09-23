@@ -2,9 +2,8 @@
 
 #include "config.h"
 
-#if USE_AWS_S3 && USE_AVRO
+#if USE_AVRO
 
-#include <Formats/FormatFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>

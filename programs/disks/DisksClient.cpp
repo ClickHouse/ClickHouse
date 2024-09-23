@@ -1,6 +1,5 @@
 #include "DisksClient.h"
 #include <Client/ClientBase.h>
-#include <Client/ReplxxLineReader.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigProcessor.h>
 
