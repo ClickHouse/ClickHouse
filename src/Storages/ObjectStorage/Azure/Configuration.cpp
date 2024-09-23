@@ -20,6 +20,18 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool azure_create_new_file_on_insert;
+    extern const SettingsBool azure_ignore_file_doesnt_exist;
+    extern const SettingsUInt64 azure_list_object_keys_size;
+    extern const SettingsBool azure_skip_empty_files;
+    extern const SettingsBool azure_throw_on_zero_files_match;
+    extern const SettingsBool azure_truncate_on_insert;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_azure;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -62,14 +74,14 @@ StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings.azure_truncate_on_insert,
-        .create_new_file_on_insert = settings.azure_create_new_file_on_insert,
-        .schema_inference_use_cache = settings.schema_inference_use_cache_for_azure,
-        .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.azure_skip_empty_files,
-        .list_object_keys_size = settings.azure_list_object_keys_size,
-        .throw_on_zero_files_match = settings.azure_throw_on_zero_files_match,
-        .ignore_non_existent_file = settings.azure_ignore_file_doesnt_exist,
+        .truncate_on_insert = settings[Setting::azure_truncate_on_insert],
+        .create_new_file_on_insert = settings[Setting::azure_create_new_file_on_insert],
+        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_azure],
+        .schema_inference_mode = settings[Setting::schema_inference_mode],
+        .skip_empty_files = settings[Setting::azure_skip_empty_files],
+        .list_object_keys_size = settings[Setting::azure_list_object_keys_size],
+        .throw_on_zero_files_match = settings[Setting::azure_throw_on_zero_files_match],
+        .ignore_non_existent_file = settings[Setting::azure_ignore_file_doesnt_exist],
     };
 }
 
@@ -223,7 +235,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         {
             account_name = fourth_arg;
             account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/structure");
             if (is_format_arg(sixth_arg))
             {
                 format = sixth_arg;
@@ -257,10 +269,10 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     }
     else if (with_structure && engine_args.size() == 8)
     {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "account_name");
         account_name = fourth_arg;
         account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
         if (!is_format_arg(sixth_arg))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
         format = sixth_arg;

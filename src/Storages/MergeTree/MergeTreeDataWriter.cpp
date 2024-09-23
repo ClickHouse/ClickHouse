@@ -54,6 +54,13 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool materialize_skip_indexes_on_insert;
+    extern const SettingsBool materialize_statistics_on_insert;
+    extern const SettingsBool optimize_on_insert;
+    extern const SettingsBool throw_on_max_partitions_per_insert_block;
+}
 
 namespace ErrorCodes
 {
@@ -78,7 +85,7 @@ void buildScatterSelector(
 
     size_t num_rows = columns[0]->size();
     size_t partitions_count = 0;
-    size_t throw_on_limit = context->getSettingsRef().throw_on_max_partitions_per_insert_block;
+    size_t throw_on_limit = context->getSettingsRef()[Setting::throw_on_max_partitions_per_insert_block];
 
     for (size_t i = 0; i < num_rows; ++i)
     {
@@ -484,11 +491,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     MergeTreeIndices indices;
-    if (context->getSettingsRef().materialize_skip_indexes_on_insert)
+    if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
         indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
 
     ColumnsStatistics statistics;
-    if (context->getSettingsRef().materialize_statistics_on_insert)
+    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
         statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
 
     /// If we need to calculate some columns to sort.
@@ -529,7 +536,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     }
 
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
-    if (context->getSettingsRef().optimize_on_insert)
+    if (context->getSettingsRef()[Setting::optimize_on_insert])
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), sort_description, partition_key_columns, perm_ptr, data.merging_params);

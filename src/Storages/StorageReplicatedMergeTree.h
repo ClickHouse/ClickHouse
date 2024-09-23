@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/RenamingRestrictions.h>
+#include <Storages/TableZnodeInfo.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -98,8 +99,7 @@ public:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     StorageReplicatedMergeTree(
-        const String & zookeeper_path_,
-        const String & replica_name_,
+        const TableZnodeInfo & zookeeper_info_,
         LoadingStrictnessLevel mode,
         const StorageID & table_id_,
         const String & relative_data_path_,
@@ -108,7 +108,6 @@ public:
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
-        RenamingRestrictions renaming_restrictions_,
         bool need_check_structure);
 
     void startup() override;
@@ -244,14 +243,15 @@ public:
     /** Remove a specific replica from zookeeper.
      * returns true if there are no replicas left
      */
-    static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
+    static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info,
                             LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
-    bool dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
+    bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
-    static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
-                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, LoggerPtr logger);
+    static bool removeTableNodesFromZooKeeper(
+        zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info2,
+        const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, LoggerPtr logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
@@ -330,16 +330,14 @@ public:
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
     // Return default or custom zookeeper name for table
-    const String & getZooKeeperName() const { return zookeeper_name; }
-    const String & getZooKeeperPath() const { return zookeeper_path; }
-    const String & getFullZooKeeperPath() const { return full_zookeeper_path; }
+    const String & getZooKeeperName() const { return zookeeper_info.zookeeper_name; }
+    const String & getZooKeeperPath() const { return zookeeper_info.path; }
+    const String & getFullZooKeeperPath() const { return zookeeper_info.full_path; }
 
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
-
-    static const String & getDefaultZooKeeperName() { return default_zookeeper_name; }
 
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
@@ -418,12 +416,10 @@ private:
 
     bool is_readonly_metric_set = false;
 
-    const String full_zookeeper_path;
-    static const String default_zookeeper_name;
-    const String zookeeper_name;
-    const String zookeeper_path;
+    const TableZnodeInfo zookeeper_info;
+    const String zookeeper_path; // shorthand for zookeeper_info.path
 
-    const String replica_name;
+    const String replica_name; // shorthand for zookeeper_info.replica_name
     const String replica_path;
 
     /** /replicas/me/is_active.
@@ -518,9 +514,6 @@ private:
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
-
-    /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
-    const RenamingRestrictions renaming_restrictions;
 
     /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
     /// speed.

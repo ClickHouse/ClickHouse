@@ -126,7 +126,8 @@ private:
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        PartFilterCounters & counters);
+        PartFilterCounters & counters,
+        QueryStatusPtr query_status);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     static void selectPartsToReadWithUUIDFilter(
