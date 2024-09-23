@@ -195,8 +195,6 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         std::lock_guard lock(mutex);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
 
-        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
-
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();
