@@ -63,7 +63,10 @@ SHOW CREATE SETTINGS PROFILE s2_01418;
 DROP SETTINGS PROFILE s2_01418;
 
 SELECT getSetting('custom_xyz') as v; -- { serverError UNKNOWN_SETTING } -- Setting not found.
-SELECT getSettingOrNull('custom_xyz') as v;
-SELECT getSettingOrNull(1) as v; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count(*) FROM numbers(10) WHERE number = toInt64(getSettingOrNull('custom_number'));
-SELECT isNull(getSettingOrNull('custom_xyz')) as v;
+SELECT getSettingOrDefault('custom_xyz','my_default_value') as v;
+SELECT getSettingOrDefault('custom_compound.identifier.v1','should not be seen') as v;
+SELECT getSettingOrDefault('custom_xyz', NULL) as v;
+SELECT getSettingOrDefault('custom_xyz', 50) as v;
+SELECT getSettingOrDefault(1, 'def') as v; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count(*) FROM numbers(10) WHERE number = getSettingOrDefault('custom_role',5);
+SELECT isNull(getSettingOrDefault('custom_xyz',NULL)) as v;

@@ -22,7 +22,7 @@ namespace
 enum class ErrorHandling : uint8_t
 {
     Exception,
-    Null,
+    Default,
 };
 
 /// Get the value of a setting.
@@ -34,8 +34,8 @@ public:
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 1; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    size_t getNumberOfArguments() const override { return ( name == "getSettingOrDefault" ? 2 : 1 ); }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0,1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -61,6 +61,15 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
+        if (arguments.size() == 2)
+        {
+            const auto * default_value_column = arguments[1].column.get();
+            if (!default_value_column || default_value_column->size() != 1)
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The 2nd argument of function {} should be a constant", String{name});
+            }
+        }
 
         std::string_view setting_name{column->getDataAt(0).toView()};
         Field setting_value;
@@ -72,7 +81,16 @@ private:
         {
             if (error_handling == ErrorHandling::Exception)
                 throw;
-            if (error_handling == ErrorHandling::Null)
+            else if (error_handling == ErrorHandling::Default)
+            {
+                if (arguments.size() == 2)
+                {
+                    auto default_value_column = arguments[1].column;
+
+                    setting_value = (*default_value_column)[0];
+                }
+            }
+            else
                 setting_value = Field(Null());
         }
         return setting_value;
@@ -89,10 +107,10 @@ REGISTER_FUNCTION(GetSetting)
         [](ContextPtr context){ return std::make_shared<FunctionGetSetting>(context, "getSetting", ErrorHandling::Exception); });
 }
 
-REGISTER_FUNCTION(GetSettingOrNull)
+REGISTER_FUNCTION(GetSettingOrDefault)
 {
-    factory.registerFunction("getSettingOrNull",
-        [](ContextPtr context){ return std::make_shared<FunctionGetSetting>(context, "getSettingOrNull", ErrorHandling::Null); });
+    factory.registerFunction("getSettingOrDefault",
+        [](ContextPtr context){ return std::make_shared<FunctionGetSetting>(context, "getSettingOrDefault", ErrorHandling::Default); });
 }
 
 }
