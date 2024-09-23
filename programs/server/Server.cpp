@@ -59,6 +59,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -1099,6 +1100,10 @@ try
     ServerUUID::load(path / "uuid", log);
 
     PlacementInfo::PlacementInfo::instance().initialize(config());
+
+    auto cancellation_task_holder = global_context->getSchedulePool().createTask("CancellationChecker", []{ CancellationChecker::getInstance().workerFunction(); });
+    auto cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
+    (*cancellation_task)->activateAndSchedule();
 
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());

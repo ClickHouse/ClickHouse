@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -104,6 +105,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast);
+    std::shared_ptr<QueryStatus> query;
 
     {
         auto [lock, overcommit_blocker] = safeLock(); // To avoid deadlock in case of OOM
@@ -285,17 +287,21 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             ///  since allocation and deallocation could happen in different threads
         }
 
+        query = std::make_shared<QueryStatus>(
+            query_context,
+            query_,
+            client_info,
+            priorities.insert(static_cast<int>(settings.priority)),
+            std::move(thread_group),
+            query_kind,
+            settings,
+            watch_start_nanoseconds);
+
         auto process_it = processes.emplace(
             processes.end(),
-            std::make_shared<QueryStatus>(
-                query_context,
-                query_,
-                client_info,
-                priorities.insert(settings[Setting::priority]),
-                std::move(thread_group),
-                query_kind,
-                settings,
-                watch_start_nanoseconds));
+            query);
+
+        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef().max_execution_time.totalMilliseconds());
 
         increaseQueryKindAmount(query_kind);
 
@@ -327,6 +333,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         }
     }
 
+    CancellationChecker::getInstance().appendDoneTasks(query);
     return res;
 }
 
