@@ -21,7 +21,7 @@ struct StatisticsUtils
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
 };
 
-/// Interface for statistics on a column in a column.
+/// Interface for a single statistics object for a column within a part.
 ///
 /// Statistics describe properties of the values in the column, e.g. how many unique values exist, what are
 /// the N most frequent values, how frequent a value V is, etc.
