@@ -25,7 +25,6 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
-
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;
@@ -411,6 +410,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
+
 #if defined(OS_LINUX)
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)

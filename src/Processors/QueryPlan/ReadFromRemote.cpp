@@ -465,6 +465,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
+
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
