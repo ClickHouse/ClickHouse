@@ -522,7 +522,8 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 		cv->set_populate(rg.NextSmallNumber() < 4);
 	}
 	this->levels[this->current_level] = QueryLevel(this->current_level);
-	GenerateSelect(rg, false, next.ncols, std::numeric_limits<uint32_t>::max(), cv->mutable_select());
+	GenerateSelect(rg, false, next.ncols, next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+				   cv->mutable_select());
 	this->staged_views[vname] = std::move(next);
 	return 0;
 }
@@ -718,7 +719,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 		tab->set_table("v" + std::to_string(v.vname));
 		v.staged_ncols = (rg.NextMediumNumber() % 5) + 1;
 		this->levels[this->current_level] = QueryLevel(this->current_level);
-		GenerateSelect(rg, false, v.staged_ncols, std::numeric_limits<uint32_t>::max(), at->mutable_alter()->mutable_modify_query());
+		GenerateSelect(rg, false, v.staged_ncols, v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+					   at->mutable_alter()->mutable_modify_query());
 	} else if (!tables.empty()) {
 		SQLTable &t = const_cast<SQLTable &>(rg.PickValueRandomlyFromMap(this->tables));
 		const uint32_t nalters = rg.NextBool() ? 1 : ((rg.NextMediumNumber() % 4) + 1);

@@ -462,8 +462,8 @@ const std::vector<CHFunction> CHFuncs = {
 	CHFunction(sql_query_grammar::SQLFunc::FUNChilbertDecode, 0, 0, 2, 2),
 	//hash
 	CHFunction(sql_query_grammar::SQLFunc::FUNChalfMD5, 0, 0, 1, ulimited_params),
-	CHFunction(sql_query_grammar::SQLFunc::FUNCMD4, 0, 0, 1, ulimited_params),
-	CHFunction(sql_query_grammar::SQLFunc::FUNCMD5, 0, 0, 1, ulimited_params),
+	CHFunction(sql_query_grammar::SQLFunc::FUNCMD4, 0, 0, 1, 1),
+	CHFunction(sql_query_grammar::SQLFunc::FUNCMD5, 0, 0, 1, 1),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCsipHash64, 0, 0, 1, ulimited_params),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCsipHash64Keyed, 0, 0, 1, ulimited_params),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCsipHash128, 0, 0, 1, ulimited_params),

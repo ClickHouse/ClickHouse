@@ -127,7 +127,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 
 			jt->mutable_est()->mutable_table_name()->set_table("v" + std::to_string(v.vname));
 			jt->mutable_table_alias()->set_table(name);
-			jt->set_final(rg.NextSmallNumber() < 3);
+			jt->set_final(!v.is_materialized && rg.NextSmallNumber() < 3);
 			for (uint32_t i = 0 ; i < v.ncols; i++) {
 				rel.cols.push_back(SQLRelationCol(name, "c" + std::to_string(i)));
 			}
