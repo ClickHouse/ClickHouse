@@ -47,7 +47,8 @@ namespace ProfileEvents
 
 }
 
-namespace {
+namespace
+{
     struct ScopedDecrement
     {
         std::atomic<int64_t>& atomic_var;
