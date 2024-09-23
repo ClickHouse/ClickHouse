@@ -21,12 +21,16 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     size_t shard_num,
     size_t shard_count,
     bool has_missing_objects,
-    bool build_logical_plan)
+    bool build_logical_plan,
+    const std::string & default_database)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
+
+    if (build_logical_plan && !default_database.empty())
+        new_context->setCurrentDatabase(default_database);
 
     /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
     if (!build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)

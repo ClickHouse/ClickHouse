@@ -1213,17 +1213,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             {
                 const auto * column_name = table_expression_data.getColumnNameOrNull(output_node->result_name);
                 if (!column_name)
-                    continue;
-
-                updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_name));
+                    updated_actions_dag_outputs.push_back(output_node);
+                else
+                    updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_name));
             }
             else
             {
                 const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
                 if (!column_identifier)
-                    continue;
-
-                updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
+                    updated_actions_dag_outputs.push_back(output_node);
+                else
+                    updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
             }
         }
 

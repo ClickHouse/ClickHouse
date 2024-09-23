@@ -183,7 +183,7 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true);
+                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentDataStream().header;
         }

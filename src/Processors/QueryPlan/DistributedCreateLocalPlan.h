@@ -15,5 +15,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     size_t shard_num,
     size_t shard_count,
     bool has_missing_objects,
-    bool build_logical_plan = false);
+    bool build_logical_plan = false,
+    const std::string & default_database = {});
 }
