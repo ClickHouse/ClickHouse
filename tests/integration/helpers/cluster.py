@@ -1751,8 +1751,7 @@ class ClickHouseCluster:
 
         if name in self.instances:
             raise Exception(
-                "Can't add instance `%s': there is already an instance with the same name!"
-                % name
+                f"Can't add instance '{name}': there is already an instance with the same name in [{self.instances.keys()}]"
             )
 
         if tag is None:
