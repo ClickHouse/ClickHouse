@@ -11,11 +11,15 @@
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
+#include <Common/callOnce.h>
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/ServerUUID.h>
 
+#include <exception>
 #include <filesystem>
+#include <mutex>
 
 
 namespace fs = std::filesystem;
@@ -88,6 +92,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
     , boundary_alignment(settings.boundary_alignment)
     , load_metadata_threads(settings.load_metadata_threads)
+    , load_metadata_asynchronously(settings.load_metadata_asynchronously)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
     , keep_current_size_to_max_ratio(1 - settings.keep_free_space_size_ratio)
     , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
@@ -136,7 +141,17 @@ const FileCache::UserInfo & FileCache::getInternalUser()
 
 bool FileCache::isInitialized() const
 {
-    return is_initialized.load(std::memory_order_seq_cst);
+    return is_initialized;
+}
+
+void FileCache::throwInitExceptionIfNeeded()
+{
+    if (load_metadata_asynchronously)
+        return;
+
+    std::lock_guard lock(init_mutex);
+    if (init_exception)
+        std::rethrow_exception(init_exception);
 }
 
 const String & FileCache::getBasePath() const
@@ -171,6 +186,35 @@ void FileCache::assertInitialized() const
 
 void FileCache::initialize()
 {
+    // Prevent initialize() from running twice. This may be caused by two cache disks being created with the same path (see integration/test_filesystem_cache).
+    callOnce(initialize_called, [&] {
+        bool need_to_load_metadata = fs::exists(getBasePath());
+        try
+        {
+            if (!need_to_load_metadata)
+                fs::create_directories(getBasePath());
+            status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+        }
+        catch (...)
+        {
+            init_exception = std::current_exception();
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw;
+        }
+
+        if (load_metadata_asynchronously)
+        {
+            load_metadata_main_thread = ThreadFromGlobalPool([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
+        }
+        else
+        {
+            initializeImpl(need_to_load_metadata);
+        }
+    });
+}
+
+void FileCache::initializeImpl(bool load_metadata)
+{
     std::lock_guard lock(init_mutex);
 
     if (is_initialized)
@@ -178,16 +222,10 @@ void FileCache::initialize()
 
     try
     {
-        if (fs::exists(getBasePath()))
-        {
+        if (load_metadata)
             loadMetadata();
-        }
-        else
-        {
-            fs::create_directories(getBasePath());
-        }
 
-        status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+        metadata.startup();
     }
     catch (...)
     {
@@ -196,8 +234,6 @@ void FileCache::initialize()
         throw;
     }
 
-    metadata.startup();
-
     if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
     {
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
@@ -205,6 +241,7 @@ void FileCache::initialize()
     }
 
     is_initialized = true;
+    LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());
 }
 
 CachePriorityGuard::Lock FileCache::lockCache() const
@@ -681,7 +718,12 @@ FileCache::getOrSet(
         }
     }
 
-    chassert(file_segments_limit ? file_segments.back()->range().left <= result_range.right : file_segments.back()->range().contains(result_range.right));
+    chassert(file_segments_limit
+             ? file_segments.back()->range().left <= result_range.right
+             : file_segments.back()->range().contains(result_range.right),
+             fmt::format("Unexpected state. Back: {}, result range: {}, limit: {}",
+                         file_segments.back()->range().toString(), result_range.toString(), file_segments_limit));
+
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
@@ -804,7 +846,8 @@ bool FileCache::tryReserve(
     const size_t size,
     FileCacheReserveStat & reserve_stat,
     const UserInfo & user,
-    size_t lock_wait_timeout_milliseconds)
+    size_t lock_wait_timeout_milliseconds,
+    std::string & failure_reason)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
@@ -817,6 +860,7 @@ bool FileCache::tryReserve(
     if (cache_is_being_resized.load(std::memory_order_relaxed))
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfCacheResize);
+        failure_reason = "cache is being resized";
         return false;
     }
 
@@ -824,6 +868,7 @@ bool FileCache::tryReserve(
     if (!cache_lock)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
+        failure_reason = "cache contention";
         return false;
     }
 
@@ -847,6 +892,7 @@ bool FileCache::tryReserve(
             LOG_TEST(log, "Query limit exceeded, space reservation failed, "
                      "recache_on_query_limit_exceeded is disabled (while reserving for {}:{})",
                      file_segment.key(), file_segment.offset());
+            failure_reason = "query limit exceeded";
             return false;
         }
 
@@ -877,6 +923,7 @@ bool FileCache::tryReserve(
         if (!query_priority->collectCandidatesForEviction(
                 size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
+            failure_reason = "cannot evict enough space for query limit";
             return false;
         }
 
@@ -891,11 +938,15 @@ bool FileCache::tryReserve(
     if (!main_priority->collectCandidatesForEviction(
             size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
+        failure_reason = "cannot evict enough space";
         return false;
     }
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    {
+        failure_reason = "not enough space on device";
         return false;
+    }
 
     if (eviction_candidates.size() > 0)
     {
@@ -1188,7 +1239,6 @@ void FileCache::loadMetadataImpl()
     std::vector<ThreadFromGlobalPool> loading_threads;
     std::exception_ptr first_exception;
     std::mutex set_exception_mutex;
-    std::atomic<bool> stop_loading = false;
 
     LOG_INFO(log, "Loading filesystem cache with {} threads from {}", load_metadata_threads, metadata.getBaseDirectory());
 
@@ -1198,7 +1248,7 @@ void FileCache::loadMetadataImpl()
         {
             loading_threads.emplace_back([&]
             {
-                while (!stop_loading)
+                while (!stop_loading_metadata)
                 {
                     try
                     {
@@ -1215,7 +1265,7 @@ void FileCache::loadMetadataImpl()
                             if (!first_exception)
                                 first_exception = std::current_exception();
                         }
-                        stop_loading = true;
+                        stop_loading_metadata = true;
                         return;
                     }
                 }
@@ -1228,7 +1278,7 @@ void FileCache::loadMetadataImpl()
                 if (!first_exception)
                     first_exception = std::current_exception();
             }
-            stop_loading = true;
+            stop_loading_metadata = true;
             break;
         }
     }
@@ -1415,6 +1465,11 @@ FileCache::~FileCache()
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
+
+    stop_loading_metadata = true;
+    if (load_metadata_main_thread.joinable())
+        load_metadata_main_thread.join();
+
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();

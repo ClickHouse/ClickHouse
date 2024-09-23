@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -31,6 +32,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool normalize_function_names;
+}
 
 namespace ErrorCodes
 {
@@ -74,7 +79,8 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
-    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getSettingsRef()[Setting::normalize_function_names])
         FunctionNameNormalizer::visit(ast.get());
 
     auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
@@ -297,7 +303,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -792,7 +798,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
     else if (const auto * literal = node->as<ASTLiteral>())
     {
         // Check if it's always true or false.
-        if (literal->value.getType() == Field::Types::UInt64 && literal->value.get<UInt64>() == 0)
+        if (literal->value.getType() == Field::Types::UInt64 && literal->value.safeGet<UInt64>() == 0)
             return {result};
         else
             return {};

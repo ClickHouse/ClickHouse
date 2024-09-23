@@ -35,11 +35,10 @@ def start_cluster():
 
 
 def _create_tables(table_name, table_size, index_granularity):
-    nodes[0].query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER {cluster_name}")
 
     nodes[0].query(
         f"""
-        CREATE TABLE IF NOT EXISTS {table_name} ON CLUSTER '{cluster_name}' (key Int64, value String)
+        CREATE TABLE {table_name} ON CLUSTER '{cluster_name}' (key Int64, value String)
         Engine=ReplicatedMergeTree('/test_parallel_replicas/shard/{table_name}/', '{{replica}}')
         ORDER BY (key)
         SETTINGS index_granularity = {index_granularity}, max_bytes_to_merge_at_max_space_in_pool = 0, max_bytes_to_merge_at_max_space_in_pool = 1
@@ -128,3 +127,4 @@ def test_reading_with_invisible_parts(
         )
         == f"{expected}\n"
     )
+    nodes[0].query(f"DROP TABLE {table_name} ON CLUSTER {cluster_name} SYNC")

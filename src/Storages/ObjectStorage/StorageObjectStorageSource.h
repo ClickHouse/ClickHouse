@@ -52,6 +52,7 @@ public:
 
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
+        const StorageObjectStorage::QuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         bool distributed_processing,
         const ContextPtr & local_context,
@@ -73,7 +74,7 @@ protected:
     const UInt64 max_block_size;
     const bool need_only_count;
     const size_t max_parsing_threads;
-    const ReadFromFormatInfo read_from_format_info;
+    ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
     std::shared_ptr<IIterator> file_iterator;
@@ -121,7 +122,7 @@ protected:
         const std::shared_ptr<IIterator> & file_iterator,
         const ConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
-        const ReadFromFormatInfo & read_from_format_info,
+        ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,
         const std::shared_ptr<const KeyCondition> & key_condition_,
         const ContextPtr & context_,
@@ -219,6 +220,7 @@ private:
     bool is_finished = false;
     bool first_iteration = true;
     std::mutex next_mutex;
+    const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
 };

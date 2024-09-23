@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 
 namespace DB

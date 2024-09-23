@@ -14,6 +14,14 @@
 
 #include <algorithm>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsString preferred_optimize_projection_name;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -115,7 +123,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     auto it = std::find_if(
         normal_projections.begin(),
         normal_projections.end(),
-        [&](const auto * projection) { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+        [&](const auto * projection) { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
 
     if (it != normal_projections.end())
     {
@@ -193,15 +201,13 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
-    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
-    proj_snapshot->addProjection(best_candidate->projection);
-
+    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
     auto query_info_copy = query_info;
     query_info_copy.prewhere_info = nullptr;
 
     auto projection_reading = reader.readFromParts(
         /*parts=*/ {},
-        /*alter_conversions=*/ {},
+        reading->getMutationsSnapshot()->cloneEmpty(),
         required_columns,
         proj_snapshot,
         query_info_copy,

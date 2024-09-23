@@ -66,17 +66,13 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
 {
     frame.need_parens = false;
 
-    /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
-    format_settings.ostr << backQuote(name);
+    /// We have to always quote column names to avoid ambiguity with INDEX and other declarations in CREATE query.
+    format_settings.quoteIdentifier(name);
 
     if (type)
     {
         format_settings.ostr << ' ';
-
-        FormatStateStacked type_frame = frame;
-        type_frame.indent = 0;
-
-        type->formatImpl(format_settings, state, type_frame);
+        type->formatImpl(format_settings, state, frame);
     }
 
     if (null_modifier)
