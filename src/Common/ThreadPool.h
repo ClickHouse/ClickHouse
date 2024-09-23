@@ -52,11 +52,13 @@ public:
     class ThreadFromThreadPool
     {
     public:
+        using ThreadList = std::list<std::unique_ptr<ThreadFromThreadPool>>;
+
         /// Constructor to initialize and start the thread (but not associate it with the pool)
         explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
 
         // Shift the thread state from Preparing to Running to allow the worker to start.
-        void start(typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator& it);
+        void start(ThreadList::iterator& it);
 
         void join();
 
@@ -193,7 +195,7 @@ private:
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
-    std::list<std::unique_ptr<ThreadFromThreadPool>> threads;
+    ThreadFromThreadPool::ThreadList threads;
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 

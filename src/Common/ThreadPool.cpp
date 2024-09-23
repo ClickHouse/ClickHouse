@@ -47,21 +47,23 @@ namespace ProfileEvents
 
 }
 
-struct ScopedDecrement
-{
-    std::atomic<int64_t>& atomic_var;
-
-    explicit ScopedDecrement(std::atomic<int64_t>& var)
-        : atomic_var(var)
+namespace {
+    struct ScopedDecrement
     {
-        atomic_var.fetch_sub(1, std::memory_order_relaxed);
-    }
+        std::atomic<int64_t>& atomic_var;
 
-    ~ScopedDecrement()
-    {
-        atomic_var.fetch_add(1, std::memory_order_relaxed);
-    }
-};
+        explicit ScopedDecrement(std::atomic<int64_t>& var)
+            : atomic_var(var)
+        {
+            atomic_var.fetch_sub(1, std::memory_order_relaxed);
+        }
+
+        ~ScopedDecrement()
+        {
+            atomic_var.fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+}
 
 class JobWithPriority
 {
@@ -295,7 +297,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         /// We must not allocate memory or perform operations that could throw exceptions after adding a job to the queue,
         /// because if an exception occurs, it may leave the job in the queue without notifying any threads.
-        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_slot;
+        typename ThreadFromThreadPool::ThreadList::iterator thread_slot;
 
         /// The decision to start a new thread is made outside the locked section.
         /// However, thread load and demand can change dynamically, and decisions based on
@@ -429,7 +431,8 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         if (!new_thread)
             break; /// failed to start more threads
 
-        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_slot;
+        typename ThreadFromThreadPool::ThreadList::iterator thread_slot;
+
 
         try
         {
@@ -589,19 +592,13 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
 
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator& it)
+void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::iterator & it)
 {
-    /// constructor & start method & destructor are expected to run in sequence, not in parallel.
-    ThreadState expected = ThreadState::Preparing;
-    if (thread_state.compare_exchange_strong(expected, ThreadState::Running))
-    {
-        thread_it = it;
-    }
-    else
-    {
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-            "ThreadFromThreadPool started twice");
-    }
+    /// the thread which created ThreadFromThreadPool should start it after adding it to the pool, or destroy it.
+    /// no parallelism is expected here. So the only valid transition for the start method is Preparing to Running.
+    chassert(thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing);
+    thread_it = it;
+    thread_state.store(ThreadState::Running); /// if worker was waiting for finishing the initialization - let it finish.
 }
 
 template <typename Thread>
@@ -642,13 +639,13 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     DENY_ALLOCATIONS_IN_SCOPE;
 
     // wait until the thread will be started
-    while (thread_state.load() == ThreadState::Preparing)
+    while (thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing)
     {
         std::this_thread::yield();  // let's try to yield to avoid consuming too much CPU in the busy-loop
     }
 
-    // If the thread transitions to Failed, exit
-    if (thread_state.load() == ThreadState::Destructing)
+    // If the thread transitions to Destructing, exit
+    if (thread_state.load(std::memory_order_relaxed) == ThreadState::Destructing)
         return;
 
     CurrentMetrics::Increment metric_pool_threads(parent_pool.metric_threads);
