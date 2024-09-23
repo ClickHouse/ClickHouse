@@ -95,7 +95,7 @@ void SetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
         client->zookeeper->set(
             client->getAbsolutePath(query->args[0].safeGet<String>()),
             query->args[1].safeGet<String>(),
-            static_cast<Int32>(query->args[2].get<Int32>()));
+            static_cast<Int32>(query->args[2].safeGet<Int32>()));
 }
 
 bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -494,7 +494,7 @@ void RMCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 {
     Int32 version{-1};
     if (query->args.size() == 2)
-        version = static_cast<Int32>(query->args[1].get<Int32>());
+        version = static_cast<Int32>(query->args[1].safeGet<Int32>());
 
     client->zookeeper->remove(client->getAbsolutePath(query->args[0].safeGet<String>()), version);
 }
@@ -506,14 +506,23 @@ bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
         return false;
     node->args.push_back(std::move(path));
 
+    ASTPtr remove_nodes_limit;
+    if (ParserUnsignedInteger{}.parse(pos, remove_nodes_limit, expected))
+        node->args.push_back(remove_nodes_limit->as<ASTLiteral &>().value);
+    else
+        node->args.push_back(UInt64(100));
+
     return true;
 }
 
 void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    UInt64 remove_nodes_limit = query->args[1].safeGet<UInt64>();
+
     client->askConfirmation(
-        "You are going to recursively delete path " + path, [client, path] { client->zookeeper->removeRecursive(path); });
+        "You are going to recursively delete path " + path,
+        [client, path, remove_nodes_limit] { client->zookeeper->removeRecursive(path, static_cast<UInt32>(remove_nodes_limit)); });
 }
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
@@ -549,7 +558,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     String leaving;
     String new_members;
 
-    auto operation = query->args[0].get<ReconfigCommand::Operation>();
+    auto operation = query->args[0].safeGet<ReconfigCommand::Operation>();
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
@@ -675,6 +684,124 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
     }
 
     std::cout << totalNumChildren << "\n";
+}
+
+namespace
+{
+
+class CPMVOperation
+{
+    constexpr static UInt64 kTryLimit = 1000;
+
+public:
+    CPMVOperation(String src_, String dest_, bool remove_src_, KeeperClient * client_)
+        : src(std::move(src_)), dest(std::move(dest_)), remove_src(remove_src_), client(client_)
+    {
+    }
+
+    bool isTryLimitReached() const { return failed_tries_count >= kTryLimit; }
+
+    bool isCompleted() const { return is_completed; }
+
+    void perform()
+    {
+        Coordination::Stat src_stat;
+        String data = client->zookeeper->get(src, &src_stat);
+
+        Coordination::Requests ops{
+            zkutil::makeCheckRequest(src, src_stat.version),
+            zkutil::makeCreateRequest(dest, data, zkutil::CreateMode::Persistent), // Do we need to copy ACLs here?
+        };
+
+        if (remove_src)
+            ops.push_back(zkutil::makeRemoveRequest(src, src_stat.version));
+
+        Coordination::Responses responses;
+        auto code = client->zookeeper->tryMulti(ops, responses);
+
+        switch (code)
+        {
+            case Coordination::Error::ZOK: {
+                is_completed = true;
+                return;
+            }
+            case Coordination::Error::ZBADVERSION: {
+                ++failed_tries_count;
+
+                if (isTryLimitReached())
+                    zkutil::KeeperMultiException::check(code, ops, responses);
+
+                return;
+            }
+            default:
+                zkutil::KeeperMultiException::check(code, ops, responses);
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable");
+    }
+
+private:
+    String src;
+    String dest;
+    bool remove_src = false;
+    KeeperClient * client = nullptr;
+
+    bool is_completed = false;
+    uint64_t failed_tries_count = 0;
+};
+
+}
+
+bool CPCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, [[maybe_unused]] Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return false;
+    node->args.push_back(std::move(src_path));
+
+    String to_path;
+    if (!parseKeeperPath(pos, expected, to_path))
+        return false;
+    node->args.push_back(std::move(to_path));
+
+    return true;
+}
+
+void CPCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
+    auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
+
+    CPMVOperation operation(std::move(src), std::move(dest), /*remove_src_=*/false, /*client_=*/client);
+
+    while (!operation.isTryLimitReached() && !operation.isCompleted())
+        operation.perform();
+}
+
+bool MVCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return false;
+    node->args.push_back(std::move(src_path));
+
+    String to_path;
+    if (!parseKeeperPath(pos, expected, to_path))
+        return false;
+    node->args.push_back(std::move(to_path));
+
+    return true;
+}
+
+void MVCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
+    auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
+
+    CPMVOperation operation(std::move(src), std::move(dest), /*remove_src_=*/true, /*client_=*/client);
+
+    while (!operation.isTryLimitReached() && !operation.isCompleted())
+        operation.perform();
 }
 
 }

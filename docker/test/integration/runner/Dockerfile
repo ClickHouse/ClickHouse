@@ -30,7 +30,6 @@ RUN apt-get update \
     luajit \
     libssl-dev \
     libcurl4-openssl-dev \
-    gdb \
     default-jdk \
     software-properties-common \
     libkrb5-dev \
@@ -87,6 +86,8 @@ COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
 
+COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"
 
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)

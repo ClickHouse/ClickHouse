@@ -1,14 +1,18 @@
 #include <Storages/Statistics/Statistics.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
+#include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 
 #include "config.h" /// USE_DATASKETCHES
@@ -27,33 +31,26 @@ enum StatisticsFileVersion : UInt16
     V0 = 0,
 };
 
-std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
+std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
 {
-    switch (field.getType())
+    if (data_type->isValueRepresentedByNumber())
     {
-        case Field::Types::Int64:
-            return field.get<Int64>();
-        case Field::Types::UInt64:
-            return field.get<UInt64>();
-        case Field::Types::Float64:
-            return field.get<Float64>();
-        case Field::Types::Int128:
-            return field.get<Int128>();
-        case Field::Types::UInt128:
-            return field.get<UInt128>();
-        case Field::Types::Int256:
-            return field.get<Int256>();
-        case Field::Types::UInt256:
-            return field.get<UInt256>();
-        default:
-            return {};
-    }
-}
+        Field value_converted;
 
-std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & field)
-{
-    if (field.getType() == Field::Types::String)
-        return field.get<String>();
+        if (isInteger(data_type) && (value.getType() == Field::Types::Float64 || value.getType() == Field::Types::String))
+            /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
+            value_converted = convertFieldToType(value, *DataTypeFactory::instance().get("Float64"));
+        else
+            /// We should convert value to the real column data type and then translate it to Float64.
+            /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
+            value_converted = convertFieldToType(value, *data_type);
+
+        if (value_converted.isNull())
+            return {};
+
+        Float64 value_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), value_converted);
+        return value_as_float;
+    }
     return {};
 }
 
@@ -62,8 +59,8 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
-    : stats_desc(stats_desc_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
+    : stats_desc(stats_desc_), column_name(column_name_)
 {
 }
 
@@ -89,21 +86,25 @@ Float64 IStatistics::estimateLess(const Field & /*val*/) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
 
-/// -------------------------------------
-/// Implementation of the estimation:
-/// Note: Each statistics object supports certain types predicates natively, e.g.
-/// - TDigest: '< X' (less-than predicates)
-/// - Count-min sketches: '= X' (equal predicates)
-/// - Uniq (HyperLogLog): 'count distinct(*)' (column cardinality)
-/// If multiple statistics objects are available per column, it is sometimes also possible to combine them in a clever way.
-/// For that reason, all estimation are performed in a central place (here), and we don't simply pass the predicate to the first statistics
-/// object that supports it natively.
+/// Notes:
+/// - Statistics object usually only support estimation for certain types of predicates, e.g.
+///    - TDigest: '< X' (less-than predicates)
+///    - Count-min sketches: '= X' (equal predicates)
+///    - Uniq (HyperLogLog): 'count distinct(*)' (column cardinality)
+///
+/// If multiple statistics objects in a column support estimating a predicate, we want to try statistics in order of descending accuracy
+/// (e.g. MinMax statistics are simpler than TDigest statistics and thus worse for estimating 'less' predicates).
+///
+/// Sometimes, it is possible to combine multiple statistics in a clever way. For that reason, all estimation are performed in a central
+/// place (here), and we don't simply pass the predicate to the first statistics object that supports it natively.
 
 Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
     if (stats.contains(StatisticsType::TDigest))
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
-    return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
+    if (stats.contains(StatisticsType::MinMax))
+        return stats.at(StatisticsType::MinMax)->estimateLess(val);
+    return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
 Float64 ColumnStatistics::estimateGreater(const Field & val) const
@@ -113,8 +114,7 @@ Float64 ColumnStatistics::estimateGreater(const Field & val) const
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
 {
-    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
-    if (float_val.has_value() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
@@ -124,10 +124,15 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
     if (stats.contains(StatisticsType::CountMinSketch))
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
 #endif
-    if (!float_val.has_value() && (float_val < - ConditionSelectivityEstimator::threshold || float_val > ConditionSelectivityEstimator::threshold))
-        return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
-    else
-        return rows * ConditionSelectivityEstimator::default_good_cond_factor;
+    if (stats.contains(StatisticsType::Uniq))
+    {
+        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+        if (cardinality == 0 || rows == 0)
+            return 0;
+        return 1.0 / cardinality * rows; /// assume uniform distribution
+    }
+
+    return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
 /// -------------------------------------
@@ -182,7 +187,7 @@ String ColumnStatistics::getFileName() const
 
 const String & ColumnStatistics::columnName() const
 {
-    return stats_desc.column_name;
+    return column_name;
 }
 
 UInt64 ColumnStatistics::rowCount() const
@@ -204,15 +209,18 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
-    registerValidator(StatisticsType::TDigest, tdigestValidator);
-    registerCreator(StatisticsType::TDigest, tdigestCreator);
+    registerValidator(StatisticsType::MinMax, minMaxStatisticsValidator);
+    registerCreator(StatisticsType::MinMax, minMaxStatisticsCreator);
 
-    registerValidator(StatisticsType::Uniq, uniqValidator);
-    registerCreator(StatisticsType::Uniq, uniqCreator);
+    registerValidator(StatisticsType::TDigest, tdigestStatisticsValidator);
+    registerCreator(StatisticsType::TDigest, tdigestStatisticsCreator);
+
+    registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
+    registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
 
 #if USE_DATASKETCHES
-    registerValidator(StatisticsType::CountMinSketch, countMinSketchValidator);
-    registerCreator(StatisticsType::CountMinSketch, countMinSketchCreator);
+    registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
+    registerCreator(StatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
 #endif
 }
 
@@ -222,7 +230,7 @@ MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
     return instance;
 }
 
-void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const
+void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
 {
     for (const auto & [type, desc] : stats.types_to_desc)
     {
@@ -233,15 +241,15 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
     }
 }
 
-ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats) const
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(stats);
-    for (const auto & [type, desc] : stats.types_to_desc)
+    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
+    for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq' and 'count_min'", type);
-        auto stat_ptr = (it->second)(desc, stats.data_type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+        auto stat_ptr = (it->second)(desc, column_desc.type);
         column_stat->stats[type] = stat_ptr;
     }
     return column_stat;
@@ -252,7 +260,7 @@ ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription &
     ColumnsStatistics result;
     for (const auto & col : columns)
         if (!col.statistics.empty())
-            result.push_back(get(col.statistics));
+            result.push_back(get(col));
     return result;
 }
 

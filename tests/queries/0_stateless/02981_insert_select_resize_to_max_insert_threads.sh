@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-${CLICKHOUSE_CLIENT} -nq """
+${CLICKHOUSE_CLIENT} -q """
     CREATE TABLE t1_local
     (
         n UInt64,

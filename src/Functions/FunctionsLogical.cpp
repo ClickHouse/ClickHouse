@@ -701,11 +701,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         bool constant_value_bool = false;
 
         if (field_type == Field::Types::Float64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Float64>());
         else if (field_type == Field::Types::Int64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Int64>());
         else if (field_type == Field::Types::UInt64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<UInt64>());
 
         has_true_constant = has_true_constant || constant_value_bool;
         has_false_constant = has_false_constant || !constant_value_bool;
