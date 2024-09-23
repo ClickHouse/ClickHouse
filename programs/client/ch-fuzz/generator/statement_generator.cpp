@@ -389,9 +389,9 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		te->set_engine(val);
 		uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_consts = 0, added_sign = 0, added_version = 0;
 		const uint32_t to_addcols = (rg.NextMediumNumber() % 5) + 1,
-					   to_addidxs = (rg.NextMediumNumber() % 4) * static_cast<uint32_t>(next.IsMergeTreeFamily() && rg.NextBool()),
-					   to_addprojs = (rg.NextMediumNumber() % 3) * static_cast<uint32_t>(next.IsMergeTreeFamily() && rg.NextBool()),
-					   to_addconsts = (rg.NextMediumNumber() % 3) * static_cast<uint32_t>(rg.NextBool()),
+					   to_addidxs = (rg.NextMediumNumber() % 4) * static_cast<uint32_t>(next.IsMergeTreeFamily() && rg.NextSmallNumber() < 4),
+					   to_addprojs = (rg.NextMediumNumber() % 3) * static_cast<uint32_t>(next.IsMergeTreeFamily() && rg.NextSmallNumber() < 5),
+					   to_addconsts = (rg.NextMediumNumber() % 3) * static_cast<uint32_t>(rg.NextSmallNumber() < 3),
 					   to_add_sign = static_cast<uint32_t>(next.HasSignColumn()),
 					   to_add_version = static_cast<uint32_t>(next.HasVersionColumn()),
 					   total_to_add = to_addcols + to_addidxs + to_addprojs + to_addconsts + to_add_sign + to_add_version;
@@ -400,7 +400,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			const uint32_t add_idx = 4 * static_cast<uint32_t>(!next.cols.empty() && added_idxs < to_addidxs),
 						   add_proj = 4 * static_cast<uint32_t>(!next.cols.empty() && added_projs < to_addprojs),
 						   add_const = 4 * static_cast<uint32_t>(!next.cols.empty() && added_consts < to_addconsts),
-						   add_col = 10 * static_cast<uint32_t>(added_cols < to_addcols),
+						   add_col = 8 * static_cast<uint32_t>(added_cols < to_addcols),
 						   add_sign = 2 * static_cast<uint32_t>(added_sign < to_add_sign),
 						   add_version = 2 * static_cast<uint32_t>(added_version < to_add_version && added_sign == to_add_sign),
 						   prob_space = add_idx + add_proj + add_const + add_col + add_sign + add_version;
