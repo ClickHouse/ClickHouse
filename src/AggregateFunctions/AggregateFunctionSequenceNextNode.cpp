@@ -18,15 +18,19 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <base/range.h>
 
 #include <bitset>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_funnel_functions;
+}
 
 constexpr size_t max_events_size = 64;
-
 constexpr size_t min_required_args = 3;
 
 namespace ErrorCodes
@@ -341,7 +345,7 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
-    inline std::optional<size_t> getBaseIndex(Data & data) const
+    std::optional<size_t> getBaseIndex(Data & data) const
     {
         if (data.value.size() == 0)
             return {};
@@ -414,7 +418,6 @@ public:
                         break;
                 return (i == events_size) ? base - i : unmatched_idx;
         }
-        UNREACHABLE();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -449,7 +452,7 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings == nullptr || !settings->allow_experimental_funnel_functions)
+    if (settings == nullptr || !(*settings)[Setting::allow_experimental_funnel_functions])
     {
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
             "Set `allow_experimental_funnel_functions` setting to enable it", name);

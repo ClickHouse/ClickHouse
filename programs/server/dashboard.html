@@ -17,7 +17,7 @@
             --input-shadow-color: rgba(0, 255, 0, 1);
             --error-color: red;
             --global-error-color: white;
-            --legend-background: rgba(255, 255, 255, 0.75);
+            --legend-background: rgba(255, 255, 0, 0.75);
             --title-color: #666;
             --text-color: black;
             --edit-title-background: #FEE;
@@ -41,7 +41,7 @@
             --moving-shadow-color: rgba(255, 255, 255, 0.25);
             --input-shadow-color: rgba(255, 128, 0, 0.25);
             --error-color: #F66;
-            --legend-background: rgba(255, 255, 255, 0.25);
+            --legend-background: rgba(0, 96, 128, 0.75);
             --title-color: white;
             --text-color: white;
             --edit-title-background: #364f69;
@@ -218,6 +218,7 @@
 
         #chart-params .param {
             width: 6%;
+            font-family: monospace;
         }
 
         input {
@@ -256,6 +257,7 @@
             font-weight: bold;
             user-select: none;
             cursor: pointer;
+            margin-bottom: 1rem;
         }
 
         #run:hover {
@@ -309,7 +311,7 @@
             color: var(--param-text-color);
             display: inline-block;
             box-shadow: 1px 1px 0 var(--shadow-color);
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem;
         }
 
         input:focus {
@@ -506,6 +508,14 @@ let user = 'default';
 let password = '';
 let add_http_cors_header = (location.protocol != 'file:');
 
+const current_url = new URL(window.location);
+/// Substitute user name if it's specified in the query string
+const user_from_url = current_url.searchParams.get('user');
+if (user_from_url) {
+    user = user_from_url;
+}
+
+
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
 }
@@ -648,6 +658,10 @@ function insertParam(name, value) {
     param_value.type = 'text';
     param_value.value = value;
     param_value.spellcheck = false;
+
+    let setWidth = e => { e.style.width = (e.value.length + 1) + 'ch' };
+    if (value) { setWidth(param_value); }
+    param_value.addEventListener('input', e => setWidth(e.target));
 
     param_wrapper.appendChild(param_name);
     param_wrapper.appendChild(param_value);
@@ -937,6 +951,7 @@ function showMassEditor() {
     let editor = document.getElementById('mass-editor-textarea');
     editor.value = JSON.stringify({params: params, queries: queries}, null, 2);
 
+    editor.focus();
     mass_editor_active = true;
 }
 
@@ -996,14 +1011,14 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         className && legendEl.classList.add(className);
 
         uPlot.assign(legendEl.style, {
-            textAlign: "left",
+            textAlign: "right",
             pointerEvents: "none",
             display: "none",
             position: "absolute",
             left: 0,
             top: 0,
             zIndex: 100,
-            boxShadow: "2px 2px 10px rgba(0,0,0,0.1)",
+            boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
             ...style
         });
 
@@ -1043,8 +1058,10 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
 
     function update(u) {
         let { left, top } = u.cursor;
-        left -= legendEl.clientWidth / 2;
-        top -= legendEl.clientHeight / 2;
+        /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
+        /// avoiding the borders of the chart.
+        left -= legendEl.clientWidth * (left / u.width);
+        top -= legendEl.clientHeight;
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
 
         if (multiline) {
@@ -1131,7 +1148,7 @@ async function draw(idx, chart, url_params, query) {
 
     let {reply, error} = await doFetch(query, url_params);
     if (!error) {
-        if (reply.rows.length == 0) {
+        if (reply.rows == 0) {
             error = "Query returned empty result.";
         } else if (reply.meta.length < 2) {
             error = "Query should return at least two columns: unix timestamp and value.";
@@ -1221,14 +1238,53 @@ async function draw(idx, chart, url_params, query) {
 
     let sync = uPlot.sync("sync");
 
-    let axis = {
+    function formatDateTime(t) {
+        return (new Date(t * 1000)).toISOString().replace('T', '\n').replace('.000Z', '');
+    }
+
+    function formatDateTimes(self, ticks) {
+        return ticks.map((t, idx) => {
+            let res = formatDateTime(t);
+            if (idx == 0 || res.substring(0, 10) != formatDateTime(ticks[idx - 1]).substring(0, 10)) {
+                return res;
+            } else {
+                return res.substring(11);
+            }
+        });
+    }
+
+    function formatValue(v) {
+        const a = Math.abs(v);
+        if (a >= 1000000000000000) { return (v / 1000000000000000) + 'P'; }
+        if (a >= 1000000000000) { return (v / 1000000000000) + 'T'; }
+        if (a >= 1000000000) { return (v / 1000000000) + 'G'; }
+        if (a >= 1000000) { return (v / 1000000) + 'M'; }
+        if (a >= 1000) { return (v / 1000) + 'K'; }
+        if (a > 0 && a < 0.001) { return (v * 1000000) + "μ"; }
+        return v;
+    }
+
+    let axis_x = {
         stroke: axes_color,
         grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-        ticks: { width: 1 / devicePixelRatio, stroke: grid_color }
+        ticks: { width: 1 / devicePixelRatio, stroke: grid_color },
+        values: formatDateTimes,
+        space: 80,
+        incrs: [1, 5, 10, 15, 30,
+            60, 60 * 5, 60 * 10, 60 * 15, 60 * 30,
+            3600, 3600 * 2, 3600 * 3, 3600 * 4, 3600 * 6, 3600 * 12,
+            3600 * 24],
     };
 
-    let axes = [axis, axis];
-    let series = [{ label: "x" }];
+    let axis_y = {
+        stroke: axes_color,
+        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+        ticks: { width: 1 / devicePixelRatio, stroke: grid_color },
+        values: (self, ticks) => ticks.map(formatValue)
+    };
+
+    let axes = [axis_x, axis_y];
+    let series = [{ label: "time", value: (self, t) => formatDateTime(t) }];
     let data = [reply.data[reply.meta[0].name]];
 
     // Treat every column as series
@@ -1246,9 +1302,10 @@ async function draw(idx, chart, url_params, query) {
     const opts = {
         width: chart.clientWidth,
         height: chart.clientHeight,
+        scales: { x: { time: false } }, /// Because we want to split and format time on our own.
         axes,
         series,
-        padding: [ null, null, null, (Math.round(max_value * 100) / 100).toString().length * 6 - 10 ],
+        padding: [ null, null, null, 3 ],
         plugins: [ legendAsTooltipPlugin() ],
         cursor: {
             sync: {

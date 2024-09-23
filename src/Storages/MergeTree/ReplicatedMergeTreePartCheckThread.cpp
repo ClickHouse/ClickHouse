@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ThreadFuzzer.h>
@@ -390,7 +391,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             {
                 WriteBufferFromOwnString wb;
                 message = PreformattedMessage::create(
-                    "Part {} has a broken projections. It will be ignored. Broken projections info: {}",
+                    "Part `{}` has broken projections. It will be ignored. Broken projections info: {}",
                     part_name, getCurrentExceptionMessage(true));
                 LOG_DEBUG(log, message);
                 result.action = ReplicatedCheckResult::DoNothing;

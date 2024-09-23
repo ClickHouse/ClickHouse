@@ -1,25 +1,34 @@
+#include <filesystem>
+#include <base/isSharedPtrUnique.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabaseFactory.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/formatAST.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Common/logger_useful.h>
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <filesystem>
-#include <Interpreters/DDLTask.h>
+#include <Core/Settings.h>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsBool check_table_dependencies;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
@@ -36,8 +45,10 @@ namespace ErrorCodes
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
 {
 public:
-    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base)
-        : DatabaseTablesSnapshotIterator(std::move(base)) {}
+    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base) noexcept
+        : DatabaseTablesSnapshotIterator(std::move(base))
+    {
+    }
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };
 
@@ -105,13 +116,25 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    // it is important to call the destructors of not_in_use without
+    // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;
-    std::lock_guard lock(mutex);
-    auto table = DatabaseOrdinary::detachTableUnlocked(name);
-    table_name_to_path.erase(name);
-    detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleanupDetachedTables();
-    return table;
+    StoragePtr detached_table;
+    {
+        std::lock_guard lock(mutex);
+        detached_table = DatabaseOrdinary::detachTableUnlocked(name);
+        table_name_to_path.erase(name);
+        detached_tables.emplace(detached_table->getStorageID().uuid, detached_table);
+        not_in_use = cleanupDetachedTables();
+    }
+
+    if (!not_in_use.empty())
+    {
+        not_in_use.clear();
+        LOG_DEBUG(log, "Finished removing not used detached tables");
+    }
+
+    return detached_table;
 }
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
@@ -180,8 +203,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    if (exchange && !supportsAtomicRename())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
+    std::string message;
+    if (exchange && !supportsAtomicRename(&message))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported because exchanging files is not supported by the OS ({})", message);
 
     waitDatabaseStarted();
 
@@ -393,9 +417,10 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
 {
     DetachedTables not_in_use;
     auto it = detached_tables.begin();
+    LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
     {
-        if (it->second.unique())
+        if (isSharedPtrUnique(it->second))
         {
             not_in_use.emplace(it->first, it->second);
             it = detached_tables.erase(it);
@@ -403,6 +428,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
         else
             ++it;
     }
+    LOG_DEBUG(log, "Found {} non used tables in detached tables.", not_in_use.size());
     /// It should be destroyed in caller with released database mutex
     return not_in_use;
 }
@@ -571,8 +597,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 
     waitDatabaseStarted();
 
-    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
-    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
+    bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
+    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         std::lock_guard lock(mutex);

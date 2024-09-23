@@ -7,8 +7,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -33,6 +35,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -76,75 +84,17 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
 {
 
     size_t size = cond.size();
-    bool a_is_short = a.size() < size;
-    bool b_is_short = b.size() < size;
-
-    if (a_is_short && b_is_short)
+    for (size_t i = 0; i < size; ++i)
     {
-        size_t a_index = 0, b_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (is_native_int_or_decimal_v<ResultType>)
+            res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+        else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[b_index], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[b_index]);
-
-            a_index += !!cond[i];
-            b_index += !cond[i];
+            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
         }
-    }
-    else if (a_is_short)
-    {
-        size_t a_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        else
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[i]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[i], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[i]);
-
-            a_index += !!cond[i];
-        }
-    }
-    else if (b_is_short)
-    {
-        size_t b_index = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[b_index], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index]);
-
-            b_index += !cond[i];
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
-            }
-            else
-            {
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
-            }
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
         }
     }
 }
@@ -153,37 +103,16 @@ template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult,
 inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
-    bool a_is_short = a.size() < size;
-    if (a_is_short)
+    for (size_t i = 0; i < size; ++i)
     {
-        size_t a_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (is_native_int_or_decimal_v<ResultType>)
+            res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
+        else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b, res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b);
-
-            a_index += !!cond[i];
+            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
         }
-    }
-    else
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
-        }
+        else
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
     }
 }
 
@@ -191,37 +120,16 @@ template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult,
 inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
-    bool b_is_short = b.size() < size;
-    if (b_is_short)
+    for (size_t i = 0; i < size; ++i)
     {
-        size_t b_index = 0;
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (is_native_int_or_decimal_v<ResultType>)
+            res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
+        else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[b_index], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index]);
-
-            b_index += !cond[i];
+            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
         }
-    }
-    else
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_native_int_or_decimal_v<ResultType>)
-                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
-            else if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
-            }
-            else
-                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
-        }
+        else
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
     }
 }
 
@@ -359,7 +267,7 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
@@ -879,9 +787,6 @@ private:
         bool then_is_const = isColumnConst(*col_then);
         bool else_is_const = isColumnConst(*col_else);
 
-        bool then_is_short = col_then->size() < cond_col->size();
-        bool else_is_short = col_else->size() < cond_col->size();
-
         const auto & cond_array = cond_col->getData();
 
         if (then_is_const && else_is_const)
@@ -901,37 +806,34 @@ private:
         {
             const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
 
-            size_t else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
                     result_column->insertFrom(then_nested_column, 0);
                 else
-                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
+                    result_column->insertFrom(*col_else, i);
             }
         }
         else if (else_is_const)
         {
             const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
 
-            size_t then_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
-                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
+                    result_column->insertFrom(*col_then, i);
                 else
                     result_column->insertFrom(else_nested_column, 0);
             }
         }
         else
         {
-            size_t then_index = 0, else_index = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (cond_array[i])
-                    result_column->insertFrom(*col_then, then_is_short ? then_index++ : i);
+                    result_column->insertFrom(*col_then, i);
                 else
-                    result_column->insertFrom(*col_else, else_is_short ? else_index++ : i);
+                    result_column->insertFrom(*col_else, i);
             }
         }
 
@@ -1124,9 +1026,6 @@ private:
         if (then_is_null && else_is_null)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        bool then_is_short = arg_then.column->size() < arg_cond.column->size();
-        bool else_is_short = arg_else.column->size() < arg_cond.column->size();
-
         const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
         const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
 
@@ -1145,8 +1044,6 @@ private:
             {
                 arg_else_column = arg_else_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_else_column));
-                if (else_is_short)
-                    result_column->expand(cond_col->getData(), true);
                 if (isColumnNullable(*result_column))
                 {
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
@@ -1155,6 +1052,11 @@ private:
                 else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
                 {
                     variant_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
+                    return result_column;
+                }
+                else if (auto * dynamic_column = typeid_cast<ColumnDynamic *>(result_column.get()))
+                {
+                    dynamic_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
                 else
@@ -1187,8 +1089,6 @@ private:
             {
                 arg_then_column = arg_then_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_then_column));
-                if (then_is_short)
-                    result_column->expand(cond_col->getData(), false);
 
                 if (isColumnNullable(*result_column))
                 {
@@ -1198,6 +1098,11 @@ private:
                 else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
                 {
                     variant_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
+                    return result_column;
+                }
+                else if (auto * dynamic_column = typeid_cast<ColumnDynamic *>(result_column.get()))
+                {
+                    dynamic_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
                 else
@@ -1334,6 +1239,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
 
+        /// If result is Variant, always use generic implementation.
+        /// Using typed implementations may lead to incorrect result column type when
+        /// resulting Variant is created by use_variant_when_no_common_type.
+        if (isVariant(result_type))
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
+
         auto call = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
@@ -1410,7 +1321,7 @@ public:
 
 REGISTER_FUNCTION(If)
 {
-    factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIf>({}, FunctionFactory::Case::Insensitive);
 }
 
 FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)

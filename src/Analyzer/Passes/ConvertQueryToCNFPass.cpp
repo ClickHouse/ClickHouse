@@ -10,6 +10,8 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 
+#include <Core/Settings.h>
+
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
@@ -17,6 +19,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool convert_query_to_cnf;
+    extern const SettingsBool optimize_append_index;
+    extern const SettingsBool optimize_substitute_columns;
+    extern const SettingsBool optimize_using_constraints;
+}
 
 namespace
 {
@@ -96,6 +105,23 @@ bool checkIfGroupAlwaysTrueGraph(const Analyzer::CNF::OrGroup & group, const Com
         }
     }
 
+    return false;
+}
+
+bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
+{
+    /// Filters out groups containing mutually exclusive atoms,
+    /// since these groups are always True
+
+    for (const auto & atom : group)
+    {
+        auto negated(atom);
+        negated.negative = !atom.negative;
+        if (group.contains(negated))
+        {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -644,7 +670,8 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
         cnf.filterAlwaysTrueGroups([&](const auto & group)
            {
                /// remove always true groups from CNF
-               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints)
+                   && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
            })
            .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
            {
@@ -661,7 +688,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
     cnf.pushNotIntoFunctions(context);
 
     const auto & settings = context->getSettingsRef();
-    if (settings.optimize_append_index)
+    if (settings[Setting::optimize_append_index])
         addIndexConstraint(cnf, table_expressions, context);
 }
 
@@ -673,7 +700,7 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
     if (!cnf)
         return;
 
-    if (settings.optimize_using_constraints)
+    if (settings[Setting::optimize_using_constraints])
         optimizeWithConstraints(*cnf, table_expressions, context);
 
     auto new_node = cnf->toQueryTree();
@@ -711,7 +738,7 @@ public:
         optimize_filter(query_node->getPrewhere());
         optimize_filter(query_node->getHaving());
 
-        if (has_filter && settings.optimize_substitute_columns)
+        if (has_filter && settings[Setting::optimize_substitute_columns])
             substituteColumns(*query_node, table_expressions, context);
     }
 };
@@ -721,7 +748,7 @@ public:
 void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings.convert_query_to_cnf)
+    if (!settings[Setting::convert_query_to_cnf])
         return;
 
     ConvertQueryToCNFVisitor visitor(std::move(context));

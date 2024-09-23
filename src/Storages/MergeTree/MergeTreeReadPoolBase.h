@@ -6,9 +6,11 @@
 namespace DB
 {
 
-class MergeTreeReadPoolBase : public IMergeTreeReadPool
+class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
 public:
+    using MutationsSnapshotPtr = MergeTreeData::MutationsSnapshotPtr;
+
     struct PoolSettings
     {
         size_t threads = 0;
@@ -23,6 +25,7 @@ public:
 
     MergeTreeReadPoolBase(
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -37,6 +40,7 @@ public:
 protected:
     /// Initialized in constructor
     const RangesInDataParts parts_ranges;
+    const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
     const StorageSnapshotPtr storage_snapshot;
     const PrewhereInfoPtr prewhere_info;
@@ -48,7 +52,7 @@ protected:
     const UncompressedCachePtr owned_uncompressed_cache;
     const Block header;
 
-    void fillPerPartInfos();
+    void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
 
     MergeTreeReadTaskPtr createTask(

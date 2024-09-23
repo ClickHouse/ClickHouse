@@ -13,7 +13,7 @@ bool ParserKQLLimit::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto expr = getExprFromToken(pos);
 
-    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
+    Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
     IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
 
     if (!ParserExpressionWithOptionalAlias(false).parse(new_pos, limit_length, expected))

@@ -193,7 +193,7 @@ The function is named “injective” if it always returns different result for 
         .categories{"String"}});
 
     /// Compatibility with Spark and MySQL:
-    factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);
 }
 
 }

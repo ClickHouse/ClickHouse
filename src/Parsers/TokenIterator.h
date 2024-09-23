@@ -15,25 +15,56 @@ namespace DB
   */
 
 /** Used as an input for parsers.
-  * All whitespace and comment tokens are transparently skipped.
+  * All whitespace and comment tokens are transparently skipped if `skip_insignificant`.
   */
 class Tokens
 {
 private:
     std::vector<Token> data;
-    std::size_t last_accessed_index = 0;
+    size_t max_pos = 0;
+    Lexer lexer;
+    bool skip_insignificant;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant = true);
-
-    ALWAYS_INLINE inline const Token & operator[](size_t index)
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
+        : lexer(begin, end, max_query_size), skip_insignificant(skip_insignificant_)
     {
-        assert(index < data.size());
-        last_accessed_index = std::max(last_accessed_index, index);
-        return data[index];
     }
 
-    ALWAYS_INLINE inline const Token & max() { return data[last_accessed_index]; }
+    const Token & operator[] (size_t index)
+    {
+        while (true)
+        {
+            if (index < data.size())
+            {
+                max_pos = std::max(max_pos, index);
+                return data[index];
+            }
+
+            if (!data.empty() && data.back().isEnd())
+            {
+                max_pos = data.size() - 1;
+                return data.back();
+            }
+
+            Token token = lexer.nextToken();
+
+            if (!skip_insignificant || token.isSignificant())
+                data.emplace_back(token);
+        }
+    }
+
+    const Token & max()
+    {
+        if (data.empty())
+            return (*this)[0];
+        return data[max_pos];
+    }
+
+    void reset()
+    {
+        max_pos = 0;
+    }
 };
 
 

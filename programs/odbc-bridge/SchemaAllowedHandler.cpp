@@ -2,8 +2,10 @@
 
 #if USE_ODBC
 
+#include <Core/Settings.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
@@ -18,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 odbc_bridge_connection_pool_size;
+}
+
 namespace
 {
     bool isSchemaAllowed(nanodbc::ConnectionHolderPtr connection_holder)
@@ -80,13 +87,13 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         if (use_connection_pooling)
             connection = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef()[Setting::odbc_bridge_connection_pool_size]);
         else
             connection = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 
         bool result = isSchemaAllowed(std::move(connection));
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
         try
         {
             writeBoolText(result, out);

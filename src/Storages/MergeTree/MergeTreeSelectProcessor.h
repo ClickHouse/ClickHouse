@@ -1,9 +1,12 @@
 #pragma once
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/RequestResponse.h>
-#include <Storages/MergeTree/MergeTreeReadTask.h>
+
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/RequestResponse.h>
+
 #include <boost/core/noncopyable.hpp>
 
 
@@ -22,16 +25,27 @@ struct ChunkAndProgress
     bool is_finished = false;
 };
 
-struct ParallelReadingExtension
+class ParallelReadingExtension
 {
+public:
+    ParallelReadingExtension(
+        MergeTreeAllRangesCallback all_callback_,
+        MergeTreeReadTaskCallback callback_,
+        size_t number_of_current_replica_,
+        size_t total_nodes_count_);
+
+    void sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const;
+
+    std::optional<ParallelReadResponse>
+    sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
+
+    size_t getTotalNodesCount() const { return total_nodes_count; }
+
+private:
     MergeTreeAllRangesCallback all_callback;
     MergeTreeReadTaskCallback callback;
-    size_t count_participating_replicas{0};
-    size_t number_of_current_replica{0};
-    /// This is needed to estimate the number of bytes
-    /// between a pair of marks to perform one request
-    /// over the network for a 1Gb of data.
-    Names columns_to_read;
+    const size_t number_of_current_replica;
+    const size_t total_nodes_count;
 };
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
@@ -41,7 +55,6 @@ public:
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
-        const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
@@ -54,7 +67,7 @@ public:
 
     ChunkAndProgress read();
 
-    void cancel() { is_cancelled = true; }
+    void cancel() noexcept { is_cancelled = true; }
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
@@ -71,7 +84,6 @@ private:
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
-    const StorageSnapshotPtr storage_snapshot;
 
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;

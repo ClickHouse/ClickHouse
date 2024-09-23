@@ -3,7 +3,6 @@
 SELECT name FROM system.functions WHERE NOT is_aggregate AND origin = 'System' AND alias_to = '' AND length(description) < 10
 AND name NOT IN (
     'aes_decrypt_mysql', 'aes_encrypt_mysql', 'decrypt', 'encrypt',
-    'base64Decode', 'base64Encode', 'tryBase64Decode',
     'convertCharset',
     'detectLanguage', 'detectLanguageMixed',
     'geoToH3',

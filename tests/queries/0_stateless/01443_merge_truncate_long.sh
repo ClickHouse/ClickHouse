@@ -34,7 +34,7 @@ do
         SELECT count() FROM t HAVING count() > 0;
         SELECT ${i};
         "
-done | ${CLICKHOUSE_CLIENT} --multiquery
+done | ${CLICKHOUSE_CLIENT}
 
 wait
 

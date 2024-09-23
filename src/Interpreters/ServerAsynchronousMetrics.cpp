@@ -55,9 +55,11 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
     unsigned update_period_seconds,
     unsigned heavy_metrics_update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
@@ -210,27 +212,47 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             auto total = disk->getTotalSpace();
 
             /// Some disks don't support information about the space.
-            if (!total)
-                continue;
-
-            auto available = disk->getAvailableSpace();
-            auto unreserved = disk->getUnreservedSpace();
-
-            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
-
-            if (available)
+            if (total)
             {
-                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+                auto available = disk->getAvailableSpace();
+                auto unreserved = disk->getUnreservedSpace();
 
-                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+                if (available)
+                {
+                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                }
+
+                if (unreserved)
+                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
 
-            if (unreserved)
-                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
+#if USE_AWS_S3
+            if (auto s3_client = disk->tryGetS3StorageClient())
+            {
+                if (auto put_throttler = s3_client->getPutRequestThrottler())
+                {
+                    new_values[fmt::format("DiskPutObjectThrottlerRPS_{}", name)] = { put_throttler->getMaxSpeed(),
+                        "PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskPutObjectThrottlerAvailable_{}", name)] = { put_throttler->getAvailable(),
+                        "Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+                if (auto get_throttler = s3_client->getGetRequestThrottler())
+                {
+                    new_values[fmt::format("DiskGetObjectThrottlerRPS_{}", name)] = { get_throttler->getMaxSpeed(),
+                        "GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskGetObjectThrottlerAvailable_{}", name)] = { get_throttler->getAvailable(),
+                        "Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+            }
+#endif
         }
     }
 

@@ -173,6 +173,16 @@ IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGU
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
 
+IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", LightweightMutationProjectionMode::THROW},
+     {"drop", LightweightMutationProjectionMode::DROP},
+     {"rebuild", LightweightMutationProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", DeduplicateMergeProjectionMode::THROW},
+     {"drop", DeduplicateMergeProjectionMode::DROP},
+     {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
+
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
@@ -201,13 +211,13 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
      {"zlib", FormatSettings::ORCCompression::ZLIB},
      {"lz4", FormatSettings::ORCCompression::LZ4}})
 
-IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
-                       {{"ordered", S3QueueMode::ORDERED},
-                        {"unordered", S3QueueMode::UNORDERED}})
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
+                       {{"ordered", ObjectStorageQueueMode::ORDERED},
+                        {"unordered", ObjectStorageQueueMode::UNORDERED}})
 
-IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
-                       {{"keep", S3QueueAction::KEEP},
-                        {"delete", S3QueueAction::DELETE}})
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
+                       {{"keep", ObjectStorageQueueAction::KEEP},
+                        {"delete", ObjectStorageQueueAction::DELETE}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
@@ -229,4 +239,15 @@ IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
      {"INVOKER", SQLSecurityType::INVOKER},
      {"NONE", SQLSecurityType::NONE}})
+
+IMPLEMENT_SETTING_ENUM(
+    GroupArrayActionWhenLimitReached,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
+
+IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", IdentifierQuotingStyle::None},
+     {"Backticks", IdentifierQuotingStyle::Backticks},
+     {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
+     {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
 }

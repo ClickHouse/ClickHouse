@@ -29,7 +29,7 @@ alter table test_wide_nested update `info.id` = [100,200], `info.age`=[68,72] wh
 alter table test_wide_nested update `info.id` = `info.age` where id = 3;
 select * from test_wide_nested;
 
-alter table test_wide_nested update `info.id` = [100,200], `info.age` = [10,20,30], `info.name` = ['a','b','c']  where id = 0; -- { serverError 341 }
+alter table test_wide_nested update `info.id` = [100,200], `info.age` = [10,20,30], `info.name` = ['a','b','c']  where id = 0; -- { serverError UNFINISHED }
 
 kill mutation where table = 'test_wide_nested' and database = currentDatabase() format Null;
 
@@ -54,7 +54,7 @@ ALTER TABLE test_wide_nested ADD COLUMN `info2.name` Array(String);
 ALTER table test_wide_nested update `info2.id` = `info.id`, `info2.name` = `info.name` where 1;
 select * from test_wide_nested;
 
-alter table test_wide_nested update `info.id` = [100,200,300], `info.age` = [10,20,30] where id = 1; -- { serverError 341 }
+alter table test_wide_nested update `info.id` = [100,200,300], `info.age` = [10,20,30] where id = 1; -- { serverError UNFINISHED }
 
 kill mutation where table = 'test_wide_nested' and database = currentDatabase() format Null;
 

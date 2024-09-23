@@ -59,7 +59,7 @@ enum class CipherMode : uint8_t
 template <CipherMode mode>
 struct KeyHolder
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key) const
+    StringRef setKey(size_t cipher_key_size, StringRef key) const
     {
         if (key.size != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -71,7 +71,7 @@ struct KeyHolder
 template <>
 struct KeyHolder<CipherMode::MySQLCompatibility>
 {
-    inline StringRef setKey(size_t cipher_key_size, StringRef key)
+    StringRef setKey(size_t cipher_key_size, StringRef key)
     {
         if (key.size < cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -165,7 +165,7 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
+        validateFunctionArguments(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
@@ -438,7 +438,7 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
+        validateFunctionArguments(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},

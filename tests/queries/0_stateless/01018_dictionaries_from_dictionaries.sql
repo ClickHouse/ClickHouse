@@ -88,13 +88,13 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'non_exis
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
-SELECT count(*) FROM database_for_dict.dict4; -- {serverError 60}
+SELECT count(*) FROM database_for_dict.dict4; -- {serverError UNKNOWN_TABLE}
 
 SELECT name from system.tables WHERE database = 'database_for_dict' ORDER BY name;
 SELECT name from system.dictionaries WHERE database = 'database_for_dict' ORDER BY name;
 
 DROP DATABASE IF EXISTS database_for_dict;
 
-SELECT count(*) from database_for_dict.dict3; --{serverError 81}
-SELECT count(*) from database_for_dict.dict2; --{serverError 81}
-SELECT count(*) from database_for_dict.dict1; --{serverError 81}
+SELECT count(*) from database_for_dict.dict3; --{serverError UNKNOWN_DATABASE}
+SELECT count(*) from database_for_dict.dict2; --{serverError UNKNOWN_DATABASE}
+SELECT count(*) from database_for_dict.dict1; --{serverError UNKNOWN_DATABASE}

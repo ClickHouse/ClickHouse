@@ -14,7 +14,7 @@ struct Settings;
 namespace ErrorCodes
 {
 
-extern const int CORRUPTED_DATA;
+extern const int INCORRECT_DATA;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 }
@@ -198,7 +198,7 @@ public:
         this->data(place).value().read(buf, *serialization_val, arena);
         if (unlikely(this->data(place).value().has() != this->data(place).result().has()))
             throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
+                ErrorCodes::INCORRECT_DATA,
                 "Invalid state of the aggregate function {}: has_value ({}) != has_result ({})",
                 getName(),
                 this->data(place).value().has(),

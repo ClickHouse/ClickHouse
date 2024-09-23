@@ -37,7 +37,7 @@ protected:
 
     Poco::URI createBaseURI() const override;
 
-    static constexpr inline size_t DEFAULT_PORT = 9012;
+    static constexpr size_t DEFAULT_PORT = 9012;
 
     const Poco::Util::AbstractConfiguration & config;
     LoggerPtr log;

@@ -18,11 +18,13 @@ protected:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
     {
+        checkFunctionArgumentSizes(arguments, input_rows_count);
         return function->executeImpl(arguments, result_type, input_rows_count);
     }
 
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
     {
+        checkFunctionArgumentSizes(arguments, input_rows_count);
         return function->executeImplDryRun(arguments, result_type, input_rows_count);
     }
 
@@ -83,6 +85,8 @@ public:
     bool isDeterministic() const override { return function->isDeterministic(); }
 
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
+
+    bool isServerConstant() const override  { return function->isServerConstant(); }
 
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
 

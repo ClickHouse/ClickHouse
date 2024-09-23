@@ -6,6 +6,7 @@ namespace DB
 {
 
 using FunctionAddMilliseconds = FunctionDateOrDateTimeAddInterval<AddMillisecondsImpl>;
+
 REGISTER_FUNCTION(AddMilliseconds)
 {
     factory.registerFunction<FunctionAddMilliseconds>();

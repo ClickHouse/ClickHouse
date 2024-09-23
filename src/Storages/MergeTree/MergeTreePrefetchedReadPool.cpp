@@ -14,6 +14,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Core/Settings.h>
 
 
 namespace ProfileEvents
@@ -24,6 +25,15 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 filesystem_prefetches_limit;
+    extern const SettingsUInt64 filesystem_prefetch_max_memory_usage;
+    extern const SettingsUInt64 filesystem_prefetch_step_marks;
+    extern const SettingsUInt64 filesystem_prefetch_step_bytes;
+    extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
+    extern const SettingsUInt64 prefetch_buffer_size;
+}
 
 namespace ErrorCodes
 {
@@ -84,6 +94,7 @@ MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 
 MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     RangesInDataParts && parts_,
+    MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -94,6 +105,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
+        std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
@@ -102,7 +114,6 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         column_names_,
         settings_,
         context_)
-    , WithContext(context_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger("MergeTreePrefetchedReadPool(" + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
 {
@@ -327,8 +338,8 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         for (const auto & range : parts_ranges[i].ranges)
             part_stat.sum_marks += range.end - range.begin;
 
-        const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
-            ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
+        const auto & columns = settings[Setting::merge_tree_determine_task_size_by_prewhere_columns] && prewhere_info
+            ? prewhere_info->prewhere_actions.getRequiredColumnsNames()
             : column_names;
 
         part_stat.approx_size_of_mark = getApproximateSizeOfGranule(*read_info.data_part, columns);
@@ -336,13 +347,13 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = read_info.data_part->getColumnSize(column_name).data_compressed;
-            part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings.prefetch_buffer_size);
+            part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
             ++part_stat.required_readers_num;
         };
 
         /// adjustBufferSize(), which is done in MergeTreeReaderStream and MergeTreeReaderCompact,
         /// lowers buffer size if file size (or required read range) is less. So we know that the
-        /// settings.prefetch_buffer_size will be lowered there, therefore we account it here as well.
+        /// settings[Setting::prefetch_buffer_size] will be lowered there, therefore we account it here as well.
         /// But here we make a more approximate lowering (because we do not have loaded marks yet),
         /// while in adjustBufferSize it will be presize.
         for (const auto & column : read_info.task_columns.columns)
@@ -378,44 +389,27 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
     for (const auto & part : per_part_statistics)
         total_size_approx += part.sum_marks * part.approx_size_of_mark;
 
-    size_t min_prefetch_step_marks = pool_settings.min_marks_for_concurrent_read;
     for (size_t i = 0; i < per_part_infos.size(); ++i)
     {
         auto & part_stat = per_part_statistics[i];
 
-        if (settings.filesystem_prefetch_step_marks)
+        if (settings[Setting::filesystem_prefetch_step_marks])
         {
-            part_stat.prefetch_step_marks = settings.filesystem_prefetch_step_marks;
+            part_stat.prefetch_step_marks = settings[Setting::filesystem_prefetch_step_marks];
         }
-        else if (settings.filesystem_prefetch_step_bytes && part_stat.approx_size_of_mark)
+        else if (settings[Setting::filesystem_prefetch_step_bytes] && part_stat.approx_size_of_mark)
         {
             part_stat.prefetch_step_marks = std::max<size_t>(
-                1, static_cast<size_t>(std::round(static_cast<double>(settings.filesystem_prefetch_step_bytes) / part_stat.approx_size_of_mark)));
+                1,
+                static_cast<size_t>(
+                    std::round(static_cast<double>(settings[Setting::filesystem_prefetch_step_bytes]) / part_stat.approx_size_of_mark)));
         }
 
-        /// This limit is important to avoid spikes of slow aws getObject requests when parallelizing within one file.
-        /// (The default is taken from here https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html).
-        if (part_stat.approx_size_of_mark
-            && settings.filesystem_prefetch_min_bytes_for_single_read_task
-            && part_stat.approx_size_of_mark < settings.filesystem_prefetch_min_bytes_for_single_read_task)
-        {
-            const size_t min_prefetch_step_marks_by_total_cols = static_cast<size_t>(
-                std::ceil(static_cast<double>(settings.filesystem_prefetch_min_bytes_for_single_read_task) / part_stat.approx_size_of_mark));
+        part_stat.prefetch_step_marks = std::max(part_stat.prefetch_step_marks, per_part_infos[i]->min_marks_per_task);
 
-            /// At least one task to start working on it right now and another one to prefetch in the meantime.
-            const size_t new_min_prefetch_step_marks = std::min<size_t>(min_prefetch_step_marks_by_total_cols, sum_marks / threads / 2);
-            if (min_prefetch_step_marks < new_min_prefetch_step_marks)
-            {
-                LOG_DEBUG(log, "Increasing min prefetch step from {} to {}", min_prefetch_step_marks, new_min_prefetch_step_marks);
-                min_prefetch_step_marks = new_min_prefetch_step_marks;
-            }
-        }
-
-        if (part_stat.prefetch_step_marks < min_prefetch_step_marks)
-        {
-            LOG_DEBUG(log, "Increasing prefetch step from {} to {}", part_stat.prefetch_step_marks, min_prefetch_step_marks);
-            part_stat.prefetch_step_marks = min_prefetch_step_marks;
-        }
+        if (part_stat.prefetch_step_marks == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
         LOG_DEBUG(
             log,
@@ -423,7 +417,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
             getPartNameForLogging(parts_ranges[i].data_part),
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
-            settings.filesystem_prefetch_step_bytes,
+            settings[Setting::filesystem_prefetch_step_bytes],
             part_stat.prefetch_step_marks,
             toString(parts_ranges[i].ranges));
     }
@@ -432,21 +426,19 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
     LOG_DEBUG(
         log,
-        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, min prefetch step marks: {}, prefetches limit: {}, total_size_approx: {}",
+        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, prefetches limit: {}, total_size_approx: {}",
         sum_marks,
         threads,
         min_marks_per_thread,
-        min_prefetch_step_marks,
-        settings.filesystem_prefetches_limit,
+        settings[Setting::filesystem_prefetches_limit],
         total_size_approx);
 
-    size_t allowed_memory_usage = settings.filesystem_prefetch_max_memory_usage;
+    size_t allowed_memory_usage = settings[Setting::filesystem_prefetch_max_memory_usage];
     if (!allowed_memory_usage)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `filesystem_prefetch_max_memory_usage` must be non-zero");
 
-    std::optional<size_t> allowed_prefetches_num = settings.filesystem_prefetches_limit
-        ? std::optional<size_t>(settings.filesystem_prefetches_limit)
-        : std::nullopt;
+    std::optional<size_t> allowed_prefetches_num
+        = settings[Setting::filesystem_prefetches_limit] ? std::optional<size_t>(settings[Setting::filesystem_prefetches_limit]) : std::nullopt;
 
     per_thread_tasks.clear();
     size_t total_tasks = 0;

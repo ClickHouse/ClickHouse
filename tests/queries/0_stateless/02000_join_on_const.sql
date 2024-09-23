@@ -15,11 +15,11 @@ SELECT 70 = 10 * sum(t1.id) + sum(t2.id) AND count() == 4 FROM t1 JOIN t2 ON toL
 SELECT 70 = 10 * sum(t1.id) + sum(t2.id) AND count() == 4 FROM t1 JOIN t2 ON toLowCardinality(toNullable(1));
 SELECT 70 = 10 * sum(t1.id) + sum(t2.id) AND count() == 4 FROM t1 JOIN t2 ON toNullable(toLowCardinality(1));
 
-SELECT * FROM t1 JOIN t2 ON toUInt16(1); -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON toInt8(1); -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON 256; -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON -1; -- { serverError 403 }
-SELECT * FROM t1 JOIN t2 ON toString(1); -- { serverError 403 }
+SELECT * FROM t1 JOIN t2 ON toUInt16(1); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON toInt8(1); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON 256; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON -1; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON toString(1); -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 SELECT '- ON NULL -';
 
@@ -56,30 +56,30 @@ SELECT * FROM t1 RIGHT JOIN t2 ON NULL SETTINGS join_algorithm = 'auto'; -- { se
 SELECT * FROM t1 FULL JOIN t2 ON NULL SETTINGS join_algorithm = 'partial_merge'; -- { serverError INVALID_JOIN_ON_EXPRESSION,NOT_IMPLEMENTED }
 
 -- mixing of constant and non-constant expressions in ON is not allowed
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 1 SETTINGS allow_experimental_analyzer = 0; -- { serverError AMBIGUOUS_COLUMN_NAME }
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 1 SETTINGS allow_experimental_analyzer = 1;
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 2 SETTINGS allow_experimental_analyzer = 0; -- { serverError AMBIGUOUS_COLUMN_NAME }
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 2 SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 1 SETTINGS enable_analyzer = 0; -- { serverError AMBIGUOUS_COLUMN_NAME }
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 2 SETTINGS enable_analyzer = 0; -- { serverError AMBIGUOUS_COLUMN_NAME }
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 2 SETTINGS enable_analyzer = 1;
 
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1 SETTINGS allow_experimental_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1 SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1 SETTINGS enable_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1 SETTINGS enable_analyzer = 1;
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND NULL; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 'aaa'; -- { serverError INVALID_JOIN_ON_EXPRESSION,ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * FROM t1 JOIN t2 ON 'aaa'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 0 SETTINGS allow_experimental_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 0 SETTINGS allow_experimental_analyzer = 1;
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS allow_experimental_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 0 SETTINGS enable_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 0 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS enable_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS enable_analyzer = 1;
 
 -- { echoOn }
-SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS allow_experimental_analyzer = 1;
-SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS allow_experimental_analyzer = 1;
-SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS enable_analyzer = 1;
 
-SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS allow_experimental_analyzer = 1;
-SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS allow_experimental_analyzer = 1;
-SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS enable_analyzer = 1;
 
 SELECT * FROM (SELECT 1 as a) as t1 INNER JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 SELECT * FROM (SELECT 1 as a) as t1 LEFT JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
@@ -94,27 +94,26 @@ SELECT a + 1
 FROM (SELECT 1 as x) as t1
 LEFT JOIN ( SELECT 1 AS a ) AS t2
 ON TRUE
-SETTINGS allow_experimental_analyzer=1, join_use_nulls=1;
+SETTINGS enable_analyzer=1, join_use_nulls=1;
 
 SELECT a + 1, x + 1, toTypeName(a), toTypeName(x)
 FROM (SELECT 1 as x) as t1
 LEFT JOIN ( SELECT sum(number) as a from numbers(3) GROUP BY NULL) AS t2
 ON TRUE
-SETTINGS allow_experimental_analyzer=1, join_use_nulls=1;
+SETTINGS enable_analyzer=1, join_use_nulls=1;
 
 SELECT a + 1, x + 1, toTypeName(a), toTypeName(x)
 FROM (SELECT 1 as x) as t1
 RIGHT JOIN ( SELECT sum(number) as a from numbers(3) GROUP BY NULL) AS t2
 ON TRUE
-SETTINGS allow_experimental_analyzer=1, join_use_nulls=1;
+SETTINGS enable_analyzer=1, join_use_nulls=1;
 
 SELECT a + 1, x + 1, toTypeName(a), toTypeName(x)
 FROM (SELECT 1 as x) as t1
 FULL JOIN ( SELECT sum(number) as a from numbers(3) GROUP BY NULL) AS t2
 ON TRUE
-SETTINGS allow_experimental_analyzer=1, join_use_nulls=1;
+SETTINGS enable_analyzer=1, join_use_nulls=1;
 
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
-

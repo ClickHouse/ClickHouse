@@ -25,8 +25,10 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <IO/SharedThreadPools.h>
@@ -34,19 +36,26 @@
 #include <base/sort.h>
 
 #include <rocksdb/advanced_options.h>
+#include <rocksdb/compression_type.h>
+#include <rocksdb/convenience.h>
 #include <rocksdb/env.h>
 #include <rocksdb/options.h>
+#include <rocksdb/statistics.h>
 #include <rocksdb/table.h>
-#include <rocksdb/convenience.h>
 #include <rocksdb/utilities/db_ttl.h>
 
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <utility>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_trivial_approximate_count_query;
+}
 
 namespace ErrorCodes
 {
@@ -185,6 +194,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         bool read_only_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
     , primary_key{primary_key_}
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
@@ -310,12 +320,14 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     Block block;
     while (executor.pull(block))
     {
-        sink->consume(Chunk{block.getColumns(), block.rows()});
+        auto chunk = Chunk(block.getColumns(), block.rows());
+        sink->consume(chunk);
     }
 }
 
 void StorageEmbeddedRocksDB::drop()
 {
+    std::lock_guard lock(rocksdb_ptr_mx);
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 }
@@ -350,12 +362,79 @@ bool StorageEmbeddedRocksDB::optimize(
     return true;
 }
 
+static_assert(rocksdb::DEBUG_LEVEL == 0);
+static_assert(rocksdb::HEADER_LEVEL == 5);
+static constexpr std::array<std::pair<DB::LogsLevel, Poco::Message::Priority>, 6> rocksdb_logger_map = {
+    std::make_pair(DB::LogsLevel::debug, Poco::Message::Priority::PRIO_DEBUG),
+    std::make_pair(DB::LogsLevel::information, Poco::Message::Priority::PRIO_INFORMATION),
+    std::make_pair(DB::LogsLevel::warning, Poco::Message::Priority::PRIO_WARNING),
+    std::make_pair(DB::LogsLevel::error, Poco::Message::Priority::PRIO_ERROR),
+    std::make_pair(DB::LogsLevel::fatal, Poco::Message::Priority::PRIO_FATAL),
+    /// Same as default logger does for HEADER_LEVEL
+    std::make_pair(DB::LogsLevel::information, Poco::Message::Priority::PRIO_INFORMATION),
+};
+class StorageEmbeddedRocksDBLogger : public rocksdb::Logger
+{
+public:
+    explicit StorageEmbeddedRocksDBLogger(const rocksdb::InfoLogLevel log_level, LoggerRawPtr log_)
+        : rocksdb::Logger(log_level)
+        , log(log_)
+    {}
+
+    void Logv(const char * format, va_list ap) override
+        __attribute__((format(printf, 2, 0)))
+    {
+        Logv(rocksdb::InfoLogLevel::DEBUG_LEVEL, format, ap);
+    }
+
+    void Logv(const rocksdb::InfoLogLevel log_level, const char * format, va_list ap) override
+        __attribute__((format(printf, 3, 0)))
+    {
+        if (log_level < GetInfoLogLevel())
+            return;
+
+        auto level = rocksdb_logger_map[log_level];
+
+        /// stack buffer was enough
+        {
+            va_list backup_ap;
+            va_copy(backup_ap, ap);
+            std::array<char, 1024> stack;
+            if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
+            {
+                va_end(backup_ap);
+                LOG_IMPL(log, level.first, level.second, "{}", stack.data());
+                return;
+            }
+            va_end(backup_ap);
+        }
+
+        /// let's try with a bigger dynamic buffer (but not too huge, since
+        /// some of rocksdb internal code has also such a limitation, i..e
+        /// HdfsLogger)
+        {
+            va_list backup_ap;
+            va_copy(backup_ap, ap);
+            static constexpr int buffer_size = 30000;
+            std::unique_ptr<char[]> buffer(new char[buffer_size]);
+            if (vsnprintf(buffer.get(), buffer_size, format, backup_ap) >= buffer_size)
+                buffer[buffer_size - 1] = 0;
+            va_end(backup_ap);
+            LOG_IMPL(log, level.first, level.second, "{}", buffer.get());
+        }
+    }
+
+private:
+    LoggerRawPtr log;
+};
+
 void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
     rocksdb::Options base;
 
     base.create_if_missing = true;
+    base.compression = rocksdb::CompressionType::kZSTD;
     base.statistics = rocksdb::CreateDBStatistics();
     /// It is too verbose by default, and in fact we don't care about rocksdb logs at all.
     base.info_log_level = rocksdb::ERROR_LEVEL;
@@ -367,7 +446,7 @@ void StorageEmbeddedRocksDB::initDB()
     if (config.has("rocksdb.options"))
     {
         auto config_options = getOptionsFromConfig(config, "rocksdb.options");
-        status = rocksdb::GetDBOptionsFromMap(merged, config_options, &merged);
+        status = rocksdb::GetDBOptionsFromMap({}, merged, config_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' at: {}: {}",
@@ -377,7 +456,7 @@ void StorageEmbeddedRocksDB::initDB()
     if (config.has("rocksdb.column_family_options"))
     {
         auto column_family_options = getOptionsFromConfig(config, "rocksdb.column_family_options");
-        status = rocksdb::GetColumnFamilyOptionsFromMap(merged, column_family_options, &merged);
+        status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, column_family_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.column_family_options' at: {}: {}",
@@ -387,7 +466,7 @@ void StorageEmbeddedRocksDB::initDB()
     if (config.has("rocksdb.block_based_table_options"))
     {
         auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
-        status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+        status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.block_based_table_options' at: {}: {}",
@@ -412,7 +491,7 @@ void StorageEmbeddedRocksDB::initDB()
             if (config.has(config_key))
             {
                 auto table_config_options = getOptionsFromConfig(config, config_key);
-                status = rocksdb::GetDBOptionsFromMap(merged, table_config_options, &merged);
+                status = rocksdb::GetDBOptionsFromMap({}, merged, table_config_options, &merged);
                 if (!status.ok())
                 {
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
@@ -424,7 +503,7 @@ void StorageEmbeddedRocksDB::initDB()
             if (config.has(config_key))
             {
                 auto table_column_family_options = getOptionsFromConfig(config, config_key);
-                status = rocksdb::GetColumnFamilyOptionsFromMap(merged, table_column_family_options, &merged);
+                status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, table_column_family_options, &merged);
                 if (!status.ok())
                 {
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
@@ -436,7 +515,7 @@ void StorageEmbeddedRocksDB::initDB()
             if (config.has(config_key))
             {
                 auto block_based_table_options = getOptionsFromConfig(config, config_key);
-                status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+                status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
                 if (!status.ok())
                 {
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
@@ -446,6 +525,7 @@ void StorageEmbeddedRocksDB::initDB()
         }
     }
 
+    merged.info_log = std::make_shared<StorageEmbeddedRocksDBLogger>(merged.info_log_level, log.get());
     merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
     if (ttl > 0)
@@ -463,18 +543,13 @@ void StorageEmbeddedRocksDB::initDB()
     {
         rocksdb::DB * db;
         if (read_only)
-        {
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
-        }
         else
-        {
             status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
-        }
+
         if (!status.ok())
-        {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
-                rocksdb_dir, status.ToString());
-        }
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}", rocksdb_dir, status.ToString());
+
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
     }
 }
@@ -578,7 +653,8 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
 
 void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const auto & sample_block = getOutputStream().header;
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
@@ -588,8 +664,12 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr  query_context, bool /*async_insert*/)
 {
     if (getSettings().optimize_for_bulk_insert)
+    {
+        LOG_DEBUG(log, "Using bulk insert");
         return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
+    }
 
+    LOG_DEBUG(log, "Using regular insert");
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
@@ -618,6 +698,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
+    metadata.setComment(args.comment);
 
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
@@ -735,7 +816,7 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & query_settings) const
 {
-    if (!query_settings.optimize_trivial_approximate_count_query)
+    if (!query_settings[Setting::optimize_trivial_approximate_count_query])
         return {};
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)

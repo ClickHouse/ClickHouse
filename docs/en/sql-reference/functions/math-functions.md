@@ -8,7 +8,7 @@ sidebar_label: Mathematical
 
 ## e
 
-Returns e ([Euler's constant](https://en.wikipedia.org/wiki/Euler%27s_constant)).
+Returns $e$ ([Euler's constant](https://en.wikipedia.org/wiki/Euler%27s_constant)).
 
 **Syntax**
 
@@ -18,11 +18,11 @@ e()
 
 **Returned value**
 
-Type: [Float64](../../sql-reference/data-types/float.md).
+Type: [Float64](../data-types/float.md).
 
 ## pi
 
-Returns π ([Pi](https://en.wikipedia.org/wiki/Pi)).
+Returns $\pi$ ([Pi](https://en.wikipedia.org/wiki/Pi)).
 
 **Syntax**
 
@@ -31,11 +31,11 @@ pi()
 ```
 **Returned value**
 
-Type: [Float64](../../sql-reference/data-types/float.md).
+Type: [Float64](../data-types/float.md).
 
 ## exp
 
-Returns e to the power of the given argument.
+Returns $e^{x}$, where x is the given argument to the function.
 
 **Syntax**
 
@@ -45,11 +45,27 @@ exp(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT round(exp(-1), 4);
+```
+
+Result:
+
+```response
+┌─round(exp(-1), 4)─┐
+│            0.3679 │
+└───────────────────┘
+```
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## log
 
@@ -65,11 +81,11 @@ Alias: `ln(x)`
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## exp2
 
@@ -83,15 +99,15 @@ exp2(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## intExp2
 
-Like `exp` but returns a UInt64.
+Like [`exp`](#exp) but returns a UInt64.
 
 **Syntax**
 
@@ -111,11 +127,11 @@ log2(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## exp10
 
@@ -129,15 +145,15 @@ exp10(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## intExp10
 
-Like `exp10` but returns a UInt64.
+Like [`exp10`](#exp10) but returns a UInt64.
 
 **Syntax**
 
@@ -157,11 +173,11 @@ log10(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## sqrt
 
@@ -173,11 +189,11 @@ sqrt(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## cbrt
 
@@ -189,15 +205,15 @@ cbrt(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## erf
 
-If `x` is non-negative, then `erf(x / σ√2)` is the probability that a random variable having a normal distribution with standard deviation `σ` takes the value that is separated from the expected value by more than `x`.
+If `x` is non-negative, then $erf(\frac{x}{\sigma\sqrt{2}})$ is the probability that a random variable having a normal distribution with standard deviation $\sigma$ takes the value that is separated from the expected value by more than `x`.
 
 **Syntax**
 
@@ -207,11 +223,11 @@ erf(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 **Example**
 
@@ -229,7 +245,7 @@ SELECT erf(3 / sqrt(2));
 
 ## erfc
 
-Returns a number close to `1 - erf(x)` without loss of precision for large ‘x’ values.
+Returns a number close to $1-erf(x)$ without loss of precision for large `x` values.
 
 **Syntax**
 
@@ -239,11 +255,11 @@ erfc(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## lgamma
 
@@ -257,11 +273,11 @@ lgamma(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## tgamma
 
@@ -275,11 +291,11 @@ gamma(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## sin
 
@@ -293,11 +309,11 @@ sin(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 **Example**
 
@@ -323,11 +339,11 @@ cos(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## tan
 
@@ -341,11 +357,11 @@ tan(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## asin
 
@@ -359,11 +375,11 @@ asin(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## acos
 
@@ -377,11 +393,11 @@ acos(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## atan
 
@@ -395,15 +411,15 @@ atan(x)
 
 **Arguments**
 
-- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-Type: [Float*](../../sql-reference/data-types/float.md).
+Type: [Float*](../data-types/float.md).
 
 ## pow
 
-Returns `x` to the power of `y`.
+Returns $x^y$.
 
 **Syntax**
 
@@ -415,12 +431,12 @@ Alias: `power(x, y)`
 
 **Arguments**
 
-- `x` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md) or [Float*](../../sql-reference/data-types/float.md)
-- `y` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md) or [Float*](../../sql-reference/data-types/float.md)
+- `x` - [(U)Int8/16/32/64](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md)
+- `y` - [(U)Int8/16/32/64](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md)
 
 **Returned value**
 
-Type: [Float64](../../sql-reference/data-types/float.md).
+Type: [Float64](../data-types/float.md).
 
 ## cosh
 
@@ -434,13 +450,13 @@ cosh(x)
 
 **Arguments**
 
-- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — The angle, in radians. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `1 <= cosh(x) < +∞`.
+- Values from the interval: $1 \le cosh(x) \lt +\infty$.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -468,13 +484,13 @@ acosh(x)
 
 **Arguments**
 
-- `x` — Hyperbolic cosine of angle. Values from the interval: `1 <= x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — Hyperbolic cosine of angle. Values from the interval: $1 \le x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- The angle, in radians. Values from the interval: `0 <= acosh(x) < +∞`.
+- The angle, in radians. Values from the interval: $0 \le acosh(x) \lt +\infty$.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -502,13 +518,13 @@ sinh(x)
 
 **Arguments**
 
-- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — The angle, in radians. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `-∞ < sinh(x) < +∞`.
+- Values from the interval: $-\infty \lt sinh(x) \lt +\infty$.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -536,13 +552,13 @@ asinh(x)
 
 **Arguments**
 
-- `x` — Hyperbolic sine of angle. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — Hyperbolic sine of angle. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- The angle, in radians. Values from the interval: `-∞ < asinh(x) < +∞`.
+- The angle, in radians. Values from the interval: $-\infty \lt asinh(x) \lt +\infty$.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -569,13 +585,13 @@ tanh(x)
 
 **Arguments**
 
-- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — The angle, in radians. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `-1 < tanh(x) < 1`.
+- Values from the interval: $-1 \lt tanh(x) \lt 1$.
 
-Type: [Float*](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float*](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -601,13 +617,13 @@ atanh(x)
 
 **Arguments**
 
-- `x` — Hyperbolic tangent of angle. Values from the interval: `–1 < x < 1`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — Hyperbolic tangent of angle. Values from the interval: $-1 \lt x \lt 1$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- The angle, in radians. Values from the interval: `-∞ < atanh(x) < +∞`.
+- The angle, in radians. Values from the interval: $-\infty \lt atanh(x) \lt +\infty$.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -635,14 +651,14 @@ atan2(y, x)
 
 **Arguments**
 
-- `y` — y-coordinate of the point through which the ray passes. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
-- `x` — x-coordinate of the point through which the ray passes. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
+- `y` — y-coordinate of the point through which the ray passes. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — x-coordinate of the point through which the ray passes. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- The angle `θ` such that `−π < θ ≤ π`, in radians.
+- The angle `θ` such that $-\pi \lt 0 \le \pi$, in radians.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -670,14 +686,14 @@ hypot(x, y)
 
 **Arguments**
 
-- `x` — The first cathetus of a right-angle triangle. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
-- `y` — The second cathetus of a right-angle triangle. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md).
+- `x` — The first cathetus of a right-angle triangle. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `y` — The second cathetus of a right-angle triangle. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
 - The length of the hypotenuse of a right-angle triangle.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -705,13 +721,13 @@ log1p(x)
 
 **Arguments**
 
-- `x` — Values from the interval: `-1 < x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — Values from the interval: $-1 \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `-∞ < log1p(x) < +∞`.
+- Values from the interval: $-\infty < log1p(x) \lt +\infty$.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -739,7 +755,7 @@ sign(x)
 
 **Arguments**
 
-- `x` — Values from  `-∞` to `+∞`. Support all numeric types in ClickHouse.
+- `x` — Values from $-\infty$ to $+\infty$. Supports all numeric types in ClickHouse.
 
 **Returned value**
 
@@ -747,7 +763,7 @@ sign(x)
 - 0 for `x = 0`
 - 1 for `x > 0`
 
-Type: [Int8](../../sql-reference/data-types/int-uint.md).
+Type: [Int8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -804,11 +820,11 @@ sigmoid(x)
 
 **Parameters**
 
-- `x` — input value. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — input value. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Corresponding value along the sigmoid curve between 0 and 1. [Float64](../../sql-reference/data-types/float.md).
+- Corresponding value along the sigmoid curve between 0 and 1. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -838,13 +854,12 @@ degrees(x)
 
 **Arguments**
 
-- `x` — Input in radians. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).  
+- `x` — Input in radians. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — Input in radians. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).  
 
 **Returned value**
 
-- Value in degrees.
-
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- Value in degrees. [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -872,13 +887,13 @@ radians(x)
 
 **Arguments**
 
-- `x` — Input in degrees. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+- `x` — Input in degrees. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
 - Value in radians.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](../data-types/float.md#float32-float64).
 
 **Example**
 
@@ -946,4 +961,50 @@ Result:
 ┌─widthBucket(10.15, -8.6, 23, 18)─┐
 │                               11 │
 └──────────────────────────────────┘
+```
+
+## proportionsZTest
+
+Returns test statistics for the two proportion Z-test - a statistical test for comparing the proportions from two populations `x` and `y`.
+
+**Syntax**
+
+```sql
+proportionsZTest(successes_x, successes_y, trials_x, trials_y, conf_level, pool_type)
+```
+
+**Arguments**
+
+- `successes_x`: Number of successes in population `x`. [UInt64](../data-types/int-uint.md).
+- `successes_y`: Number of successes in population `y`. [UInt64](../data-types/int-uint.md).
+- `trials_x`: Number of trials in population `x`. [UInt64](../data-types/int-uint.md).
+- `trials_y`: Number of trials in population `y`. [UInt64](../data-types/int-uint.md).
+- `conf_level`: Confidence level for the test. [Float64](../data-types/float.md).
+- `pool_type`: Selection of pooling (way in which the standard error is estimated). Can be either `unpooled` or `pooled`. [String](../data-types/string.md). 
+
+:::note
+For argument `pool_type`: In the pooled version, the two proportions are averaged, and only one proportion is used to estimate the standard error. In the unpooled version, the two proportions are used separately.
+:::
+
+**Returned value**
+
+- `z_stat`: Z statistic. [Float64](../data-types/float.md).
+- `p_val`: P value. [Float64](../data-types/float.md).
+- `ci_low`: The lower confidence interval. [Float64](../data-types/float.md).
+- `ci_high`: The upper confidence interval. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
+```
+
+Result:
+
+```response
+┌─proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled')───────────────────────────────┐
+│ (-0.20656724435948853,0.8363478437079654,-0.09345975390115283,0.07563797172293502) │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```

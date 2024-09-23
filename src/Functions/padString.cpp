@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -237,8 +238,8 @@ namespace
         void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
             const auto & chars = strings.getElements();
-            bool all_ascii = UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
-                && UTF8::isAllASCII(chars.data(), chars.size());
+            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                && isAllASCII(chars.data(), chars.size());
             bool is_actually_utf8 = is_utf8 && !all_ascii;
 
             if (!is_actually_utf8)
@@ -334,8 +335,8 @@ REGISTER_FUNCTION(PadString)
     factory.registerFunction<FunctionPadString<true, false>>();  /// rightPad
     factory.registerFunction<FunctionPadString<true, true>>();   /// rightPadUTF8
 
-    factory.registerAlias("lpad", "leftPad", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("rpad", "rightPad", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("lpad", "leftPad", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("rpad", "rightPad", FunctionFactory::Case::Insensitive);
 }
 
 }

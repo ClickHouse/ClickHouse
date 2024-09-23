@@ -101,7 +101,8 @@ public:
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
-        bool last_reader_in_chain_);
+        bool last_reader_in_chain_,
+        bool main_reader_);
 
     MergeTreeRangeReader() = default;
 
@@ -326,6 +327,7 @@ private:
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     bool last_reader_in_chain = false;
+    bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool is_initialized = false;
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");

@@ -1,0 +1,3 @@
+<clickhouse>
+    <grpc_port>9100</grpc_port>
+</clickhouse>

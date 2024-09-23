@@ -3,7 +3,7 @@
         <disks>
             <s3>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <endpoint>http://minio1:9001/root/data/s3</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
                 <proxy>
@@ -13,9 +13,10 @@
             </s3>
             <s3_with_resolver>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <endpoint>http://minio1:9001/root/data/s3_with_resolver</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
+                <skip_access_check>true</skip_access_check>
                 <proxy>
                     <!--
                         At each interaction with S3 resolver sends empty GET request to specified endpoint URL to obtain proxy host.
