@@ -99,6 +99,10 @@ public:
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
+    void add(const String & name, const SerializationInfo & info);
+
+    SerializationInfoPtr tryGet(const String & name) const;
+    MutableSerializationInfoPtr tryGet(const String & name);
     ISerialization::Kind getKind(const String & column_name) const;
 
     /// Takes data from @other, but keeps current serialization kinds.

@@ -203,13 +203,25 @@ void SerializationInfoByName::add(const Block & block)
 void SerializationInfoByName::add(const SerializationInfoByName & other)
 {
     for (const auto & [name, info] : other)
-    {
-        auto it = find(name);
-        if (it == end())
-            continue;
+        add(name, *info);
+}
 
-        it->second->add(*info);
-    }
+void SerializationInfoByName::add(const String & name, const SerializationInfo & info)
+{
+    if (auto it = find(name); it != end())
+        it->second->add(info);
+}
+
+SerializationInfoPtr SerializationInfoByName::tryGet(const String & name) const
+{
+    auto it = find(name);
+    return it == end() ? nullptr : it->second;
+}
+
+MutableSerializationInfoPtr SerializationInfoByName::tryGet(const String & name)
+{
+    auto it = find(name);
+    return it == end() ? nullptr : it->second;
 }
 
 void SerializationInfoByName::replaceData(const SerializationInfoByName & other)

@@ -8531,12 +8531,28 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         .choose_kind = true,
     };
 
-    auto columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
-    serialization_hints = SerializationInfoByName(columns, settings);
+    const auto & storage_columns = getInMemoryMetadataPtr()->getColumns();
+    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
     auto range = getDataPartsStateRange(DataPartState::Active);
 
     for (const auto & part : range)
-        serialization_hints.add(part->getSerializationInfos());
+    {
+        const auto & part_columns = part->getColumnsDescription();
+        for (const auto & [name, info] : part->getSerializationInfos())
+        {
+            auto new_hint = serialization_hints.tryGet(name);
+            if (!new_hint)
+                continue;
+
+            /// Structure may change after alter. Do not add info for such items.
+            /// Instead it will be updated on commit of the result part of alter.
+            if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
+                continue;
+
+            chassert(new_hint->structureEquals(*info));
+            new_hint->add(*info);
+        }
+    }
 }
 
 void MergeTreeData::updateSerializationHints(const DataPartPtr & part, const DataPartsLock & /*lock*/)

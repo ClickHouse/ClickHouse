@@ -400,16 +400,16 @@ void StorageMergeTree::alter(
 
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 
+            {
+                /// Reset Object columns, because column of type
+                /// Object may be added or dropped by alter.
+                auto parts_lock = lockParts();
+                resetObjectColumnsFromActiveParts(parts_lock);
+                resetSerializationHints(parts_lock);
+            }
+
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
-        }
-
-        {
-            /// Reset Object columns, because column of type
-            /// Object may be added or dropped by alter.
-            auto parts_lock = lockParts();
-            resetObjectColumnsFromActiveParts(parts_lock);
-            resetSerializationHints(parts_lock);
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
