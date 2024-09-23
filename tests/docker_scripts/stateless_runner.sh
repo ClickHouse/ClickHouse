@@ -62,20 +62,12 @@ source /repo/tests/docker_scripts/utils.lib
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
-    sudo sed -i "/<use_compression>1<\/use_compression>/d" /etc/clickhouse-server/config.d/zookeeper.xml
-
-    # it contains some new settings, but we can safely remove it
-    rm /etc/clickhouse-server/config.d/handlers.yaml
-    rm /etc/clickhouse-server/users.d/s3_cache_new.xml
-    rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
-
     function remove_keeper_config()
     {
         sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
     }
-    # commit_logs_cache_size_threshold setting doesn't exist on some older versions
-    remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
-    remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
+
+    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
 fi
 
 export IS_FLAKY_CHECK=0
