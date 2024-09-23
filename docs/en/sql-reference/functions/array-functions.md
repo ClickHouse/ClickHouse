@@ -1717,6 +1717,24 @@ Result:
 [[1,1,2,3],[1,2,3,4]]
 ```
 
+## arrayUnion(arr)
+
+Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays.
+
+Example:
+```sql
+SELECT
+    arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
+    arrayUnion(['hi'], [], ['hello', 'hi']) as str_example,
+    arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
+```
+
+```text
+┌─num_example─┬─str_example────┬─null_example─┐
+│ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
+└─────────────┴────────────────┴──────────────┘
+```
+
 ## arrayIntersect(arr)
 
 Takes multiple arrays, returns an array with elements that are present in all source arrays.
@@ -2088,13 +2106,14 @@ Calculate AUC (Area Under the Curve, which is a concept in machine learning, see
 **Syntax**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels)
+arrayAUC(arr_scores, arr_labels[, scale])
 ```
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
 
 **Returned value**
 

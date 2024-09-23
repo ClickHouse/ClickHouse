@@ -40,6 +40,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -238,7 +243,7 @@ void StorageMaterializedView::read(
 {
     auto context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context);
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
@@ -296,7 +301,7 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 {
     auto context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context);
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     auto storage_id = storage->getStorageID();
@@ -425,7 +430,7 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool app
     insert_query->table_id = target_table;
 
     Block header;
-    if (refresh_context->getSettingsRef().allow_experimental_analyzer)
+    if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
     else
         header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
