@@ -478,7 +478,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
 static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
-    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE};
+    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
@@ -1892,19 +1892,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             }
             out.point_in_polygon_column_description = column_desc;
 
-//            auto col = func.getArgumentAt(1).getConstantColumn();
-//            const auto & second_argument = typeid_cast<const ColumnConst &>(*col.column);
-//            const auto const_col = second_argument.getDataColumnPtr();
-//            auto points = ColumnToPointsConverter<RPNElement::Point>::convert(const_col);
-//            for (auto & p : points)
-//                out.polygon.outer().push_back(p);
-
             /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
             chassert(WhichDataType(const_type).isArray());
-            for (const auto & ele : const_value.get<Array>())
+            for (const auto & ele : const_value.safeGet<Array>())
             {
                 chassert(ele.getType() == Field::Types::Tuple);
-                const auto & ele_tuple = ele.get<Tuple>();
+                const auto & ele_tuple = ele.safeGet<Tuple>();
                 chassert(ele_tuple.size() == 2);
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[1]);
