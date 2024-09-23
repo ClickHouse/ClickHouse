@@ -4558,12 +4558,17 @@ message SQLFuncArg {
   }
 }
 
+enum FuncNulls {
+  NRESPECT = 1;
+  NIGNORE = 2;
+}
+
 message SQLFuncCall {
   required SQLFunc func = 1;
   optional bool distinct = 2;
   repeated Expr params = 3;
   repeated SQLFuncArg args = 4;
-  optional bool respect_nulls = 5;
+  optional FuncNulls fnulls = 5;
 }
 
 message Window {
@@ -4637,13 +4642,9 @@ enum WindowFuncs {
 }
 
 message SQLWindowCall {
-  enum WindowFuncNulls {
-    RESPECT_NULLS = 1;
-    IGNORE_NULLS = 2;
-  }
   required WindowFuncs func = 1;
   repeated Expr args = 2;
-  optional WindowFuncNulls wfn = 3;
+  optional FuncNulls fnulls = 3;
 }
 
 message WindowFuncCall {

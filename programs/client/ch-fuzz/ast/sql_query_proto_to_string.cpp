@@ -1027,8 +1027,10 @@ CONV_FN(SQLFuncCall, sfc) {
     }
   }
   ret += ')';
-  if (sfc.respect_nulls()) {
-    ret += " RESPECT NULLS";
+  if (sfc.has_fnulls()) {
+    ret += " ";
+    ret += FuncNulls_Name(sfc.fnulls()).substr(1);
+    ret += " NULLS";
   }
 }
 
@@ -1062,12 +1064,10 @@ CONV_FN(SQLWindowCall, wc) {
     ExprToString(ret, wc.args(i));
   }
   ret += ')';
-  if (wc.has_wfn()) {
-    std::string next = SQLWindowCall_WindowFuncNulls_Name(wc.wfn());
-
-    std::replace(next.begin(), next.end(), '_', ' ');
+  if (wc.has_fnulls()) {
     ret += " ";
-    ret += next;
+    ret += FuncNulls_Name(wc.fnulls()).substr(1);
+    ret += " NULLS";
   }
 }
 
