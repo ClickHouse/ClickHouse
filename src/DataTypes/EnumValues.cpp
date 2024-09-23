@@ -56,37 +56,37 @@ void EnumValues<T>::fillMaps()
 template <typename T>
 T EnumValues<T>::getValue(StringRef field_name) const
 {
-    auto it = name_to_value_map.find(field_name);
-    if (it == name_to_value_map.end())
+    T x;
+    if (auto it = name_to_value_map.find(field_name); it != name_to_value_map.end())
+    {
+        return it->getMapped();
+    }
+    else if (tryParse(x, field_name.data, field_name.size) && value_to_name_map.contains(x))
     {
         /// If we fail to find given string in enum names, we will try to treat it as enum id.
-        T x;
-        ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
-        readText(x, tmp_buf);
-        /// Check if we reached end of the tmp_buf (otherwise field_name is not a number)
-        /// and try to find it in enum ids
-        if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
-            return x;
-
+        return x;
+    }
+    else
+    {
         auto hints = this->getHints(field_name.toString());
         auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element '{}' for enum{}", field_name.toString(), hints_string);
     }
-    return it->getMapped();
 }
 
 template <typename T>
 bool EnumValues<T>::tryGetValue(T & x, StringRef field_name) const
 {
-    auto it = name_to_value_map.find(field_name);
-    if (it == name_to_value_map.end())
+    if (auto it = name_to_value_map.find(field_name); it != name_to_value_map.end())
+    {
+        x = it->getMapped();
+        return true;
+    }
+    else
     {
         /// If we fail to find given string in enum names, we will try to treat it as enum id.
-        ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
-        return tryReadText(x, tmp_buf) && tmp_buf.eof() && value_to_name_map.contains(x);
+        return tryParse(x, field_name.data, field_name.size) && value_to_name_map.contains(x);
     }
-    x = it->getMapped();
-    return true;
 }
 
 template <typename T>
