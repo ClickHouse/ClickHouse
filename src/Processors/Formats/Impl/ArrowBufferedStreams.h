@@ -1,6 +1,8 @@
 #pragma once
 #include "config.h"
 
+#include <Common/threadPoolCallbackRunner.h>
+
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <optional>
@@ -100,7 +102,10 @@ public:
     bool closed() const override { return !is_open; }
 
 private:
+    void asyncThreadFunction(arrow::WeakFuture<std::shared_ptr<arrow::Buffer>>& future, int64_t position, int64_t nbytes);
+
     SeekableReadBuffer & in;
+    ThreadPoolCallbackRunnerUnsafe<void> async_runner;
     size_t file_size;
     bool is_open = true;
 

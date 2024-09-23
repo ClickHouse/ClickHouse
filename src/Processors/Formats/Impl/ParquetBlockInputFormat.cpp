@@ -467,6 +467,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
+    bool prefetch_group = supportPrefetch();
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -477,7 +478,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
 
     int num_row_groups = metadata->num_row_groups();
-    row_group_batches.reserve(num_row_groups);
+    prefetch_group ? row_group_batches.reserve(1) : row_group_batches.reserve(num_row_groups);
 
     auto adaptive_chunk_size = [&](int row_group_idx) -> size_t
     {
@@ -510,7 +511,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                     .can_be_true)
             continue;
 
-        if (row_group_batches.empty() || row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek)
+        // When single-threaded parsing, can prefetch row groups, so need to put all row groups in the same row_group_batch
+        if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
             row_group_batches.emplace_back();
 
         row_group_batches.back().row_groups_idxs.push_back(row_group);
@@ -523,6 +525,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
 {
+    bool row_group_prefetch = supportPrefetch();
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
     parquet::ArrowReaderProperties arrow_properties;
@@ -546,8 +549,19 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     //
     // This adds one unnecessary copy. We should probably do coalescing and prefetch scheduling on
     // our side instead.
-    arrow_properties.set_pre_buffer(true);
-    auto cache_options = arrow::io::CacheOptions::LazyDefaults();
+    arrow::io::CacheOptions cache_options;
+
+    if (row_group_prefetch)
+    {
+        // Manual prefetch via RowGroupPrefetchIterator
+        arrow_properties.set_pre_buffer(false);
+        cache_options = arrow::io::CacheOptions::Defaults();
+    }
+    else
+    {
+        arrow_properties.set_pre_buffer(true);
+        cache_options = arrow::io::CacheOptions::LazyDefaults();
+    }
     cache_options.hole_size_limit = min_bytes_for_seek;
     cache_options.range_size_limit = 1l << 40; // reading the whole row group at once is fine
     arrow_properties.set_cache_options(cache_options);
@@ -589,11 +603,19 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         THROW_ARROW_NOT_OK(builder.Open(arrow_file, reader_properties, metadata));
         builder.properties(arrow_properties);
         builder.memory_pool(ArrowMemoryPool::instance());
+        // should get raw reader before build, raw_reader will set null after build
+        auto * parquet_file_reader = builder.raw_reader();
         THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
-
-        THROW_ARROW_NOT_OK(
-            row_group_batch.file_reader->GetRecordBatchReader(row_group_batch.row_groups_idxs, column_indices, &row_group_batch.record_batch_reader));
-
+        if (row_group_prefetch)
+        {
+            row_group_batch.prefetch_iterator = std::make_unique<RowGroupPrefetchIterator>(parquet_file_reader, row_group_batch, column_indices);
+            row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
+        }
+        else
+        {
+            THROW_ARROW_NOT_OK(
+                row_group_batch.file_reader->GetRecordBatchReader(row_group_batch.row_groups_idxs, column_indices, &row_group_batch.record_batch_reader));
+        }
         row_group_batch.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
             getPort().getHeader(),
             "Parquet",
@@ -656,6 +678,29 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
             return;
     }
 }
+bool ParquetBlockInputFormat::supportPrefetch() const
+{
+    return max_decoding_threads == 1 && format_settings.parquet.enable_row_group_prefetch && !format_settings.parquet.use_native_reader;
+}
+
+std::shared_ptr<arrow::RecordBatchReader> ParquetBlockInputFormat::RowGroupPrefetchIterator::nextRowGroupReader()
+{
+    if (next_row_group_idx >= row_group_batch.row_groups_idxs.size()) return nullptr;
+    std::shared_ptr<arrow::RecordBatchReader> reader;
+    THROW_ARROW_NOT_OK(row_group_batch.file_reader->GetRecordBatchReader({row_group_batch.row_groups_idxs[next_row_group_idx]}, column_indices, &reader));
+    prefetchNextRowGroupReader();
+    ++next_row_group_idx;
+    return reader;
+}
+
+void ParquetBlockInputFormat::RowGroupPrefetchIterator::prefetchNextRowGroupReader()
+{
+    if (next_row_group_idx < row_group_batch.row_groups_idxs.size())
+    {
+        file_reader->PreBuffer({row_group_batch.row_groups_idxs[next_row_group_idx]}, column_indices,
+            row_group_batch.file_reader->properties().io_context(), row_group_batch.file_reader->properties().cache_options());
+    }
+}
 
 void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::unique_lock<std::mutex> & lock)
 {
@@ -712,11 +757,26 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     }
     else
     {
-        auto batch = row_group_batch.record_batch_reader->Next();
-        if (!batch.ok())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+        auto fetchBatch = [&]
+        {
+            chassert(row_group_batch.record_batch_reader);
+            auto batch = row_group_batch.record_batch_reader->Next();
+            if (!batch.ok())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+            return batch;
+        };
 
-        if (!*batch)
+        auto batch = fetchBatch();
+        if (!*batch && row_group_batch.prefetch_iterator)
+        {
+            row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
+            if (row_group_batch.record_batch_reader)
+            {
+                batch = fetchBatch();
+            }
+        }
+
+        if (!*batch || !row_group_batch.record_batch_reader)
         {
             end_of_row_group();
             return;

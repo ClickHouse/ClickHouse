@@ -288,6 +288,7 @@ struct FormatSettings
         size_t write_batch_size = 1024;
         bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
+        bool enable_row_group_prefetch = true;
     } parquet{};
 
     struct Pretty
