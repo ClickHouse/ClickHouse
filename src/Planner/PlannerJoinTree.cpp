@@ -1202,28 +1202,39 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         table_expression->formatASTForErrorMessage());
     }
 
-    if (from_stage == QueryProcessingStage::FetchColumns && !select_query_options.ignore_rename_columns)
+    if (from_stage == QueryProcessingStage::FetchColumns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
 
         for (auto & output_node : rename_actions_dag.getOutputs())
         {
-            const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
-            if (!column_identifier)
-                continue;
+            if (select_query_options.ignore_rename_columns)
+            {
+                const auto * column_name = table_expression_data.getColumnNameOrNull(output_node->result_name);
+                if (!column_name)
+                    continue;
 
-            updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
+                updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_name));
+            }
+            else
+            {
+                const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
+                if (!column_identifier)
+                    continue;
+
+                updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
+            }
         }
 
         rename_actions_dag.getOutputs() = std::move(updated_actions_dag_outputs);
 
         auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
-        rename_step->setStepDescription("Change column names to column identifiers");
+        rename_step->setStepDescription(select_query_options.ignore_rename_columns
+            ? "Change column identifiers to column names"
+            : "Change column names to column identifiers");
+
         query_plan.addStep(std::move(rename_step));
-    }
-    else if (from_stage == QueryProcessingStage::FetchColumns)
-    {
     }
     else
     {
