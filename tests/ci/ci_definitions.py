@@ -62,7 +62,6 @@ class Runners(metaclass=WithIter):
     STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
     FUNC_TESTER_ARM = "func-tester-aarch64"
-    STRESS_TESTER = "stress-tester"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -456,7 +455,7 @@ class CommonJobConfigs:
             docker=["clickhouse/stress-test"],
         ),
         run_command="stress_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
         timeout=9000,
     )
     UPGRADE_TEST = JobConfig(
@@ -467,7 +466,7 @@ class CommonJobConfigs:
             docker=["clickhouse/stress-test"],
         ),
         run_command="upgrade_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
         timeout=3600,
     )
     INTEGRATION_TEST = JobConfig(
@@ -482,7 +481,7 @@ class CommonJobConfigs:
             docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
@@ -517,7 +516,7 @@ class CommonJobConfigs:
             docker=["clickhouse/performance-comparison"],
         ),
         run_command="performance_comparison_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
     )
     SQLLANCER_TEST = JobConfig(
         job_name_keyword="lancer",

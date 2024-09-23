@@ -304,21 +304,30 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, getClientInfo());
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
         }
     }
 }
 
-AuthenticationType Session::getAuthenticationType(const String & user_name) const
+std::unordered_set<AuthenticationType> Session::getAuthenticationTypes(const String & user_name) const
 {
-    return global_context->getAccessControl().read<User>(user_name)->auth_data.getType();
+    std::unordered_set<AuthenticationType> authentication_types;
+
+    const auto user_to_query = global_context->getAccessControl().read<User>(user_name);
+
+    for (const auto & authentication_method : user_to_query->authentication_methods)
+    {
+        authentication_types.insert(authentication_method.getType());
+    }
+
+    return authentication_types;
 }
 
-AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
+std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name) const
 {
     try
     {
-        return getAuthenticationType(user_name);
+        return getAuthenticationTypes(user_name);
     }
     catch (const Exception & e)
     {
@@ -354,6 +363,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     {
         auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
         user_id = auth_result.user_id;
+        user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
@@ -698,7 +708,8 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      settings,
                                      access->getAccess(),
                                      getClientInfo(),
-                                     user);
+                                     user,
+                                     user_authenticated_with);
     }
 
     notified_session_log_about_login = true;

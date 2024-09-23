@@ -1,5 +1,5 @@
 -- Tags: zookeeper
-
+DROP TABLE IF EXISTS join_inner_table__fuzz_146_replicated;
 CREATE TABLE join_inner_table__fuzz_146_replicated
 (
     `id` UUID,
@@ -16,6 +16,8 @@ SETTINGS index_granularity = 8192;
 INSERT INTO join_inner_table__fuzz_146_replicated
     SELECT CAST('833c9e22-c245-4eb5-8745-117a9a1f26b1', 'UUID') AS id, CAST(rowNumberInAllBlocks(), 'String') AS key, *
     FROM generateRandom('number Int64, value1 String, value2 String, time Int64', 1, 10, 2) LIMIT 10;
+
+SET parallel_replicas_local_plan = 1;
 
 -- Simple query with analyzer and pure parallel replicas
 SELECT number
@@ -49,3 +51,5 @@ WHERE
       )
 GROUP BY is_initial_query, query
 ORDER BY is_initial_query DESC, c, query;
+
+DROP TABLE join_inner_table__fuzz_146_replicated;
