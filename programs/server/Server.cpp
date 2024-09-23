@@ -784,10 +784,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(server_settings.use_legacy_mongodb_integration);
-    registerDictionaries(server_settings.use_legacy_mongodb_integration);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
