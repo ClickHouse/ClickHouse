@@ -290,6 +290,7 @@ function run_tests
         --print-time
         --report-logs-stats
         --jobs "${NPROC}"
+        --timeout 30 # We don't want slow test being introduced again in this check
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \

@@ -19,6 +19,7 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
+from pathlib import Path
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -52,6 +53,7 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
+from .random_settings import write_random_settings_config
 from .retry_decorator import retry
 
 from .config_cluster import *
@@ -60,6 +62,9 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
+DEFAULT_BASE_CONFIG_DIR = os.environ.get(
+    "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
+)
 
 SANITIZER_SIGN = "=================="
 
@@ -444,9 +449,7 @@ class ClickHouseCluster:
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)
 
-        self.base_config_dir = base_config_dir or os.environ.get(
-            "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
-        )
+        self.base_config_dir = base_config_dir or DEFAULT_BASE_CONFIG_DIR
         self.server_bin_path = p.realpath(
             server_bin_path
             or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", "/usr/bin/clickhouse")
@@ -1741,6 +1744,7 @@ class ClickHouseCluster:
         copy_common_configs=True,
         config_root_name="clickhouse",
         extra_configs=[],
+        randomize_settings=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1845,6 +1849,7 @@ class ClickHouseCluster:
             mem_limit=mem_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
+            randomize_settings=randomize_settings,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -3463,6 +3468,7 @@ class ClickHouseInstance:
         mem_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
+        randomize_settings=True,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3531,6 +3537,7 @@ class ClickHouseInstance:
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
         self.use_old_analyzer = use_old_analyzer
+        self.randomize_settings = randomize_settings
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -4093,7 +4100,7 @@ class ClickHouseInstance:
         exclusion_substring="",
     ):
         if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
+            # We check first file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
@@ -4602,6 +4609,10 @@ class ClickHouseInstance:
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
 
+        if self.randomize_settings and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR:
+            # If custom main config is used, do not apply random settings to it
+            write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
+
         version = None
         version_parts = self.tag.split(".")
         if version_parts[0].isdigit() and version_parts[1].isdigit():
@@ -4715,6 +4726,9 @@ class ClickHouseInstance:
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")
+
+        if self.with_ldap:
+            depends_on.append("openldap")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")

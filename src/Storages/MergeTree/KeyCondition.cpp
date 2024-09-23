@@ -21,6 +21,7 @@
 #include <Common/HilbertUtils.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -42,6 +43,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool analyze_index_with_space_filling_curves;
+}
 
 namespace ErrorCodes
 {
@@ -818,7 +823,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
+    if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
     if (!filter_dag)
@@ -1207,14 +1212,6 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!future_set)
         return false;
 
-    const auto set_types = future_set->getTypes();
-    size_t set_types_size = set_types.size();
-    size_t indexes_mapping_size = indexes_mapping.size();
-
-    for (auto & index_mapping : indexes_mapping)
-        if (index_mapping.tuple_index >= set_types_size)
-            return false;
-
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
         return false;
@@ -1229,14 +1226,50 @@ bool KeyCondition::tryPrepareSetIndex(
       * we need to convert set column to primary key column.
       */
     auto set_columns = prepared_set->getSetElements();
+    auto set_types = future_set->getTypes();
+    {
+        Columns new_columns;
+        DataTypes new_types;
+        while (set_columns.size() < left_args_count) /// If we have an unpacked tuple inside, we unpack it
+        {
+            bool has_tuple = false;
+            for (size_t i = 0; i < set_columns.size(); ++i)
+            {
+                if (isTuple(set_types[i]))
+                {
+                    has_tuple = true;
+                    auto columns_tuple = assert_cast<const ColumnTuple*>(set_columns[i].get())->getColumns();
+                    auto subtypes = assert_cast<const DataTypeTuple&>(*set_types[i]).getElements();
+                    new_columns.insert(new_columns.end(), columns_tuple.begin(), columns_tuple.end());
+                    new_types.insert(new_types.end(), subtypes.begin(), subtypes.end());
+                }
+                else
+                {
+                    new_columns.push_back(set_columns[i]);
+                    new_types.push_back(set_types[i]);
+                }
+            }
+            if (!has_tuple)
+                return false;
+
+            set_columns.swap(new_columns);
+            set_types.swap(new_types);
+            new_columns.clear();
+            new_types.clear();
+        }
+    }
+    size_t set_types_size = set_types.size();
+    size_t indexes_mapping_size = indexes_mapping.size();
     assert(set_types_size == set_columns.size());
+
+    Columns transformed_set_columns = set_columns;
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
     {
         const auto & key_column_type = data_types[indexes_mapping_index];
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
-        auto set_column = set_columns[set_element_index];
+        ColumnPtr set_column = set_columns[set_element_index];
 
         if (!set_transforming_chains[indexes_mapping_index].empty())
         {
@@ -1257,7 +1290,7 @@ bool KeyCondition::tryPrepareSetIndex(
 
         if (canBeSafelyCasted(set_element_type, key_column_type))
         {
-            set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
             continue;
         }
 
@@ -1266,23 +1299,40 @@ bool KeyCondition::tryPrepareSetIndex(
 
         const NullMap * set_column_null_map = nullptr;
 
+        // Keep a reference to the original set_column to ensure the data remains valid
+        ColumnPtr original_set_column = set_column;
+
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
             if (WhichDataType(set_element_type).isLowCardinality())
             {
                 set_element_type = removeLowCardinality(set_element_type);
-                set_column = set_column->convertToFullColumnIfLowCardinality();
+                transformed_set_columns[set_element_index] = set_column->convertToFullColumnIfLowCardinality();
             }
 
             set_element_type = removeNullable(set_element_type);
-            const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
-            set_column_null_map = &set_column_nullable.getNullMapData();
-            set_column = set_column_nullable.getNestedColumnPtr();
+
+            // Obtain the nullable column without reassigning set_column immediately
+            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
+            if (!set_column_nullable)
+                return false;
+
+            const NullMap & null_map_data = set_column_nullable->getNullMapData();
+            if (!null_map_data.empty())
+                set_column_null_map = &null_map_data;
+
+            ColumnPtr nested_column = set_column_nullable->getNestedColumnPtr();
+
+            // Reassign set_column after we have obtained necessary references
+            set_column = nested_column;
         }
 
-        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
-        const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
-        const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
+        ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
+        if (!nullable_set_column_typed)
+            return false;
+
+        const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
 
         IColumn::Filter filter(nullable_set_column_null_map_size);
@@ -1290,20 +1340,27 @@ bool KeyCondition::tryPrepareSetIndex(
         if (set_column_null_map)
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+            {
+                if (nullable_set_column_null_map_size < set_column_null_map->size())
+                    filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+                else
+                    filter[i] = !nullable_set_column_null_map[i];
+            }
 
-            set_column = nullable_set_column_typed.filter(filter, 0);
+            set_column = nullable_set_column_typed->filter(filter, 0);
         }
         else
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
                 filter[i] = !nullable_set_column_null_map[i];
 
-            set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
+            set_column = nullable_set_column_typed->getNestedColumn().filter(filter, 0);
         }
 
-        set_columns[set_element_index] = std::move(set_column);
+        transformed_set_columns[set_element_index] = std::move(set_column);
     }
+
+    set_columns = std::move(transformed_set_columns);
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 

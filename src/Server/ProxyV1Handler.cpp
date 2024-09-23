@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds receive_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -20,7 +24,7 @@ namespace ErrorCodes
 void ProxyV1Handler::run()
 {
     const auto & settings = server.context()->getSettingsRef();
-    socket().setReceiveTimeout(settings.receive_timeout);
+    socket().setReceiveTimeout(settings[Setting::receive_timeout]);
 
     std::string word;
     bool eol;

@@ -184,7 +184,7 @@ struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
-struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
+struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperRequest
 {
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
         : TestKeeperMultiRequest(std::span(generic_requests))

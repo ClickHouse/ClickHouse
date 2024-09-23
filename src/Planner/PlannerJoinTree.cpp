@@ -71,6 +71,39 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMap additional_table_filters;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool allow_experimental_query_deduplication;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool enable_unaligned_array_join;
+    extern const SettingsBool join_use_nulls;
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_columns_to_read;
+    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsFloat max_streams_to_max_threads_ratio;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool optimize_sorting_by_input_stream_properties;
+    extern const SettingsBool optimize_trivial_count_query;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
+    extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
+    extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
+    extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsBool optimize_move_to_prewhere;
+    extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -224,7 +257,7 @@ bool applyTrivialCountIfPossible(
     const Names & columns_names)
 {
     const auto & settings = query_context->getSettingsRef();
-    if (!settings.optimize_trivial_count_query)
+    if (!settings[Setting::optimize_trivial_count_query])
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
@@ -266,8 +299,7 @@ bool applyTrivialCountIfPossible(
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
         return false;
 
-    if (settings.allow_experimental_query_deduplication
-        || settings.empty_result_for_aggregation_by_empty_set)
+    if (settings[Setting::allow_experimental_query_deduplication] || settings[Setting::empty_result_for_aggregation_by_empty_set])
         return false;
 
     QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
@@ -290,9 +322,9 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    if (settings.max_parallel_replicas > 1)
+    if (settings[Setting::max_parallel_replicas] > 1)
     {
-        if (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas == 0)
+        if (!settings[Setting::parallel_replicas_custom_key].value.empty() || settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0)
             return false;
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
@@ -388,11 +420,12 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     }
 
     /// Limitation on the number of columns to read
-    if (settings.max_columns_to_read && columns_names.size() > settings.max_columns_to_read)
-        throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+    if (settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
+        throw Exception(
+            ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             columns_names.size(),
-            settings.max_columns_to_read);
+            settings[Setting::max_columns_to_read]);
 }
 
 void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info,
@@ -411,8 +444,8 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     auto & table_expression_modifiers = table_expression_query_info.table_expression_modifiers;
     if (table_expression_modifiers)
     {
-        if (table_expression_modifiers->hasSampleSizeRatio() ||
-            table_expression_query_info.planner_context->getQueryContext()->getSettingsRef().parallel_replicas_count > 1)
+        if (table_expression_modifiers->hasSampleSizeRatio()
+            || table_expression_query_info.planner_context->getQueryContext()->getSettingsRef()[Setting::parallel_replicas_count] > 1)
         {
             /// We evaluate sampling for Merge lazily so we need to get all the columns
             if (storage_snapshot->storage.getName() == "Merge")
@@ -487,10 +520,10 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings.parallel_replicas_count <= 1 || settings.parallel_replicas_custom_key.value.empty())
+    if (settings[Setting::parallel_replicas_count] <= 1 || settings[Setting::parallel_replicas_custom_key].value.empty())
         return {};
 
-    auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *query_context);
+    auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
     if (!custom_key_ast)
         throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -498,15 +531,15 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
                 "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
                 " or it's invalid (setting 'parallel_replicas_custom_key')");
 
-    LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
+    LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
     auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-        settings.parallel_replicas_count,
-        settings.parallel_replica_offset,
+        settings[Setting::parallel_replicas_count],
+        settings[Setting::parallel_replica_offset],
         std::move(custom_key_ast),
-        {settings.parallel_replicas_custom_key_filter_type,
-         settings.parallel_replicas_custom_key_range_lower,
-         settings.parallel_replicas_custom_key_range_upper},
+        {settings[Setting::parallel_replicas_custom_key_filter_type],
+         settings[Setting::parallel_replicas_custom_key_range_lower],
+         settings[Setting::parallel_replicas_custom_key_range_upper]},
         storage->getInMemoryMetadataPtr()->columns,
         query_context);
 
@@ -522,7 +555,7 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    auto const & additional_filters = settings.additional_table_filters.value;
+    auto const & additional_filters = settings[Setting::additional_table_filters].value;
     if (additional_filters.empty())
         return {};
 
@@ -541,8 +574,13 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
         {
             ParserExpression parser;
             additional_filter_ast = parseQuery(
-                parser, filter.data(), filter.data() + filter.size(),
-                "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+                parser,
+                filter.data(),
+                filter.data() + filter.size(),
+                "additional filter",
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
             break;
         }
     }
@@ -652,8 +690,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas
             = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
-        size_t max_streams = settings.max_threads;
-        size_t max_threads_execute_query = settings.max_threads;
+        size_t max_streams = settings[Setting::max_threads];
+        size_t max_threads_execute_query = settings[Setting::max_threads];
 
         /**
          * To simultaneously query more remote servers when async_socket_for_remote is off
@@ -667,14 +705,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
          * threads are not blocked waiting for data from remote servers.
          *
          */
-        bool is_sync_remote = table_expression_data.isRemote() && !settings.async_socket_for_remote;
+        bool is_sync_remote = table_expression_data.isRemote() && !settings[Setting::async_socket_for_remote];
         if (is_sync_remote)
         {
-            max_streams = settings.max_distributed_connections;
-            max_threads_execute_query = settings.max_distributed_connections;
+            max_streams = settings[Setting::max_distributed_connections];
+            max_threads_execute_query = settings[Setting::max_distributed_connections];
         }
 
-        UInt64 max_block_size = settings.max_block_size;
+        UInt64 max_block_size = settings[Setting::max_block_size];
         UInt64 max_block_size_limited = 0;
         if (is_single_table_expression)
         {
@@ -718,7 +756,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; canConvertTo<size_t>(streams_with_ratio))
+            if (auto streams_with_ratio = max_streams * settings[Setting::max_streams_to_max_threads_ratio];
+                canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
@@ -755,7 +794,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         /// Apply trivial_count optimization if possible
         bool is_trivial_count_applied = !select_query_options.only_analyze && is_single_table_expression
-            && (table_node || table_function_node) && select_query_info.has_aggregates && settings.additional_table_filters.value.empty()
+            && (table_node || table_function_node) && select_query_info.has_aggregates && settings[Setting::additional_table_filters].value.empty()
             && applyTrivialCountIfPossible(
                 query_plan,
                 table_expression_query_info,
@@ -795,10 +834,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     bool is_final = table_expression_query_info.table_expression_modifiers
                         && table_expression_query_info.table_expression_modifiers->hasFinal();
                     bool optimize_move_to_prewhere
-                        = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
+                        = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
 
                     auto supported_prewhere_columns = storage->supportedPrewhereColumns();
-                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
+                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
+                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
                         {
@@ -836,7 +876,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 if (query_context->canUseParallelReplicasCustomKey())
                 {
-                    if (settings.parallel_replicas_count > 1)
+                    if (settings[Setting::parallel_replicas_count] > 1)
                     {
                         if (auto parallel_replicas_custom_key_filter_info= buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context))
                             add_filter(*parallel_replicas_custom_key_filter_info, "Parallel replicas custom key filter");
@@ -884,7 +924,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (!table->isMergeTree())
                         return false;
 
-                    if (!table->supportsReplication() && !query_settings.parallel_replicas_for_non_replicated_merge_tree)
+                    if (!table->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
                         return false;
 
                     return true;
@@ -944,7 +984,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         chassert(reading);
 
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
-                        if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
+                        if (settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
                             auto result_ptr = reading->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
@@ -958,7 +998,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 rows_to_read = max_block_size_limited;
 
                             const size_t number_of_replicas_to_use
-                                = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
+                                = rows_to_read / settings[Setting::parallel_replicas_min_number_of_rows_per_replica];
                             LOG_TRACE(
                                 getLogger("Planner"),
                                 "Estimated {} rows to read. It is enough work for {} parallel replicas",
@@ -972,7 +1012,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
                                 LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                             }
-                            else if (number_of_replicas_to_use < settings.max_parallel_replicas)
+                            else if (number_of_replicas_to_use < settings[Setting::max_parallel_replicas])
                             {
                                 planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", number_of_replicas_to_use);
                                 LOG_DEBUG(getLogger("Planner"), "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
@@ -1056,7 +1096,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (!query_plan.getMaxThreads() || is_sync_remote)
                     query_plan.setMaxThreads(max_threads_execute_query);
 
-                query_plan.setConcurrencyControl(settings.use_concurrency_control);
+                query_plan.setConcurrencyControl(settings[Setting::use_concurrency_control]);
             }
             else
             {
@@ -1307,7 +1347,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings.join_use_nulls)
+    if (settings[Setting::join_use_nulls])
     {
         auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
         if (isFull(join_kind))
@@ -1486,10 +1526,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     bool is_filled_join = join_algorithm->isFilled();
     if (is_filled_join)
     {
-        auto filled_join_step = std::make_unique<FilledJoinStep>(
-            left_plan.getCurrentDataStream(),
-            join_algorithm,
-            settings.max_block_size);
+        auto filled_join_step
+            = std::make_unique<FilledJoinStep>(left_plan.getCurrentDataStream(), join_algorithm, settings[Setting::max_block_size]);
 
         filled_join_step->setStepDescription("Filled JOIN");
         left_plan.addStep(std::move(filled_join_step));
@@ -1512,7 +1550,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 std::move(sort_description),
                 0 /*limit*/,
                 sort_settings,
-                settings.optimize_sorting_by_input_stream_properties);
+                settings[Setting::optimize_sorting_by_input_stream_properties]);
             sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
             plan.addStep(std::move(sorting_step));
         };
@@ -1521,11 +1559,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
         {
             auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
-                plan.getCurrentDataStream(),
-                key_names,
-                settings.max_rows_in_set_to_optimize_join,
-                crosswise_connection,
-                join_table_side);
+                plan.getCurrentDataStream(), key_names, settings[Setting::max_rows_in_set_to_optimize_join], crosswise_connection, join_table_side);
             creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side));
 
             auto * step_raw_ptr = creating_set_step.get();
@@ -1559,7 +1593,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             bool has_non_const_keys = has_non_const(left_plan.getCurrentDataStream().header, join_clause.key_names_left)
                 && has_non_const(right_plan.getCurrentDataStream().header, join_clause.key_names_right);
 
-            if (settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
+            if (settings[Setting::max_rows_in_set_to_optimize_join] > 0 && join_type_allows_filtering && has_non_const_keys)
             {
                 auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
                 auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);
@@ -1580,8 +1614,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             left_plan.getCurrentDataStream(),
             right_plan.getCurrentDataStream(),
             std::move(join_algorithm),
-            settings.max_block_size,
-            settings.max_threads,
+            settings[Setting::max_block_size],
+            settings[Setting::max_threads],
             false /*optimize_read_in_order*/);
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
@@ -1674,11 +1708,12 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     PlannerActionsVisitor actions_visitor(planner_context);
     std::unordered_set<std::string> array_join_expressions_output_nodes;
 
-    NameSet array_join_column_names;
+    Names array_join_column_names;
+    array_join_column_names.reserve(array_join_node.getJoinExpressions().getNodes().size());
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
     {
         const auto & array_join_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(array_join_expression);
-        array_join_column_names.insert(array_join_column_identifier);
+        array_join_column_names.push_back(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
         auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
@@ -1727,8 +1762,13 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     drop_unused_columns_before_array_join_transform_step->setStepDescription("DROP unused columns before ARRAY JOIN");
     plan.addStep(std::move(drop_unused_columns_before_array_join_transform_step));
 
-    auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_column_names, array_join_node.isLeft(), planner_context->getQueryContext());
-    auto array_join_step = std::make_unique<ArrayJoinStep>(plan.getCurrentDataStream(), std::move(array_join_action));
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto array_join_step = std::make_unique<ArrayJoinStep>(
+        plan.getCurrentDataStream(),
+        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
+        settings[Setting::enable_unaligned_array_join],
+        settings[Setting::max_block_size]);
+
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
 
