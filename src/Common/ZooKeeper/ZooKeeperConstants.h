@@ -40,6 +40,7 @@ enum class OpNum : int32_t
     FilteredList = 500,
     CheckNotExists = 501,
     CreateIfNotExists = 502,
+    RemoveRecursive = 503,
 
     SessionID = 997, /// Special internal request
 };
