@@ -22,8 +22,8 @@ def start_cluster():
 
 
 def test_min_free_disk_settings(start_cluster):
-    # min_free_disk_bytes_to_throw_insert (default 0)
-    # min_free_disk_ratio_to_throw_insert (default 0.0)
+    # min_free_disk_bytes_to_perform_insert (default 0)
+    # min_free_disk_ratio_to_perform_insert (default 0.0)
 
     node.query("DROP TABLE IF EXISTS test_table")
 
@@ -41,18 +41,18 @@ def test_min_free_disk_settings(start_cluster):
     node.query("INSERT INTO test_table (id, data) values (1, 'a')")
 
     free_bytes = 7 * 1024 * 1024  # 7MB -- size of disk
-    node.query(f"SET min_free_disk_bytes_to_throw_insert = {free_bytes}")
+    node.query(f"SET min_free_disk_bytes_to_perform_insert = {free_bytes}")
 
     try:
         node.query("INSERT INTO test_table (id, data) values (1, 'a')")
     except QueryRuntimeException as e:
         assert "NOT_ENOUGH_SPACE" in str(e)
 
-    node.query("SET min_free_disk_bytes_to_throw_insert = 0")
+    node.query("SET min_free_disk_bytes_to_perform_insert = 0")
     node.query("INSERT INTO test_table (id, data) values (1, 'a')")
 
     free_ratio = 1.0
-    node.query(f"SET min_free_disk_ratio_to_throw_insert = {free_ratio}")
+    node.query(f"SET min_free_disk_ratio_to_perform_insert = {free_ratio}")
 
     try:
         node.query("INSERT INTO test_table (id, data) values (1, 'a')")
@@ -61,7 +61,7 @@ def test_min_free_disk_settings(start_cluster):
 
     node.query("DROP TABLE test_table")
 
-    # server setting for min_free_disk_ratio_to_throw_insert is 1 but we can overwrite at table level
+    # server setting for min_free_disk_ratio_to_perform_insert is 1 but we can overwrite at table level
     node.query(
         f"""
         CREATE TABLE test_table (
@@ -69,14 +69,14 @@ def test_min_free_disk_settings(start_cluster):
             data String
         ) ENGINE = MergeTree()
         ORDER BY id
-        SETTINGS storage_policy = 'only_disk1', min_free_disk_ratio_to_throw_insert = 0.0
+        SETTINGS storage_policy = 'only_disk1', min_free_disk_ratio_to_perform_insert = 0.0
     """
     )
 
     node.query("INSERT INTO test_table (id, data) values (1, 'a')")
 
     node.query("DROP TABLE test_table")
-    node.query("SET min_free_disk_ratio_to_throw_insert = 0.0")
+    node.query("SET min_free_disk_ratio_to_perform_insert = 0.0")
 
 
 def test_insert_stops_when_disk_full(start_cluster):
@@ -91,7 +91,7 @@ def test_insert_stops_when_disk_full(start_cluster):
             data String
         ) ENGINE = MergeTree()
         ORDER BY id
-        SETTINGS storage_policy = 'only_disk1', min_free_disk_bytes_to_throw_insert = {min_free_bytes}
+        SETTINGS storage_policy = 'only_disk1', min_free_disk_bytes_to_perform_insert = {min_free_bytes}
     """
     )
 
@@ -106,7 +106,7 @@ def test_insert_stops_when_disk_full(start_cluster):
             count += 1
     except QueryRuntimeException as e:
         assert "Could not perform insert" in str(e)
-        assert "free bytes in disk space" in str(e)
+        assert "free bytes left in the disk space" in str(e)
 
     free_space = int(
         node.query("SELECT free_space FROM system.disks WHERE name = 'disk1'").strip()
