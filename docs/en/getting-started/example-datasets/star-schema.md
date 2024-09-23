@@ -770,5 +770,3 @@ ORDER BY
     P_BRAND ASC;
 ```
 
-TODO:
-- uppercase SQL keywords
