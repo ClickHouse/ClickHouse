@@ -54,6 +54,20 @@ def set_default_configs():
     yield
 
 
+@pytest.fixture(scope="function", autouse=True)
+def clear_workloads_and_resources():
+    node.query(
+        f"""
+        -- drop resource if exist io_write; TODO(serxa): uncomment it
+        -- drop resource if exist io_read;
+        -- drop workload if exist production;
+        -- drop workload if exist development;
+        -- drop workload if exist all;
+    """
+    )
+    yield
+
+
 def update_workloads_config(**settings):
     xml = ""
     for name in settings:
@@ -569,3 +583,149 @@ def test_mutation_workload_change():
 
         assert reads_before < reads_after
         assert writes_before < writes_after
+
+
+def test_create_workload():
+    node.query(
+        f"""
+        create resource io_write (write disk s3);
+        create resource io_read (read disk s3);
+        create workload all settings max_cost = 1000000;
+        create workload admin in all settings priority = 0;
+        create workload production in all settings priority = 1, weight = 9;
+        create workload development in all settings priority = 1, weight = 1;
+    """
+    )
+
+    def do_checks():
+        assert (
+            node.query(
+                f"select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
+            )
+            == "2\n"
+        )
+        assert (
+            node.query(
+                f"select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
+            )
+            == "2\n"
+        )
+        assert (
+            node.query(
+                f"select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
+            )
+            == "2\n"
+        )
+        assert (
+            node.query(
+                f"select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
+            )
+            == "2\n"
+        )
+        assert (
+            node.query(
+                f"select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
+            )
+            == "2\n"
+        )
+
+    do_checks()
+    node.restart_clickhouse() # Check that workloads persist
+    do_checks()
+
+
+
+def test_resource_read_and_write():
+    node.query(
+        f"""
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+    """
+    )
+
+    node.query(
+        f"""
+        create resource io_write (write disk s3);
+        create resource io_read (read disk s3);
+        create workload all settings max_cost = 1000000;
+        create workload admin in all settings priority = 0;
+        create workload production in all settings priority = 1, weight = 9;
+        create workload development in all settings priority = 1, weight = 1;
+    """
+    )
+
+    def write_query(workload):
+        try:
+            node.query(
+                f"insert into data select * from numbers(1e5) settings workload='{workload}'"
+            )
+        except QueryRuntimeException:
+            pass
+
+    thread1 = threading.Thread(target=write_query, args=["development"])
+    thread2 = threading.Thread(target=write_query, args=["production"])
+    thread3 = threading.Thread(target=write_query, args=["admin"])
+
+    thread1.start()
+    thread2.start()
+    thread3.start()
+
+    thread3.join()
+    thread2.join()
+    thread1.join()
+
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/development/%' and type='fifo'"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/production/%' and type='fifo'"
+        )
+        == "1\n"
+    )
+
+    def read_query(workload):
+        try:
+            node.query(f"select sum(key*key) from data settings workload='{workload}'")
+        except QueryRuntimeException:
+            pass
+
+    thread1 = threading.Thread(target=read_query, args=["development"])
+    thread2 = threading.Thread(target=read_query, args=["production"])
+    thread3 = threading.Thread(target=read_query, args=["admin"])
+
+    thread1.start()
+    thread2.start()
+    thread3.start()
+
+    thread3.join()
+    thread2.join()
+    thread1.join()
+
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/development/%' and type='fifo'"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/production/%' and type='fifo'"
+        )
+        == "1\n"
+    )
