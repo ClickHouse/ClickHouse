@@ -155,6 +155,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool enable_secure_identifiers;
 }
 
 namespace ErrorCodes
@@ -992,7 +993,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
 
-        if (settings.enable_secure_identifiers)
+        if (settings[Setting::enable_secure_identifiers])
         {
             WriteBufferFromOwnString buf;
             IAST::FormatSettings enable_secure_identifiers_settings(buf, true);

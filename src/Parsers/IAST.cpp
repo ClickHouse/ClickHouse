@@ -6,6 +6,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -291,12 +292,13 @@ void IAST::FormatSettings::checkIdentifier(const String & name) const
 {
     if (enable_secure_identifiers)
     {
-        for (char c : name)
+        bool is_secure_identifier = std::all_of(name.begin(), name.end(), [](char ch) { return std::isalnum(ch) || ch == '_'; });
+        if (!is_secure_identifier)
         {
-            if (!std::isalnum(c) && c != '_')
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a secure identifier: `{}`", name);
-            }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Not a secure identifier: `{}`, a secure identifier must contain only underscore and alphanumeric characters",
+                name);
         }
     }
 }

@@ -5682,3 +5682,9 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## enable_secure_identifiers
+
+If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+
+Default value: `false`.
