@@ -53,13 +53,16 @@ void StatementGenerator::AddTableRelation(RandomGenerator &rg, const bool allow_
 			rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry.first)));
 		}
 	}
-	if (allow_internal_cols && t.IsMergeTreeFamily() && rg.NextSmallNumber() < 3) {
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part_index"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_partition_id"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part_uuid"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_sample_factor"));
+	if (allow_internal_cols && t.IsMergeTreeFamily() && rg.NextSmallNumber() < 4) {
 		rel.cols.push_back(SQLRelationCol(rel_name, "_block_number"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_data_version"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_index"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_offset"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_uuid"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_partition_id"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_partition_value"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_sample_factor"));
 	}
 	if (rel_name == "") {
 		this->levels[this->current_level] = QueryLevel(this->current_level);

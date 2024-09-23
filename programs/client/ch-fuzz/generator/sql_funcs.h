@@ -242,7 +242,7 @@ const std::vector<CHFunction> CHFuncs = {
 	CHFunction(sql_query_grammar::SQLFunc::FUNCarrayReverseFill, 1, 1, 1, ulimited_params),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCarraySplit, 1, 1, 1, ulimited_params),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCarrayReverseSplit, 1, 1, 1, ulimited_params),
-	CHFunction(sql_query_grammar::SQLFunc::FUNCarrayExists, 0, 1, 1, ulimited_params),
+	CHFunction(sql_query_grammar::SQLFunc::FUNCarrayExists, 1, 1, 1, ulimited_params),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCarrayAll, 0, 1, 1, ulimited_params),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCarrayFirst, 1, 1, 1, ulimited_params),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCarrayFirstOrNull, 1, 1, 1, ulimited_params),
