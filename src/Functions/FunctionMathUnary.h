@@ -106,42 +106,40 @@ private:
     }
 
     template <typename T, typename ReturnType>
-    static ColumnPtr execute(const ColumnVector<T> * col)
+    static ColumnPtr execute(const ColumnVector<T> * col, size_t input_rows_count)
     {
         const auto & src_data = col->getData();
-        const size_t size = src_data.size();
 
         auto dst = ColumnVector<ReturnType>::create();
         auto & dst_data = dst->getData();
-        dst_data.resize(size);
+        dst_data.resize(input_rows_count);
 
-        executeInIterations(src_data.data(), dst_data.data(), size);
+        executeInIterations(src_data.data(), dst_data.data(), input_rows_count);
 
         return dst;
     }
 
     template <typename T, typename ReturnType>
-    static ColumnPtr execute(const ColumnDecimal<T> * col)
+    static ColumnPtr execute(const ColumnDecimal<T> * col, size_t input_rows_count)
     {
         const auto & src_data = col->getData();
-        const size_t size = src_data.size();
         UInt32 scale = col->getScale();
 
         auto dst = ColumnVector<ReturnType>::create();
         auto & dst_data = dst->getData();
-        dst_data.resize(size);
+        dst_data.resize(input_rows_count);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
 
-        executeInIterations(dst_data.data(), dst_data.data(), size);
+        executeInIterations(dst_data.data(), dst_data.data(), input_rows_count);
 
         return dst;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col = arguments[0];
         ColumnPtr res;
@@ -156,7 +154,7 @@ private:
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
             if (col_vec == nullptr)
                 return false;
-            return (res = execute<Type, ReturnType>(col_vec)) != nullptr;
+            return (res = execute<Type, ReturnType>(col_vec, input_rows_count)) != nullptr;
         };
 
         if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))

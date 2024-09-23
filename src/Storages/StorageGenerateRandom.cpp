@@ -30,6 +30,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <Functions/FunctionFactory.h>
@@ -37,6 +38,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 preferred_block_size_bytes;
+}
 
 namespace ErrorCodes
 {
@@ -687,7 +692,7 @@ Pipe StorageGenerateRandom::read(
     }
 
     /// Correction of block size for wide tables.
-    size_t preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes;
+    size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
     if (preferred_block_size_bytes)
     {
         size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
@@ -705,7 +710,7 @@ Pipe StorageGenerateRandom::read(
         }
     }
 
-    UInt64 query_limit = query_info.limit;
+    UInt64 query_limit = query_info.trivial_limit;
     if (query_limit && num_streams * max_block_size > query_limit)
     {
         /// We want to avoid spawning more streams than necessary
@@ -717,7 +722,7 @@ Pipe StorageGenerateRandom::read(
     /// Will create more seed values for each source from initial seed.
     pcg64 generate(random_seed);
 
-    auto shared_state = std::make_shared<GenerateRandomState>(query_info.limit);
+    auto shared_state = std::make_shared<GenerateRandomState>(query_info.trivial_limit);
 
     for (UInt64 i = 0; i < num_streams; ++i)
     {

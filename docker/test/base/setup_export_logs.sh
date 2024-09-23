@@ -124,6 +124,8 @@ function setup_logs_replication
     check_logs_credentials || return 0
     __set_connection_args
 
+    echo "My hostname is ${HOSTNAME}"
+
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
 
@@ -184,7 +186,17 @@ function setup_logs_replication
             /^TTL /d
             ')
 
-        echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
+        echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
+
+        echo "::group::${table}"
+        # there's the only way big "$statement" can be printed without causing EAGAIN error
+        # cat: write error: Resource temporarily unavailable
+        statement_print="${statement}"
+        if [ "${#statement_print}" -gt 4000 ]; then
+          statement_print="${statement::1999}\n…\n${statement:${#statement}-1999}"
+        fi
+        echo -e "$statement_print"
+        echo "::endgroup::"
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
@@ -218,6 +230,6 @@ function stop_logs_replication
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        xargs -n1 -r -i clickhouse-client --query "drop table {}"
+        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --query "drop table {}"
     }
 }

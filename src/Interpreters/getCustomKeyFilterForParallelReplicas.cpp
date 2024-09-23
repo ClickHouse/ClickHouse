@@ -1,5 +1,7 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
+#include <Core/Settings.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -13,6 +15,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace ErrorCodes
 {
@@ -166,8 +174,13 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     ParserExpression parser;
     const auto & settings = context.getSettingsRef();
     return parseQuery(
-        parser, custom_key.data(), custom_key.data() + custom_key.size(),
-        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        parser,
+        custom_key.data(),
+        custom_key.data() + custom_key.size(),
+        "parallel replicas custom key",
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 }
 
 }

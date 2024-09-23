@@ -11,13 +11,13 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             use_old_analyzer=True,
         )
         cluster.add_instance(
             "node2",
-            main_configs=["configs/storage_conf_web.xml"],
+            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
@@ -25,7 +25,7 @@ def cluster():
         )
         cluster.add_instance(
             "node3",
-            main_configs=["configs/storage_conf_web.xml"],
+            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             with_zookeeper=True,
             use_old_analyzer=True,
@@ -33,7 +33,7 @@ def cluster():
 
         cluster.add_instance(
             "node4",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             stay_alive=True,
             with_installed_binary=True,
@@ -42,7 +42,7 @@ def cluster():
         )
         cluster.add_instance(
             "node5",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             use_old_analyzer=True,
         )
@@ -311,7 +311,8 @@ def test_replicated_database(cluster):
         SETTINGS storage_policy = 'web';
     """.format(
             uuids[0]
-        )
+        ),
+        settings={"database_replicated_allow_explicit_uuid": 3},
     )
 
     node2 = cluster.instances["node2"]

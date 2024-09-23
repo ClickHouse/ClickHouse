@@ -27,6 +27,7 @@ struct ParallelReadingExtension
     MergeTreeAllRangesCallback all_callback;
     MergeTreeReadTaskCallback callback;
     size_t number_of_current_replica{0};
+    size_t total_nodes_count{0};
 };
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
@@ -48,7 +49,7 @@ public:
 
     ChunkAndProgress read();
 
-    void cancel() { is_cancelled = true; }
+    void cancel() noexcept { is_cancelled = true; }
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 

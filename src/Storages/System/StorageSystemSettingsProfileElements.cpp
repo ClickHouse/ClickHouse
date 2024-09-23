@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <Common/SettingConstraintWritability.h>
+#include <base/range.h>
 
 
 namespace DB

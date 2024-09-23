@@ -1420,7 +1420,7 @@ struct fmt::formatter<DB::UUID>
     }
 
     template<typename FormatContext>
-    auto format(const DB::UUID & uuid, FormatContext & context)
+    auto format(const DB::UUID & uuid, FormatContext & context) const
     {
         return fmt::format_to(context.out(), "{}", toString(uuid));
     }

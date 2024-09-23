@@ -7,25 +7,24 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #endif
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
-#endif
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -33,6 +32,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 hdfs_replication;
+}
+
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -172,6 +176,14 @@ void checkS3Capabilities(
 }
 }
 
+static std::string getEndpoint(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ContextPtr & context)
+{
+    return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+}
+
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
     static constexpr auto disk_type = "s3";
@@ -185,8 +197,9 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings, true);
+        auto endpoint = getEndpoint(config, config_prefix, context);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = createObjectStorage<S3ObjectStorage>(
@@ -221,8 +234,9 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
 
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings, true);
+        auto endpoint = getEndpoint(config, config_prefix, context);
+        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
@@ -255,8 +269,9 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-            auto settings = getSettings(config, config_prefix, context);
-            auto client = getClient(config, config_prefix, context, *settings, true);
+            auto endpoint = getEndpoint(config, config_prefix, context);
+            auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+            auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
             auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<S3ObjectStorage, MetadataStorageType::PlainRewritable>();
@@ -273,7 +288,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
@@ -290,15 +305,14 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
-                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-                context->getSettingsRef().hdfs_replication);
+                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
             return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
         });
 }
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
@@ -308,21 +322,27 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
+        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+
+        AzureBlobStorage::ConnectionParams params
+        {
+            .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+            .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+            .client_options = AzureBlobStorage::getClientOptions(*azure_settings, /*for_disk=*/ true),
+        };
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
-            getAzureBlobContainerClient(config, config_prefix),
-            getAzureBlobStorageSettings(config, config_prefix, context),
-            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix,
-            endpoint.getEndpointWithoutContainer());
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
+            params.endpoint.getEndpointWithoutContainer());
     };
+
     factory.registerObjectStorageType("azure_blob_storage", creator);
     factory.registerObjectStorageType("azure", creator);
 }
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -370,7 +390,6 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_blob_storage", creator);
     factory.registerObjectStorageType("local", creator);
 }
-#endif
 
 void registerObjectStorages()
 {
@@ -382,18 +401,16 @@ void registerObjectStorages()
     registerS3PlainRewritableObjectStorage(factory);
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
     registerHDFSObjectStorage(factory);
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerWebObjectStorage(factory);
     registerLocalObjectStorage(factory);
-#endif
 }
 
 }

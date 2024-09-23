@@ -16,5 +16,5 @@ LIFETIME(MIN 10 MAX 10);
 
 SELECT dictGet(currentDatabase() || '.dict', 's', number) FROM numbers(2);
 
-DROP TABLE src;
 DROP DICTIONARY dict;
+DROP TABLE src;

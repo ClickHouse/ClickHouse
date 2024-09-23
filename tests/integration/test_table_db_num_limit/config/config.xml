@@ -1,0 +1,5 @@
+<clickhouse>
+    <max_table_num_to_throw>10</max_table_num_to_throw>
+    <max_database_num_to_throw>10</max_database_num_to_throw>
+</clickhouse>
+
