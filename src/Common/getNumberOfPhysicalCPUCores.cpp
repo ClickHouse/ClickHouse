@@ -37,12 +37,12 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
     /// cgroupsv2
     if (cgroupsV2Enabled())
     {
-        /// First, we identify the cgroup the process belongs
-        std::string cgroup = cgroupV2OfProcess();
-        if (cgroup.empty())
+        /// First, we identify the path of the cgroup the process belongs
+        std::filesystem::path cgroup_path = cgroupV2PathOfProcess();
+        if (cgroup_path.empty())
             return default_cpu_count;
 
-        auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
+        auto current_cgroup = cgroup_path;
 
         // Looking for cpu.max in directories from the current cgroup to the top level
         // It does not stop on the first time since the child could have a greater value than parent
@@ -62,7 +62,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
             }
             current_cgroup = current_cgroup.parent_path();
         }
-        current_cgroup = default_cgroups_mount / cgroup;
+        current_cgroup = cgroup_path;
         // Looking for cpuset.cpus.effective in directories from the current cgroup to the top level
         while (current_cgroup != default_cgroups_mount.parent_path())
         {

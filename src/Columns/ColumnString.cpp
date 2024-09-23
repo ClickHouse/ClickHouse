@@ -5,6 +5,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
@@ -38,7 +39,11 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
@@ -103,13 +108,10 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-void ColumnString::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnString::getWeakHash32() const
 {
     auto s = offsets.size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -125,10 +127,16 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
         prev_offset = offset;
         ++hash_data;
     }
+
+    return hash;
 }
 
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
@@ -481,6 +489,23 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
+size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        StringRef value = getDataAt(permuted_i);
+        elements.emplace(value, inserted);
+    }
+    return elements.size();
+}
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
@@ -530,6 +555,26 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve_exact(n);
+}
+
+size_t ColumnString::capacity() const
+{
+    return offsets.capacity();
+}
+
+void ColumnString::prepareForSquashing(const Columns & source_columns)
+{
+    size_t new_size = size();
+    size_t new_chars_size = chars.size();
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
+        new_size += source_string_column.size();
+        new_chars_size += source_string_column.chars.size();
+    }
+
+    offsets.reserve_exact(new_size);
+    chars.reserve_exact(new_chars_size);
 }
 
 void ColumnString::shrinkToFit()

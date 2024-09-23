@@ -118,7 +118,7 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
-bool KeyMetadata::createBaseDirectory()
+bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
     if (!created_base_directory.exchange(true))
     {
@@ -131,7 +131,7 @@ bool KeyMetadata::createBaseDirectory()
         {
             created_base_directory = false;
 
-            if (e.code() == std::errc::no_space_on_device)
+            if (!throw_if_failed && e.code() == std::errc::no_space_on_device)
             {
                 LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
                           "because no space left on device", key);
@@ -178,7 +178,7 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Temporary:
+        case FileSegmentKind::Ephemeral:
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
@@ -198,13 +198,13 @@ String CacheMetadata::getFileSegmentPath(
 
 String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
 {
+    const auto key_str = key.toString();
     if (write_cache_per_user_directory)
     {
-        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key.toString();
+        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
     }
     else
     {
-        const auto key_str = key.toString();
         return fs::path(path) / key_str.substr(0, 3) / key_str;
     }
 }
@@ -423,6 +423,8 @@ CacheMetadata::removeEmptyKey(
             fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
         }
+
+        /// TODO: Remove empty user directories.
     }
     catch (...)
     {
@@ -705,7 +707,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     {
         auto size = reader->available();
 
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds))
+        std::string failure_reason;
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "
@@ -846,7 +849,7 @@ LockedKey::~LockedKey()
     /// See comment near cleanupThreadFunc() for more details.
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_DEBUG(key_metadata->logger(), "Submitting key {} for removal", getKey());
+    LOG_TRACE(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 
@@ -944,14 +947,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     try
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
-        if (file_segment->segment_kind == FileSegmentKind::Temporary)
-        {
-            /// FIXME: For temporary file segment the requirement is not as strong because
-            /// the implementation of "temporary data in cache" creates files in advance.
-            if (fs::exists(path))
-                fs::remove(path);
-        }
-        else if (file_segment->downloaded_size == 0)
+        if (file_segment->downloaded_size == 0)
         {
             chassert(!fs::exists(path));
         }
@@ -970,7 +966,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
         }
         else if (!can_be_broken)
         {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 #else
             LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",

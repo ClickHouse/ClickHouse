@@ -1,0 +1,90 @@
+compact part
+testing throw default mode
+-- { echoOn }
+
+ALTER TABLE users_compact MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
+DELETE FROM users_compact WHERE uid = 1231;  -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'testing drop mode';
+testing drop mode
+ALTER TABLE users_compact MODIFY SETTING lightweight_mutation_projection_mode = 'drop';
+DELETE FROM users_compact WHERE uid = 1231;
+SELECT * FROM users_compact ORDER BY uid;
+SYSTEM FLUSH LOGS;
+-- all_1_1_0_2
+SELECT
+    name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_compact') AND (active = 1);
+all_1_1_0_2
+-- expecting no projection
+SELECT
+    name, parent_name
+FROM system.projection_parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_compact') AND (active = 1);
+SELECT 'testing rebuild mode';
+testing rebuild mode
+INSERT INTO users_compact VALUES (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+ALTER TABLE users_compact MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild';
+DELETE FROM users_compact WHERE uid = 6666;
+SELECT * FROM users_compact ORDER BY uid;
+8888	Alice	50
+SYSTEM FLUSH LOGS;
+-- all_1_1_0_4, all_3_3_0_4
+SELECT
+    name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_compact') AND (active = 1);
+all_1_1_0_4
+all_3_3_0_4
+-- expecting projection p1, p2
+SELECT
+    name, parent_name
+FROM system.projection_parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_compact') AND (active = 1) AND parent_name like 'all_3_3%';
+p1	all_3_3_0_4
+p2	all_3_3_0_4
+wide part
+testing throw default mode
+-- { echoOn }
+
+ALTER TABLE users_wide MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
+DELETE FROM users_wide WHERE uid = 1231;  -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'testing drop mode';
+testing drop mode
+ALTER TABLE users_wide MODIFY SETTING lightweight_mutation_projection_mode = 'drop';
+DELETE FROM users_wide WHERE uid = 1231;
+SELECT * FROM users_wide ORDER BY uid;
+SYSTEM FLUSH LOGS;
+-- all_1_1_0_2
+SELECT
+    name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_wide') AND (active = 1);
+all_1_1_0_2
+-- expecting no projection
+SELECT
+    name, parent_name
+FROM system.projection_parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_wide') AND (active = 1);
+SELECT 'testing rebuild mode';
+testing rebuild mode
+INSERT INTO users_wide VALUES (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+ALTER TABLE users_wide MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild';
+DELETE FROM users_wide WHERE uid = 6666;
+SELECT * FROM users_wide ORDER BY uid;
+8888	Alice	50
+SYSTEM FLUSH LOGS;
+-- all_1_1_0_4, all_3_3_0_4
+SELECT
+    name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_wide') AND (active = 1);
+all_1_1_0_4
+all_3_3_0_4
+-- expecting projection p1, p2
+SELECT
+    name, parent_name
+FROM system.projection_parts
+WHERE (database = currentDatabase()) AND (`table` = 'users_wide') AND (active = 1) AND parent_name like 'all_3_3%';
+p1	all_3_3_0_4
+p2	all_3_3_0_4

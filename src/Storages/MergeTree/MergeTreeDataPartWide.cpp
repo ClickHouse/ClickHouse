@@ -53,19 +53,28 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
         profile_callback);
 }
 
-IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
+MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
+    const String & data_part_name_,
+    const String & logger_name_,
+    const SerializationByName & serializations_,
+    MutableDataPartStoragePtr data_part_storage_,
+    const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsDescriptionPtr & virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
+    const ColumnsStatistics & stats_to_recalc_,
+    const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity)
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
-        shared_from_this(), columns_list,
-        metadata_snapshot, indices_to_recalc, stats_to_recalc_,
-        getMarksFileExtension(),
+        data_part_name_, logger_name_, serializations_, data_part_storage_,
+        index_granularity_info_, storage_settings_, columns_list,
+        metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
+        marks_file_extension_,
         default_codec_, writer_settings, computed_index_granularity);
 }
 
@@ -257,10 +266,13 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 
 bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 {
+    auto serialization = tryGetSerialization(column.name);
+    if (!serialization)
+        return false;
     auto marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
     bool res = true;
-    getSerialization(column.name)->enumerateStreams([&](const auto & substream_path)
+    serialization->enumerateStreams([&](const auto & substream_path)
     {
         auto stream_name = getStreamNameForColumn(column, substream_path, checksums);
         if (!stream_name || !checksums.files.contains(*stream_name + marks_file_extension))
@@ -289,6 +301,11 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
 std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     std::optional<String> filename;
+
+    /// Fallback for the case when serializations was not loaded yet (called from loadColumns())
+    if (getSerializations().empty())
+        return getStreamNameForColumn(column, {}, DATA_FILE_EXTENSION, getDataPartStorage());
+
     getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (!filename.has_value())
@@ -300,6 +317,7 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
                 filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage());
         }
     });
+
     return filename;
 }
 

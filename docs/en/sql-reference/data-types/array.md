@@ -96,3 +96,22 @@ Result:
 │         1 │ [2]       │ [[4,1]]   │
 └───────────┴───────────┴───────────┘
 ```
+
+## Reading nested subcolumns from Array
+
+If nested type `T` inside `Array` has subcolumns (for example, if it's a [named tuple](./tuple.md)), you can read its subcolumns from an `Array(T)` type with the same subcolumn names. The type of a subcolumn will be `Array` of the type of original subcolumn.
+
+**Example**
+
+```sql
+CREATE TABLE t_arr (arr Array(Tuple(field1 UInt32, field2 String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_arr VALUES ([(1, 'Hello'), (2, 'World')]), ([(3, 'This'), (4, 'is'), (5, 'subcolumn')]);
+SELECT arr.field1, toTypeName(arr.field1), arr.field2, toTypeName(arr.field2) from t_arr;
+```
+
+```test
+┌─arr.field1─┬─toTypeName(arr.field1)─┬─arr.field2────────────────┬─toTypeName(arr.field2)─┐
+│ [1,2]      │ Array(UInt32)          │ ['Hello','World']         │ Array(String)          │
+│ [3,4,5]    │ Array(UInt32)          │ ['This','is','subcolumn'] │ Array(String)          │
+└────────────┴────────────────────────┴───────────────────────────┴────────────────────────┘
+```

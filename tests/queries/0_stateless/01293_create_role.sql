@@ -14,7 +14,7 @@ SHOW CREATE ROLE r2_01293;
 
 SELECT '-- rename';
 ALTER ROLE r2_01293 RENAME TO 'r2_01293_renamed';
-SHOW CREATE ROLE r2_01293; -- { serverError 511 } -- Role not found
+SHOW CREATE ROLE r2_01293; -- { serverError UNKNOWN_ROLE } -- Role not found
 SHOW CREATE ROLE r2_01293_renamed;
 DROP ROLE r1_01293, r2_01293_renamed;
 

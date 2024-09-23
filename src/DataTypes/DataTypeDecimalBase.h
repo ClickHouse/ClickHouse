@@ -147,7 +147,7 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
-    inline DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
+    DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
     {
         return {precision, scale};
     }
@@ -195,7 +195,7 @@ inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision: it must be between {} and {}, got {}",
                         DecimalUtils::min_precision, DecimalUtils::max_precision<Decimal256>, precision_value);
 
-    if (static_cast<UInt64>(scale_value) > precision_value)
+    if (scale_value > precision_value)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative scales and scales larger than precision are not supported");
 
     if (precision_value <= DecimalUtils::max_precision<Decimal32>)

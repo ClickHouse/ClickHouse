@@ -10,6 +10,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -17,7 +18,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
@@ -25,6 +26,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsUInt64 min_external_table_block_size_rows;
+    extern const SettingsUInt64 min_external_table_block_size_bytes;
+    extern const SettingsBool parallel_replicas_prefer_local_join;
+    extern const SettingsBool prefer_global_in_and_join;
+}
 
 namespace ErrorCodes
 {
@@ -181,7 +190,7 @@ private:
         if (!distributed_valid_for_rewrite)
             return;
 
-        auto distributed_product_mode = getSettings().distributed_product_mode;
+        auto distributed_product_mode = getSettings()[Setting::distributed_product_mode];
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
@@ -193,7 +202,7 @@ private:
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
-        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings().prefer_global_in_and_join) &&
+        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
             !in_function_or_join_stack.empty())
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
@@ -288,8 +297,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
-    size_t min_block_size_rows = mutable_context->getSettingsRef().min_external_table_block_size_rows;
-    size_t min_block_size_bytes = mutable_context->getSettingsRef().min_external_table_block_size_bytes;
+    size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
+    size_t min_block_size_bytes = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_bytes];
     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);
@@ -319,6 +328,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
+
+    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
@@ -364,15 +375,19 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            auto subquery_to_execute = in_function_subquery_node;
-            if (subquery_to_execute->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context->getQueryContext());
+            auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
+            if (!temporary_table_expression_node)
+            {
+                auto subquery_to_execute = in_function_subquery_node;
+                if (subquery_to_execute->as<TableNode>())
+                    subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
 
-            auto temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
-                planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth);
+                temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
+                    planner_context->getMutableQueryContext(),
+                    global_in_or_join_node.subquery_depth);
+            }
 
-            in_function_subquery_node = std::move(temporary_table_expression_node);
+            replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
         }
         else
         {
@@ -434,7 +449,7 @@ public:
     {
         if (auto * join_node = node->as<JoinNode>())
         {
-            bool prefer_local_join = getContext()->getSettingsRef().parallel_replicas_prefer_local_join;
+            bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
             bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);

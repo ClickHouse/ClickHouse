@@ -82,6 +82,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
             auto queue_iterator = candidate->getQueueIterator();
             queue_iterator->invalidate();
 
+            chassert(candidate->releasable());
             candidate->file_segment->resetQueueIterator();
             /// We need to set removed flag in file segment metadata,
             /// because in dynamic cache resize we first remove queue entries,
@@ -122,7 +123,13 @@ void EvictionCandidates::evict()
         while (!key_candidates.candidates.empty())
         {
             auto & candidate = key_candidates.candidates.back();
-            chassert(candidate->releasable());
+            if (!candidate->releasable())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Eviction candidate is not releasable: {} (evicting or removed flag: {})",
+                                candidate->file_segment->getInfoForLog(), candidate->isEvictingOrRemoved(*locked_key));
+            }
+
             const auto segment = candidate->file_segment;
 
             IFileCachePriority::IteratorPtr iterator;

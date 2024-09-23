@@ -28,29 +28,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
-Suggest::Suggest()
-{
-    /// Keywords may be not up to date with ClickHouse parser.
-    addWords({"CREATE",       "DATABASE",      "IF",           "NOT",        "EXISTS",   "TEMPORARY",   "TABLE",      "ON",
-              "CLUSTER",      "DEFAULT",       "MATERIALIZED", "ALIAS",      "ENGINE",   "AS",          "VIEW",       "POPULATE",
-              "SETTINGS",     "ATTACH",        "DETACH",       "DROP",       "RENAME",   "TO",          "ALTER",      "ADD",
-              "MODIFY",       "CLEAR",         "COLUMN",       "AFTER",      "COPY",     "PROJECT",     "PRIMARY",    "KEY",
-              "CHECK",        "PARTITION",     "PART",         "FREEZE",     "FETCH",    "FROM",        "SHOW",       "INTO",
-              "OUTFILE",      "FORMAT",        "TABLES",       "DATABASES",  "LIKE",     "PROCESSLIST", "CASE",       "WHEN",
-              "THEN",         "ELSE",          "END",          "DESCRIBE",   "DESC",     "USE",         "SET",        "OPTIMIZE",
-              "FINAL",        "DEDUPLICATE",   "INSERT",       "VALUES",     "SELECT",   "DISTINCT",    "SAMPLE",     "ARRAY",
-              "JOIN",         "GLOBAL",        "LOCAL",        "ANY",        "ALL",      "INNER",       "LEFT",       "RIGHT",
-              "FULL",         "OUTER",         "CROSS",        "USING",      "PREWHERE", "WHERE",       "GROUP",      "BY",
-              "WITH",         "TOTALS",        "HAVING",       "ORDER",      "COLLATE",  "LIMIT",       "UNION",      "AND",
-              "OR",           "ASC",           "IN",           "KILL",       "QUERY",    "SYNC",        "ASYNC",      "TEST",
-              "BETWEEN",      "TRUNCATE",      "USER",         "ROLE",       "PROFILE",  "QUOTA",       "POLICY",     "ROW",
-              "GRANT",        "REVOKE",        "OPTION",       "ADMIN",      "EXCEPT",   "REPLACE",     "IDENTIFIED", "HOST",
-              "NAME",         "READONLY",      "WRITABLE",     "PERMISSIVE", "FOR",      "RESTRICTIVE", "RANDOMIZED", "INTERVAL",
-              "LIMITS",       "ONLY",          "TRACKING",     "IP",         "REGEXP",   "ILIKE",       "CLEANUP",    "APPEND",
-              "IGNORE NULLS", "RESPECT NULLS", "OVER",         "PASTE"});
-}
-
-static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
+static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
@@ -82,6 +60,9 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     add_column("name", "data_type_families", false, {});
     add_column("name", "merge_tree_settings", false, {});
     add_column("name", "settings", false, {});
+
+    if (server_revision >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE)
+        add_column("keyword", "keywords", false, {});
 
     if (!basic_suggestion)
     {
@@ -120,7 +101,14 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
             try
             {
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
-                fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
+                fetch(*connection,
+                    connection_parameters.timeouts,
+                    getLoadSuggestionQuery(
+                        suggestion_limit,
+                        std::is_same_v<ConnectionType, LocalConnection>,
+                        connection->getServerRevision(connection_parameters.timeouts)
+                    ),
+                    my_context->getClientInfo());
             }
             catch (const Exception & e)
             {
@@ -159,11 +147,12 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
 void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
-                   Int32 suggestion_limit)
+                   Int32 suggestion_limit,
+                   const ClientInfo & client_info)
 {
     try
     {
-        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true));
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true, connection.getServerRevision(timeouts)), client_info);
     }
     catch (...)
     {
@@ -172,10 +161,10 @@ void Suggest::load(IServerConnection & connection,
     }
 }
 
-void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
+void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
 {
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {});
 
     while (true)
     {
@@ -225,7 +214,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
     Words new_words;
     new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
-        new_words.emplace_back(column[i].get<String>());
+        new_words.emplace_back(column[i].safeGet<String>());
 
     addWords(std::move(new_words));
 }

@@ -1,14 +1,23 @@
 #include "NamedCollectionsHelpers.h"
 #include <Access/ContextAccess.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryToString.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/assert_cast.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_named_collection_override_by_default;
+}
 
 namespace ErrorCodes
 {
@@ -94,7 +103,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.empty())
         return nullptr;
 
-    NamedCollectionUtils::loadIfNot();
+    NamedCollectionFactory::instance().loadIfNot();
 
     auto collection_name = getCollectionName(asts);
     if (!collection_name.has_value())
@@ -116,7 +125,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.size() == 1)
         return collection_copy;
 
-    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
+    const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
@@ -161,7 +170,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
+    const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
     for (const auto & key : keys)
     {
         if (collection_copy->isOverridable(key, allow_override_by_default))

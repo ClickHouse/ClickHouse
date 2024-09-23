@@ -15,7 +15,7 @@ struct GreatestBaseImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         return static_cast<Result>(a) > static_cast<Result>(b) ?
                static_cast<Result>(a) : static_cast<Result>(b);
@@ -24,7 +24,7 @@ struct GreatestBaseImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
         {
@@ -46,7 +46,7 @@ struct GreatestSpecialImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::greaterOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
@@ -65,7 +65,7 @@ using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
 REGISTER_FUNCTION(Greatest)
 {
-    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

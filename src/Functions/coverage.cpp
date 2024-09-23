@@ -20,7 +20,7 @@ namespace DB
 namespace
 {
 
-enum class Kind
+enum class Kind : uint8_t
 {
     Current,
     Cumulative,

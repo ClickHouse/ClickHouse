@@ -22,8 +22,15 @@ public:
 
     /// Initialize static SentryWriter instance
     static void initializeInstance(Poco::Util::LayeredConfiguration & config);
+
     /// @return nullptr if initializeInstance() was not called (i.e. for non-server) or SentryWriter object
     static SentryWriter * getInstance();
+
+    /// SentryWriter static instance should be reset explicitly to avoid
+    /// possible use-after-free, since it may use some global objects (i.e.
+    /// OpenSSL), while sending final statistics
+    /// (SENTRY_SESSION_STATUS_EXITED).
+    static void resetInstance();
 
     void onSignal(
         int sig,

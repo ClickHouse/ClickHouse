@@ -1,6 +1,6 @@
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
-#include <base/defines.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
@@ -48,9 +48,13 @@ bool queryProfilerWorks() { return false; }
 namespace DB
 {
 
-namespace ErrorCodes
+namespace Setting
 {
-extern const int INVALID_SETTING_VALUE;
+    extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
+    extern const SettingsUInt64 query_profiler_real_time_period_ns;
+    extern const SettingsBool use_hedged_requests;
 }
 
 /// Update some settings defaults to avoid some known issues.
@@ -58,21 +62,21 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 {
     if (!nestedEpollWorks(log))
     {
-        if (!settings.async_socket_for_remote.changed && settings.async_socket_for_remote)
+        if (!settings[Setting::async_socket_for_remote].changed && settings[Setting::async_socket_for_remote])
         {
-            settings.async_socket_for_remote = false;
+            settings[Setting::async_socket_for_remote] = false;
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
         }
-        if (!settings.async_query_sending_for_remote.changed && settings.async_query_sending_for_remote)
+        if (!settings[Setting::async_query_sending_for_remote].changed && settings[Setting::async_query_sending_for_remote])
         {
-            settings.async_query_sending_for_remote = false;
+            settings[Setting::async_query_sending_for_remote] = false;
             if (log)
                 LOG_WARNING(log, "async_query_sending_for_remote has been disabled (you can explicitly enable it still)");
         }
-        if (!settings.use_hedged_requests.changed && settings.use_hedged_requests)
+        if (!settings[Setting::use_hedged_requests].changed && settings[Setting::use_hedged_requests])
         {
-            settings.use_hedged_requests = false;
+            settings[Setting::use_hedged_requests] = false;
             if (log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
@@ -80,24 +84,24 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 
     if (!queryProfilerWorks())
     {
-        if (settings.query_profiler_real_time_period_ns)
+        if (settings[Setting::query_profiler_real_time_period_ns])
         {
-            settings.query_profiler_real_time_period_ns = 0;
+            settings[Setting::query_profiler_real_time_period_ns] = 0;
             if (log)
                 LOG_WARNING(log, "query_profiler_real_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
-        if (settings.query_profiler_cpu_time_period_ns)
+        if (settings[Setting::query_profiler_cpu_time_period_ns])
         {
-            settings.query_profiler_cpu_time_period_ns = 0;
+            settings[Setting::query_profiler_cpu_time_period_ns] = 0;
             if (log)
                 LOG_WARNING(log, "query_profiler_cpu_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
     }
 }
 
-void doSettingsSanityCheck(const Settings & current_settings)
+void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
 {
-    auto getCurrentValue = [&current_settings](const std::string_view name) -> Field
+    auto get_current_value = [&current_settings](const std::string_view name) -> Field
     {
         Field current_value;
         bool has_current_value = current_settings.tryGet(name, current_value);
@@ -105,11 +109,16 @@ void doSettingsSanityCheck(const Settings & current_settings)
         return current_value;
     };
 
-    UInt64 max_threads = getCurrentValue("max_threads").get<UInt64>();
-    if (max_threads > getNumberOfPhysicalCPUCores() * 65536)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: Too many threads requested ({})", max_threads);
+    UInt64 max_threads = get_current_value("max_threads").safeGet<UInt64>();
+    UInt64 max_threads_max_value = 256 * getNumberOfPhysicalCPUCores();
+    if (max_threads > max_threads_max_value)
+    {
+        if (log)
+            LOG_WARNING(log, "Sanity check: Too many threads requested ({}). Reduced to {}", max_threads, max_threads_max_value);
+        current_settings.set("max_threads", max_threads_max_value);
+    }
 
-    constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
+    static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
     std::unordered_set<String> block_rows_settings{
         "max_block_size",
         "max_insert_block_size",
@@ -120,9 +129,21 @@ void doSettingsSanityCheck(const Settings & current_settings)
         "input_format_parquet_max_block_size"};
     for (auto const & setting : block_rows_settings)
     {
-        auto block_size = getCurrentValue(setting).get<UInt64>();
-        if (block_size > max_sane_block_rows_size)
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: '{}' value is too high ({})", setting, block_size);
+        if (auto block_size = get_current_value(setting).safeGet<UInt64>();
+            block_size > max_sane_block_rows_size)
+        {
+            if (log)
+                LOG_WARNING(log, "Sanity check: '{}' value is too high ({}). Reduced to {}", setting, block_size, max_sane_block_rows_size);
+            current_settings.set(setting, max_sane_block_rows_size);
+        }
+    }
+
+    if (auto max_block_size = get_current_value("max_block_size").safeGet<UInt64>(); max_block_size == 0)
+    {
+        if (log)
+            LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);
+        current_settings.set("max_block_size", DEFAULT_BLOCK_SIZE);
     }
 }
+
 }

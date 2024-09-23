@@ -15,15 +15,19 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/randomDelay.h>
+#include <Common/FailPoint.h>
+#include <Common/thread_local_rng.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
 #include <base/sort.h>
-
+#include <random>
 
 namespace fs = std::filesystem;
 
@@ -47,6 +51,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int ZERO_COPY_REPLICATION_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char replicated_sends_failpoint[];
 }
 
 namespace DataPartsExchange
@@ -215,14 +225,18 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
+        if (e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+            && !isRetryableException(std::current_exception()))
+        {
             report_broken_part();
+        }
 
         throw;
     }
     catch (...)
     {
-        report_broken_part();
+        if (!isRetryableException(std::current_exception()))
+            report_broken_part();
         throw;
     }
 }
@@ -298,11 +312,23 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         auto file_in = desc.input_buffer_getter();
         HashingWriteBuffer hashing_out(out);
-        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
-        hashing_out.finalize();
 
-        if (blocker.isCancelled())
-            throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
+        const auto & is_cancelled = blocker.getCounter();
+        auto cancellation_hook = [&]()
+        {
+            if (is_cancelled)
+                throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
+
+            fiu_do_on(FailPoints::replicated_sends_failpoint,
+            {
+                std::bernoulli_distribution fault(0.1);
+                if (fault(thread_local_rng))
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint replicated_sends_failpoint is triggered");
+            });
+        };
+        copyDataWithThrottler(*file_in, hashing_out, cancellation_hook, data.getSendsThrottler());
+
+        hashing_out.finalize();
 
         if (hashing_out.count() != desc.file_size)
             throw Exception(
@@ -742,9 +768,11 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         if (expected_hash != hashing_out.getHash())
             throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                "Checksum mismatch for file {} transferred from {}",
+                "Checksum mismatch for file {} transferred from {} (0x{} vs 0x{})",
                 (fs::path(data_part_storage->getFullPath()) / file_name).string(),
-                replica_path);
+                replica_path,
+                getHexUIntLowercase(expected_hash),
+                getHexUIntLowercase(hashing_out.getHash()));
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&

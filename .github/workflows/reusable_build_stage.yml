@@ -13,6 +13,10 @@ name: BuildStageWF
         description: ci data
         type: string
         required: true
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
 
 jobs:
   s:
@@ -30,3 +34,5 @@ jobs:
       # for now let's do I deep checkout for builds
       checkout_depth: 0
       data: ${{ inputs.data }}
+    secrets:
+      secret_envs: ${{ secrets.secret_envs }}

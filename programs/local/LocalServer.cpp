@@ -1,8 +1,10 @@
 #include "LocalServer.h"
 
 #include <sys/resource.h>
+#include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
@@ -31,11 +33,11 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -48,7 +50,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
@@ -60,11 +61,21 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
+
 namespace fs = std::filesystem;
 
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_introspection_functions;
+    extern const SettingsLocalFSReadMethod storage_file_read_method;
+}
 
 namespace ErrorCodes
 {
@@ -75,12 +86,17 @@ namespace ErrorCodes
 
 void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
-    Settings settings = context->getSettings();
+    Settings settings = context->getSettingsCopy();
 
-    settings.allow_introspection_functions = true;
-    settings.storage_file_read_method = LocalFSReadMethod::mmap;
+    settings[Setting::allow_introspection_functions] = true;
+    settings[Setting::storage_file_read_method] = LocalFSReadMethod::mmap;
 
     context->setSettings(settings);
+}
+
+Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
+{
+    return config();
 }
 
 void LocalServer::processError(const String &) const
@@ -117,21 +133,33 @@ void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
+    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path_cstr)
+        home_path = home_path_cstr;
+
     /// Load config files if exists
-    if (config().has("config-file") || fs::exists("config.xml"))
+    std::string config_path;
+    if (getClientConfiguration().has("config-file"))
+        config_path = getClientConfiguration().getString("config-file");
+    else if (config_path.empty() && fs::exists("config.xml"))
+        config_path = "config.xml";
+    else if (config_path.empty())
+        config_path = getLocalConfigPath(home_path).value_or("");
+
+    if (fs::exists(config_path))
     {
-        const auto config_path = config().getString("config-file", "config.xml");
-        ConfigProcessor config_processor(config_path, false, true);
+        ConfigProcessor config_processor(config_path);
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
-        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+        getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
+    server_settings.loadSettingsFromConfig(config());
+
     GlobalThreadPool::initialize(
-        config().getUInt("max_thread_pool_size", 10000),
-        config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
-    );
+        server_settings.max_thread_pool_size,
+        server_settings.max_thread_pool_free_size,
+        server_settings.thread_pool_queue_size);
 
 #if USE_AZURE_BLOB_STORAGE
     /// See the explanation near the same line in Server.cpp
@@ -142,18 +170,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
 #endif
 
     getIOThreadPool().initialize(
-        config().getUInt("max_io_thread_pool_size", 100),
-        config().getUInt("max_io_thread_pool_free_size", 0),
-        config().getUInt("io_thread_pool_queue_size", 10000));
+        server_settings.max_io_thread_pool_size,
+        server_settings.max_io_thread_pool_free_size,
+        server_settings.io_thread_pool_queue_size);
 
-
-    const size_t active_parts_loading_threads = config().getUInt("max_active_parts_loading_thread_pool_size", 64);
+    const size_t active_parts_loading_threads = server_settings.max_active_parts_loading_thread_pool_size;
     getActivePartsLoadingThreadPool().initialize(
         active_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
         active_parts_loading_threads);
 
-    const size_t outdated_parts_loading_threads = config().getUInt("max_outdated_parts_loading_thread_pool_size", 32);
+    const size_t outdated_parts_loading_threads = server_settings.max_outdated_parts_loading_thread_pool_size;
     getOutdatedPartsLoadingThreadPool().initialize(
         outdated_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
@@ -161,11 +188,24 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
-    const size_t cleanup_threads = config().getUInt("max_parts_cleaning_thread_pool_size", 128);
+    const size_t unexpected_parts_loading_threads = server_settings.max_unexpected_parts_loading_thread_pool_size;
+    getUnexpectedPartsLoadingThreadPool().initialize(
+        unexpected_parts_loading_threads,
+        0, // We don't need any threads one all the parts will be loaded
+        unexpected_parts_loading_threads);
+
+    getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
+
+    const size_t cleanup_threads = server_settings.max_parts_cleaning_thread_pool_size;
     getPartsCleaningThreadPool().initialize(
         cleanup_threads,
         0, // We don't need any threads one all the parts will be deleted
         cleanup_threads);
+
+    getDatabaseCatalogDropTablesThreadPool().initialize(
+        server_settings.database_catalog_drop_table_concurrency,
+        0, // We don't need any threads if there are no DROP queries.
+        server_settings.database_catalog_drop_table_concurrency);
 }
 
 
@@ -194,10 +234,10 @@ void LocalServer::tryInitPath()
 {
     std::string path;
 
-    if (config().has("path"))
+    if (getClientConfiguration().has("path"))
     {
         // User-supplied path.
-        path = config().getString("path");
+        path = getClientConfiguration().getString("path");
         Poco::trimInPlace(path);
 
         if (path.empty())
@@ -211,7 +251,7 @@ void LocalServer::tryInitPath()
     else
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
-        // (or in the current dir if temporary don't exist)
+        // (or in the current dir if a temporary doesn't exist)
         LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
@@ -237,41 +277,32 @@ void LocalServer::tryInitPath()
         /// as we can't accurately distinguish those situations we don't touch any existent folders
         /// we just try to pick some free name for our working folder
 
-        default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
+        default_path = parent_folder / fmt::format("clickhouse-local-{}", UUIDHelpers::generateV4());
 
-        if (exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} already exists.", default_path.string());
+        if (fs::exists(default_path))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to set up the working directory: {} already exists.", default_path.string());
 
-        create_directory(default_path);
+        /// The directory can be created lazily during the runtime.
         temporary_directory_to_delete = default_path;
 
         path = default_path.string();
         LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    if (path.back() != '/')
-        path += '/';
+    global_context->setPath(fs::path(path) / "");
 
-    fs::create_directories(fs::path(path) / "user_defined/");
-    fs::create_directories(fs::path(path) / "data/");
-    fs::create_directories(fs::path(path) / "metadata/");
-    fs::create_directories(fs::path(path) / "metadata_dropped/");
+    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
+    global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
-    global_context->setPath(path);
+    global_context->setUserFilesPath(""); /// user's files are everywhere
 
-    global_context->setTemporaryStoragePath(path + "tmp/", 0);
-    global_context->setFlagsPath(path + "flags");
-
-    global_context->setUserFilesPath(""); // user's files are everywhere
-
-    std::string user_scripts_path = config().getString("user_scripts_path", fs::path(path) / "user_scripts/");
+    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts/");
     global_context->setUserScriptsPath(user_scripts_path);
-    fs::create_directories(user_scripts_path);
 
     /// top_level_domains_lists
-    const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
+    const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
     if (!top_level_domains_path.empty())
-        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
+        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", getClientConfiguration());
 }
 
 
@@ -286,6 +317,8 @@ void LocalServer::cleanup()
         if (suggest)
             suggest.reset();
 
+        client_context.reset();
+
         if (global_context)
         {
             global_context->shutdown();
@@ -299,10 +332,9 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
-            const auto dir = *temporary_directory_to_delete;
+            LOG_DEBUG(&logger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
+            fs::remove_all(*temporary_directory_to_delete);
             temporary_directory_to_delete.reset();
-            LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
-            remove_all(dir);
         }
     }
     catch (...)
@@ -314,14 +346,14 @@ void LocalServer::cleanup()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
+    if (!getClientConfiguration().has("table-structure") && !getClientConfiguration().has("table-file") && !getClientConfiguration().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
         return {};
 
-    auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure", "auto");
+    auto table_name = backQuoteIfNeed(getClientConfiguration().getString("table-name", "table"));
+    auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
-    if (!config().has("table-file") || config().getString("table-file") == "-")
+    if (!getClientConfiguration().has("table-file") || getClientConfiguration().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
@@ -329,7 +361,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
     {
         /// Use regular file
-        auto file_name = config().getString("table-file");
+        auto file_name = getClientConfiguration().getString("table-file");
         table_file = quoteString(file_name);
     }
 
@@ -340,7 +372,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
@@ -368,6 +400,7 @@ void LocalServer::setupUsers()
         "            </networks>"
         "            <profile>default</profile>"
         "            <quota>default</quota>"
+        "            <named_collection_control>1</named_collection_control>"
         "        </default>"
         "    </users>"
         "    <quotas>"
@@ -377,18 +410,18 @@ void LocalServer::setupUsers()
 
     ConfigurationPtr users_config;
     auto & access_control = global_context->getAccessControl();
-    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
-    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
-    if (config().has("config-file") || fs::exists("config.xml"))
+    access_control.setNoPasswordAllowed(getClientConfiguration().getBool("allow_no_password", true));
+    access_control.setPlaintextPasswordAllowed(getClientConfiguration().getBool("allow_plaintext_password", true));
+    if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
     {
-        String config_path = config().getString("config-file", "");
-        bool has_user_directories = config().has("user_directories");
+        String config_path = getClientConfiguration().getString("config-file", "");
+        bool has_user_directories = getClientConfiguration().has("user_directories");
         const auto config_dir = fs::path{config_path}.remove_filename().string();
-        String users_config_path = config().getString("users_config", "");
+        String users_config_path = getClientConfiguration().getString("users_config", "");
 
         if (users_config_path.empty() && has_user_directories)
         {
-            users_config_path = config().getString("user_directories.users_xml.path");
+            users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
             if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
                 users_config_path = fs::path(config_dir) / users_config_path;
         }
@@ -412,10 +445,11 @@ void LocalServer::setupUsers()
 
 void LocalServer::connect()
 {
-    connection_parameters = ConnectionParameters(config(), "localhost");
+    connection_parameters = ConnectionParameters(getClientConfiguration(), "localhost");
 
+    /// This is needed for table function input(...).
     ReadBuffer * in;
-    auto table_file = config().getString("table-file", "-");
+    auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
         in = &std_in;
@@ -426,7 +460,7 @@ void LocalServer::connect()
         in = input.get();
     }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -436,7 +470,7 @@ try
     UseSSL use_ssl;
     thread_status.emplace();
 
-    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
+    StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
     setupSignalHandler();
 
@@ -451,7 +485,7 @@ try
 
         if (rlim.rlim_cur < rlim.rlim_max)
         {
-            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
+            rlim.rlim_cur = getClientConfiguration().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
                 std::cerr << fmt::format("Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString()) << '\n';
@@ -459,8 +493,8 @@ try
     }
 
     is_interactive = stdin_is_a_tty
-        && (config().hasOption("interactive")
-            || (queries.empty() && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
+        && (getClientConfiguration().hasOption("interactive")
+            || (queries.empty() && !getClientConfiguration().has("table-structure") && queries_files.empty() && !getClientConfiguration().has("table-file")));
 
     if (!is_interactive)
     {
@@ -481,22 +515,27 @@ try
     registerFormats();
 
     processConfig();
-    adjustSettings();
-    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
-    applyCmdSettings(global_context);
+    SCOPE_EXIT({ cleanup(); });
+
+    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     /// try to load user defined executable functions, throw on error and die
     try
     {
-        global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+        global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
     }
     catch (...)
     {
         tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
         throw;
     }
+
+    /// Must be called after we stopped initializing the global context and changing its settings.
+    /// After this point the global context must be stayed almost unchanged till shutdown,
+    /// and all necessary changes must be made to the client context instead.
+    createClientContext();
 
     if (is_interactive)
     {
@@ -531,58 +570,51 @@ try
 }
 catch (const DB::Exception & e)
 {
-    cleanup();
-
-    bool need_print_stack_trace = config().getBool("stacktrace", false);
+    bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
     return e.code() ? e.code() : -1;
 }
 catch (...)
 {
-    cleanup();
-
     std::cerr << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
 }
 
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
-    config().setString("logger.level", logs_level);
-    updateLevels(config(), logger());
+    getClientConfiguration().setString("logger.level", logs_level);
+    updateLevels(getClientConfiguration(), logger());
 }
 
 void LocalServer::processConfig()
 {
-    if (!queries.empty() && config().has("queries-file"))
+    if (!queries.empty() && getClientConfiguration().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
-    if (config().has("multiquery"))
-        is_multiquery = true;
+    pager = getClientConfiguration().getString("pager", "");
 
-    pager = config().getString("pager", "");
-
-    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
+    delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || getClientConfiguration().has("queries-file"));
     if (!is_interactive || delayed_interactive)
     {
-        echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-        ignore_error = config().getBool("ignore-error", false);
+        echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
+        ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
 
-    print_stack_trace = config().getBool("stacktrace", false);
+    print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     const std::string clickhouse_dialect{"clickhouse"};
-    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
-        && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
-    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
+    load_suggestions = (is_interactive || delayed_interactive) && !getClientConfiguration().getBool("disable_suggestion", false)
+        && getClientConfiguration().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
+    wait_for_suggestions_to_load = getClientConfiguration().getBool("wait_for_suggestions_to_load", false);
 
-    auto logging = (config().has("logger.console")
-                    || config().has("logger.level")
-                    || config().has("log-level")
-                    || config().has("send_logs_level")
-                    || config().has("logger.log"));
+    auto logging = (getClientConfiguration().has("logger.console")
+                    || getClientConfiguration().has("logger.level")
+                    || getClientConfiguration().has("log-level")
+                    || getClientConfiguration().has("send_logs_level")
+                    || getClientConfiguration().has("logger.log"));
 
-    auto level = config().getString("log-level", "trace");
+    auto level = getClientConfiguration().getString("log-level", "trace");
 
-    if (config().has("server_logs_file"))
+    if (getClientConfiguration().has("server_logs_file"))
     {
         auto poco_logs_level = Poco::Logger::parseLevel(level);
         Poco::Logger::root().setLevel(poco_logs_level);
@@ -592,10 +624,10 @@ void LocalServer::processConfig()
     }
     else
     {
-        config().setString("logger", "logger");
+        getClientConfiguration().setString("logger", "logger");
         auto log_level_default = logging ? level : "fatal";
-        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
-        buildLoggers(config(), logger(), "clickhouse-local");
+        getClientConfiguration().setString("logger.level", getClientConfiguration().getString("log-level", getClientConfiguration().getString("send_logs_level", log_level_default)));
+        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
     }
 
     shared_context = Context::createShared();
@@ -609,13 +641,13 @@ void LocalServer::processConfig()
     LoggerRawPtr log = &logger();
 
     /// Maybe useless
-    if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+    if (getClientConfiguration().has("macros"))
+        global_context->setMacros(std::make_unique<Macros>(getClientConfiguration(), "macros", log));
 
-    setDefaultFormatsFromConfiguration();
+    setDefaultFormatsAndCompressionFromConfiguration();
 
     /// Sets external authenticators config (LDAP, Kerberos).
-    global_context->setExternalAuthenticatorsConfig(config());
+    global_context->setExternalAuthenticatorsConfig(getClientConfiguration());
 
     setupUsers();
 
@@ -624,12 +656,43 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     const size_t physical_server_memory = getMemoryAmount();
-    const double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
+
+    size_t max_server_memory_usage = server_settings.max_server_memory_usage;
+    double max_server_memory_usage_to_ram_ratio = server_settings.max_server_memory_usage_to_ram_ratio;
+
+    size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
+
+    if (max_server_memory_usage == 0)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+                      " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                 formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                 formatReadableSizeWithBinarySuffix(physical_server_memory),
+                 max_server_memory_usage_to_ram_ratio);
+    }
+    else if (max_server_memory_usage > default_max_server_memory_usage)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+                      " because the system has low amount of memory. The amount was"
+                      " calculated as {} available"
+                      " * {:.2f} max_server_memory_usage_to_ram_ratio",
+                 formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                 formatReadableSizeWithBinarySuffix(physical_server_memory),
+                 max_server_memory_usage_to_ram_ratio);
+    }
+
+    total_memory_tracker.setHardLimit(max_server_memory_usage);
+    total_memory_tracker.setDescription("(total)");
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    const double cache_size_to_ram_max_ratio = server_settings.cache_size_to_ram_max_ratio;
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
-    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
-    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double uncompressed_cache_size_ratio = config().getDouble("uncompressed_cache_size_ratio", DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
+    size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
+    double uncompressed_cache_size_ratio = server_settings.uncompressed_cache_size_ratio;
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
@@ -637,9 +700,9 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
-    size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
-    double mark_cache_size_ratio = config().getDouble("mark_cache_size_ratio", DEFAULT_MARK_CACHE_SIZE_RATIO);
+    String mark_cache_policy = server_settings.mark_cache_policy;
+    size_t mark_cache_size = server_settings.mark_cache_size;
+    double mark_cache_size_ratio = server_settings.mark_cache_size_ratio;
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -649,31 +712,31 @@ void LocalServer::processConfig()
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    String index_uncompressed_cache_policy = config().getString("index_uncompressed_cache_policy", DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY);
-    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double index_uncompressed_cache_size_ratio = config().getDouble("index_uncompressed_cache_size_ratio", DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
+    size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
+    double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_uncompressed_cache_size));
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
-    String index_mark_cache_policy = config().getString("index_mark_cache_policy", DEFAULT_INDEX_MARK_CACHE_POLICY);
-    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
-    double index_mark_cache_size_ratio = config().getDouble("index_mark_cache_size_ratio", DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO);
+    String index_mark_cache_policy = server_settings.index_mark_cache_policy;
+    size_t index_mark_cache_size = server_settings.index_mark_cache_size;
+    double index_mark_cache_size_ratio = server_settings.index_mark_cache_size_ratio;
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_mark_cache_size));
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    size_t mmap_cache_size = server_settings.mmap_cache_size;
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mmap_cache_size));
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
@@ -681,30 +744,35 @@ void LocalServer::processConfig()
     global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
-    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
+    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
     /// NOTE: it is important to apply any overrides before
     /// setDefaultProfiles() calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
+    adjustSettings();
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 
     /// Load global settings from default_profile and system_profile.
-    global_context->setDefaultProfiles(config());
+    global_context->setDefaultProfiles(getClientConfiguration());
+
+    /// Command-line parameters can override settings from the default profile.
+    applyCmdSettings(global_context);
 
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string default_database = config().getString("default_database", "default");
+    std::string default_database = server_settings.default_database;
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 
-    if (config().has("path"))
+    if (getClientConfiguration().has("path"))
     {
         String path = global_context->getPath();
+        fs::create_directories(fs::path(path));
 
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
@@ -716,7 +784,7 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
 
-        if (!config().has("only-system-tables"))
+        if (!getClientConfiguration().has("only-system-tables"))
         {
             DatabaseCatalog::instance().createBackgroundTasks();
             waitLoad(loadMetadata(global_context));
@@ -728,22 +796,15 @@ void LocalServer::processConfig()
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
-    else if (!config().has("no-system-tables"))
+    else if (!getClientConfiguration().has("no-system-tables"))
     {
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
 
-    server_display_name = config().getString("display_name", getFQDNOrHostName());
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-    std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
-    for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-
-    global_context->setQueryKindInitial();
-    global_context->setQueryKind(query_kind);
-    global_context->setQueryParameters(query_parameters);
+    server_display_name = getClientConfiguration().getString("display_name", "");
+    prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
 }
 
 
@@ -774,10 +835,12 @@ void LocalServer::processConfig()
 }
 
 
-void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
+void LocalServer::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
+    if (verbose)
+        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
@@ -815,41 +878,51 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
     applyCmdSettings(context);
+}
+
+
+void LocalServer::createClientContext()
+{
+    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
+    /// We can't just change the global context because it is used in background tasks (for example, in merges)
+    /// which don't expect that the global context can suddenly change.
+    client_context = Context::createCopy(global_context);
+    initClientContext();
 }
 
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))
-        config().setString("table-name", options["table"].as<std::string>());
+        getClientConfiguration().setString("table-name", options["table"].as<std::string>());
     if (options.count("file"))
-        config().setString("table-file", options["file"].as<std::string>());
+        getClientConfiguration().setString("table-file", options["file"].as<std::string>());
     if (options.count("structure"))
-        config().setString("table-structure", options["structure"].as<std::string>());
+        getClientConfiguration().setString("table-structure", options["structure"].as<std::string>());
     if (options.count("no-system-tables"))
-        config().setBool("no-system-tables", true);
+        getClientConfiguration().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
-        config().setBool("only-system-tables", true);
+        getClientConfiguration().setBool("only-system-tables", true);
     if (options.count("database"))
-        config().setString("default_database", options["database"].as<std::string>());
+        getClientConfiguration().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
-        config().setString("table-data-format", options["input-format"].as<std::string>());
+        getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
     if (options.count("output-format"))
-        config().setString("output-format", options["output-format"].as<std::string>());
+        getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
 
     if (options.count("logger.console"))
-        config().setBool("logger.console", options["logger.console"].as<bool>());
+        getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());
     if (options.count("logger.log"))
-        config().setString("logger.log", options["logger.log"].as<std::string>());
+        getClientConfiguration().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))
-        config().setString("logger.level", options["logger.level"].as<std::string>());
+        getClientConfiguration().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
-        config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
+        getClientConfiguration().setString("send_logs_level", options["send_logs_level"].as<std::string>());
     if (options.count("wait_for_suggestions_to_load"))
-        config().setBool("wait_for_suggestions_to_load", true);
+        getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
@@ -881,13 +954,6 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
                 /// param_name=value
                 query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
             }
-        }
-        else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-        {
-            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
-            ++arg_num;
-            arg = argv[arg_num];
-            addMultiquery(arg, common_arguments);
         }
         else
         {

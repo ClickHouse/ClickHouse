@@ -118,7 +118,7 @@ namespace
     /// Checks if the current user has enough access rights granted with grant option to grant or revoke specified access rights.
     void checkGrantOption(
         const AccessControl & access_control,
-        const ContextAccess & current_user_access,
+        const ContextAccessWrapper & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const AccessRightsElements & elements_to_grant,
@@ -200,7 +200,7 @@ namespace
     /// Checks if the current user has enough roles granted with admin option to grant or revoke specified roles.
     void checkAdminOption(
         const AccessControl & access_control,
-        const ContextAccess & current_user_access,
+        const ContextAccessWrapper & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const std::vector<UUID> & roles_to_grant,
@@ -255,7 +255,7 @@ namespace
         if (roles_to_revoke.all)
             boost::range::set_difference(all_granted_roles_set, roles_to_revoke.except_ids, std::back_inserter(roles_to_revoke_ids));
         else
-            boost::range::remove_erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
+            std::erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
 
         roles_to_revoke = roles_to_revoke_ids;
         current_user_access.checkAdminOption(roles_to_revoke_ids);
@@ -277,7 +277,7 @@ namespace
     /// This function is less accurate than checkAdminOption() because it cannot use any information about
     /// granted roles the grantees currently have (due to those grantees are located on multiple nodes,
     /// we just don't have the full information about them).
-    void checkAdminOptionForExecutingOnCluster(const ContextAccess & current_user_access,
+    void checkAdminOptionForExecutingOnCluster(const ContextAccessWrapper & current_user_access,
                                                const std::vector<UUID> roles_to_grant,
                                                const RolesOrUsersSet & roles_to_revoke)
     {
@@ -376,7 +376,7 @@ namespace
     /// Calculates all available rights to grant with current user intersection.
     void calculateCurrentGrantRightsWithIntersection(
         AccessRights & rights,
-        std::shared_ptr<const ContextAccess> current_user_access,
+        std::shared_ptr<const ContextAccessWrapper> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
         AccessRightsElements current_user_grantable_elements;
@@ -438,6 +438,12 @@ BlockIO InterpreterGrantQuery::execute()
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
 
+    /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
+    String current_database = getContext()->getCurrentDatabase();
+    elements_to_grant.replaceEmptyDatabase(current_database);
+    elements_to_revoke.replaceEmptyDatabase(current_database);
+    query.access_rights_elements.replaceEmptyDatabase(current_database);
+
     /// Executing on cluster.
     if (!query.cluster.empty())
     {
@@ -453,9 +459,6 @@ BlockIO InterpreterGrantQuery::execute()
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.
-    String current_database = getContext()->getCurrentDatabase();
-    elements_to_grant.replaceEmptyDatabase(current_database);
-    elements_to_revoke.replaceEmptyDatabase(current_database);
     bool need_check_grantees_are_allowed = true;
     if (!query.current_grants)
         checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);

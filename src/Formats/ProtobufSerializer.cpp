@@ -1719,9 +1719,7 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf, lut);
-            if (tm < 0)
-                tm = 0;
-            return tm;
+            return std::max<time_t>(tm, 0);
         }
     };
 
@@ -3736,6 +3734,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support type recursion ({})", field_descriptor->full_name());
         }
         pending_resolution.emplace(field_descriptor);
+        SCOPE_EXIT({ pending_resolution.erase(field_descriptor); });
 
         if (allow_repeat && field_descriptor->is_map())
         {
@@ -3790,10 +3789,7 @@ namespace
                 }
                 int max_abs = std::abs(enum_descriptor->value(0)->number());
                 for (int i = 1; i != enum_descriptor->value_count(); ++i)
-                {
-                    if (std::abs(enum_descriptor->value(i)->number()) > max_abs)
-                        max_abs = std::abs(enum_descriptor->value(i)->number());
-                }
+                    max_abs = std::max(std::abs(enum_descriptor->value(i)->number()), max_abs);
                 if (max_abs < 128)
                     return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
                 else if (max_abs < 32768)

@@ -39,9 +39,9 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
-    size_t getFileSize() override { return getTotalSize(blobs_to_read); }
+    std::optional<size_t> tryGetFileSize() override { return getTotalSize(blobs_to_read); }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 

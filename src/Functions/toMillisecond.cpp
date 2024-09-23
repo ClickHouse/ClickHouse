@@ -27,7 +27,7 @@ Returns the millisecond component (0-999) of a date with time.
             );
 
     /// MySQL compatibility alias.
-    factory.registerAlias("MILLISECOND", "toMillisecond", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("MILLISECOND", "toMillisecond", FunctionFactory::Case::Insensitive);
 }
 
 }

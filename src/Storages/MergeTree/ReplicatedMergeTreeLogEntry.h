@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/CopyableAtomic.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
@@ -9,7 +10,6 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
 
-#include <mutex>
 #include <condition_variable>
 
 
@@ -135,7 +135,6 @@ struct ReplicatedMergeTreeLogEntryData
     int alter_version = -1; /// May be equal to -1, if it's normal mutation, not metadata update.
 
     /// only ALTER METADATA command
-    /// NOTE It's never used
     bool have_mutation = false; /// If this alter requires additional mutation step, for data update
 
     String columns_str; /// New columns data corresponding to alter_version
@@ -174,7 +173,7 @@ struct ReplicatedMergeTreeLogEntryData
     size_t quorum = 0;
 
     /// Used only in tests for permanent fault injection for particular queue entry.
-    bool fault_injected = false;
+    CopyableAtomic<bool> fault_injected{false};
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const

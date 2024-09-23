@@ -19,7 +19,7 @@ public:
     bool ephemeral_default = false;
     ASTPtr comment;
     ASTPtr codec;
-    ASTPtr stat_type;
+    ASTPtr statistics_desc;
     ASTPtr ttl;
     ASTPtr collation;
     ASTPtr settings;

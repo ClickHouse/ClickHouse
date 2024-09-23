@@ -67,7 +67,7 @@ FileSegment::FileSegment(
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
     , cache(cache_)
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     , log(getLogger(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #else
     , log(getLogger("FileSegment"))
@@ -187,13 +187,6 @@ size_t FileSegment::getDownloadedSize() const
     return downloaded_size;
 }
 
-void FileSegment::setDownloadedSize(size_t delta)
-{
-    auto lk = lock();
-    downloaded_size += delta;
-    assert(downloaded_size == std::filesystem::file_size(getPath()));
-}
-
 bool FileSegment::isDownloaded() const
 {
     auto lk = lock();
@@ -311,6 +304,11 @@ FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
     return remote_file_reader;
 }
 
+FileSegment::LocalCacheWriterPtr FileSegment::getLocalCacheWriter()
+{
+    return cache_writer;
+}
+
 void FileSegment::resetRemoteFileReader()
 {
     auto lk = lock();
@@ -340,33 +338,31 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     remote_file_reader = remote_file_reader_;
 }
 
-void FileSegment::write(const char * from, size_t size, size_t offset)
+void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
-
-    if (!size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
-
+    auto file_segment_path = getPath();
     {
-        auto lk = lock();
-        assertIsDownloaderUnlocked("write", lk);
-        assertNotDetachedUnlocked(lk);
-    }
+        if (!size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
-    const auto file_segment_path = getPath();
+        {
+            auto lk = lock();
+            assertIsDownloaderUnlocked("write", lk);
+            assertNotDetachedUnlocked(lk);
+        }
 
-    {
         if (download_state != State::DOWNLOADING)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
         const size_t first_non_downloaded_offset = getCurrentWriteOffset();
-        if (offset != first_non_downloaded_offset)
+        if (offset_in_file != first_non_downloaded_offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
-                size, offset, first_non_downloaded_offset);
+                size, offset_in_file, first_non_downloaded_offset);
 
         const size_t current_downloaded_size = getDownloadedSize();
         chassert(reserved_size >= current_downloaded_size);
@@ -389,16 +385,20 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
     try
     {
-        if (!cache_writer)
-            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         /// This mutex is only needed to have a valid assertion in assertCacheCorrectness(),
-        /// which is only executed in debug/sanitizer builds (under ABORT_ON_LOGICAL_ERROR).
+        /// which is only executed in debug/sanitizer builds (under DEBUG_OR_SANITIZER_BUILD).
         std::lock_guard lock(write_mutex);
 #endif
 
-        cache_writer->write(from, size);
+        if (!cache_writer)
+            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0);
+
+        /// Size is equal to offset as offset for write buffer points to data end.
+        cache_writer->set(from, /* size */size, /* offset */size);
+        /// Reset the buffer when finished.
+        SCOPE_EXIT({ cache_writer->set(nullptr, 0); });
+        /// Flush the buffer.
         cache_writer->next();
 
         downloaded_size += size;
@@ -431,7 +431,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         }
 
         throw;
-
     }
     catch (Exception & e)
     {
@@ -441,7 +440,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         throw;
     }
 
-    chassert(getCurrentWriteOffset() == offset + size);
+    chassert(getCurrentWriteOffset() == offset_in_file + size);
 }
 
 FileSegment::State FileSegment::wait(size_t offset)
@@ -503,7 +502,11 @@ LockedKeyPtr FileSegment::lockKeyMetadata(bool assert_exists) const
     return metadata->tryLock();
 }
 
-bool FileSegment::reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat)
+bool FileSegment::reserve(
+    size_t size_to_reserve,
+    size_t lock_wait_timeout_milliseconds,
+    std::string & failure_reason,
+    FileCacheReserveStat * reserve_stat)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -555,7 +558,7 @@ bool FileSegment::reserve(size_t size_to_reserve, size_t lock_wait_timeout_milli
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds);
+    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -666,7 +669,7 @@ void FileSegment::complete()
         resetDownloaderUnlocked(segment_lock);
     }
 
-    if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
+    if (segment_kind == FileSegmentKind::Ephemeral && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
         locked_key->removeFileSegment(offset(), segment_lock);
@@ -795,7 +798,6 @@ String FileSegment::stateToString(FileSegment::State state)
         case FileSegment::State::DETACHED:
             return "DETACHED";
     }
-    UNREACHABLE();
 }
 
 bool FileSegment::assertCorrectness() const
@@ -825,7 +827,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
     };
 
     const auto file_path = getPath();
-    if (segment_kind != FileSegmentKind::Temporary)
+
     {
         std::lock_guard lk(write_mutex);
         if (downloaded_size == 0)
@@ -986,13 +988,26 @@ FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
     ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments, file_segments.size());
 }
 
-FileSegmentsHolder::~FileSegmentsHolder()
+FileSegmentPtr FileSegmentsHolder::getSingleFileSegment() const
+{
+    if (file_segments.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single file segment, got: {} in holder {}", file_segments.size(), toString());
+    return file_segments.front();
+}
+
+void FileSegmentsHolder::reset()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
         file_segment_it = completeAndPopFrontImpl();
+    file_segments.clear();
+}
+
+FileSegmentsHolder::~FileSegmentsHolder()
+{
+    reset();
 }
 
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
@@ -1010,7 +1025,12 @@ FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)
     return *file_segments.back();
 }
 
-String FileSegmentsHolder::toString()
+String FileSegmentsHolder::toString(bool with_state) const
+{
+    return DB::toString(file_segments, with_state);
+}
+
+String toString(const FileSegments & file_segments, bool with_state)
 {
     String ranges;
     for (const auto & file_segment : file_segments)
@@ -1020,6 +1040,8 @@ String FileSegmentsHolder::toString()
         ranges += file_segment->range().toString();
         if (file_segment->isUnbound())
             ranges += "(unbound)";
+        if (with_state)
+            ranges += "(" + FileSegment::stateToString(file_segment->state()) + ")";
     }
     return ranges;
 }

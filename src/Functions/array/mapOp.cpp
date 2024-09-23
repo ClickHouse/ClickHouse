@@ -37,7 +37,7 @@ struct TupArg
 };
 using TupleMaps = std::vector<TupArg>;
 
-enum class OpTypes
+enum class OpTypes : uint8_t
 {
     ADD = 0,
     SUBTRACT = 1
@@ -104,7 +104,7 @@ private:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Each tuple in {} arguments should consist of two arrays",
                     getName());
 
-            auto result_type = v->getNestedType();
+            const auto & result_type = v->getNestedType();
             if (!result_type->canBePromoted())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Values to be summed are expected to be Numeric, Float or Decimal.");
 
@@ -237,7 +237,7 @@ private:
                     }
 
                     arg.val_column->get(offset + j, temp_val);
-                    ValType value = temp_val.get<ValType>();
+                    ValType value = temp_val.safeGet<ValType>();
 
                     if constexpr (op_type == OpTypes::ADD)
                     {

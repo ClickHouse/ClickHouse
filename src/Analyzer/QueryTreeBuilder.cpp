@@ -40,6 +40,8 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include <Core/Settings.h>
+
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/StorageID.h>
@@ -48,6 +50,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool any_join_distinct_right_table_keys;
+    extern const SettingsJoinStrictness join_default_strictness;
+    extern const SettingsBool enable_order_by_all;
+    extern const SettingsUInt64 limit;
+    extern const SettingsUInt64 offset;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 
 namespace ErrorCodes
 {
@@ -233,13 +246,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     UInt64 offset = 0;
 
     /// Remove global settings limit and offset
-    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
+    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref[Setting::limit] || settings_ref[Setting::offset])
     {
-        Settings settings = updated_context->getSettings();
-        limit = settings.limit;
-        offset = settings.offset;
-        settings.limit = 0;
-        settings.offset = 0;
+        Settings settings = updated_context->getSettingsCopy();
+        limit = settings[Setting::limit];
+        offset = settings[Setting::offset];
+        settings[Setting::limit] = 0;
+        settings[Setting::offset] = 0;
         updated_context->setSettings(settings);
     }
 
@@ -266,11 +279,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
         }
     }
 
+    const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
+
     auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
 
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_name.empty());
     current_query_tree->setCTEName(cte_name);
+    current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
     current_query_tree->setIsGroupByWithTotals(select_query_typed.group_by_with_totals);
@@ -278,7 +294,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
-    current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
+    /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
+    /// since SETTINGS section has not been parsed yet, - so, check the setting here
+    if (enable_order_by_all)
+        current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
     current_query_tree->setOriginalAST(select_query);
 
     auto current_context = current_query_tree->getContext();
@@ -287,7 +306,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
+    {
         current_query_tree->getWithNode() = buildExpressionList(select_with_list, current_context);
+
+        if (select_query_typed.recursive_with)
+        {
+            for (auto & with_node : current_query_tree->getWith().getNodes())
+            {
+                auto * with_union_node = with_node->as<UnionNode>();
+                if (!with_union_node)
+                    continue;
+
+                with_union_node->setIsRecursiveCTE(true);
+            }
+        }
+    }
 
     auto select_expression_list = select_query_typed.select();
     if (select_expression_list)
@@ -329,6 +362,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     auto window_list = select_query_typed.window();
     if (window_list)
         current_query_tree->getWindowNode() = buildWindowList(window_list, current_context);
+
+    auto qualify_expression = select_query_typed.qualify();
+    if (qualify_expression)
+        current_query_tree->getQualify() = buildExpression(qualify_expression, current_context);
 
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
@@ -445,7 +482,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
 
         std::shared_ptr<Collator> collator;
         if (order_by_element.getCollation())
-            collator = std::make_shared<Collator>(order_by_element.getCollation()->as<ASTLiteral &>().value.get<String &>());
+            collator = std::make_shared<Collator>(order_by_element.getCollation()->as<ASTLiteral &>().value.safeGet<String &>());
 
         const auto & sort_expression_ast = order_by_element.children.at(0);
         auto sort_expression = buildExpression(sort_expression_ast, context);
@@ -551,7 +588,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
-        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+        if (context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type])
             result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
         else
             result = std::make_shared<ConstantNode>(ast_literal->value);
@@ -882,8 +919,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 join_expression = buildExpression(table_join.on_expression, context);
 
             const auto & settings = context->getSettingsRef();
-            auto join_default_strictness = settings.join_default_strictness;
-            auto any_join_distinct_right_table_keys = settings.any_join_distinct_right_table_keys;
+            auto join_default_strictness = settings[Setting::join_default_strictness];
+            auto any_join_distinct_right_table_keys = settings[Setting::any_join_distinct_right_table_keys];
 
             JoinStrictness result_join_strictness = table_join.strictness;
             JoinKind result_join_kind = table_join.kind;
@@ -921,6 +958,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 table_join.locality,
                 result_join_strictness,
                 result_join_kind);
+            join_node->setOriginalAST(table_element.table_join);
 
             /** Original AST is not set because it will contain only join part and does
               * not include left table expression.

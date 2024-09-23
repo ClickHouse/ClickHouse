@@ -19,7 +19,6 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i % 3 == 2 and not upgrade_check:
         options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
-        client_options.append("allow_experimental_database_replicated=1")
         client_options.append("enable_deflate_qpl_codec=1")
         client_options.append("enable_zstd_qat_codec=1")
 
@@ -48,6 +47,8 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i > 0 and random.random() < 1 / 3:
         client_options.append("use_query_cache=1")
+        client_options.append("query_cache_nondeterministic_function_handling='ignore'")
+        client_options.append("query_cache_system_table_handling='ignore'")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
@@ -75,6 +76,12 @@ def get_options(i: int, upgrade_check: bool) -> str:
     #       stress test and upgrade check
     if not upgrade_check:
         client_options.append("ignore_drop_queries_probability=0.5")
+
+    if random.random() < 0.2:
+        client_options.append("allow_experimental_parallel_reading_from_replicas=1")
+        client_options.append("max_parallel_replicas=3")
+        client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
+        client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))

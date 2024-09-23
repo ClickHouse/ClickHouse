@@ -20,7 +20,7 @@ using FunctionMatch = FunctionsStringSearch<MatchImpl<NameMatch, MatchTraits::Sy
 REGISTER_FUNCTION(Match)
 {
     factory.registerFunction<FunctionMatch>();
-    factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::Case::Insensitive);
 }
 
 }

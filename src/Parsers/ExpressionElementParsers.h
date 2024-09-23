@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** The SELECT subquery is in parenthesis.
+/** The SELECT subquery, in parentheses.
   */
 class ParserSubquery : public IParserBase
 {
@@ -47,15 +47,27 @@ public:
 protected:
     const char * getName() const override { return "string literal table identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::identifier; }
 };
 
 
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
- *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+ *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'.
+ *  There is also special delimiters `.:` and `.^` for JSON type subcolumns. In case of special delimiter
+ *  the next identifier part after it will include special delimiter and be back quoted always: json.a.b.:UInt32 -> ['json', 'a', 'b', ':`UInt32`'].
+ *  It's needed to distinguish identifiers json.a.b.:UInt32 and json.a.b.`:UInt32`.
+ *  There is also a special syntax sugar for reading JSON subcolumns of type Array(JSON): json.a.b[][].c -> json.a.b.:Array(Array(JSON)).c
   */
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
+    enum class SpecialDelimiter : char
+    {
+        NONE = '\0',
+        JSON_PATH_DYNAMIC_TYPE = ':',
+        JSON_PATH_PREFIX = '^',
+    };
+
     explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
         : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
     {
@@ -201,11 +213,11 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// STATISTIC(tdigest(200))
-class ParserStatisticType : public IParserBase
+/// STATISTICS(tdigest(200))
+class ParserStatisticsType : public IParserBase
 {
 protected:
-    const char * getName() const override { return "statistic"; }
+    const char * getName() const override { return "statistics"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
