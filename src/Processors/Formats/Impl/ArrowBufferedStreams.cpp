@@ -2,6 +2,9 @@
 
 #include "ArrowBufferedStreams.h"
 
+#include <Common/ThreadPool.h>
+#include <IO/SharedThreadPools.h>
+
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -183,7 +186,10 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_) {}
+RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_)
+{
+    async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ArrowFile");
+}
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
 {
@@ -218,14 +224,23 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessRe
 
 arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes)
 {
-    return arrow::Future<std::shared_ptr<arrow::Buffer>>::MakeFinished(ReadAt(position, nbytes));
+    auto future = arrow::Future<std::shared_ptr<arrow::Buffer>>::Make();
+    async_runner([this, weak_future = arrow::WeakFuture(future), position, nbytes]() mutable { asyncThreadFunction(weak_future, position, nbytes); }, {0});
+    return future;
 }
+
 
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
 {
     chassert(is_open);
     is_open = false;
     return arrow::Status::OK();
+}
+void RandomAccessFileFromRandomAccessReadBuffer::asyncThreadFunction(
+    arrow::WeakFuture<std::shared_ptr<arrow::Buffer>> & future, int64_t position, int64_t nbytes)
+{
+    auto buffer = ReadAt(position, nbytes);
+    future.get().MarkFinished(buffer);
 }
 
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Seek(int64_t) { return arrow::Status::NotImplemented(""); }
