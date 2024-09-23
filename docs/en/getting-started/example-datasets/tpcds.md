@@ -1,7 +1,7 @@
 ---
 slug: /en/getting-started/example-datasets/star-schema
-sidebar_label: TPC-H
-description:  "Classical TPC-DS benchmark."
+sidebar_label: TPC-DS
+description:  "The TPC-DS benchmark data set and queries."
 ---
 
 # TPC-DS (2012)

@@ -1,7 +1,7 @@
 ---
 slug: /en/getting-started/example-datasets/star-schema
 sidebar_label: Star Schema Benchmark (SSB)
-description:  "Dataset based on the TPC-H dbgen source. The coding style and architecture follows the TPCH dbgen."
+description:  "The Star Schema Benchmark (SSB) data set and queries"
 ---
 
 # Star Schema Benchmark (SSB, 2009)
