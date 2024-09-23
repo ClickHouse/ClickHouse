@@ -285,12 +285,12 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
                 auto current_representation = SimpleTypeRepresentation{name, required, type_name};
                 if (current_representation != simple_type_by_field_id[id].back().second.value())
                 {
-                    simple_type_by_field_id[id].emplace_back(id, current_representation);
+                    simple_type_by_field_id[id].emplace_back(current_schema_id.value(), current_representation);
                 }
             }
             else
             {
-                simple_type_by_field_id[id].emplace_back(id, SimpleTypeRepresentation{name, required, type_name});
+                simple_type_by_field_id[id].emplace_back(current_schema_id.value(), SimpleTypeRepresentation{name, required, type_name});
             }
         }
         return required ? getSimpleType(type_name) : makeNullable(getSimpleType(type_name));
@@ -513,7 +513,37 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     }
+    last_schema_id = schema_id;
+    for (auto & [field_id, id_variable_type_evolution] : simple_type_by_field_id)
+    {
+        LOG_DEBUG(&Poco::Logger::get("Printing schema id"), "Field Id: {}", field_id);
+        LOG_DEBUG(&Poco::Logger::get("Printing schema id"), "Types size: {}", id_variable_type_evolution.size());
+        for (const auto & [schema_version_id, simple_type] : id_variable_type_evolution)
+        {
+            if (simple_type.has_value())
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Printing schema id"),
+                    "Schema id: {}, Simple repro: name: {}, required: {}, type: {}",
+                    schema_version_id,
+                    simple_type->name.has_value() ? simple_type->name.value() : "NONAME",
+                    simple_type->required,
+                    simple_type->type);
+            }
+            else
+            {
+                LOG_DEBUG(&Poco::Logger::get("Printing schema id"), "Schema id: {}, FINISHED", schema_id);
+            }
+        }
+        std::optional<NameAndTypePair> kek = IcebergSchemaProcessor::getSimpleNameAndTypeByVersion(field_id);
+        LOG_DEBUG(
+            &Poco::Logger::get("Printing schema id after request"),
+            "Name: {}, type: {}",
+            kek.has_value() ? kek.value().name : "NONAME",
+            kek.has_value() ? kek.value().type->getPrettyName() : "NOTYPE");
+    }
 }
+
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
@@ -651,12 +681,12 @@ DataLakeMetadataPtr IcebergMetadata::create(
  */
 DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) const
 {
-    if (!data_file_infos.empty())
-        return data_file_infos;
+    // if (!data_file_infos.empty())
+    //     return data_file_infos;
 
     Strings manifest_files;
     if (manifest_list_file.empty())
-        return data_file_infos;
+        return {};
 
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
@@ -717,7 +747,10 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
         }
 
         avro::NodePtr status_node = root_node->leafAt(0);
-        if ((status_node->type() != avro::Type::AVRO_INT) || (status_node->name().simpleName() != "status"))
+        LOG_DEBUG(&Poco::Logger::get("Node characteristics"), "Status node has name: {}", status_node->hasName());
+        LOG_DEBUG(&Poco::Logger::get("Filter dag state"), "Filter dag is None: {}", filter_dag == nullptr);
+
+        if (status_node->type() != avro::Type::AVRO_INT)
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -726,7 +759,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
         }
 
         avro::NodePtr data_file_node = root_node->leafAt(static_cast<int>(leaves_num) - 1);
-        if ((data_file_node->type() != avro::Type::AVRO_RECORD) || (data_file_node->name().simpleName() != "data_file"))
+        if (data_file_node->type() != avro::Type::AVRO_RECORD)
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -786,14 +819,16 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
         NamesAndTypesList partition_names_and_types;
         if (filter_dag)
         {
-            ColumnPtr partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
-            if (partition_column->getDataType() != TypeIndex::Tuple)
+            LOG_DEBUG(&Poco::Logger::get("Entered partitioning block"), "");
+            ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
+            if (big_partition_column->getDataType() != TypeIndex::Tuple)
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "The parsed column from Avro file of `file_path` field should be Tuple type, got {}",
                     columns.at(1)->getFamilyName());
             }
+            const auto * big_partition_tuple = assert_cast<const ColumnTuple *>(big_partition_column.get());
             std::vector<uint8_t> partition_spec_json_bytes = avro_metadata["partition-spec"];
             String partition_spec_json_string
                 = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
@@ -801,34 +836,44 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
             Poco::JSON::Array::Ptr partition_spec = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
             for (size_t i = 0; i != partition_spec->size(); ++i)
             {
-                auto source_id = schema_object->getValue<Int32>("source-id");
+                auto current_field = partition_spec->getObject(static_cast<UInt32>(i));
+
+                auto source_id = current_field->getValue<Int32>("source-id");
+                LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "source_id: {}", source_id);
                 auto name_and_type = schema_processor.getSimpleNameAndTypeByVersion(source_id);
+                LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "name_and_type has value: {}", name_and_type.has_value());
                 if (!name_and_type.has_value())
                 {
                     continue;
                 }
+                LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Type: {}", name_and_type.value().type);
+
                 //NEED TO REMOVE THIS
-                if (!WhichDataType(name_and_type->getTypeInStorage()).isDate())
+                auto if_nullable = dynamic_cast<const DataTypeNullable *>(name_and_type->getTypeInStorage().get());
+                if (!WhichDataType(if_nullable->getNestedType()).isDate())
                 {
                     continue;
                 }
-                PartitionTransform transform = getTransform(schema_object->getValue<String>("transform"));
+                PartitionTransform transform = getTransform(current_field->getValue<String>("transform"));
+                LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Transform is year: {}", transform == PartitionTransform::Year);
+
                 if (transform == PartitionTransform::Unsupported)
                 {
                     continue;
                 }
-                auto partition_name = schema_object->getValue<String>("name");
+                auto partition_name = current_field->getValue<String>("name");
+                LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Name: {}", partition_name);
+
                 // NEED TO COMPILE THIS
-                // partition_columns.push_back(partition_column->getColumnPtr(partition_column.getPositionByName(partition_name)));
+                partition_columns.push_back(big_partition_tuple->getColumnPtr(i));
                 partition_transforms.push_back(transform);
                 partition_names_and_types.push_back(std::move(name_and_type).value());
             }
+            LOG_DEBUG(&Poco::Logger::get("Exited partitioning block"), "Number of taken colums: {}", partition_columns.size());
         }
 
 
         // partition_name_types = partition_key_expr->getRequiredColumnsWithTypes();
-        auto partition_names = partition_names_and_types.getNames();
-        auto partition_types = partition_names_and_types.getTypes();
         // auto partition_minmax_idx_expr
         //     = std::make_shared<ExpressionActions>(ActionsDAG(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
         // // std::vector<Range> ranges;
@@ -873,32 +918,78 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
 
             const auto file_path = data_path.substr(pos);
 
+            auto partition_names = partition_names_and_types.getNames();
+            auto partition_types = partition_names_and_types.getTypes();
+
             std::vector<Range> ranges;
             for (size_t j = 0; j < partition_transforms.size(); ++j)
             {
-                assert(partition_transforms[j] == PartitionTransform::Year);
+                chassert(partition_transforms[j] == PartitionTransform::Year);
                 {
                     auto type = partition_types[j];
-                    auto year_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("content"));
-                    if (year_column->getDataType() != TypeIndex::Int32)
-                    {
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_COLUMN,
-                            "The parsed column from Avro file of `{}` field should be Int type, got {}",
-                            partition_names[i],
-                            year_column->getFamilyName());
-                    }
+                    auto year_column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
+
+                    // if (year_column->getDataType()->getNested() != TypeIndex::Int32)
+                    // {
+                    //     throw Exception(
+                    //         ErrorCodes::ILLEGAL_COLUMN,
+                    //         "The parsed column from Avro file of `{}` field should be Int type, got {}",
+                    //         partition_names[i],
+                    //         year_column->getFamilyName());
+                    // }
                     auto year_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
-                    const auto year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year_int_column->getInt(i));
-                    const auto next_year_beginning
-                        = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year_int_column->getInt(i) + 1);
+                    auto year = year_int_column->getInt(i);
+
+                    const auto year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year);
+                    const auto next_year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1);
+                    Field year_beginning_field(year_beginning);
+                    Field next_year_beginning_field(next_year_beginning);
+                    // ColumnVector<UInt16>(1, year_beginning)->get(0, year_beginning_field);
+                    // ColumnVector<UInt16>(1, next_year_beginning)->get(0, next_year_beginning_field);
+                    ranges.emplace_back(year_beginning_field, true, next_year_beginning_field, false);
                     LOG_DEBUG(
                         &Poco::Logger::get("Partition years"),
-                        "Print partition date years: file_path: {}, year_begin: {}, year_exclusive_end: {}, clickhouse_column_name: {}",
+                        "Print partition date years: file_path: {}, year from epoch: {}, year_begin: {}, year_exclusive_end: {}, "
+                        "clickhouse_column_name: {}",
                         file_path,
+                        year,
                         year_beginning,
                         next_year_beginning,
                         partition_names[j]);
+                }
+            }
+
+            if (!partition_transforms.empty())
+            {
+                ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
+                    ActionsDAG(partition_names_and_types), ExpressionActionsSettings::fromContext(getContext()));
+                for (auto par_name : partition_names)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("Partition names"), "{}", par_name);
+                }
+                const KeyCondition partition_key_condition(filter_dag, getContext(), partition_names, partition_minmax_idx_expr);
+                Ranges debug_ranges;
+                bool ranges_extracted = partition_key_condition.extractPlainRanges(ranges);
+                if (ranges_extracted)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("Range extracting"), "Extracted ranges size: {}", debug_ranges.size());
+                    for (const auto & range : debug_ranges)
+                    {
+                        LOG_DEBUG(&Poco::Logger::get("Range extracting"), "Extracted range: {}", range.toString());
+                    }
+                }
+                else
+                {
+                    LOG_DEBUG(&Poco::Logger::get("Range extracting"), "Ranges were not extracted");
+                }
+                if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("Partition pruning"), "Partition pruning was successful for file: {}", file_path);
+                    continue;
+                }
+                else
+                {
+                    LOG_DEBUG(&Poco::Logger::get("Partition pruning"), "Partition pruning failed for file: {}", file_path);
                 }
             }
 
@@ -915,6 +1006,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
         }
     }
 
+    DataFileInfos data_file_infos;
 
     for (const auto & [file_path, schema_object_id] : files)
     {

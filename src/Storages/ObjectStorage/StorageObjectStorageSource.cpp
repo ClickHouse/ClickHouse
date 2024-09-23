@@ -46,6 +46,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
+    StorageObjectStorage * table_engine_ptr_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
     ContextPtr context_,
@@ -57,6 +58,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , WithContext(context_)
     , name(std::move(name_))
     , object_storage(object_storage_)
+    , table_engine_ptr(table_engine_ptr_)
     , configuration(configuration_)
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
@@ -64,10 +66,10 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1/* max_threads */))
+          CurrentMetrics::StorageObjectStorageThreads,
+          CurrentMetrics::StorageObjectStorageThreadsActive,
+          CurrentMetrics::StorageObjectStorageThreadsScheduled,
+          1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
@@ -82,6 +84,12 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
 {
     setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
+    LOG_DEBUG(&Poco::Logger::get("setKeyCondition"), "Filter dag has value: {}", filter_actions_dag.has_value());
+    if (filter_actions_dag.has_value())
+    {
+        // LOG_DEBUG(&Poco::Logger::get("setKeyCondition"), "Entered refresh");
+        table_engine_ptr->refreshFilesWithFilterDag(filter_actions_dag.value());
+    }
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(

@@ -273,7 +273,7 @@ private:
     Int32 format_version;
     String manifest_list_file;
     const Int32 current_schema_id;
-    mutable DataFileInfos data_file_infos;
+    // mutable DataFileInfos data_file_infos;
     std::unordered_map<String, String> column_name_to_physical_name;
     mutable IcebergSchemaProcessor schema_processor;
     NamesAndTypesList schema;

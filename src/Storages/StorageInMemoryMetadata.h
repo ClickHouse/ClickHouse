@@ -27,7 +27,7 @@ struct StorageInMemoryMetadata
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
     IndicesDescription secondary_indices;
-    /// Table constraints. Currently supported for MergeTree only.
+    /// Table constraints. Currently supporfted for MergeTree only.
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
     ProjectionsDescription projections;

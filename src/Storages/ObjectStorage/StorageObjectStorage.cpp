@@ -134,6 +134,7 @@ public:
     ReadFromObjectStorageStep(
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
+        StorageObjectStorage * table_engine_ptr_,
         const String & name_,
         const Names & columns_to_read,
         const NamesAndTypesList & virtual_columns_,
@@ -149,6 +150,7 @@ public:
         : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
+        , table_engine_ptr(table_engine_ptr_)
         , info(std::move(info_))
         , virtual_columns(virtual_columns_)
         , format_settings(format_settings_)
@@ -166,8 +168,13 @@ public:
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
         const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag)
+        LOG_DEBUG(&Poco::Logger::get("applyFilters"), "Filter dag has value: {}", filter_actions_dag.has_value());
+        if (filter_actions_dag.has_value())
+        {
+            LOG_DEBUG(&Poco::Logger::get("applyFilters"), "Entered refresh");
+            table_engine_ptr->refreshFilesWithFilterDag(filter_actions_dag.value());
             predicate = filter_actions_dag->getOutputs().at(0);
+        }
         createIterator(predicate);
     }
 
@@ -194,8 +201,17 @@ public:
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
-                getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
+                getName(),
+                object_storage,
+                configuration,
+                table_engine_ptr,
+                info,
+                format_settings,
+                context,
+                max_block_size,
+                iterator_wrapper,
+                max_parsing_threads,
+                need_only_count);
 
             source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));
@@ -214,6 +230,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
+    StorageObjectStorage * table_engine_ptr;
     std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
 
     const ReadFromFormatInfo info;
@@ -272,6 +289,7 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
+        this,
         getName(),
         column_names,
         getVirtualsList(),

@@ -122,9 +122,7 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    virtual bool isDataLake() const {
-        return false;
-    }
+    virtual void refreshFilesWithFilterDag(const ActionsDAG &) { }
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
@@ -233,6 +231,7 @@ public:
     virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
+    virtual void refreshFilesWithFilterDag(const ActionsDAG &) { }
     void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
     const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
 

@@ -103,7 +103,7 @@ public:
         else
         {
             ConfigurationPtr configuration = base_configuration->clone();
-            configuration->setPaths(metadata->getDataFileInfos());
+            configuration->setPaths(metadata->getDataFileInfos(nullptr));
             std::string sample_path;
             return Storage::resolveSchemaFromData(
                 object_storage_, configuration, format_settings_, sample_path, local_context);
@@ -142,11 +142,17 @@ public:
         Storage::configuration = updated_configuration;
     }
 
-    void getPartitionFiles(auto & filter_dag)
+    void refreshFilesWithFilterDag(const ActionsDAG & filter_dag) override
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("Refresh called"),
+            "It is Iceberg: {}",
+            static_cast<bool>(std::is_same_v<IcebergMetadata, DataLakeMetadata>));
+
         if constexpr (std::is_same_v<IcebergMetadata, DataLakeMetadata>)
         {
-            configuration->setPaths(current_metadata->getDataFileInfos(filter_dag));
+            LOG_DEBUG(&Poco::Logger::get("getDataFileInfos with not null filter dag is called"), "");
+            configuration->setPaths(current_metadata->getDataFileInfos(&filter_dag));
         }
     }
 
@@ -187,9 +193,6 @@ public:
     }
 
     bool hasExternalDynamicMetadata() const override { return std::is_same_v<DataLakeMetadata, IcebergMetadata>; }
-
-    bool isDataLake() const override { return true; }
-
 
 private:
     ConfigurationPtr base_configuration;

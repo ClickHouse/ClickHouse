@@ -1,12 +1,13 @@
 #pragma once
-#include <Common/re2.h>
-#include <Interpreters/Context_fwd.h>
 #include <IO/Archives/IArchiveReader.h>
-#include <Processors/SourceWithKeyCondition.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/re2.h>
+#include "StorageObjectStorage.h"
 
 
 namespace DB
@@ -34,6 +35,7 @@ public:
         String name_,
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration,
+        StorageObjectStorage * table_engine_ptr_,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
@@ -69,6 +71,7 @@ public:
 protected:
     const String name;
     ObjectStoragePtr object_storage;
+    StorageObjectStorage * table_engine_ptr;
     const ConfigurationPtr configuration;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
