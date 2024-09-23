@@ -164,10 +164,7 @@ static DataTypePtr parseORCType(
             else
                 type = std::make_shared<DataTypeString>();
 
-            // std::cout << "type:" << type->getName() << std::endl;
-            // std::cout << "dictionary_as_low_cardinality:" << dictionary_as_low_cardinality << std::endl;
-
-            /// Wrap type in LowCardinality if orc column is dictionary encoded and dictionary_as_low_cardinality is true
+            /// Wrap type in LowCardinality if ORC column is dictionary encoded and dictionary_as_low_cardinality is true
             if (dictionary_as_low_cardinality && isDictionaryEncoded(stripe_info, orc_type))
                 type = std::make_shared<DataTypeLowCardinality>(type);
 
@@ -774,7 +771,7 @@ static const orc::Type * traverseDownORCTypeByName(
     else if (orc::LIST == orc_type->getKind())
     {
         /// For cases in which header contains subcolumns flattened from nested columns.
-        /// For example, "a Nested(x String, y Int64)" is flattened to "a.x Array(String), a.y Array(Int64)", and orc file schema is still "a array<struct<x string, y long>>".
+        /// For example, "a Nested(x String, y Int64)" is flattened to "a.x Array(String), a.y Array(Int64)", and ORC file schema is still "a array<struct<x string, y long>>".
         /// In this case, we should skip possible array type and traverse down to its nested struct type.
         const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(type).get());
         const auto * orc_nested_type = orc_type->getSubtype(0);
@@ -826,7 +823,7 @@ static void updateIncludeTypeIds(
             return;
         }
         case orc::STRUCT: {
-            /// To make sure tuple field pruning work fine, we should include only the fields of orc struct type which are also contained in CH tuple types, instead of all fields of orc struct type.
+            /// To make sure tuple field pruning work fine, we should include only the fields of ORC struct type which are also contained in CH tuple types, instead of all fields of ORC struct type.
             /// For example, CH tupe type in header is "x Tuple(a String)", ORC struct type is "x struct<a:string, b:long>", then only type id of field "x.a" should be included.
             /// For tuple field pruning purpose, we should never include "x.b" for it is not required in format header.
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(non_nullable_type.get());
@@ -1188,12 +1185,7 @@ template <bool fixed_string>
 static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     const orc::ColumnVectorBatch * orc_column, const orc::Type * orc_type, const String & column_name, bool nullable)
 {
-    const auto * orc_str_column = dynamic_cast<const orc::EncodedStringVectorBatch *>(orc_column);
-    size_t rows = orc_str_column->numElements;
-    const auto & orc_dict = *orc_str_column->dictionary;
-    size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
-
-    /// Fill CH holder_column with orc dictionary
+    /// Fill CH holder_column with ORC dictionary
     /// Note that holder_column is always a ColumnString or ColumnFixedstring whether nullable is true or false, because ORC dictionary doesn't contain null values.
     DataTypePtr holder_type;
     if constexpr (fixed_string)
@@ -1201,6 +1193,16 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     else
         holder_type = std::make_shared<DataTypeString>();
 
+    DataTypePtr nested_type = nullable ? std::make_shared<DataTypeNullable>(holder_type) : holder_type;
+    auto internal_type = std::make_shared<DataTypeLowCardinality>(std::move(nested_type));
+
+    const auto & orc_str_column = dynamic_cast<const orc::EncodedStringVectorBatch &>(*orc_column);
+    size_t rows = orc_str_column.numElements;
+    const auto & orc_dict = *orc_str_column.dictionary;
+    if (orc_dict.dictionaryOffset.size() <= 1)
+        return {internal_type->createColumn(), internal_type, column_name};
+
+    size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
     auto holder_column = holder_type->createColumn();
     if constexpr (fixed_string)
     {
@@ -1243,8 +1245,6 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     }
 
     /// Insert CH dictionary_column from holder_column
-    DataTypePtr nested_type = nullable ? std::make_shared<DataTypeNullable>(holder_type) : holder_type;
-    auto internal_type = std::make_shared<DataTypeLowCardinality>(std::move(nested_type));
     auto tmp_internal_column = internal_type->createColumn();
     auto dictionary_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_internal_column.get())->getDictionaryPtr());
     auto index_column
@@ -1262,12 +1262,12 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         auto new_index_column = ColumnVector<IndexType>::create(rows);
         auto & new_index_data = dynamic_cast<ColumnVector<IndexType> &>(*new_index_column).getData();
 
-        if (!orc_str_column->hasNulls)
+        if (!orc_str_column.hasNulls)
         {
             for (size_t i = 0; i < rows; ++i)
             {
-                /// First map row index to orc dictionary index, then map orc dictionary index to CH dictionary index
-                new_index_data[i] = index_data[orc_str_column->index[i]];
+                /// First map row index to ORC dictionary index, then map ORC dictionary index to CH dictionary index
+                new_index_data[i] = index_data[orc_str_column.index[i]];
             }
         }
         else
@@ -1276,7 +1276,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             {
                 /// Set index 0 if we meet null value. If dictionary_column is nullable, 0 represents null value.
                 /// Otherwise 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
-                new_index_data[i] = orc_str_column->notNull[i] ? index_data[orc_str_column->index[i]] : 0;
+                new_index_data[i] = orc_str_column.notNull[i] ? index_data[orc_str_column.index[i]] : 0;
             }
         }
 
