@@ -882,9 +882,7 @@ public:
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
-    const IWorkloadEntityStorage & getWorkloadEntityStorage() const;
-    IWorkloadEntityStorage & getWorkloadEntityStorage();
-    void setWorkloadEntityStorage(std::unique_ptr<IWorkloadEntityStorage> storage);
+    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;

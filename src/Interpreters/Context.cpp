@@ -2979,17 +2979,7 @@ void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObj
     shared->user_defined_sql_objects_storage = std::move(storage);
 }
 
-const IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
-{
-    callOnce(shared->workload_entity_storage_initialized, [&] {
-        shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
-    });
-
-    SharedLockGuard lock(shared->mutex);
-    return *shared->workload_entity_storage;
-}
-
-IWorkloadEntityStorage & Context::getWorkloadEntityStorage()
+IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
         shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
@@ -2997,12 +2987,6 @@ IWorkloadEntityStorage & Context::getWorkloadEntityStorage()
 
     std::lock_guard lock(shared->mutex);
     return *shared->workload_entity_storage;
-}
-
-void Context::setWorkloadEntityStorage(std::unique_ptr<IWorkloadEntityStorage> storage)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->workload_entity_storage = std::move(storage);
 }
 
 #if USE_NLP

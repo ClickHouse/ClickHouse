@@ -6,6 +6,8 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Common/re2.h>
 
+#include <base/scope_guard.h>
+
 #include "config.h"
 
 
@@ -242,8 +244,11 @@ private:
     const bool send_metadata;
 
     mutable std::mutex resource_mutex;
-    String read_resource_name;
-    String write_resource_name;
+    String read_resource_name_from_config; // specified in disk config.xml
+    String write_resource_name_from_config; // specified in disk config.xml
+    String read_resource_name_from_sql; // described by CREATE RESOURCE queries
+    String write_resource_name_from_sql; // described by CREATE RESOURCE queries
+    scope_guard resource_changes_subscription;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
