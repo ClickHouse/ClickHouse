@@ -36,9 +36,8 @@ done
 wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -q "
-        SYSTEM SYNC REPLICA r$i;
-        SELECT count(), min(x), max(x), sum(x) FROM r$i;"
+    while [[ $($CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA r$i;" 2>&1) ]]; do :; done | grep -F "Exception: " | grep -Fv "Table is in readonly mode"
+    $CLICKHOUSE_CLIENT -q "SELECT count(), min(x), max(x), sum(x) FROM r$i;"
 done
 
 for i in $(seq 1 $NUM_REPLICAS); do
