@@ -26,9 +26,7 @@ struct AggregateDescription
 
 using AggregateDescriptions = std::vector<AggregateDescription>;
 
-class Block;
-
 void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out);
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, const Block & header);
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in);
 
 }

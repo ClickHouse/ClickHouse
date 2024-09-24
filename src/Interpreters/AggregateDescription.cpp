@@ -4,11 +4,17 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Parsers/NullsAction.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
 {
@@ -130,9 +136,24 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
     {
         writeStringBinary(aggregate.column_name, out);
 
-        writeVarUInt(aggregate.argument_names.size(), out);
-        for (const auto & name : aggregate.argument_names)
-            writeStringBinary(name, out);
+        UInt64 num_args = aggregate.argument_names.size();
+        const auto & argument_types = aggregate.function->getArgumentTypes();
+
+        if (argument_types.size() != num_args)
+        {
+            WriteBufferFromOwnString buf;
+            aggregate.explain(buf, 0);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid number of for aggregate function. Expected {}, got {}. Description:\n{}",
+                argument_types.size(), num_args, buf.str());
+        }
+
+        writeVarUInt(num_args, out);
+        for (size_t i = 0; i < num_args; ++i)
+        {
+            writeStringBinary(aggregate.argument_names[i], out);
+            encodeDataType(argument_types[i], out);
+        }
 
         writeStringBinary(aggregate.function->getName(), out);
 
@@ -142,7 +163,7 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
     }
 }
 
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, const Block & header)
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
 {
     UInt64 num_aggregates;
     readVarUInt(num_aggregates, in);
@@ -154,8 +175,15 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         UInt64 num_args;
         readVarUInt(num_args, in);
         aggregate.argument_names.resize(num_args);
+
+        DataTypes argument_types;
+        argument_types.reserve(num_args);
+
         for (auto & arg_name : aggregate.argument_names)
+        {
             readStringBinary(arg_name, in);
+            argument_types.emplace_back(decodeDataType(in));
+        }
 
         String function_name;
         readStringBinary(function_name, in);
@@ -165,14 +193,6 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)
             param = readFieldBinary(in);
-
-        DataTypes argument_types;
-        argument_types.reserve(num_args);
-        for (const auto & arg_name : aggregate.argument_names)
-        {
-            const auto & arg = header.getByName(arg_name);
-            argument_types.emplace_back(arg.type);
-        }
 
         auto action = NullsAction::EMPTY; /// As I understand, it should be resolved to function name.
         AggregateFunctionProperties properties;

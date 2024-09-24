@@ -808,7 +808,7 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         readStringBinary(key, ctx.in);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.input_streams.front().header);
+    deserializeAggregateDescriptions(aggregates, ctx.in);
 
     UInt64 stats_key = 0;
     if (has_stats_key)

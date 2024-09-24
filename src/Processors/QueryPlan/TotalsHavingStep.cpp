@@ -194,7 +194,7 @@ std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & 
     bool remove_filter_column = bool(flags & 8);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.input_streams.front().header);
+    deserializeAggregateDescriptions(aggregates, ctx.in);
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;
