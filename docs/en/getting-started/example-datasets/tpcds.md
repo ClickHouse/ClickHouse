@@ -16,15 +16,15 @@ References
 First, checkout the TPC-H repository and compile the data generator:
 
 ``` bash
-$ git clone https://github.com/gregrahn/tpcds-kit.git
-$ cd tpcds-kit/tools
-$ make
+git clone https://github.com/gregrahn/tpcds-kit.git
+cd tpcds-kit/tools
+make
 ```
 
 Then, generate the data. Parameter `-scale` specifies the scale factor.
 
 ``` bash
-$ ./dsdgen -scale 1
+./dsdgen -scale 1
 ```
 
 Then, generate the queries (use the same scale factor):
@@ -562,30 +562,12 @@ CREATE TABLE web_site (
 The data can be imported as follows:
 
 ``` bash
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO call_center FORMAT CSV" < call_center.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_page FORMAT CSV" < catalog_page.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_returns FORMAT CSV" < catalog_returns.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_sales FORMAT CSV" < catalog_sales.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer FORMAT CSV" < customer.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer_address FORMAT CSV" < customer_address.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer_demographics FORMAT CSV" < customer_demographics.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO date_dim FORMAT CSV" < date_dim.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO household_demographics FORMAT CSV" < household_demographics.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO income_band FORMAT CSV" < income_band.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO inventory FORMAT CSV" < inventory.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO item FORMAT CSV" < item.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO promotion FORMAT CSV" < promotion.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO reason FORMAT CSV" < reason.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO ship_mode FORMAT CSV" < ship_mode.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO store FORMAT CSV" < store.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO store_returns FORMAT CSV" < store_returns.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO store_sales FORMAT CSV" < store_sales.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO time_dim FORMAT CSV" < time_dim.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO warehouse FORMAT CSV" < warehouse.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_page FORMAT CSV" < web_page.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_returns FORMAT CSV" < web_returns.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_sales FORMAT CSV" < web_sales.tbl
-$ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_site FORMAT CSV" < web_site.tbl
+declare -a tables=("call_center" "catalog_page" "catalog_returns" "catalog_sales" "customer" "customer_address" "customer_demographics" "date_dim" "household_demographics" "income_band" "inventory" "item" "promotion" "reason" "ship_mode" "store" "store_returns" "store_sales" "table_dim" "warehouse" "web_page" "web_returns" "web_sales" "web_site")
+
+for table in "${table[@]}"
+do
+    clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO ${table} FORMAT CSV" < ${table}.tbl
+done
 ```
 
 Then run the generated queries.

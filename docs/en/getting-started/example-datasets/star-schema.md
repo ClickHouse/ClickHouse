@@ -17,19 +17,19 @@ References:
 First, checkout the star schema benchmark repository and compile the data generator:
 
 ``` bash
-$ git clone https://github.com/vadimtk/ssb-dbgen.git
-$ cd ssb-dbgen
-$ make
+git clone https://github.com/vadimtk/ssb-dbgen.git
+cd ssb-dbgen
+make
 ```
 
 Then, generate the data. Parameter `-s` specifies the scale factor. For example, with `-s 100`, 600 million rows are generated.
 
 ``` bash
-$ ./dbgen -s 1000 -T c
-$ ./dbgen -s 1000 -T l
-$ ./dbgen -s 1000 -T p
-$ ./dbgen -s 1000 -T s
-$ ./dbgen -s 1000 -T d
+./dbgen -s 1000 -T c
+./dbgen -s 1000 -T l
+./dbgen -s 1000 -T p
+./dbgen -s 1000 -T s
+./dbgen -s 1000 -T d
 ```
 
 Now create tables in ClickHouse:
@@ -122,11 +122,12 @@ ENGINE = MergeTree ORDER BY D_DATEKEY;
 The data can be imported as follows:
 
 ``` bash
-$ clickhouse-client --query "INSERT INTO customer FORMAT CSV" < customer.tbl
-$ clickhouse-client --query "INSERT INTO part FORMAT CSV" < part.tbl
-$ clickhouse-client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
-$ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
-$ clickhouse-client --query "INSERT INTO date FORMAT CSV" < date.tbl
+declare -a tables=("customer" "part" "supplier" "lineorder" "date")
+
+for table in "${table[@]}"
+do
+    clickhouse-client --query "INSERT INTO ${table} FORMAT CSV" < ${table}.tbl
+done
 ```
 
 In many use cases of ClickHouse, multiple tables are converted into a single denormalized flat table.
