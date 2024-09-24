@@ -1878,8 +1878,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             RPNElement::MultiColumnsFunctionDescription column_desc;
             column_desc.function_name = func_name;
             auto first_argument = func.getArgumentAt(0).toFunctionNode();
-            chassert(first_argument.getArgumentsSize() == 2);
-            chassert(first_argument.getFunctionName() == "tuple");
+
+            if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
+                return false;
 
             for (size_t i =0; i< first_argument.getArgumentsSize(); i++)
             {
@@ -1896,9 +1897,13 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             chassert(WhichDataType(const_type).isArray());
             for (const auto & ele : const_value.safeGet<Array>())
             {
-                chassert(ele.getType() == Field::Types::Tuple);
+                if (ele.getType() != Field::Types::Tuple)
+                    return false;
+
                 const auto & ele_tuple = ele.safeGet<Tuple>();
-                chassert(ele_tuple.size() == 2);
+                if (ele_tuple.size() != 2)
+                    return false;
+
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[1]);
                 out.polygon.outer().push_back({x, y});
