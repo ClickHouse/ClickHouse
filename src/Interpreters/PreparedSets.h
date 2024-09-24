@@ -11,6 +11,7 @@
 #include <Interpreters/SetKeys.h>
 #include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -85,7 +86,7 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Hash hash_, Block block, bool transform_null_in, SizeLimits size_limits);
+    FutureSetFromTuple(Hash hash_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
@@ -177,7 +178,7 @@ public:
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
     FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_, StorageID storage_id);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, ColumnsWithTypeAndName block, const Settings & settings);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,

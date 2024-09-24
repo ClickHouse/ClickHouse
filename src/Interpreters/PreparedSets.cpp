@@ -71,18 +71,27 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 
 
 FutureSetFromTuple::FutureSetFromTuple(
-    Hash hash_, Block block,
+    Hash hash_, ColumnsWithTypeAndName block,
     bool transform_null_in, SizeLimits size_limits)
     : hash(hash_)
 {
-    set = std::make_shared<Set>(size_limits, 0, transform_null_in);
-    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
-    Columns columns;
-    columns.reserve(block.columns());
-    for (const auto & column : block)
-        columns.emplace_back(column.column);
+    ColumnsWithTypeAndName header = block;
+    for (auto & elem : header)
+        elem.column = elem.column->cloneEmpty();
 
-    set_key_columns.filter = ColumnUInt8::create(block.rows());
+    set = std::make_shared<Set>(size_limits, 0, transform_null_in);
+
+    set->setHeader(header);
+    Columns columns;
+    columns.reserve(block.size());
+    size_t num_rows = 0;
+    for (const auto & column : block)
+    {
+        columns.emplace_back(column.column);
+        num_rows = column.column->size();
+    }
+
+    set_key_columns.filter = ColumnUInt8::create(num_rows);
 
     set->insertFromColumns(columns, set_key_columns);
     set->finishInsert();
@@ -287,7 +296,7 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ColumnsWithTypeAndName block, const Settings & settings)
 {
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
