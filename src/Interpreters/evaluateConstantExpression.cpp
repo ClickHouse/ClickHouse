@@ -29,6 +29,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
@@ -110,6 +112,9 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
         GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
         auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+        collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
+        collectSets(expression, *planner_context);
 
         auto actions = buildActionsDAGFromExpressionNode(expression, {}, planner_context);
 
