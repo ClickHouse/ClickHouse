@@ -9,9 +9,11 @@
 
 #include <queue>
 
-namespace parquet {
+namespace parquet
+{
 class ParquetFileReader;
-class FileMetaData; }
+class FileMetaData;
+}
 namespace parquet::arrow { class FileReader; }
 namespace arrow { class Buffer; class RecordBatchReader;}
 namespace arrow::io { class RandomAccessFile; }

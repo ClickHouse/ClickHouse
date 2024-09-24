@@ -47,6 +47,7 @@ public:
     String getFileName() const override;
 
     size_t readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> & function) const override;
+
     bool supportsReadAt() override;
 
 private:

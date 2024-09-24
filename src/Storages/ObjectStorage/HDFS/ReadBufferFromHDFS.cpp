@@ -173,13 +173,17 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
         if (bytes_read < 0)
         {
-            throw Exception(ErrorCodes::HDFS_ERROR,
-                            "Fail to read from HDFS: {}, file path: {}. Error: {}",
-                            hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
+            throw Exception(
+                ErrorCodes::HDFS_ERROR,
+                "Fail to read from HDFS: {}, file path: {}. Error: {}",
+                hdfs_uri,
+                hdfs_file_path,
+                std::string(hdfsGetLastError()));
         }
         if (bytes_read && read_settings.remote_throttler)
         {
-            read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            read_settings.remote_throttler->add(
+                bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
         }
         return bytes_read;
     }
@@ -269,10 +273,12 @@ String ReadBufferFromHDFS::getFileName() const
 {
     return impl->hdfs_file_path;
 }
-size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> & ) const
+
+size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> &) const
 {
     return impl->pread(buffer, size, offset);
 }
+
 bool ReadBufferFromHDFS::supportsReadAt()
 {
     return true;
