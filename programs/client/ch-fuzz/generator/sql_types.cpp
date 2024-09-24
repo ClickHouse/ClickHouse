@@ -471,7 +471,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 		}
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
-			ret += itp->TypeName();
+			ret += itp->TypeName(false);
 		}
 	} else if ((ftp = dynamic_cast<FloatType*>(tp))) {
 		const uint32_t next_option = rg.NextLargeNumber();
@@ -491,7 +491,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 		}
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
-			ret += ftp->TypeName();
+			ret += ftp->TypeName(false);
 		}
 	} else if ((dtp = dynamic_cast<DateType*>(tp))) {
 		ret += "'";
@@ -511,7 +511,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 		ret += "'";
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
-			ret += dtp->TypeName();
+			ret += dtp->TypeName(false);
 		}
 	} else if ((detp = dynamic_cast<DecimalType*>(tp))) {
 		const uint32_t right = detp->scale.value_or(0), left = detp->precision.value_or(10) - right;
@@ -519,7 +519,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 		AppendDecimal(rg, ret, left, right);
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
-			ret += detp->TypeName();
+			ret += detp->TypeName(false);
 		}
 	} else if ((stp = dynamic_cast<StringType*>(tp))) {
 		const uint32_t limit = stp->precision.value_or(100000);
@@ -529,13 +529,13 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 		ret += "'";
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
-			ret += stp->TypeName();
+			ret += stp->TypeName(false);
 		}
 	} else if ((btp = dynamic_cast<BoolType*>(tp))) {
 		ret += rg.NextBool() ? "TRUE" : "FALSE";
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
-			ret += btp->TypeName();
+			ret += btp->TypeName(false);
 		}
 	} else if ((etp = dynamic_cast<EnumType*>(tp))) {
 		const int32_t nvalue = rg.PickRandomlyFromVector(etp->values);
@@ -545,7 +545,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 		ret += "'";
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
-			ret += etp->TypeName();
+			ret += etp->TypeName(false);
 		}
 	} else {
 		assert(0);

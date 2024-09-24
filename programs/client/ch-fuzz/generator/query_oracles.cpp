@@ -1,5 +1,6 @@
-#include <cstdint>
 #include "statement_generator.h"
+
+#include <filesystem>
 
 namespace chfuzz {
 
@@ -117,8 +118,12 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 	sql_query_grammar::Insert *ins = sq1.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();
+	auto outf = std::filesystem::temp_directory_path() / "table.data"; //TODO fix this
 
-	ff->set_path("/tmp/table.data");
+	if (std::filesystem::exists(outf)) {
+		std::filesystem::resize_file(outf, 0); //truncate the file
+	}
+	ff->set_path(outf.generic_string());
 	ff->set_outformat(rg.PickKeyRandomlyFromMap(out_in));
 
 	buf.resize(0);
@@ -132,7 +137,7 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 				}
 				buf += cname;
 				buf += " ";
-				buf += entry2.subtype->TypeName();
+				buf += entry2.subtype->TypeName(true);
 				sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
 				first = false;
 			}
@@ -144,7 +149,7 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 			}
 			buf += cname;
 			buf += " ";
-			buf += col.second.tp->TypeName();
+			buf += col.second.tp->TypeName(true);
 			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
 			first = false;
 		}

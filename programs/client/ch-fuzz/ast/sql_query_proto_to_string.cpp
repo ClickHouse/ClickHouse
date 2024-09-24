@@ -1906,9 +1906,7 @@ CONV_FN(Insert, insert) {
   if (insert.has_values()) {
     ValuesStatementToString(ret, insert.values());
   } else if (insert.has_select()) {
-    ret += "SELECT * FROM (";
     SelectToString(ret, insert.select());
-    ret += ")";
   } else if (insert.has_ffile()) {
     InsertFromFileToString(ret, insert.ffile());
   } else if (insert.has_query()) {

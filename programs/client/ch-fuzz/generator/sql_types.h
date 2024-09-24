@@ -21,14 +21,15 @@ const constexpr uint32_t allow_nullable = (1 << 0),
 
 class SQLType {
 public:
-	virtual const std::string TypeName() = 0;
+	virtual const std::string TypeName(const bool escape) = 0;
 
 	virtual ~SQLType() = default;
 };
 
 class BoolType : public SQLType {
 public:
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
+		(void) escape;
 		return "Bool";
 	}
 	~BoolType() override = default;
@@ -40,9 +41,10 @@ public:
 	const bool is_unsigned;
 	IntType(const uint32_t s, const bool isu) : size(s), is_unsigned(isu) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
+		(void) escape;
 		ret += is_unsigned ? "U" : "";
 		ret += "Int";
 		ret += std::to_string(size);
@@ -56,9 +58,10 @@ public:
 	const uint32_t size;
 	FloatType(const uint32_t s) : size(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
+		(void) escape;
 		ret += "Float";
 		ret += std::to_string(size);
 		return ret;
@@ -71,9 +74,10 @@ public:
 	const bool has_time, extended;
 	DateType(const bool ht, const bool ex) : has_time(ht), extended(ex) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
+		(void) escape;
 		ret += "Date";
 		ret += has_time ? "Time" : "";
 		if (extended) {
@@ -89,9 +93,10 @@ public:
 	const std::optional<uint32_t> precision, scale;
 	DecimalType(const std::optional<uint32_t> p, const std::optional<uint32_t> s) : precision(p), scale(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
+		(void) escape;
 		ret += "Decimal";
 		if (precision.has_value()) {
 			ret += "(";
@@ -112,9 +117,10 @@ public:
 	std::optional<uint32_t> precision;
 	StringType(const std::optional<uint32_t> p) : precision(p) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
+		(void) escape;
 		if (precision.has_value()) {
 			ret += "FixedString(";
 			ret += std::to_string(precision.value());
@@ -133,7 +139,7 @@ public:
 	std::vector<int32_t> values;
 	EnumType(const uint32_t s, const std::vector<int32_t> v) : size(s), values(v) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "Enum";
@@ -145,8 +151,14 @@ public:
 			if (i != 0) {
 				ret += ", ";
 			}
+			if (escape) {
+				ret += "\\";
+			}
 			ret += "'";
 			ret += next;
+			if (escape) {
+				ret += "\\";
+			}
 			ret += "' = ";
 			ret += next;
 		}
@@ -161,9 +173,10 @@ public:
 	std::optional<uint32_t> ntypes;
 	DynamicType(const std::optional<uint32_t> n) : ntypes(n) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
+		(void) escape;
 		ret += "Dynamic";
 		if (ntypes.has_value()) {
 			ret += "(max_types=";
@@ -180,11 +193,11 @@ public:
 	SQLType* subtype;
 	LowCardinality(SQLType* s) : subtype(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "LowCardinality(";
-		ret += subtype->TypeName();
+		ret += subtype->TypeName(escape);
 		ret += ")";
 		return ret;
 	}
@@ -197,13 +210,13 @@ public:
 	SQLType* key, *value;
 	MapType(SQLType* k, SQLType* v) : key(k), value(v) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "Map(";
-		ret += key->TypeName();
+		ret += key->TypeName(escape);
 		ret += ",";
-		ret += value->TypeName();
+		ret += value->TypeName(escape);
 		ret += ")";
 		return ret;
 	}
@@ -215,11 +228,11 @@ public:
 	SQLType* subtype;
 	ArrayType(SQLType* s) : subtype(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "Array(";
-		ret += subtype->TypeName();
+		ret += subtype->TypeName(escape);
 		ret += ")";
 		return ret;
 	}
@@ -239,7 +252,7 @@ public:
 	std::vector<SubType> subtypes;
 	TupleType(std::vector<SubType> s) : subtypes(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "Tuple(";
@@ -247,9 +260,9 @@ public:
 			if (i != 0) {
 				ret += ",";
 			}
-			ret += subtypes[i].cname;
+			ret += std::to_string(subtypes[i].cname);
 			ret += " ";
-			ret += subtypes[i].subtype->TypeName();
+			ret += subtypes[i].subtype->TypeName(escape);
 		}
 		ret += ")";
 		return ret;
@@ -266,7 +279,7 @@ public:
 	std::vector<SQLType*> subtypes;
 	VariantType(std::vector<SQLType*> s) : subtypes(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "Variant(";
@@ -274,7 +287,7 @@ public:
 			if (i != 0) {
 				ret += ",";
 			}
-			ret += subtypes[i]->TypeName();
+			ret += subtypes[i]->TypeName(escape);
 		}
 		ret += ")";
 		return ret;
@@ -302,7 +315,7 @@ public:
 	std::vector<NestedSubType> subtypes;
 	NestedType(std::vector<NestedSubType> s) : subtypes(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "Nested(";
@@ -310,9 +323,9 @@ public:
 			if (i != 0) {
 				ret += ",";
 			}
-			ret += subtypes[i].cname;
+			ret += std::to_string(subtypes[i].cname);
 			ret += " ";
-			ret += subtypes[i].subtype->TypeName();
+			ret += subtypes[i].subtype->TypeName(escape);
 		}
 		ret += ")";
 		return ret;
@@ -328,7 +341,8 @@ public:
 
 class JSONType : public SQLType {
 public:
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
+		(void) escape;
 		return "JSON";
 	}
 	~JSONType() override = default;
@@ -339,15 +353,15 @@ public:
 	SQLType* subtype;
 	Nullable(SQLType* s) : subtype(s) {}
 
-	const std::string TypeName() override {
+	const std::string TypeName(const bool escape) override {
 		std::string ret;
 
 		ret += "Nullable(";
-		ret += subtype->TypeName();
+		ret += subtype->TypeName(escape);
 		ret += ")";
 		return ret;
 	}
-	~Nullable() override  { delete subtype; }
+	~Nullable() override { delete subtype; }
 };
 
 std::tuple<SQLType*, sql_query_grammar::Integers> RandomIntType(RandomGenerator &rg);
