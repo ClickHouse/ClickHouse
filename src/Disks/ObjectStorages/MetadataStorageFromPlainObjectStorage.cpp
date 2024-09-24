@@ -52,7 +52,12 @@ bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path)
 {
     ObjectStorageKey object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     StoredObject object(object_key.serialize(), path);
-    return object_storage->exists(object);
+    if (!object_storage->exists(object))
+        return false;
+
+    /// The path does not correspond to a directory.
+    auto directory = std::filesystem::path(object_key.serialize()) / "";
+    return !object_storage->exists(StoredObject(directory));
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsDirectory(const std::string & path) const
