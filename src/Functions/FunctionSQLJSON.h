@@ -29,6 +29,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_simdjson;
+    extern const SettingsBool function_json_value_return_type_allow_complex;
+    extern const SettingsBool function_json_value_return_type_allow_nullable;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
+
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -209,11 +218,11 @@ class FunctionSQLJSON : public IFunction
 public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }
     explicit FunctionSQLJSON(ContextPtr context_)
-        : max_parser_depth(context_->getSettingsRef().max_parser_depth),
-          max_parser_backtracks(context_->getSettingsRef().max_parser_backtracks),
-          allow_simdjson(context_->getSettingsRef().allow_simdjson),
-          function_json_value_return_type_allow_complex(context_->getSettingsRef().function_json_value_return_type_allow_complex),
-          function_json_value_return_type_allow_nullable(context_->getSettingsRef().function_json_value_return_type_allow_nullable)
+        : max_parser_depth(context_->getSettingsRef()[Setting::max_parser_depth]),
+          max_parser_backtracks(context_->getSettingsRef()[Setting::max_parser_backtracks]),
+          allow_simdjson(context_->getSettingsRef()[Setting::allow_simdjson]),
+          function_json_value_return_type_allow_complex(context_->getSettingsRef()[Setting::function_json_value_return_type_allow_complex]),
+          function_json_value_return_type_allow_nullable(context_->getSettingsRef()[Setting::function_json_value_return_type_allow_nullable])
     {
     }
 

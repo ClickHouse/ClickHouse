@@ -410,7 +410,9 @@ class CI:
             num_batches=6,
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_TSAN],
+            num_batches=6,
+            timeout=9000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
@@ -471,7 +473,7 @@ class CI:
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
-            timeout=3600,
+            timeout=3 * 3600,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),

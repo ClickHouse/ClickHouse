@@ -62,8 +62,6 @@ jobs:
     env:
       GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -72,6 +70,8 @@ jobs:
           submodules: ${{inputs.submodules}}
           fetch-depth: ${{inputs.checkout_depth}}
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
