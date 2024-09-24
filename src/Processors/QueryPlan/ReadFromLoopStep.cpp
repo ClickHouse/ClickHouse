@@ -115,7 +115,7 @@ namespace DB
     static ContextPtr disableParallelReplicas(ContextPtr context)
     {
         auto modified_context = Context::createCopy(context);
-        modified_context->setSetting("enable_parallel_replicas", Field(0));
+        modified_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         return modified_context;
     }
 

@@ -67,7 +67,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_query_deduplication;
-    extern const SettingsUInt64 enable_parallel_replicas;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -298,7 +298,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         */
 
     const bool can_use_sampling_key_parallel_replicas =
-        settings[Setting::enable_parallel_replicas] > 0
+        settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings[Setting::max_parallel_replicas] > 1
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY;
 

@@ -37,7 +37,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 enable_parallel_replicas;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsUInt64 limit;
@@ -197,7 +197,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             }
         }
         if (disable_parallel_replicas)
-            new_settings[Setting::enable_parallel_replicas] = 0;
+            new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
 
     if (settings[Setting::max_execution_time_leaf].value > 0)
@@ -321,9 +321,9 @@ void executeQuery(
     auto cluster = query_info.getCluster();
     auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
         settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
-    if (context->getSettingsRef()[Setting::enable_parallel_replicas].value
-        && context->getSettingsRef()[Setting::enable_parallel_replicas].value
-           != new_context->getSettingsRef()[Setting::enable_parallel_replicas].value)
+    if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
+        && context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
+           != new_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value)
     {
         LOG_TRACE(
             log,

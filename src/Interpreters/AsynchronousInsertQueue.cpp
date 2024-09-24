@@ -58,7 +58,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 enable_parallel_replicas;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsDouble async_insert_busy_timeout_decrease_rate;
     extern const SettingsDouble async_insert_busy_timeout_increase_rate;
