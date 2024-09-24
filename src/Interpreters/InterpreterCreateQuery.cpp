@@ -1661,6 +1661,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             drop_ast->no_ddl_lock = true;
 
             auto drop_context = Context::createCopy(context);
+            /// Don't check dependencies during DROP of the view, because we will recreate
+            /// it with the same name and all dependencies will remain valid.
             drop_context->setSetting("check_table_dependencies", false);
             InterpreterDropQuery interpreter(drop_ast, drop_context);
             interpreter.execute();
