@@ -4,7 +4,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Block.h>
@@ -103,8 +103,8 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
         QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
-        QueryAnalysisPass query_analysis_pass(fake_table_expression);
-        query_analysis_pass.run(expression, execution_context);
+        QueryAnalyzer analyzer(false);
+        analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
         GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
         auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
