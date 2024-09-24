@@ -180,7 +180,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColums,
         /// But distributed_group_by_no_merge requires Complete.
-        if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
                 query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
@@ -189,7 +189,7 @@ void SelectStreamFactory::createForShardImpl(
         }
         else
         {
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (settings[Setting::allow_experimental_analyzer])
                 shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
             else
                 shard_header = header;
