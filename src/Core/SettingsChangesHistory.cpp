@@ -76,7 +76,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.8",
         {
             {"rows_before_aggregation", true, true, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
-            {"enable_optimize_query_tree_logical_expression", true, true, "New setting."},
             {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
             {"restore_replace_external_engines_to_null", false, false, "New setting."},
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
