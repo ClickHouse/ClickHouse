@@ -14,6 +14,15 @@ namespace ProfileEvents
 {
     extern const Event RemoteWriteThrottlerBytes;
     extern const Event RemoteWriteThrottlerSleepMicroseconds;
+
+    extern const Event AzureUpload;
+    extern const Event AzureStageBlock;
+    extern const Event AzureCommitBlockList;
+
+    extern const Event DiskAzureUpload;
+    extern const Event DiskAzureStageBlock;
+    extern const Event DiskAzureCommitBlockList;
+
 }
 
 namespace DB
@@ -30,7 +39,7 @@ struct WriteBufferFromAzureBlobStorage::PartData
     size_t data_size = 0;
 };
 
-BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureObjectStorageSettings & settings)
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
@@ -48,9 +57,9 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     const String & blob_path_,
     size_t buf_size_,
     const WriteSettings & write_settings_,
-    std::shared_ptr<const AzureObjectStorageSettings> settings_,
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
@@ -92,15 +101,13 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
     {
         try
         {
-            ResourceGuard rlock(write_settings.resource_link, cost); // Note that zero-cost requests are ignored
+            ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, cost); // Note that zero-cost requests are ignored
             func();
+            rlock.unlock(cost);
             break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            if (cost)
-                write_settings.resource_link.accumulate(cost); // Accumulate resource for later use, because we have failed to consume it
-
             if (i == num_tries - 1 || !isRetryableAzureException(e))
                 throw;
 
@@ -108,8 +115,6 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
         }
         catch (...)
         {
-            if (cost)
-                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
             throw;
         }
     }
@@ -134,6 +139,10 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
     /// then we use single part upload instead of multi part upload
     if (block_ids.empty() && detached_part_data.size() == 1 && detached_part_data.front().data_size <= max_single_part_upload_size)
     {
+        ProfileEvents::increment(ProfileEvents::AzureUpload);
+        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+            ProfileEvents::increment(ProfileEvents::DiskAzureUpload);
+
         auto part_data = std::move(detached_part_data.front());
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
@@ -164,6 +173,10 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
     if (!block_ids.empty())
     {
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
+        ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
+        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+            ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
+
         execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
         LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
     }
@@ -231,11 +244,21 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
-    auto size = buffer_allocation_policy->getBufferSize();
-
+    /// First buffer was already allocated in BufferWithOwnMemory constructor with buffer size provided in constructor.
+    /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
     if (buffer_allocation_policy->getBufferNumber() == 1)
-        size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
+    {
+        /// Reduce memory size if initial size was larger then desired size from buffer_allocation_policy.
+        /// Usually it doesn't happen but we have it in unit tests.
+        if (memory.size() > buffer_allocation_policy->getBufferSize())
+        {
+            memory.resize(buffer_allocation_policy->getBufferSize());
+            WriteBuffer::set(memory.data(), memory.size());
+        }
+        return;
+    }
 
+    auto size = buffer_allocation_policy->getBufferSize();
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
@@ -268,6 +291,10 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         auto & data_size = std::get<1>(*worker_data).data_size;
         auto & data_block_id = std::get<0>(*worker_data);
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
+
+        ProfileEvents::increment(ProfileEvents::AzureStageBlock);
+        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
+            ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);
         execWithRetry([&](){ block_blob_client.StageBlock(data_block_id, memory_stream); }, max_unexpected_write_error_retries, data_size);

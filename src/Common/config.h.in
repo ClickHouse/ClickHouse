@@ -32,6 +32,8 @@
 #cmakedefine01 USE_IDNA
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_VECTORSCAN
+#cmakedefine01 USE_QPL
+#cmakedefine01 USE_QATLIB
 #cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_AVRO
 #cmakedefine01 USE_CAPNP
@@ -56,13 +58,17 @@
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_BLAKE3
+#cmakedefine01 USE_USEARCH
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
 #cmakedefine01 USE_ULID
-#cmakedefine01 FIU_ENABLE
+#cmakedefine01 USE_LIBFIU
 #cmakedefine01 USE_BCRYPT
 #cmakedefine01 USE_LIBARCHIVE
 #cmakedefine01 USE_POCKETFFT
+#cmakedefine01 USE_PROMETHEUS_PROTOBUFS
+#cmakedefine01 USE_MONGODB
+#cmakedefine01 USE_NUMACTL
 
 /// This is needed for .incbin in assembly. For some reason, include paths don't work there in presence of LTO.
 /// That's why we use absolute paths.

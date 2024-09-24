@@ -6,6 +6,7 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/UncompressedCache.h>
 #include <Interpreters/Context.h>
+#include <Common/Config/ConfigReloader.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
@@ -62,7 +63,6 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
     /// current setting values, one needs to ask the components directly.
     std::unordered_map<String, std::pair<String, ChangeableWithoutRestart>> changeable_settings = {
         {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
-        {"allow_use_jemalloc_memory", {std::to_string(total_memory_tracker.getAllowUseJemallocMmemory()), ChangeableWithoutRestart::Yes}},
 
         {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
         {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
@@ -84,7 +84,8 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
 
         {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
-        {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}}
+        {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+        {"config_reload_interval_ms", {std::to_string(context->getConfigReloaderInterval()), ChangeableWithoutRestart::Yes}}
     };
 
     if (context->areBackgroundExecutorsInitialized())

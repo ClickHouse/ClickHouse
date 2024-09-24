@@ -108,6 +108,14 @@ struct make_unsigned // NOLINT(readability-identifier-naming)
     using type = std::make_unsigned_t<T>;
 };
 
+template <> struct make_unsigned<Int8> { using type = UInt8; };
+template <> struct make_unsigned<UInt8> { using type = UInt8; };
+template <> struct make_unsigned<Int16> { using type = UInt16; };
+template <> struct make_unsigned<UInt16> { using type = UInt16; };
+template <> struct make_unsigned<Int32> { using type = UInt32; };
+template <> struct make_unsigned<UInt32> { using type = UInt32; };
+template <> struct make_unsigned<Int64> { using type = UInt64; };
+template <> struct make_unsigned<UInt64> { using type = UInt64; };
 template <> struct make_unsigned<Int128> { using type = UInt128; };
 template <> struct make_unsigned<UInt128> { using type = UInt128; };
 template <> struct make_unsigned<Int256>  { using type = UInt256; };
@@ -121,6 +129,14 @@ struct make_signed // NOLINT(readability-identifier-naming)
     using type = std::make_signed_t<T>;
 };
 
+template <> struct make_signed<Int8> { using type = Int8; };
+template <> struct make_signed<UInt8> { using type = Int8; };
+template <> struct make_signed<Int16> { using type = Int16; };
+template <> struct make_signed<UInt16> { using type = Int16; };
+template <> struct make_signed<Int32> { using type = Int32; };
+template <> struct make_signed<UInt32> { using type = Int32; };
+template <> struct make_signed<Int64> { using type = Int64; };
+template <> struct make_signed<UInt64> { using type = Int64; };
 template <> struct make_signed<Int128>  { using type = Int128; };
 template <> struct make_signed<UInt128> { using type = Int128; };
 template <> struct make_signed<Int256>  { using type = Int256; };

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/stochasticlinearregression
-sidebar_position: 221
+sidebar_position: 192
 ---
 
 # stochasticLinearRegression {#agg_functions_stochasticlinearregression_parameters}

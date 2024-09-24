@@ -1667,8 +1667,18 @@ public:
                 if (!mergeElement())
                     return false;
 
-                to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
-                elements.clear();
+                /// Trimming an empty string is a no-op.
+                ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
+                if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
+                {
+                    noop = true;
+                }
+                else
+                {
+                    to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
+                    elements.clear();
+                }
+
                 state = 2;
             }
         }
@@ -1680,15 +1690,20 @@ public:
                 if (!mergeElement())
                     return false;
 
-                ASTPtr pattern_node;
-
+                if (noop)
+                {
+                    /// The operation does nothing.
+                }
                 if (char_override)
                 {
+                    ASTPtr pattern_node;
+
                     auto pattern_func_node = std::make_shared<ASTFunction>();
                     auto pattern_list_args = std::make_shared<ASTExpressionList>();
                     if (trim_left && trim_right)
                     {
-                        pattern_list_args->children = {
+                        pattern_list_args->children =
+                        {
                             std::make_shared<ASTLiteral>("^["),
                             to_remove,
                             std::make_shared<ASTLiteral>("]+|["),
@@ -1701,7 +1716,8 @@ public:
                     {
                         if (trim_left)
                         {
-                            pattern_list_args->children = {
+                            pattern_list_args->children =
+                            {
                                 std::make_shared<ASTLiteral>("^["),
                                 to_remove,
                                 std::make_shared<ASTLiteral>("]+")
@@ -1710,7 +1726,8 @@ public:
                         else
                         {
                             /// trim_right == false not possible
-                            pattern_list_args->children = {
+                            pattern_list_args->children =
+                            {
                                 std::make_shared<ASTLiteral>("["),
                                 to_remove,
                                 std::make_shared<ASTLiteral>("]+$")
@@ -1724,6 +1741,9 @@ public:
                     pattern_func_node->children.push_back(pattern_func_node->arguments);
 
                     pattern_node = std::move(pattern_func_node);
+
+                    elements.push_back(pattern_node);
+                    elements.push_back(std::make_shared<ASTLiteral>(""));
                 }
                 else
                 {
@@ -1740,12 +1760,6 @@ public:
                     }
                 }
 
-                if (char_override)
-                {
-                    elements.push_back(pattern_node);
-                    elements.push_back(std::make_shared<ASTLiteral>(""));
-                }
-
                 finished = true;
             }
         }
@@ -1756,7 +1770,10 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTFunction(function_name, std::move(elements));
+        if (noop)
+            node = std::move(elements.at(1));
+        else
+            node = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -1764,6 +1781,7 @@ private:
     bool trim_left;
     bool trim_right;
     bool char_override = false;
+    bool noop = false;
 
     ASTPtr to_remove;
     String function_name;
@@ -2388,6 +2406,24 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 }
 
+bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_p;
+    ParserFunction func_p;
+
+    if (ParserFunction(false, false).parse(pos, node, expected))
+        return true;
+
+    if (ParserIdentifier().parse(pos, node, expected))
+    {
+        node = makeASTFunction(node->as<ASTIdentifier>()->name());
+        node->as<ASTFunction &>().no_empty_args = true;
+        return true;
+    }
+
+    return false;
+}
+
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
@@ -2743,7 +2779,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     /// 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
     if (op.function_name == "and" && layers.back()->between_counter)
     {
-        layers.back()->between_counter--;
+        --layers.back()->between_counter;
         op = finish_between_operator;
     }
 
@@ -2793,8 +2829,8 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (op.type == OperatorType::TupleElement)
     {
         ASTPtr tmp;
-        if (asterisk_parser.parse(pos, tmp, expected) ||
-            columns_matcher_parser.parse(pos, tmp, expected))
+        if (asterisk_parser.parse(pos, tmp, expected)
+            || columns_matcher_parser.parse(pos, tmp, expected))
         {
             if (auto * asterisk = tmp->as<ASTAsterisk>())
             {
@@ -2813,6 +2849,17 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
             }
 
             layers.back()->pushOperand(std::move(tmp));
+            return Action::OPERATOR;
+        }
+
+        /// If it is an identifier,
+        /// replace it with literal, because an expression `expr().elem`
+        /// should be transformed to `tupleElement(expr(), 'elem')` for query analysis,
+        /// otherwise the identifier `elem` will not be found.
+        if (ParserIdentifier().parse(pos, tmp, expected))
+        {
+            layers.back()->pushOperator(op);
+            layers.back()->pushOperand(std::make_shared<ASTLiteral>(tmp->as<ASTIdentifier>()->name()));
             return Action::OPERATOR;
         }
     }
@@ -2845,7 +2892,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         layers.push_back(std::make_unique<ArrayElementLayer>());
 
     if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
-        layers.back()->between_counter++;
+        ++layers.back()->between_counter;
 
     return Action::OPERAND;
 }

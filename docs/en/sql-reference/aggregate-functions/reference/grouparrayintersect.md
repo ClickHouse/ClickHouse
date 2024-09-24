@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/grouparrayintersect
-sidebar_position: 115
+sidebar_position: 141
 ---
 
 # groupArrayIntersect

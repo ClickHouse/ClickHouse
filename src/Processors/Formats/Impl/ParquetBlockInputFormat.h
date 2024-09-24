@@ -7,6 +7,8 @@
 #include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <queue>
+
 namespace parquet { class FileMetaData; }
 namespace parquet::arrow { class FileReader; }
 namespace arrow { class Buffer; class RecordBatchReader;}
@@ -68,7 +70,7 @@ public:
 private:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }

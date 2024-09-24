@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -47,6 +47,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AzureQueue
 BIGINT
 BIGSERIAL
 BORO
@@ -114,6 +115,7 @@ CESU
 CIDR
 CIDRToRange
 CKMAN
+CKibana
 CLOB
 CLion
 CMPLNT
@@ -183,6 +185,7 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+CountMin
 Covid
 Cramer's
 Criteo
@@ -222,7 +225,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -248,10 +250,12 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
+ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
+ElasticSearch
 EmbeddedRocksDB
 Embeddings
 Encodings
@@ -294,7 +298,6 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
-flameGraph
 Flink
 ForEach
 FreeBSD
@@ -386,12 +389,26 @@ IntelliJ
 IntelliSense
 InterserverConnection
 InterserverThreads
+IntervalDay
+IntervalHour
+IntervalMicrosecond
+IntervalMillisecond
+IntervalMilliseconds
+IntervalMinute
+IntervalMonth
+IntervalNanosecond
+IntervalQuarter
+IntervalSecond
+IntervalWeek
+IntervalYear
 IsPentagon
 IsResClassIII
 IsValid
 JBOD
 JOINed
 JOINs
+JSONAllPaths
+JSONAllPathsWithTypes
 JSONArrayLength
 JSONAsObject
 JSONAsString
@@ -406,6 +423,9 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactWithProgress
+JSONDynamicPaths
+JSONDynamicPathsWithTypes
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -422,6 +442,8 @@ JSONExtractUInt
 JSONHas
 JSONLength
 JSONObjectEachRow
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
@@ -451,9 +473,10 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
+Kibana
 KittenHouse
 Klickhouse
 Kolmogorov
@@ -469,7 +492,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
-Lemir
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -560,9 +583,13 @@ MinHash
 MinIO
 MinMax
 MindsDB
+mongoc
+mongocxx
+Mongo
 Mongodb
 Monotonicity
 MsgPack
+MultiLineString
 MultiPolygon
 Multiline
 Multiqueries
@@ -574,6 +601,7 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
+NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -709,6 +737,7 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
+PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
@@ -716,6 +745,8 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PostHistory
+PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -744,6 +775,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -760,6 +792,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -771,6 +804,7 @@ RWLockActiveWriters
 RWLockWaitingReaders
 RWLockWaitingWriters
 RabbitMQ
+Rabl
 RangeHashed
 RawBLOB
 ReDoS
@@ -952,6 +986,8 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+TimeSeries
+TimescaleDB's
 Timeunit
 TinyLog
 Tkachenko
@@ -991,6 +1027,8 @@ UPDATEs
 URIs
 URL
 URL's
+URLDecode
+URLEncode
 URLHash
 URLHierarchy
 URLPathHierarchy
@@ -1012,8 +1050,6 @@ Updatable
 Uppercased
 Uptime
 Uptrace
-UrlDecode
-UrlEncode
 UserID
 Util
 VARCHAR
@@ -1093,10 +1129,12 @@ addressToLineWithInlines
 addressToSymbol
 adviced
 agg
+aggThrow
 aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
 aiochclient
 allocator
 alphaTokens
@@ -1131,6 +1169,7 @@ arrayDifference
 arrayDistinct
 arrayDotProduct
 arrayElement
+arrayElementOrNull
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -1180,9 +1219,11 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip
+arrayZipUnaligned
 ascii
 asin
 asinh
@@ -1219,6 +1260,7 @@ basename
 bcrypt
 benchmarking
 bfloat
+bigrams
 binlog
 bitAnd
 bitCount
@@ -1315,6 +1357,12 @@ cfg
 cgroup
 cgroups
 chadmin
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 changelog
 changelogs
 charset
@@ -1333,6 +1381,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckibana
 ckman
 clangd
 cli
@@ -1468,6 +1517,7 @@ dbeaver
 dbgen
 dbms
 ddl
+deallocated
 deallocation
 deallocations
 debian
@@ -1504,12 +1554,15 @@ dequeues
 deserialization
 deserialized
 deserializing
+dest
 destructor
 destructors
 detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
+detectTonality
 determinator
 deterministically
 dictGet
@@ -1525,7 +1578,13 @@ dictIsIn
 disableProtocols
 disjunction
 disjunctions
+displayName
 displaySecretsInShowAndSelect
+distinctDynamicTypes
+distinctJSONPaths
+distinctJSONPathsAndTypes
+distinctdynamictypes
+distinctjsonpaths
 distro
 divideDecimal
 dmesg
@@ -1571,10 +1630,15 @@ enum's
 enums
 erfc
 errorCodeToName
+etag
 evalMLMethod
 exFAT
 expiryMsec
 exponentialMovingAverage
+exponentialTimeDecayedAvg
+exponentialTimeDecayedCount
+exponentialTimeDecayedMax
+exponentialTimeDecayedSum
 exponentialmovingaverage
 expr
 exprN
@@ -1602,6 +1666,7 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
+filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1612,6 +1677,7 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 fixedstring
+flameGraph
 flamegraph
 flatbuffers
 flattenTuple
@@ -1633,6 +1699,7 @@ formated
 formatschema
 formatter
 formatters
+fqdn
 frac
 freezed
 fromDaysSinceYearZero
@@ -1645,9 +1712,11 @@ fsync
 func
 fuzzBits
 fuzzJSON
+fuzzQuery
 fuzzer
 fuzzers
 gRPC
+gaugehistogram
 gccMurmurHash
 gcem
 generateRandom
@@ -1674,6 +1743,8 @@ getOSKernelVersion
 getServerPort
 getSetting
 getSizeOfEnumType
+getSubcolumn
+getTypeSerializationStreams
 getblockinfo
 getevents
 ghcnd
@@ -1709,6 +1780,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1725,6 +1797,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1795,6 +1868,7 @@ indexHint
 indexOf
 infi
 inflight
+infty
 initcap
 initcapUTF
 initialQueryID
@@ -1841,8 +1915,10 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
+jsonasobject
 jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
@@ -1855,6 +1931,7 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
+jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -1884,12 +1961,14 @@ kurtSamp
 kurtosis
 kurtpop
 kurtsamp
+lagInFrame
 laion
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF
@@ -1942,9 +2021,9 @@ loghouse
 london
 lookups
 loongarch
-lowcardinality
 lowCardinalityIndices
 lowCardinalityKeys
+lowcardinality
 lowerUTF
 lowercased
 lttb
@@ -1967,6 +2046,8 @@ mapExtractKeyLike
 mapFilter
 mapFromArrays
 mapKeys
+mapPartialReverseSort
+mapPartialSort
 mapPopulateSeries
 mapReverseSort
 mapSort
@@ -2000,6 +2081,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -2007,6 +2089,7 @@ minimalistic
 mininum
 miniselect
 minmap
+mflix
 minmax
 mins
 misconfiguration
@@ -2052,6 +2135,7 @@ multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
+multilinestring
 multiplyDecimal
 multipolygon
 multisearchany
@@ -2075,11 +2159,14 @@ namenode
 namepassword
 nameprofile
 namequota
+namespace
 namespaces
 natively
 nats
+ness
 nestjs
 netloc
+newjson
 ngram
 ngramDistance
 ngramDistanceCaseInsensitive
@@ -2107,8 +2194,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
@@ -2145,6 +2234,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overlayUTF
 overparallelization
 packetpool
 packetsize
@@ -2171,6 +2261,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionID
+partitionId
 pathFull
 pclmulqdq
 pcre
@@ -2243,6 +2335,7 @@ prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prewhere
+printf
 privateKeyFile
 privateKeyPassphraseHandler
 prlimit
@@ -2253,7 +2346,9 @@ prometheus
 proportionsZTest
 proto
 protobuf
+protobuflist
 protobufsingle
+protocol
 proxied
 pseudorandom
 pseudorandomize
@@ -2322,6 +2417,7 @@ rankCorr
 rapidjson
 rawblob
 readWKTLineString
+readWKTMultiLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2395,6 +2491,7 @@ rewritable
 rightPad
 rightPadUTF
 rightUTF
+ripeMD
 risc
 riscv
 ro
@@ -2505,6 +2602,8 @@ sqlite
 sqrt
 src
 srcReplicas
+sshkey
+stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2512,6 +2611,7 @@ startsWithUTF
 startswith
 statbox
 stateful
+stateset
 stddev
 stddevPop
 stddevPopStable
@@ -2643,6 +2743,9 @@ themself
 threadpool
 throwIf
 timeDiff
+timeSeriesData
+timeSeriesMetrics
+timeSeriesTags
 timeSlot
 timeSlots
 timeZone
@@ -2651,6 +2754,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
@@ -2674,6 +2778,17 @@ toISOWeek
 toISOYear
 toInt
 toInterval
+toIntervalDay
+toIntervalHour
+toIntervalMicrosecond
+toIntervalMillisecond
+toIntervalMinute
+toIntervalMonth
+toIntervalNanosecond
+toIntervalQuarter
+toIntervalSecond
+toIntervalWeek
+toIntervalYear
 toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
@@ -2744,6 +2859,9 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+transactionID
+transactionLatestSnapshot
+transactionOldestSnapshot
 transactional
 transactionally
 translateUTF
@@ -2777,6 +2895,7 @@ tupleModulo
 tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
+tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
@@ -2797,6 +2916,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unigrams
 unintuitive
 uniq
 uniqCombined
@@ -2843,6 +2963,7 @@ userver
 utils
 uuid
 uuidv
+vCPU
 varPop
 varPopStable
 varSamp

@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -13,12 +14,17 @@
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
+
+#include <queue>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool external_table_strict_query;
+}
 
 namespace ErrorCodes
 {
@@ -291,7 +297,7 @@ String transformQueryForExternalDatabaseImpl(
     ContextPtr context,
     std::optional<size_t> limit)
 {
-    bool strict = context->getSettingsRef().external_table_strict_query;
+    bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -419,7 +425,7 @@ String transformQueryForExternalDatabase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
                             query_info.query_tree->formatASTForErrorMessage(), database, table);
 
-        auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree);
+        auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree, query_info.table_expression);
 
         return transformQueryForExternalDatabaseImpl(
             clone_query,

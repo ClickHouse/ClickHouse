@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <string>
 #include <Coordination/KeeperLogStore.h>
-#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperSnapshotManager.h>
+#include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "Coordination/KeeperStateMachine.h"
 #include "Coordination/RaftServerConfig.h"
-#include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
 {

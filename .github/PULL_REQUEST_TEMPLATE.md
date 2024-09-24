@@ -6,6 +6,7 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 -->
 ### Changelog category (leave one):
 - New Feature
+- Experimental Feature
 - Improvement
 - Performance Improvement
 - Backward Incompatible Change
@@ -57,6 +58,9 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
 - [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
 - [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
+---
+- [ ] <!---ci_include_fuzzer--> Run only fuzzers related jobs (libFuzzer fuzzers, AST fuzzers, etc.)
+- [ ] <!---ci_exclude_ast--> Exclude: AST fuzzers
 ---
 - [ ] <!---do_not_test--> Do not test
 - [ ] <!---woolen_wolfdog--> Woolen Wolfdog
