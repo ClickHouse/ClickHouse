@@ -6,8 +6,11 @@ RUN arch=${TARGETARCH:-amd64} \
         amd64) rarch=x86_64 ;; \
         arm64) rarch=aarch64 ;; \
     esac \
-    && ln -s "${rarch}-linux-gnu" /lib/linux-gnu
-
+    && ln -s "${rarch}-linux-gnu" /lib/linux-gnu \
+    && case $arch in \
+        amd64) ln /lib/linux-gnu/ld-linux-x86-64.so.2 /lib/linux-gnu/ld-2.31.so ;; \
+        arm64) ln /lib/linux-gnu/ld-linux-aarch64.so.1 /lib/linux-gnu/ld-2.31.so ;; \
+    esac
 
 FROM alpine
 
