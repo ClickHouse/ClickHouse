@@ -1208,7 +1208,7 @@ void InterpreterSystemQuery::loadPrimaryKeys()
                         /// Calls the improved loadPrimaryKeys in MergeTreeData
                         merge_tree->loadPrimaryKeys();
                     }
-                    catch (const Exception & ex)
+                    catch (...)
                     {
                         LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
                     }

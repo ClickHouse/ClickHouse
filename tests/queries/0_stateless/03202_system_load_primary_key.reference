@@ -1,6 +1,21 @@
-0	0
-0	0
-0	0
-1	a
-2	b
-3	c
+0    0
+0    0
+0    0
+
+# After loading primary keys:
+10000000   10000000  -- These numbers will vary depending on the system
+10000000   10000000
+
+# After unloading primary keys:
+0    0
+0    0
+
+# Data in test_load_primary_key:
+1    a
+2    b
+3    c
+
+# Data in test_load_primary_key_2:
+1    x
+2    y
+3    z
