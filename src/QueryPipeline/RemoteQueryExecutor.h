@@ -351,6 +351,9 @@ private:
 
     /// Reads packet by packet
     Block readPackets();
+
+    /// Reset and re-establish connection with another replica.
+    void resetConnection();
 };
 
 }

@@ -40,6 +40,8 @@ namespace ErrorCodes
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
+    extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
 }
 
 namespace
@@ -932,5 +934,59 @@ bool Cluster::maybeCrossReplication() const
 
     return false;
 }
+
+ConnectionPoolWithFailover::Entry Cluster::getConnectionWithRetries(
+    size_t shard_index,
+    size_t replica_index,
+    const Settings & settings,
+    size_t max_retries,
+    const QualifiedTableName & query_context)
+{
+    const auto & shard_info = getShardsInfo()[shard_index];
+    const auto & addresses = getShardsAddresses();
+    size_t retries = 0;
+
+    // Begin a loop that will execute until the maximum number of retries is reached
+    while (retries < max_retries)
+    {
+        try
+        {
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
+            ConnectionPoolWithFailover::Entry connection_entry;
+
+            if (shard_info.hasInternalReplication())
+            {
+                auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, query_context);
+                connection_entry = std::move(results.front().entry);
+            }
+            else
+            {
+                // const auto & replica = addresses.at(shard_index).at(replica_index);
+                const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(replica_index);
+                connection_entry = connection_pool->get(timeouts, settings);
+            }
+
+            if (connection_entry.isNull())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica {}", addresses[shard_index][replica_index].readableString());
+
+            return connection_entry;
+        }
+        catch (const Exception & ex)
+        {
+            if (ex.code() == ErrorCodes::NETWORK_ERROR || ex.code() == ErrorCodes::SOCKET_TIMEOUT)
+            {
+                LOG_WARNING(log, "Network error or socket timeout detected on shard {}, replica {}. Retry {}/{}", shard_index, replica_index, retries + 1, max_retries);
+                ++retries;
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
+
+    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to get connection to shard {} replica {} after {} retries", shard_index, replica_index, max_retries);
+}
+
 
 }

@@ -77,6 +77,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
+            {"distributed_query_retries", 0, 3, "Maximum number of retries for distributed queries"},
+            {"output_format_always_quote_identifiers", false, false, "Always quote identifiers"},
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "Set the quoting style for identifiers"}
             {"output_format_always_quote_identifiers", false, false, "New setting."},
             {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
             {"parallel_replicas_mark_segment_size", 128, 0, "Value for this setting now determined automatically"},

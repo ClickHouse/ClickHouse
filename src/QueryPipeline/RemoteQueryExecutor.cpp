@@ -32,6 +32,8 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
+    extern const int SOCKET_TIMEOUT;
+    extern const int NETWORK_ERROR;
 }
 
 namespace DB
@@ -448,95 +450,165 @@ Block RemoteQueryExecutor::readBlock()
     }
 }
 
+void RemoteQueryExecutor::resetConnection()
+{
+    // Logic to reset and re-establish connection to another replica
+    connections->disconnect();
+
+    const auto & settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
+
+    create_connections(nullptr); // Recreate the connections using the same logic as in the constructor
+}
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 {
-    if (!sent_query)
+    size_t retries = 0;
+    const auto & settings = context->getSettingsRef();
+
+    while (retries < settings.distributed_query_retries)
     {
-        sendQuery();
+        if (!sent_query)
+        {
+            sendQuery();
+
+
+            if (context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()))
+                return ReadResult(Block());
+        }
 
         if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
             return ReadResult(Block());
     }
 
-    while (true)
-    {
-        std::lock_guard lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
+        try
+        {
+            while (true)
+            {
+                std::lock_guard lock(was_cancelled_mutex);
+                if (was_cancelled)
+                    return ReadResult(Block());
 
-        auto packet = connections->receivePacket();
-        auto anything = processPacket(std::move(packet));
+                auto packet = connections->receivePacket();
+                auto anything = processPacket(std::move(packet));
 
-        if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
-            return anything;
+                if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
+                    return anything;
 
-        if (got_duplicated_part_uuids)
-            break;
+                if (got_duplicated_part_uuids)
+                    break;
+            }
+
+            return restartQueryWithoutDuplicatedUUIDs();
+        }
+        catch (const Exception & ex)
+        {
+            if (ex.code() == ErrorCodes::NETWORK_ERROR || ex.code() == ErrorCodes::SOCKET_TIMEOUT)
+            {
+                LOG_WARNING(log, "Network error or socket timeout during SELECT query. Retrying {}/{}", retries + 1, settings.distributed_query_retries);
+                ++retries;
+
+                // Reset the connection and attempt to reconnect
+                resetConnection();
+                continue;
+            }
+            else
+            {
+                throw;
+            }
+        }
     }
 
-    return restartQueryWithoutDuplicatedUUIDs();
+    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to retrieve data after {} retries", settings.distributed_query_retries);
 }
+
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
 #if defined(OS_LINUX)
-    if (!read_context || (resent_query && recreate_read_context))
+    size_t retries = 0;
+    const auto & settings = context->getSettingsRef();
+
+    while (retries < settings.distributed_query_retries)
     {
-        std::lock_guard lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
-
-        read_context = std::make_unique<ReadContext>(*this);
-        recreate_read_context = false;
-    }
-
-    while (true)
-    {
-        std::lock_guard lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
-
-        if (has_postponed_packet)
+        if (!read_context || (resent_query && recreate_read_context))
         {
-            has_postponed_packet = false;
-            auto read_result = processPacket(read_context->getPacket());
-            if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
-                return read_result;
+            std::lock_guard lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
 
-            if (got_duplicated_part_uuids)
-                break;
+            read_context = std::make_unique<ReadContext>(*this);
+            recreate_read_context = false;
         }
 
-        read_context->resume();
-
-        if (isReplicaUnavailable() || needToSkipUnavailableShard())
+        try
         {
-            /// We need to tell the coordinator not to wait for this replica.
-            /// But at this point it may lead to an incomplete result set, because
-            /// this replica committed to read some part of there data and then died.
-            if (extension && extension->parallel_reading_coordinator)
+            while (true)
             {
-                chassert(extension->parallel_reading_coordinator);
-                extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+                std::lock_guard lock(was_cancelled_mutex);
+                if (was_cancelled)
+                    return ReadResult(Block());
+
+                if (has_postponed_packet)
+                {
+                    has_postponed_packet = false;
+                    auto read_result = processPacket(read_context->getPacket());
+                    if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+                        return read_result;
+
+                    if (got_duplicated_part_uuids)
+                        break;
+                }
+
+                read_context->resume();
+
+                if (isReplicaUnavailable() || needToSkipUnavailableShard())
+                {
+                    /// We need to tell the coordinator not to wait for this replica.
+                    /// But at this point it may lead to an incomplete result set, because
+                    /// this replica committed to read some part of their data and then died.
+                    if (extension && extension->parallel_reading_coordinator)
+                    {
+                        chassert(extension->parallel_reading_coordinator);
+                        extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+                    }
+
+                    return ReadResult(Block());
+                }
+
+                /// Check if packet is not ready yet.
+                if (read_context->isInProgress())
+                    return ReadResult(read_context->getFileDescriptor());
+
+                auto read_result = processPacket(read_context->getPacket());
+                if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+                    return read_result;
+
+                if (got_duplicated_part_uuids)
+                    break;
             }
 
-            return ReadResult(Block());
+            return restartQueryWithoutDuplicatedUUIDs();
         }
+        catch (const Exception & ex)
+        {
+            if (ex.code() == ErrorCodes::NETWORK_ERROR || ex.code() == ErrorCodes::SOCKET_TIMEOUT)
+            {
+                LOG_WARNING(log, "Network error or socket timeout during SELECT query. Retrying {}/{}", retries + 1, settings.distributed_query_retries);
+                ++retries;
 
-        /// Check if packet is not ready yet.
-        if (read_context->isInProgress())
-            return ReadResult(read_context->getFileDescriptor());
-
-        auto read_result = processPacket(read_context->getPacket());
-        if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
-            return read_result;
-
-        if (got_duplicated_part_uuids)
-            break;
+                // Reset the connection and attempt to reconnect
+                resetConnection();
+                continue;
+            }
+            else
+            {
+                throw;
+            }
+        }
     }
 
-    return restartQueryWithoutDuplicatedUUIDs();
+    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to retrieve data after {} retries", settings.distributed_query_retries);
 #else
     return read();
 #endif

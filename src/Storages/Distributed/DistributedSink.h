@@ -5,6 +5,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
@@ -113,6 +114,7 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
 
+    size_t max_retries;
     std::mutex execution_mutex;
 
     struct JobReplica
@@ -153,6 +155,7 @@ private:
     std::atomic<unsigned> finished_jobs_count{0};
 
     LoggerPtr log;
+    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
 };
 
 }

@@ -33,6 +33,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <Common/ErrorCodes.h>
 
 #include <filesystem>
 
@@ -81,6 +82,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ABORTED;
+    extern const int SOCKET_TIMEOUT;
+    extern const int NETWORK_ERROR;
 }
 
 static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
@@ -145,6 +148,7 @@ DistributedSink::DistributedSink(
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
     , insert_timeout(insert_timeout_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
+    , max_retries(context->getSettingsRef().distributed_query_retries)
     , log(getLogger("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
@@ -465,6 +469,36 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 }
 
 
+bool DistributedSink::reconnectAndResend(JobReplica & job, const Block & shard_block)
+{
+    const auto & settings = context->getSettingsRef();
+
+    try
+    {
+        job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings, max_retries);
+
+        if (throttler)
+            job.connection_entry->setThrottler(throttler);
+
+        job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(*job.connection_entry, ConnectionTimeouts::getTCPTimeoutsWithFailover(settings), query_string, settings, context->getClientInfo()));
+        job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+        job.executor->start();
+
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
+        Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+        job.executor->push(adopted_shard_block);
+
+        job.blocks_written += 1;
+        job.rows_written += shard_block.rows();
+        return true;
+    }
+    catch (const Exception & ex)
+    {
+        LOG_ERROR(log, "Reconnection attempt failed with error: {}", ex.message());
+        return false;
+    }
+}
+
 void DistributedSink::writeSync(const Block & block)
 {
     std::lock_guard lock(execution_mutex);
@@ -534,33 +568,41 @@ void DistributedSink::writeSync(const Block & block)
             per_shard_jobs[current_selector[i]].shard_current_block_permutation.push_back(i);
     }
 
-    try
+    size_t attempt = 0;
+    while (attempt < max_retries)
     {
-        /// Run jobs in parallel for each block and wait them
-        finished_jobs_count = 0;
-        for (size_t shard_index : collections::range(start, end))
-            for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
-    }
-    catch (...)
-    {
-        pool->wait();
-        throw;
+        try
+        {
+            /// Run jobs in parallel for each block and wait them
+            finished_jobs_count = 0;
+            for (size_t shard_index : collections::range(start, end))
+                for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+                    pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+
+            waitForJobs();
+
+            inserted_blocks += 1;
+            inserted_rows += block.rows();
+            break; // If successful, exit the retry loop
+        }
+        catch (const Exception & exception)
+        {
+            if (exception.code() == ErrorCodes::NETWORK_ERROR || exception.code() == ErrorCodes::SOCKET_TIMEOUT)
+            {
+                LOG_WARNING(log, "Retrying due to network error. Attempt: {}", attempt + 1);
+                ++attempt;
+            }
+            else
+            {
+                throw;
+            }
+        }
     }
 
-    try
+    if (attempt == max_retries)
     {
-        waitForJobs();
-    }
-    catch (Exception & exception)
-    {
-        exception.addMessage(getCurrentStateDescription());
-        span.addAttribute(exception);
         throw;
     }
-
-    inserted_blocks += 1;
-    inserted_rows += block.rows();
 }
 
 
