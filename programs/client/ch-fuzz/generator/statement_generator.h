@@ -168,6 +168,9 @@ public:
 
 	int GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq);
 	int GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
+	int GenerateExportQuery(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq1);
+	int GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
+	int GenerateImportQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq3);
 
 	void UpdateGenerator(const sql_query_grammar::SQLQuery &sq, const bool success);
 	void FinishGenerator();

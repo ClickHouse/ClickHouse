@@ -9,6 +9,7 @@ set (CLICKHOUSE_CLIENT_SOURCES
     ch-fuzz/generator/sql_types.cpp
     ch-fuzz/generator/statement_generator.cpp
     ch-fuzz/generator/random_settings.cpp
+    ch-fuzz/generator/query_oracles.cpp
     ${GRAMMAR_SRC}
 )
 set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused")

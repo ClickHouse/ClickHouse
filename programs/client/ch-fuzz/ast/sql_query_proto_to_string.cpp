@@ -2332,7 +2332,7 @@ CONV_FN(SQLQuery, query) {
       ret += "ROLLBACK";
       break;
     default:
-      SQLQueryInnerToString(ret, query.def_query());
+      ret += "SELECT 1";
   }
   ret += ";";
 }
