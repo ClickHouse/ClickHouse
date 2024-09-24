@@ -83,15 +83,10 @@ private:
                 throw;
             else if (error_handling == ErrorHandling::Default)
             {
-                if (arguments.size() == 2)
-                {
-                    auto default_value_column = arguments[1].column;
+                auto default_value_column = arguments[1].column;
 
-                    setting_value = (*default_value_column)[0];
-                }
+                setting_value = (*default_value_column)[0];
             }
-            else
-                setting_value = Field(Null());
         }
         return setting_value;
     }
