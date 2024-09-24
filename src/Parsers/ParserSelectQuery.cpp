@@ -106,7 +106,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             select_query->recursive_with = s_recursive.ignore(pos, expected);
 
-            if (!ParserList(std::make_unique<ParserWithElement>(select_query->recursive_with), std::make_unique<ParserToken>(TokenType::Comma))
+            if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
                      .parse(pos, with_expression_list, expected))
                 return false;
             if (with_expression_list->children.empty())
