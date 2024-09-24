@@ -25,11 +25,12 @@ make
 Then, generate the data. Parameter `-s` specifies the scale factor. For example, with `-s 100`, 600 million rows are generated.
 
 ``` bash
-./dbgen -s 1000 -T c
-./dbgen -s 1000 -T l
-./dbgen -s 1000 -T p
-./dbgen -s 1000 -T s
-./dbgen -s 1000 -T d
+declare -a tables=("c" "l" "p" "s" "d")
+
+for table in "${table[@]}"
+do
+    ./dbgen -s 1000 -T ${table}
+done
 ```
 
 Now create tables in ClickHouse:
