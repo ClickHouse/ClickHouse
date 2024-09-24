@@ -1,5 +1,5 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -30,6 +30,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool single_join_prefer_left_table;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
@@ -420,7 +426,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     if (!storage)
         return {};
 
-    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
@@ -452,10 +458,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
         if (auto * column = compound_expression->as<ColumnNode>())
         {
             const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
-            if (column_type->getTypeId() == TypeIndex::Object)
+            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
             {
-                const auto * object_type = checkAndGetDataType<DataTypeObject>(column_type.get());
-                if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
+                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
+                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
                 {
                     QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
                     return constant_node_null;
@@ -692,7 +698,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
         result_column_node = it->second;
     }
     /// Check if it's a dynamic subcolumn
-    else
+    else if (table_expression_data.supports_subcolumns)
     {
         auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
         auto jt = table_expression_data.column_name_to_column_node.find(column_name);
@@ -1000,7 +1006,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
     if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
     {
         auto & join_using_list = from_join_node.getJoinExpression()->as<ListNode &>();
-
         for (auto & join_using_node : join_using_list.getNodes())
         {
             auto & column_node = join_using_node->as<ColumnNode &>();
@@ -1156,7 +1161,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
                 resolved_identifier = left_resolved_identifier;
             }
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
+        else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;

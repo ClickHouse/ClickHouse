@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <Core/Block.h>
 #include <Core/Field.h>
 
 

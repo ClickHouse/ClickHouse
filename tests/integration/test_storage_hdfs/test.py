@@ -3,7 +3,9 @@ import os
 import pytest
 import uuid
 import time
+import re
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.client import QueryRuntimeException
 from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
 
@@ -1253,6 +1255,43 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     )
 
     assert int(result) == 44
+
+
+def test_hive_partitioning_with_one_parameter(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/file_1", f"column0,column1\nElizabeth,Gordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/file_1")
+        == f"column0,column1\nElizabeth,Gordon\n"
+    )
+
+    r = node1.query(
+        "SELECT column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/file_1', 'CSVWithNames')",
+        settings={"use_hive_partitioning": 1},
+    )
+    assert r == f"Elizabeth\n"
+
+
+def test_hive_partitioning_without_setting(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/column1=Gordon/parquet_2", f"Elizabeth\tGordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/column1=Gordon/parquet_2")
+        == f"Elizabeth\tGordon\n"
+    )
+    pattern = re.compile(
+        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+    )
+
+    with pytest.raises(QueryRuntimeException, match=pattern):
+        node1.query(
+            f"SELECT column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+            settings={"use_hive_partitioning": 0},
+        )
 
 
 if __name__ == "__main__":

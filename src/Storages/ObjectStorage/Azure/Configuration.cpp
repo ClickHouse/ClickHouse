@@ -20,10 +20,23 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool azure_create_new_file_on_insert;
+    extern const SettingsBool azure_ignore_file_doesnt_exist;
+    extern const SettingsUInt64 azure_list_object_keys_size;
+    extern const SettingsBool azure_skip_empty_files;
+    extern const SettingsBool azure_throw_on_zero_files_match;
+    extern const SettingsBool azure_truncate_on_insert;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_azure;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -61,14 +74,14 @@ StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings.azure_truncate_on_insert,
-        .create_new_file_on_insert = settings.azure_create_new_file_on_insert,
-        .schema_inference_use_cache = settings.schema_inference_use_cache_for_azure,
-        .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.azure_skip_empty_files,
-        .list_object_keys_size = settings.azure_list_object_keys_size,
-        .throw_on_zero_files_match = settings.azure_throw_on_zero_files_match,
-        .ignore_non_existent_file = settings.azure_ignore_file_doesnt_exist,
+        .truncate_on_insert = settings[Setting::azure_truncate_on_insert],
+        .create_new_file_on_insert = settings[Setting::azure_create_new_file_on_insert],
+        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_azure],
+        .schema_inference_mode = settings[Setting::schema_inference_mode],
+        .skip_empty_files = settings[Setting::azure_skip_empty_files],
+        .list_object_keys_size = settings[Setting::azure_list_object_keys_size],
+        .throw_on_zero_files_match = settings[Setting::azure_throw_on_zero_files_match],
+        .ignore_non_existent_file = settings[Setting::azure_ignore_file_doesnt_exist],
     };
 }
 
@@ -146,12 +159,13 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    if (engine_args.size() < 3 || engine_args.size() > (with_structure ? 8 : 7))
+    if (engine_args.size() < 3 || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Storage AzureBlobStorage requires 3 to 7 arguments: "
-                        "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
-                        "[account_name, account_key, format, compression, structure)])");
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -221,7 +235,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         {
             account_name = fourth_arg;
             account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/structure");
             if (is_format_arg(sixth_arg))
             {
                 format = sixth_arg;
@@ -255,10 +269,10 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     }
     else if (with_structure && engine_args.size() == 8)
     {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "account_name");
         account_name = fourth_arg;
         account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
         if (!is_format_arg(sixth_arg))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
         format = sixth_arg;
@@ -270,26 +284,30 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
 }
 
-void StorageAzureConfiguration::addStructureAndFormatToArgs(
+void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {
-        if (args.size() < 3 || args.size() > 8)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Azure requires 3 to 7 arguments: "
-                            "StorageObjectStorage(connection_string|storage_account_url, container_name, "
-                            "blobpath, [account_name, account_key, format, compression, structure])");
-        }
+        if (args.size() < 3 || args.size() > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 3 to {} arguments in table function azureBlobStorage, got {}", getMaxNumberOfArguments(), args.size());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);

@@ -101,7 +101,6 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
-arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -141,9 +140,9 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
-arrayZip
 asinh
 assumeNotNull
 atan
@@ -416,7 +415,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-lowerUTF8
 makeDate
 makeDate32
 makeDateTime
@@ -562,7 +560,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-printf
 proportionsZTest
 protocol
 queryID
@@ -897,7 +894,6 @@ tupleToNameValuePairs
 unbin
 unhex
 upper
-upperUTF8
 uptime
 validateNestedArraySizes
 version

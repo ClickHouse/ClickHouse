@@ -43,6 +43,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multiread;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_fault_injection_seed;
+    extern const SettingsFloat backup_restore_keeper_fault_injection_probability;
+}
 
 namespace ErrorCodes
 {
@@ -98,12 +107,12 @@ namespace
 
             RestoreCoordinationRemote::RestoreKeeperSettings keeper_settings
             {
-                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed
+                .keeper_max_retries = context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+                .keeper_retry_max_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+                .batch_size_for_keeper_multiread = context->getSettingsRef()[Setting::backup_restore_batch_size_for_keeper_multiread],
+                .keeper_fault_injection_probability = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_probability],
+                .keeper_fault_injection_seed = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_seed]
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -490,8 +499,6 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
             /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
-            /// Update context to preserve query information in processlist (settings, current_database)
-            process_list_element->updateContext(context_in_use);
 
             thread_pool.scheduleOrThrowOnError(
                 [this,
@@ -855,8 +862,6 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
             /// process_list_element_holder is used to make an element in ProcessList live while RESTORE is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
-            /// Update context to preserve query information in processlist (settings, current_database)
-            process_list_element->updateContext(context_in_use);
 
             thread_pool.scheduleOrThrowOnError(
                 [this,
