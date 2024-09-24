@@ -1661,6 +1661,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             drop_ast->no_ddl_lock = true;
 
             auto drop_context = Context::createCopy(context);
+            drop_context->setSetting("check_table_dependencies", false);
             InterpreterDropQuery interpreter(drop_ast, drop_context);
             interpreter.execute();
         }
