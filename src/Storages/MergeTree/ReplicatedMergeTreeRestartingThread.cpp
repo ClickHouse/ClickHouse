@@ -418,7 +418,7 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
 
     {
         std::lock_guard lock(storage.readonly_duration_timer_mutex);
-        storage.readonly_duration_timer->reset();
+        storage.readonly_duration_timer.reset();
     }
 }
 
