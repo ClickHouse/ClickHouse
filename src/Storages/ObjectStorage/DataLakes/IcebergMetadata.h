@@ -123,7 +123,7 @@ private:
     DataTypePtr getSimpleType(const String & type_name);
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
         [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema);
-    void refresh_parent_info(Int32 parent_id, Int32 current_id);
+    void refreshParentInfo(Int32 parent_id, Int32 current_id);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
 
@@ -206,10 +206,10 @@ public:
         {
             return PartitionTransform::Year;
         }
-        // else if (transform_name == "month")
-        // {
-        //     return PartitionTransform::Month;
-        // }
+        else if (transform_name == "month")
+        {
+            return PartitionTransform::Month;
+        }
         // else if (transform_name == "day")
         // {
         //     return PartitionTransform::Day;
@@ -279,6 +279,78 @@ private:
     NamesAndTypesList schema;
     LoggerPtr log;
     const DataLakePartitionColumns fake_partition_columns{};
+
+    std::optional<Range>
+    getPartitionRange(PartitionTransform partition_transform, UInt32 index, ColumnPtr partition_column, DataTypePtr column_data_type)
+    {
+        // Field period_beginning_field;
+        // Field next_period_beginning_field;
+        UInt64 period_beginning_num;
+        UInt64 next_period_beginning_num;
+
+        if (partition_transform == PartitionTransform::Year)
+        {
+            auto column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
+            auto year_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
+            auto year = year_int_column->getInt(index);
+            const UInt64 year_beginning_day = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year);
+            const UInt64 next_year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1);
+            if (WhichDataType(column_data_type).isDate())
+            {
+                period_beginning_num = year_beginning_day;
+            }
+            else if (WhichDataType(column_data_type).isDateTime64())
+            {
+                period_beginning_num = DateLUT::instance().find(year_beginning_day).date;
+                next_period_beginning_num = DateLUT::instance().find(next_year_beginning).date;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Year partitioning is not supported for the type: {}", column_data_type);
+            }
+        }
+        else if (partition_transform == PartitionTransform::Month)
+        {
+            auto column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
+            auto month_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
+            auto month = year_int_column->getInt(index);
+
+            if (WhichDataType(column_data_type).isDate())
+            {
+                const UInt64 month_beginning_day = DateLUT::instance().LUTIndexMonthSinceEpochStartsZeroIndexing(month);
+                const UInt64 next_month_beginning = DateLUT::instance().LUTIndexByMonthSinceEpochStartsZeroIndexing(month + 1);
+                Field year_beginning_field(year_beginning);
+                Field next_year_beginning_field(next_year_beginning);
+                return Range(year_beginning_field, true, next_year_beginning_field, false);
+            }
+            else if (WhichDataType(column_data_type).isDateTime64())
+            {
+                const UInt64 year_beginning_time
+                    = DateLUT::instance().find(DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year)).date;
+                const UInt64 next_year_beginning
+                    = DateLUT::instance().find(DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1)).date;
+                Field year_beginning_field(year_beginning);
+                Field next_year_beginning_field(next_year_beginning);
+                return Range(year_beginning_field, true, next_year_beginning_field, false);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Year partitioning is not supported for the type: {}", column_data_type);
+            }
+        }
+    }
+    auto column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
+    auto year_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
+    auto year = year_int_column->getInt(i);
+
+    const UInt64 year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year);
+    const UInt64 next_year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1);
+    Field year_beginning_field(year_beginning);
+    Field next_year_beginning_field(next_year_beginning);
+    // ColumnVector<UInt16>(1, year_beginning)->get(0, year_beginning_field);
+    // ColumnVector<UInt16>(1, next_year_beginning)->get(0, next_year_beginning_field);
+    ranges.emplace_back(year_beginning_field, true, next_year_beginning_field, false);
+}
 };
 
 }

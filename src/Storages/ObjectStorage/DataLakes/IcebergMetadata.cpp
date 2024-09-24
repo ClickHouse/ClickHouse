@@ -241,7 +241,7 @@ DataTypePtr IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::O
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-void IcebergSchemaProcessor::refresh_parent_info(Int32 parent_id, Int32 current_id)
+void IcebergSchemaProcessor::refreshParentInfo(Int32 parent_id, Int32 current_id)
 {
     if (!parents.contains(current_id))
     {
@@ -261,7 +261,7 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
         Int32 current_id = field->getValue<Int32>("id");
         if (current_schema_id.has_value())
         {
-            refresh_parent_info(parent_id, current_id);
+            refreshParentInfo(parent_id, current_id);
         }
         return getComplexTypeFromObject(field->getObject(type_key), current_id);
     }
@@ -273,7 +273,7 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
         if (current_schema_id.has_value())
         {
             Int32 id = field->getValue<Int32>(id_key);
-            refresh_parent_info(parent_id, id);
+            refreshParentInfo(parent_id, id);
             auto nullable_name = field->getNullableValue<String>("name");
             std::optional<String> name = nullable_name.isNull() ? std::nullopt : std::optional{nullable_name.value()};
             if (simple_type_by_field_id.contains(id))
@@ -855,7 +855,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
                     continue;
                 }
                 PartitionTransform transform = getTransform(current_field->getValue<String>("transform"));
-                LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Transform is year: {}", transform == PartitionTransform::Year);
+                // LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Transform is year: {}", transform == PartitionTransform::Year);
 
                 if (transform == PartitionTransform::Unsupported)
                 {
@@ -924,43 +924,47 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
             std::vector<Range> ranges;
             for (size_t j = 0; j < partition_transforms.size(); ++j)
             {
-                chassert(partition_transforms[j] == PartitionTransform::Year);
-                {
-                    auto type = partition_types[j];
-                    auto year_column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
+                chassert((partition_transforms[j] == PartitionTransform::Year) || (partition_transforms[j] == PartitionTransform::Month));
+                auto type = partition_types[j];
+                auto year_column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
 
-                    // if (year_column->getDataType()->getNested() != TypeIndex::Int32)
-                    // {
-                    //     throw Exception(
-                    //         ErrorCodes::ILLEGAL_COLUMN,
-                    //         "The parsed column from Avro file of `{}` field should be Int type, got {}",
-                    //         partition_names[i],
-                    //         year_column->getFamilyName());
-                    // }
-                    auto year_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
-                    auto year = year_int_column->getInt(i);
+                // if (year_column->getDataType()->getNested() != TypeIndex::Int32)
+                // {
+                //     throw Exception(
+                //         ErrorCodes::ILLEGAL_COLUMN,
+                //         "The parsed column from Avro file of `{}` field should be Int type, got {}",
+                //         partition_names[i],
+                //         year_column->getFamilyName());
+                // }
+                auto year_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
+                auto year = year_int_column->getInt(i);
 
-                    const auto year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year);
-                    const auto next_year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1);
-                    Field year_beginning_field(year_beginning);
-                    Field next_year_beginning_field(next_year_beginning);
-                    // ColumnVector<UInt16>(1, year_beginning)->get(0, year_beginning_field);
-                    // ColumnVector<UInt16>(1, next_year_beginning)->get(0, next_year_beginning_field);
-                    ranges.emplace_back(year_beginning_field, true, next_year_beginning_field, false);
-                    LOG_DEBUG(
-                        &Poco::Logger::get("Partition years"),
-                        "Print partition date years: file_path: {}, year from epoch: {}, year_begin: {}, year_exclusive_end: {}, "
-                        "clickhouse_column_name: {}",
-                        file_path,
-                        year,
-                        year_beginning,
-                        next_year_beginning,
-                        partition_names[j]);
-                }
+                const UInt64 year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year);
+                const UInt64 next_year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1);
+                Field year_beginning_field(year_beginning);
+                Field next_year_beginning_field(next_year_beginning);
+                // ColumnVector<UInt16>(1, year_beginning)->get(0, year_beginning_field);
+                // ColumnVector<UInt16>(1, next_year_beginning)->get(0, next_year_beginning_field);
+                ranges.emplace_back(year_beginning_field, true, next_year_beginning_field, false);
+                LOG_DEBUG(
+                    &Poco::Logger::get("Partition years"),
+                    "Print partition date years: file_path: {}, year from epoch: {}, year_begin: {}, year_exclusive_end: {}, "
+                    "clickhouse_column_name: {}",
+                    file_path,
+                    year,
+                    year_beginning,
+                    next_year_beginning,
+                    partition_names[j]);
             }
+
 
             if (!partition_transforms.empty())
             {
+                LOG_DEBUG(&Poco::Logger::get("Range to check"), "Given ranges size: {}", ranges.size());
+                for (const auto & range : ranges)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("Range to check"), "Given range: {}", range.toString());
+                }
                 ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
                     ActionsDAG(partition_names_and_types), ExpressionActionsSettings::fromContext(getContext()));
                 for (auto par_name : partition_names)
@@ -969,7 +973,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
                 }
                 const KeyCondition partition_key_condition(filter_dag, getContext(), partition_names, partition_minmax_idx_expr);
                 Ranges debug_ranges;
-                bool ranges_extracted = partition_key_condition.extractPlainRanges(ranges);
+                bool ranges_extracted = partition_key_condition.extractPlainRanges(debug_ranges);
                 if (ranges_extracted)
                 {
                     LOG_DEBUG(&Poco::Logger::get("Range extracting"), "Extracted ranges size: {}", debug_ranges.size());
