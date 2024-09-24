@@ -14,6 +14,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+}
 
 namespace ErrorCodes
 {
@@ -78,7 +82,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
         }
 
-        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
         if (!max_allowed_delay)
         {
             result.is_up_to_date = true;

@@ -22,6 +22,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool splitby_max_substrings_includes_remaining_string;
+}
 
 namespace ErrorCodes
 {
@@ -64,7 +68,7 @@ public:
     explicit FunctionTokens<Generator>(ContextPtr context)
     {
         const Settings & settings = context->getSettingsRef();
-        max_substrings_includes_remaining_string = settings.splitby_max_substrings_includes_remaining_string;
+        max_substrings_includes_remaining_string = settings[Setting::splitby_max_substrings_includes_remaining_string];
     }
 
     String getName() const override { return name; }
