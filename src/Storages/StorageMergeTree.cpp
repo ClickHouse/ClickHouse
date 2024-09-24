@@ -2174,7 +2174,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    const String partition_id = getPartitionIDFromQuery(partition, local_context);
+    String partition_id = getPartitionIDFromQuery(partition, local_context);
     auto merges_blocker = stopMergesAndWaitForPartition(partition_id);
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
@@ -2196,7 +2196,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
     else
     {
-        partition_id = getPartitionIDFromQuery(partition, local_context);
         src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
     }
 

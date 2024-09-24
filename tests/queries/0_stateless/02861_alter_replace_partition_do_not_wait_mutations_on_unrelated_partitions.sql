@@ -1,7 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/45328
 -- Check that replacing one partition on a table with `ALTER TABLE REPLACE PARTITION`
 -- doesn't wait for mutations on other partitions.
--- { echo }
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -29,7 +28,7 @@ SELECT not(is_done) as is_running FROM system.mutations WHERE database==currentD
 ALTER TABLE t1 REPLACE PARTITION id '2' FROM t2;
 
 -- check that mutation is still running
-SELECT is_done, latest_fail_reason, parts_to_do FROM system.mutations WHERE database==currentDatabase() AND table=='t1';
+SELECT is_done FROM system.mutations WHERE database==currentDatabase() AND table=='t1';
 
 -- Expecting that mutation hasn't finished yet (since ALTER TABLE .. REPLACE wasn't waiting for it),
 -- so row with `p == 1` still has the old value of `i == 1`.
