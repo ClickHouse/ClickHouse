@@ -21,6 +21,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/isLocalAddress.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -177,6 +178,66 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsMilliseconds async_insert_poll_timeout_ms;
+    extern const SettingsBool azure_allow_parallel_part_upload;
+    extern const SettingsUInt64 backup_threads;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool enable_filesystem_cache;
+    extern const SettingsBool enable_filesystem_cache_log;
+    extern const SettingsBool enable_filesystem_cache_on_write_operations;
+    extern const SettingsBool enable_filesystem_read_prefetches_log;
+    extern const SettingsBool enable_blob_storage_log;
+    extern const SettingsUInt64 filesystem_cache_max_download_size;
+    extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    extern const SettingsUInt64 filesystem_cache_segments_batch_size;
+    extern const SettingsBool http_make_head_request;
+    extern const SettingsUInt64 http_max_fields;
+    extern const SettingsUInt64 http_max_field_name_size;
+    extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsUInt64 http_max_tries;
+    extern const SettingsUInt64 http_max_uri_size;
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsUInt64 http_retry_initial_backoff_ms;
+    extern const SettingsUInt64 http_retry_max_backoff_ms;
+    extern const SettingsSeconds http_send_timeout;
+    extern const SettingsBool http_skip_not_found_url_for_globs;
+    extern const SettingsUInt64 hsts_max_age;
+    extern const SettingsString local_filesystem_read_method;
+    extern const SettingsBool local_filesystem_read_prefetch;
+    extern const SettingsBool load_marks_asynchronously;
+    extern const SettingsUInt64 max_backup_bandwidth;
+    extern const SettingsUInt64 max_local_read_bandwidth;
+    extern const SettingsUInt64 max_local_write_bandwidth;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsUInt64 max_read_buffer_size_local_fs;
+    extern const SettingsUInt64 max_read_buffer_size_remote_fs;
+    extern const SettingsUInt64 max_remote_read_network_bandwidth;
+    extern const SettingsUInt64 max_remote_write_network_bandwidth;
+    extern const SettingsUInt64 min_bytes_to_use_direct_io;
+    extern const SettingsUInt64 min_bytes_to_use_mmap_io;
+    extern const SettingsBool page_cache_inject_eviction;
+    extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsInt64 read_priority;
+    extern const SettingsUInt64 restore_threads;
+    extern const SettingsString remote_filesystem_read_method;
+    extern const SettingsBool remote_filesystem_read_prefetch;
+    extern const SettingsUInt64 remote_fs_read_max_backoff_ms;
+    extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
+    extern const SettingsUInt64 remote_read_min_bytes_for_seek;
+    extern const SettingsBool throw_on_error_from_cache_on_write_operations;
+    extern const SettingsBool skip_download_if_exceeds_query_cache;
+    extern const SettingsBool s3_allow_parallel_part_upload;
+    extern const SettingsBool use_page_cache_for_disks_without_file_cache;
+    extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+    extern const SettingsString workload;
+}
 
 namespace ErrorCodes
 {
@@ -1039,12 +1100,7 @@ Strings Context::getWarnings() const
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
-    std::set<String> obsolete_settings;
-    for (const auto & setting : *settings)
-    {
-        if (setting.isValueChanged() && setting.isObsolete())
-            obsolete_settings.emplace(setting.getName());
-    }
+    auto obsolete_settings = settings->getChangedAndObsoleteNames();
 
     if (!obsolete_settings.empty())
     {
@@ -1055,7 +1111,9 @@ Strings Context::getWarnings() const
         for (const auto & setting : obsolete_settings)
         {
             res += first ? "" : ", ";
-            res += "'" + setting + "'";
+            res += "'";
+            res += setting;
+            res += "'";
             first = false;
         }
         res = res + "]" + (single_element ? " is" : " are")
@@ -1555,7 +1613,8 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
-        return ContextAccessParams{user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
+        return ContextAccessParams{
+            user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -1685,7 +1744,7 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(getSettingsRef().workload);
+        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload]);
     return classifier;
 }
 
@@ -2062,8 +2121,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             throw;
         }
 
-        uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
-        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
+        uint64_t use_structure_from_insertion_table_in_table_functions
+            = getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
+        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint()
+            && hasInsertionTable())
         {
             const auto & insert_columns = DatabaseCatalog::instance()
                                               .getTable(getInsertionTable(), shared_from_this())
@@ -2191,8 +2252,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
                     if (!structure_hint.empty())
                         table_function_ptr->setStructureHint(structure_hint);
-
-                } else if (use_structure_from_insertion_table_in_table_functions == 1)
+                }
+                else if (use_structure_from_insertion_table_in_table_functions == 1)
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
             }
         }
@@ -2679,14 +2740,15 @@ void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_sett
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings->workload = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
+    (*settings)[Setting::workload] = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings->workload = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
+    (*settings)[Setting::workload]
+        = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
 }
 
 void Context::makeSessionContext()
@@ -2935,8 +2997,8 @@ BackupsWorker & Context::getBackupsWorker() const
     callOnce(shared->backups_worker_initialized, [&] {
         const auto & config = getConfigRef();
         const auto & settings_ref = getSettingsRef();
-        UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
-        UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
+        UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref[Setting::backup_threads]);
+        UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref[Setting::restore_threads]);
 
         shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads);
     });
@@ -3413,7 +3475,7 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
     ThrottlerPtr throttler = shared->remote_read_throttler;
-    if (auto bandwidth = getSettingsRef().max_remote_read_network_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
@@ -3426,7 +3488,7 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
     ThrottlerPtr throttler = shared->remote_write_throttler;
-    if (auto bandwidth = getSettingsRef().max_remote_write_network_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
@@ -3439,7 +3501,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
 ThrottlerPtr Context::getLocalReadThrottler() const
 {
     ThrottlerPtr throttler = shared->local_read_throttler;
-    if (auto bandwidth = getSettingsRef().max_local_read_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
@@ -3452,7 +3514,7 @@ ThrottlerPtr Context::getLocalReadThrottler() const
 ThrottlerPtr Context::getLocalWriteThrottler() const
 {
     ThrottlerPtr throttler = shared->local_write_throttler;
-    if (auto bandwidth = getSettingsRef().max_local_write_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
@@ -3465,7 +3527,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
 ThrottlerPtr Context::getBackupsThrottler() const
 {
     ThrottlerPtr throttler = shared->backups_server_throttler;
-    if (auto bandwidth = getSettingsRef().max_backup_bandwidth)
+    if (auto bandwidth = getSettingsRef()[Setting::max_backup_bandwidth])
     {
         std::lock_guard lock(mutex);
         if (!backups_query_throttler)
@@ -3761,6 +3823,11 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
         zookeeper->second = zookeeper->second->startNewSession();
 
     return zookeeper->second;
+}
+
+std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const String & name) const
+{
+    return name == zkutil::DEFAULT_ZOOKEEPER_NAME ? getZooKeeper() : getAuxiliaryZooKeeper(name);
 }
 
 
@@ -4330,9 +4397,9 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
-    bool enable_blob_storage_log = settings->enable_blob_storage_log;
+    bool enable_blob_storage_log = getSettingsRef()[Setting::enable_blob_storage_log];
     if (hasQueryContext())
-        enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
+        enable_blob_storage_log = getQueryContext()->getSettingsRef()[Setting::enable_blob_storage_log];
 
     if (!enable_blob_storage_log)
         return {};
@@ -5383,7 +5450,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 
     SharedLockGuard lock(shared->mutex);
 
-    if (std::chrono::milliseconds(settings->async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
+    if (std::chrono::milliseconds(getSettingsRef()[Setting::async_insert_poll_timeout_ms]) == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
@@ -5529,70 +5596,73 @@ ThreadPool & Context::getThreadPoolWriter() const
 ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
+    const auto & settings_ref = getSettingsRef();
 
-    std::string_view read_method_str = settings->local_filesystem_read_method.value;
+    std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
 
     if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
         res.local_fs_method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
 
-    read_method_str = settings->remote_filesystem_read_method.value;
+    read_method_str = getSettingsRef()[Setting::remote_filesystem_read_method].value;
 
     if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
         res.remote_fs_method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
 
-    res.local_fs_prefetch = settings->local_filesystem_read_prefetch;
-    res.remote_fs_prefetch = settings->remote_filesystem_read_prefetch;
+    res.local_fs_prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
+    res.remote_fs_prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
 
-    res.load_marks_asynchronously = settings->load_marks_asynchronously;
+    res.load_marks_asynchronously = settings_ref[Setting::load_marks_asynchronously];
 
-    res.enable_filesystem_read_prefetches_log = settings->enable_filesystem_read_prefetches_log;
+    res.enable_filesystem_read_prefetches_log = settings_ref[Setting::enable_filesystem_read_prefetches_log];
 
-    res.remote_fs_read_max_backoff_ms = settings->remote_fs_read_max_backoff_ms;
-    res.remote_fs_read_backoff_max_tries = settings->remote_fs_read_backoff_max_tries;
-    res.enable_filesystem_cache = settings->enable_filesystem_cache;
-    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings->read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
-    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
-    res.filesystem_cache_segments_batch_size = settings->filesystem_cache_segments_batch_size;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    res.remote_fs_read_max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
+    res.remote_fs_read_backoff_max_tries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
+    res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
+    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+    res.enable_filesystem_cache_log = settings_ref[Setting::enable_filesystem_cache_log];
+    res.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
 
-    res.filesystem_cache_max_download_size = settings->filesystem_cache_max_download_size;
-    res.skip_download_if_exceeds_query_cache = settings->skip_download_if_exceeds_query_cache;
+    res.filesystem_cache_max_download_size = settings_ref[Setting::filesystem_cache_max_download_size];
+    res.skip_download_if_exceeds_query_cache = settings_ref[Setting::skip_download_if_exceeds_query_cache];
 
     res.page_cache = getPageCache();
-    res.use_page_cache_for_disks_without_file_cache = settings->use_page_cache_for_disks_without_file_cache;
-    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings->read_from_page_cache_if_exists_otherwise_bypass_cache;
-    res.page_cache_inject_eviction = settings->page_cache_inject_eviction;
+    res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
+    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
+    res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
 
-    res.remote_read_min_bytes_for_seek = settings->remote_read_min_bytes_for_seek;
+    res.remote_read_min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
 
     /// Zero read buffer will not make progress.
-    if (!settings->max_read_buffer_size)
+    if (!getSettingsRef()[Setting::max_read_buffer_size])
     {
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid value '{}' for max_read_buffer_size", settings->max_read_buffer_size);
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE, "Invalid value '{}' for max_read_buffer_size", getSettingsRef()[Setting::max_read_buffer_size]);
     }
 
     res.local_fs_buffer_size
-        = settings->max_read_buffer_size_local_fs ? settings->max_read_buffer_size_local_fs : settings->max_read_buffer_size;
+        = settings_ref[Setting::max_read_buffer_size_local_fs] ? settings_ref[Setting::max_read_buffer_size_local_fs] : settings_ref[Setting::max_read_buffer_size];
     res.remote_fs_buffer_size
-        = settings->max_read_buffer_size_remote_fs ? settings->max_read_buffer_size_remote_fs : settings->max_read_buffer_size;
-    res.prefetch_buffer_size = settings->prefetch_buffer_size;
-    res.direct_io_threshold = settings->min_bytes_to_use_direct_io;
-    res.mmap_threshold = settings->min_bytes_to_use_mmap_io;
-    res.priority = Priority{settings->read_priority};
+        = settings_ref[Setting::max_read_buffer_size_remote_fs] ? settings_ref[Setting::max_read_buffer_size_remote_fs] : settings_ref[Setting::max_read_buffer_size];
+    res.prefetch_buffer_size = settings_ref[Setting::prefetch_buffer_size];
+    res.direct_io_threshold = settings_ref[Setting::min_bytes_to_use_direct_io];
+    res.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
+    res.priority = Priority{settings_ref[Setting::read_priority]};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
 
-    res.http_max_tries = settings->http_max_tries;
-    res.http_retry_initial_backoff_ms = settings->http_retry_initial_backoff_ms;
-    res.http_retry_max_backoff_ms = settings->http_retry_max_backoff_ms;
-    res.http_skip_not_found_url_for_globs = settings->http_skip_not_found_url_for_globs;
-    res.http_make_head_request = settings->http_make_head_request;
+    res.http_max_tries = settings_ref[Setting::http_max_tries];
+    res.http_retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
+    res.http_retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
+    res.http_skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
+    res.http_make_head_request = settings_ref[Setting::http_make_head_request];
 
     res.mmap_cache = getMMappedFileCache().get();
 
@@ -5602,14 +5672,16 @@ ReadSettings Context::getReadSettings() const
 WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
+    const auto & settings_ref = getSettingsRef();
 
-    res.enable_filesystem_cache_on_write_operations = settings->enable_filesystem_cache_on_write_operations;
-    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
-    res.throw_on_error_from_cache = settings->throw_on_error_from_cache_on_write_operations;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    res.enable_filesystem_cache_on_write_operations = settings_ref[Setting::enable_filesystem_cache_on_write_operations];
+    res.enable_filesystem_cache_log = settings_ref[Setting::enable_filesystem_cache_log];
+    res.throw_on_error_from_cache = settings_ref[Setting::throw_on_error_from_cache_on_write_operations];
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
 
-    res.s3_allow_parallel_part_upload = settings->s3_allow_parallel_part_upload;
-    res.azure_allow_parallel_part_upload = settings->azure_allow_parallel_part_upload;
+    res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
+    res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
@@ -5630,10 +5702,10 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     const auto & settings_ref = getSettingsRef();
 
     using enum Context::ParallelReplicasMode;
-    if (!settings_ref.parallel_replicas_custom_key.value.empty())
+    if (!settings_ref[Setting::parallel_replicas_custom_key].value.empty())
         return CUSTOM_KEY;
 
-    if (settings_ref.allow_experimental_parallel_reading_from_replicas > 0)
+    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
         return READ_TASKS;
 
     return SAMPLE_KEY;
@@ -5642,7 +5714,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref[Setting::max_parallel_replicas] > 1;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
@@ -5657,7 +5729,7 @@ bool Context::canUseParallelReplicasOnFollower() const
 
 bool Context::canUseParallelReplicasCustomKey() const
 {
-    return settings->max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+    return getSettingsRef()[Setting::max_parallel_replicas] > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
 }
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
@@ -5667,7 +5739,7 @@ bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster)
 
 bool Context::canUseOffsetParallelReplicas() const
 {
-    return offset_parallel_replicas_enabled && settings->max_parallel_replicas > 1
+    return offset_parallel_replicas_enabled && getSettingsRef()[Setting::max_parallel_replicas] > 1
         && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
 }
 
@@ -5678,14 +5750,15 @@ void Context::disableOffsetParallelReplicas()
 
 ClusterPtr Context::getClusterForParallelReplicas() const
 {
+    const auto & settings_ref = getSettingsRef();
     /// check cluster for parallel replicas
-    if (settings->cluster_for_parallel_replicas.value.empty())
+    if (settings_ref[Setting::cluster_for_parallel_replicas].value.empty())
         throw Exception(
             ErrorCodes::CLUSTER_DOESNT_EXIST,
             "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
             "'cluster_for_parallel_replicas' setting");
 
-    return getCluster(settings->cluster_for_parallel_replicas);
+    return getCluster(settings_ref[Setting::cluster_for_parallel_replicas]);
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
@@ -5715,37 +5788,37 @@ const ServerSettings & Context::getServerSettings() const
 
 uint64_t HTTPContext::getMaxHstsAge() const
 {
-    return context->getSettingsRef().hsts_max_age;
+    return context->getSettingsRef()[Setting::hsts_max_age];
 }
 
     uint64_t HTTPContext::getMaxUriSize() const
 {
-    return context->getSettingsRef().http_max_uri_size;
+    return context->getSettingsRef()[Setting::http_max_uri_size];
 }
 
 uint64_t HTTPContext::getMaxFields() const
 {
-return context->getSettingsRef().http_max_fields;
+    return context->getSettingsRef()[Setting::http_max_fields];
 }
 
 uint64_t HTTPContext::getMaxFieldNameSize() const
 {
-return context->getSettingsRef().http_max_field_name_size;
+    return context->getSettingsRef()[Setting::http_max_field_name_size];
 }
 
 uint64_t HTTPContext::getMaxFieldValueSize() const
 {
-return context->getSettingsRef().http_max_field_value_size;
+    return context->getSettingsRef()[Setting::http_max_field_value_size];
 }
 
 Poco::Timespan HTTPContext::getReceiveTimeout() const
 {
-return context->getSettingsRef().http_receive_timeout;
+    return context->getSettingsRef()[Setting::http_receive_timeout];
 }
 
 Poco::Timespan HTTPContext::getSendTimeout() const
 {
-return context->getSettingsRef().http_send_timeout;
+    return context->getSettingsRef()[Setting::http_send_timeout];
 }
 
 }
