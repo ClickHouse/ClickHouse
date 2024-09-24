@@ -64,6 +64,7 @@ class WriteBuffer;
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
     M(CLASS_NAME, LogQueriesType) \
@@ -88,7 +89,6 @@ class WriteBuffer;
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
-    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
