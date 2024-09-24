@@ -74,6 +74,20 @@ def pre_build(repo_path: Path, env_variables: List[str]) -> None:
             subprocess.check_call(cmd, shell=True)
 
 
+def get_total_memory_gb():
+    with open("/proc/meminfo", "r") as f:
+        meminfo = f.read()
+
+    mem_kb = 0
+    for line in meminfo.splitlines():
+        if "MemTotal" in line:
+            mem_kb = int(line.split()[1])  # Memory is reported in KB
+            break
+
+    assert mem_kb, "Cannot read meminfo from fs"
+    return int(mem_kb / (1024**2))
+
+
 def run_docker_image_with_env(
     image_name: str,
     as_root: bool,
@@ -104,8 +118,9 @@ def run_docker_image_with_env(
     if ccache_dir is None:
         ccache_mount = ""
 
+    # limit available memory for the build to not exhaust runner resources
     cmd = (
-        f"docker run --network=host --user={user} --rm {ccache_mount} "
+        f"docker run --memory={get_total_memory_gb()-2}g --network=host --user={user} --rm {ccache_mount} "
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
         f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
     )
