@@ -151,10 +151,12 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+    const BuildQueryPipelineSettings & build_pipeline_settings,
+    bool do_optimize)
 {
     checkInitialized();
-    optimize(optimization_settings);
+    if (do_optimize)
+        optimize(optimization_settings);
 
     struct Frame
     {

@@ -1673,13 +1673,16 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 
                     auto plan = QueryPlan::resolveStorages(std::move(*query_plan), context);
 
+                    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+
                     WriteBufferFromOwnString buf;
                     plan.explainPlan(buf, {.header=true, .actions=true});
                     LOG_TRACE(getLogger("executeQuery"), "Query Plan:\n{}", buf.str());
 
                     auto pipeline = plan.buildQueryPipeline(
                             QueryPlanOptimizationSettings::fromContext(context),
-                            BuildQueryPipelineSettings::fromContext(context));
+                            BuildQueryPipelineSettings::fromContext(context),
+                            /*do_optimize=*/ false);
 
                     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline));
 

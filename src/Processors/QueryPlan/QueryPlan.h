@@ -70,7 +70,8 @@ public:
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
+        const BuildQueryPipelineSettings & build_pipeline_settings,
+        bool do_optimize=true);
 
     struct ExplainPlanOptions
     {
