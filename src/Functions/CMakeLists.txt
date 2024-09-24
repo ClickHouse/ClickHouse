@@ -3,6 +3,31 @@ add_subdirectory(divide)
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 
+# These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
+# This allows less dependency and linker work (specially important when building many example executables)
+set(DBMS_FUNCTIONS
+    IFunction.cpp
+    FunctionFactory.cpp
+    FunctionHelpers.cpp
+    extractTimeZoneFromFunctionArguments.cpp
+    FunctionsLogical.cpp
+    if.cpp
+    multiIf.cpp
+    multiMatchAny.cpp
+    checkHyperscanRegexp.cpp
+    CastOverloadResolver.cpp
+    FunctionsConversion.cpp # createFunctionBaseCast
+)
+extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
+extract_into_parent_list(clickhouse_functions_headers dbms_headers
+    IFunction.h
+    FunctionFactory.h
+    FunctionHelpers.h
+    extractTimeZoneFromFunctionArguments.h
+    FunctionsLogical.h
+    CastOverloadResolver.h
+)
+
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
@@ -141,6 +166,10 @@ if (USE_GPERF)
     endif ()
     add_dependencies(generate-source generate-html-char-ref)
 endif ()
+
+# Update after all the includes
+set(dbms_sources "${dbms_sources}" PARENT_SCOPE)
+set(dbms_headers "${dbms_headers}" PARENT_SCOPE)
 
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
 
