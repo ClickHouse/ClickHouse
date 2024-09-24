@@ -11,7 +11,7 @@ namespace DB
 class ParserWithElement : public IParserBase
 {
 public:
-    explicit ParserWithElement(bool with_recursive_ = false) : with_recursive(with_recursive_) {}
+    ParserWithElement(bool with_recursive_ = false) : with_recursive(with_recursive_) {}
 protected:
     const char * getName() const override { return "WITH element"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
