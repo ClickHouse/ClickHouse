@@ -588,8 +588,8 @@ def test_mutation_workload_change():
 def test_create_workload():
     node.query(
         f"""
-        create resource io_write (write disk s3);
-        create resource io_read (read disk s3);
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
         create workload all settings max_cost = 1000000;
         create workload admin in all settings priority = 0;
         create workload production in all settings priority = 1, weight = 9;
@@ -639,14 +639,14 @@ def test_resource_read_and_write():
     node.query(
         f"""
         drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
     node.query(
         f"""
-        create resource io_write (write disk s3);
-        create resource io_read (read disk s3);
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
         create workload all settings max_cost = 1000000;
         create workload admin in all settings priority = 0;
         create workload production in all settings priority = 1, weight = 9;
