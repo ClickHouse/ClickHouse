@@ -26,8 +26,6 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
-#include <openssl/ssl.h>
-
 namespace DB
 {
 
@@ -61,6 +59,7 @@ StorageNATS::StorageNATS(
     , num_consumers(nats_settings->nats_num_consumers.value)
     , max_rows_per_message(nats_settings->nats_max_rows_per_message)
     , log(getLogger("StorageNATS (" + table_id_.table_name + ")"))
+    , event_handler(log)
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
@@ -83,9 +82,6 @@ StorageNATS::StorageNATS(
         .secure = nats_settings->nats_secure.value
     };
 
-    if (configuration.secure)
-        SSL_library_init();
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
@@ -100,7 +96,7 @@ StorageNATS::StorageNATS(
         size_t num_tries = nats_settings->nats_startup_connect_tries;
         for (size_t i = 0; i < num_tries; ++i)
         {
-            connection = std::make_shared<NATSConnectionManager>(configuration, log);
+            connection = std::make_shared<NATSConnection>(configuration, log, event_handler.createOptions());
 
             if (connection->connect())
                 break;
@@ -201,14 +197,14 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
 
 void StorageNATS::loopingFunc()
 {
-    connection->getHandler().startLoop();
+    event_handler.startLoop();
     looping_task->activateAndSchedule();
 }
 
 
 void StorageNATS::stopLoop()
 {
-    connection->getHandler().updateLoopState(Loop::STOP);
+    event_handler.updateLoopState(Loop::STOP);
 }
 
 void StorageNATS::stopLoopIfNoReaders()
@@ -222,12 +218,12 @@ void StorageNATS::stopLoopIfNoReaders()
     std::lock_guard lock(loop_mutex);
     if (readers_count)
         return;
-    connection->getHandler().updateLoopState(Loop::STOP);
+    event_handler.updateLoopState(Loop::STOP);
 }
 
 void StorageNATS::startLoop()
 {
-    connection->getHandler().updateLoopState(Loop::RUN);
+    event_handler.updateLoopState(Loop::RUN);
     looping_task->activateAndSchedule();
 }
 
@@ -356,7 +352,7 @@ void StorageNATS::read(
         pipes.back().addTransform(std::move(converting_transform));
     }
 
-    if (!connection->getHandler().loopRunning() && connection->isConnected())
+    if (!event_handler.loopRunning() && connection->isConnected())
         startLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -404,7 +400,7 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto producer = std::make_unique<NATSProducer>(configuration, subject, shutdown_called, log);
+    auto producer = std::make_unique<NATSProducer>(configuration, event_handler.createOptions(), subject, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
@@ -683,7 +679,7 @@ bool StorageNATS::streamToViews()
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
-    if (!connection->getHandler().loopRunning())
+    if (!event_handler.loopRunning())
         startLoop();
 
     {
@@ -715,7 +711,7 @@ bool StorageNATS::streamToViews()
             if (source->queueEmpty())
                 ++queue_empty;
 
-            connection->getHandler().iterateLoop();
+            event_handler.iterateLoop();
         }
     }
 

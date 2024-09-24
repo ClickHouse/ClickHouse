@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <Storages/NATS/NATSHandler.h>
-#include <Storages/UVLoop.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -22,11 +25,11 @@ struct NATSConfiguration
     bool secure;
 };
 
-class NATSConnectionManager
+class NATSConnection
 {
 public:
-    NATSConnectionManager(const NATSConfiguration & configuration_, LoggerPtr log_);
-    ~NATSConnectionManager();
+    NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_);
+    ~NATSConnection();
 
     bool isConnected();
 
@@ -36,11 +39,7 @@ public:
 
     void disconnect();
 
-    bool closed();
-
-    /// NATSHandler is thread safe. Any public methods can be called concurrently.
-    NATSHandler & getHandler() { return event_handler; }
-    natsConnection * getConnection() { return connection; }
+    natsConnection * getConnection() { return connection.get(); }
 
     String connectionInfoForLog() const;
 
@@ -57,18 +56,12 @@ private:
     NATSConfiguration configuration;
     LoggerPtr log;
 
-    NATSHandler event_handler;
-
-    natsConnection * connection;
-    // true if at any point successfully connected to NATS
-    bool has_connection = false;
-
-    // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert
-    bool skip_verification = false;
+    NATSOptionsPtr options;
+    std::unique_ptr<natsConnection, decltype(&natsConnection_Destroy)> connection;
 
     std::mutex mutex;
 };
 
-using NATSConnectionManagerPtr = std::shared_ptr<NATSConnectionManager>;
+using NATSConnectionPtr = std::shared_ptr<NATSConnection>;
 
 }

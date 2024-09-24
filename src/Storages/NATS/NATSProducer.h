@@ -18,6 +18,7 @@ class NATSProducer : public AsynchronousMessageProducer
 public:
     NATSProducer(
         const NATSConfiguration & configuration_,
+        NATSOptionsPtr options_,
         const String & subject_,
         std::atomic<bool> & shutdown_called_,
         LoggerPtr log_);
@@ -33,12 +34,11 @@ private:
 
     void startProducingTaskLoop() override;
 
-    void iterateEventLoop();
     void publish();
 
     static void publishThreadFunc(void * arg);
 
-    NATSConnectionManager connection;
+    NATSConnection connection;
     const String subject;
 
     /* false: when shutdown is called

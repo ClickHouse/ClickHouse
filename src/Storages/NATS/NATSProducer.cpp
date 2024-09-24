@@ -21,11 +21,12 @@ namespace ErrorCodes
 
 NATSProducer::NATSProducer(
     const NATSConfiguration & configuration_,
+    NATSOptionsPtr options_,
     const String & subject_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
-    , connection(configuration_, log_)
+    , connection(configuration_, log_, std::move(options_))
     , subject(subject_)
     , shutdown_called(shutdown_called_)
     , payloads(BATCH)
@@ -55,8 +56,6 @@ void NATSProducer::publish()
     uv_thread_t flush_thread;
 
     uv_thread_create(&flush_thread, publishThreadFunc, static_cast<void *>(this));
-
-    connection.getHandler().startLoop();
     uv_thread_join(&flush_thread);
 }
 
@@ -105,8 +104,6 @@ void NATSProducer::startProducingTaskLoop()
 
             if (!connection.isConnected())
                 connection.reconnect();
-
-            iterateEventLoop();
         }
     }
     catch (...)
@@ -115,12 +112,6 @@ void NATSProducer::startProducingTaskLoop()
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
-}
-
-
-void NATSProducer::iterateEventLoop()
-{
-    connection.getHandler().iterateLoop();
 }
 
 }

@@ -80,7 +80,9 @@ private:
 
     LoggerPtr log;
 
-    NATSConnectionManagerPtr connection; /// Connection for all consumers
+    NATSHandler event_handler;
+
+    NATSConnectionPtr connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
     size_t num_created_consumers = 0;

@@ -17,14 +17,14 @@ namespace ErrorCodes
 }
 
 NATSConsumer::NATSConsumer(
-    std::shared_ptr<NATSConnectionManager> connection_,
+    NATSConnectionPtr connection_,
     StorageNATS & storage_,
     std::vector<String> & subjects_,
     const String & subscribe_queue_name,
     LoggerPtr log_,
     uint32_t queue_size_,
     const std::atomic<bool> & stopped_)
-    : connection(connection_)
+    : connection(std::move(connection_))
     , storage(storage_)
     , subjects(subjects_)
     , log(log_)

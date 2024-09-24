@@ -19,7 +19,7 @@ namespace Loop
     static const UInt8 STOP = 2;
 }
 
-using SubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
+using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
 using LockPtr = std::unique_ptr<std::lock_guard<std::mutex>>;
 
 class NATSHandler
@@ -44,11 +44,10 @@ public:
     void updateLoopState(UInt8 state) { loop_state.store(state); }
     UInt8 getLoopState() { return loop_state.load(); }
 
-    natsOptions * getOptions() { return opts; }
+    NATSOptionsPtr createOptions();
 
 private:
     UVLoop loop;
-    natsOptions * opts = nullptr;
     LoggerPtr log;
 
     std::atomic<bool> loop_running;
