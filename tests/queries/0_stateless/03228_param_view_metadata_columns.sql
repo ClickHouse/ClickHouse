@@ -16,6 +16,8 @@ describe (SELECT * FROM p3(t = 'Int64') union all SELECT * FROM p3(t = 'UInt64')
 
 SELECT * FROM p3(t = 'String');
 
+SELECT * FROM p3(plus(equals(equals(equals(t), equals(toLowCardinality(6) = 6, 2), top)), 'String', 6, 6), materialize(3), equals(p3(globalIn(1), p2(equals(top)), t = 'Int') = top, p3(globalIn(1), p2(equals(top)), t = 'Int'), 'Int', toNullable(toUInt256(3)), 3, 3), t = 'String');
+
 select arrayReduce('sum', (select groupArray(number) from paramview(top=10)));
 
 create view test_pv as select number from numbers({limit:UInt64});
