@@ -1,1 +1,1 @@
-SELECT toTypeName(getSubcolumn(tuple('str'::LowCardinality(String) as a), 'a'))
+SELECT toTypeName(getSubcolumn(tuple('str')::Tuple(a LowCardinality(String)), 'a'))
