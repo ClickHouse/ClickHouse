@@ -4927,15 +4927,16 @@ message JoinedTable {
   optional bool final = 3;
 }
 
+enum FileCompression {
+  COMPgz = 1;
+  COMPbr = 2;
+  COMPxz = 3;
+  COMPzst = 4;
+  COMPlz4 = 5;
+  COMPbz2 = 6;
+}
+
 message FileFunc {
-  enum FileCompression {
-    gz = 1;
-    br = 2;
-    xz = 3;
-    zst = 4;
-    lz4 = 5;
-    bz2 = 6;
-  }
   required string path = 1;
   oneof file_func_oneof {
     InFormat informat = 2;
@@ -4963,13 +4964,17 @@ message GenerateSeriesFunc {
   optional Expr expr3 = 4;
 }
 
-message JoinedTableFunction {
+message TableFunction {
   oneof jtf_oneof {
     FileFunc file = 1;
     FormatFunc format = 2;
     GenerateSeriesFunc gseries = 3;
   }
-  optional Table table_alias = 4;
+}
+
+message JoinedTableFunction {
+  required TableFunction tfunc = 1;
+  optional Table table_alias = 2;
 }
 
 message TableOrSubquery {
@@ -5352,13 +5357,27 @@ message ValuesStatement {
   repeated ExprList extra_expr_lists = 2;
 }
 
-message Insert {
+message InsertIntoTable {
   required ExprSchemaTable est = 1;
   repeated ColumnPath cols = 2;
+}
+
+message InsertFromFile {
+  required string path = 1;
+  optional FileCompression fcomp = 2;
+  required InFormat format = 3;
+}
+
+message Insert {
+  oneof into_oneof {
+    InsertIntoTable itable = 1;
+    TableFunction tfunction = 2;
+  }
   oneof insert_oneof {
     ValuesStatement values = 3;
     Select select = 4;
-    string query = 5;
+    InsertFromFile ffile = 5;
+    string query = 6;
   }
 }
 

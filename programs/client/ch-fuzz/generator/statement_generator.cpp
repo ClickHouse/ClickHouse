@@ -617,6 +617,8 @@ int StatementGenerator::GenerateNextDescTable(RandomGenerator &rg, sql_query_gra
 
 int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_grammar::Insert *ins) {
 	NestedType *ntp = nullptr;
+	const uint32_t noption = rg.NextMediumNumber();
+	sql_query_grammar::InsertIntoTable *iit = ins->mutable_itable();
 	const SQLTable &t = rg.PickValueRandomlyFromMap(this->tables);
 
 	assert(this->entries.empty());
@@ -631,9 +633,9 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 	}
 	std::shuffle(this->entries.begin(), this->entries.end(), rg.gen);
 
-	ins->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	iit->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 	for (const auto &entry : this->entries) {
-		sql_query_grammar::ColumnPath *cp = ins->add_cols();
+		sql_query_grammar::ColumnPath *cp = iit->add_cols();
 
 		cp->mutable_col()->set_column("c" + std::to_string(entry.cname1));
 		if (entry.cname2.has_value()) {
@@ -641,7 +643,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 		}
 	}
 
-	if (rg.NextSmallNumber() < 10) {
+	if (noption < 901) {
 		const uint32_t nrows = rg.NextMediumNumber();
 
 		buf.resize(0);
@@ -666,9 +668,32 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 			buf += ")";
 		}
 		ins->set_query(buf);
-	} else {
+	} else if (noption < 951) {
 		this->levels[this->current_level] = QueryLevel(this->current_level);
-		GenerateSelect(rg, true, static_cast<uint32_t>(t.RealNumberOfColumns()), std::numeric_limits<uint32_t>::max(), ins->mutable_select());
+		GenerateSelect(rg, true, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), ins->mutable_select());
+	} else {
+		const uint32_t nrows = (rg.NextSmallNumber() % 3) + 1;
+		sql_query_grammar::ValuesStatement *vs = ins->mutable_values();
+
+		this->levels[this->current_level] = QueryLevel(this->current_level);
+		this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+		for (uint32_t i = 0 ; i < nrows; i++) {
+			bool first = true;
+			sql_query_grammar::ExprList *elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
+
+			for (const auto &entry : this->entries) {
+				sql_query_grammar::Expr *expr = first ? elist->mutable_expr() : elist->add_extra_exprs();
+
+				if (entry.is_sign) {
+					expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.NextBool() ? 1 : -1);
+				} else {
+					GenerateExpression(rg, expr);
+				}
+				first = false;
+			}
+		}
+		this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
+		this->levels.clear();
 	}
 	this->entries.clear();
 	return 0;

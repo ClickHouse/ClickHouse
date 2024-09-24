@@ -1376,7 +1376,7 @@ CONV_FN(FileFunc, ff) {
   ret += "'";
   if (ff.has_fcomp()) {
     ret += ", '";
-    ret += FileFunc_FileCompression_Name(ff.fcomp());
+    ret += FileCompression_Name(ff.fcomp()).substr(4);
     ret += "'";
   }
   ret += ")";
@@ -1410,21 +1410,25 @@ CONV_FN(GenerateSeriesFunc, gsf) {
   ret += ")";
 }
 
-CONV_FN(JoinedTableFunction, jtf) {
-  using TableFunctionType = JoinedTableFunction::JtfOneofCase;
-  switch (jtf.jtf_oneof_case()) {
+CONV_FN(TableFunction, tf) {
+  using TableFunctionType = TableFunction::JtfOneofCase;
+  switch (tf.jtf_oneof_case()) {
     case TableFunctionType::kFile:
-      FileFuncToString(ret, jtf.file());
+      FileFuncToString(ret, tf.file());
       break;
     case TableFunctionType::kFormat:
-      FormatFuncToString(ret, jtf.format());
+      FormatFuncToString(ret, tf.format());
       break;
     case TableFunctionType::kGseries:
-      GenerateSeriesFuncToString(ret, jtf.gseries());
+      GenerateSeriesFuncToString(ret, tf.gseries());
       break;
     default:
       ret += "numbers(10)";
   }
+}
+
+CONV_FN(JoinedTableFunction, jtf) {
+  TableFunctionToString(ret, jtf.tfunc());
   if (jtf.has_table_alias()) {
     ret += " ";
     TableToString(ret, jtf.table_alias());
@@ -1863,8 +1867,7 @@ CONV_FN(ValuesStatement, values) {
   }
 }
 
-CONV_FN(Insert, insert) {
-  ret += "INSERT INTO ";
+CONV_FN(InsertIntoTable, insert) {
   ExprSchemaTableToString(ret, insert.est());
   if (insert.cols_size()) {
     ret += " (";
@@ -1876,6 +1879,29 @@ CONV_FN(Insert, insert) {
     }
     ret += ")";
   }
+}
+
+CONV_FN(InsertFromFile, ffile) {
+  ret += "FROM INFILE '";
+  ret += ffile.path();
+  ret += "'";
+  if (ffile.has_fcomp()) {
+    ret += " COMPRESSION '";
+    ret += FileCompression_Name(ffile.fcomp()).substr(4);
+    ret += "'";
+  }
+  ret += " FORMAT ";
+  ret += InFormat_Name(ffile.format()).substr(3);
+}
+
+CONV_FN(Insert, insert) {
+  ret += "INSERT INTO TABLE ";
+  if (insert.has_itable()) {
+    InsertIntoTableToString(ret, insert.itable());
+  } else {
+    ret += "FUNCTION ";
+    TableFunctionToString(ret, insert.tfunction());
+  }
   ret += " ";
   if (insert.has_values()) {
     ValuesStatementToString(ret, insert.values());
@@ -1883,6 +1909,8 @@ CONV_FN(Insert, insert) {
     ret += "SELECT * FROM (";
     SelectToString(ret, insert.select());
     ret += ")";
+  } else if (insert.has_ffile()) {
+    InsertFromFileToString(ret, insert.ffile());
   } else if (insert.has_query()) {
     ret += "VALUES ";
     ret += insert.query();
