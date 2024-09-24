@@ -4927,11 +4927,57 @@ message JoinedTable {
   optional bool final = 3;
 }
 
+message FileFunc {
+  enum FileCompression {
+    gz = 1;
+    br = 2;
+    xz = 3;
+    zst = 4;
+    lz4 = 5;
+    bz2 = 6;
+  }
+  required string path = 1;
+  oneof file_func_oneof {
+    InFormat informat = 2;
+    OutFormat outformat = 3;
+  }
+  required string structure = 4;
+  optional FileCompression fcomp = 5;
+}
+
+message FormatFunc {
+  required InFormat format = 1;
+  required string structure = 2;
+  required string data = 3;
+}
+
+message GenerateSeriesFunc {
+  enum GSName {
+    generate_series = 1;
+    generateSeries = 2;
+    numbers = 3;
+  }
+  required GSName fname = 1;
+  required Expr expr1 = 2;
+  optional Expr expr2 = 3;
+  optional Expr expr3 = 4;
+}
+
+message JoinedTableFunction {
+  oneof jtf_oneof {
+    FileFunc file = 1;
+    FormatFunc format = 2;
+    GenerateSeriesFunc gseries = 3;
+  }
+  optional Table table_alias = 4;
+}
+
 message TableOrSubquery {
   oneof tos_oneof {
-    JoinedTable jt = 1;
-    JoinedDerivedQuery jdq = 2;
-    JoinedQuery jq = 3;
+    JoinedTable joined_table = 1;
+    JoinedDerivedQuery joined_derived_query = 2;
+    JoinedTableFunction joined_table_function = 3;
+    JoinedQuery joined_query = 4;
   }
 }
 

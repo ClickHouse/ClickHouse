@@ -1360,16 +1360,94 @@ CONV_FN(JoinedTable, jt) {
   }
 }
 
-CONV_FN(TableOrSubquery, tos) {
-  // oneof
-  if (tos.has_jt()) {
-    JoinedTableToString(ret, tos.jt());
-  } else if (tos.has_jq()) {
-    JoinedQueryToString(ret, tos.jq());
-  } else if (tos.has_jdq()) {
-    JoinedDerivedQueryToString(ret, tos.jdq());
+CONV_FN(FileFunc, ff) {
+  ret += "file('";
+  ret += ff.path();
+  ret += "', '";
+  if (ff.has_informat()) {
+    ret += InFormat_Name(ff.informat()).substr(3);
+  } else if (ff.has_outformat()) {
+    ret += OutFormat_Name(ff.outformat()).substr(4);
   } else {
-    ret += "(SELECT 1 c0) t0";
+    ret += "CSV";
+  }
+  ret += "', '";
+  ret += ff.structure();
+  ret += "'";
+  if (ff.has_fcomp()) {
+    ret += ", '";
+    ret += FileFunc_FileCompression_Name(ff.fcomp());
+    ret += "'";
+  }
+  ret += ")";
+}
+
+CONV_FN(FormatFunc, ff) {
+  ret += "format(";
+  ret += InFormat_Name(ff.format()).substr(3);
+  if (ff.has_structure()) {
+    ret += "', '";
+    ret += ff.structure();
+    ret += "'";
+  }
+  ret += ", $$\n";
+  ret += ff.data();
+  ret += "$$)";
+}
+
+CONV_FN(GenerateSeriesFunc, gsf) {
+  ret += GenerateSeriesFunc_GSName_Name(gsf.fname());
+  ret += "(";
+  ExprToString(ret, gsf.expr1());
+  if (gsf.has_expr2()) {
+    ret += ", ";
+    ExprToString(ret, gsf.expr2());
+  }
+  if (gsf.has_expr3()) {
+    ret += ", ";
+    ExprToString(ret, gsf.expr3());
+  }
+  ret += ")";
+}
+
+CONV_FN(JoinedTableFunction, jtf) {
+  using TableFunctionType = JoinedTableFunction::JtfOneofCase;
+  switch (jtf.jtf_oneof_case()) {
+    case TableFunctionType::kFile:
+      FileFuncToString(ret, jtf.file());
+      break;
+    case TableFunctionType::kFormat:
+      FormatFuncToString(ret, jtf.format());
+      break;
+    case TableFunctionType::kGseries:
+      GenerateSeriesFuncToString(ret, jtf.gseries());
+      break;
+    default:
+      ret += "numbers(10)";
+  }
+  if (jtf.has_table_alias()) {
+    ret += " ";
+    TableToString(ret, jtf.table_alias());
+  }
+}
+
+CONV_FN(TableOrSubquery, tos) {
+  using JoinedType = TableOrSubquery::TosOneofCase;
+  switch (tos.tos_oneof_case()) {
+    case JoinedType::kJoinedTable:
+      JoinedTableToString(ret, tos.joined_table());
+      break;
+    case JoinedType::kJoinedDerivedQuery:
+      JoinedDerivedQueryToString(ret, tos.joined_derived_query());
+      break;
+    case JoinedType::kJoinedTableFunction:
+      JoinedTableFunctionToString(ret, tos.joined_table_function());
+      break;
+    case JoinedType::kJoinedQuery:
+      JoinedQueryToString(ret, tos.joined_query());
+      break;
+    default:
+      ret += "(SELECT 1 c0) t0";
   }
 }
 

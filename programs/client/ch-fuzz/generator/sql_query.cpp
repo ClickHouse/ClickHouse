@@ -94,14 +94,14 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 
 		if (derived_table && nopt < (derived_table + 1)) {
 			SQLRelation rel(name);
-			sql_query_grammar::JoinedDerivedQuery *jdq = tos->mutable_jdq();
+			sql_query_grammar::JoinedDerivedQuery *jdq = tos->mutable_joined_derived_query();
 
 			GenerateDerivedTable(rg, rel, allowed_clauses, jdq->mutable_select());
 			jdq->mutable_table_alias()->set_table(name);
 			this->levels[this->current_level].rels.push_back(std::move(rel));
 		} else if (cte && nopt < (derived_table + cte + 1)) {
 			SQLRelation rel(name);
-			sql_query_grammar::JoinedTable *jt = tos->mutable_jt();
+			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
 			const auto &next_cte = rg.PickValueRandomlyFromMap(rg.PickValueRandomlyFromMap(this->ctes));
 
 			jt->mutable_est()->mutable_table_name()->set_table(next_cte.name);
@@ -111,7 +111,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			jt->mutable_table_alias()->set_table(name);
 			this->levels[this->current_level].rels.push_back(std::move(rel));
 		} else if (table && nopt < (derived_table + cte + table + 1)) {
-			sql_query_grammar::JoinedTable *jt = tos->mutable_jt();
+			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
 			const SQLTable &t = rg.PickValueRandomlyFromMap(this->tables);
 
 			jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
@@ -122,7 +122,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			AddTableRelation(rg, true, name, t);
 		} else if (view && nopt < (derived_table + cte + table + view + 1)) {
 			SQLRelation rel(name);
-			sql_query_grammar::JoinedTable *jt = tos->mutable_jt();
+			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
 			const SQLView &v = rg.PickValueRandomlyFromMap(this->views);
 
 			jt->mutable_est()->mutable_table_name()->set_table("v" + std::to_string(v.vname));
@@ -138,7 +138,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 	} else {
 		//fallback case
 		SQLRelation rel(name);
-		sql_query_grammar::JoinedDerivedQuery *jdq = tos->mutable_jdq();
+		sql_query_grammar::JoinedDerivedQuery *jdq = tos->mutable_joined_derived_query();
 		sql_query_grammar::Select *sel = jdq->mutable_select();
 		sql_query_grammar::SelectStatementCore *ssc = sel->mutable_select_core();
 		sql_query_grammar::ExprColAlias *eca = ssc->add_result_columns()->mutable_eca();
