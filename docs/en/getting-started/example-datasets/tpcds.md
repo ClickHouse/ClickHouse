@@ -592,5 +592,5 @@ Then run the generated queries.
 
 ::::warning
 TPC-DS makes heavy use of correlated subqueries which are at the time of writing (September 2024) not supported by ClickHouse ([issue #6697](https://github.com/ClickHouse/ClickHouse/issues/6697)).
-As a result, many of below benchmark queries will fail with errors.
+As a result, many of the benchmark queries above will fail with errors.
 ::::
