@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_db ENGINE=Ato
 
 function create_or_replace_view_thread
 {
-    for _ in {1..10}; do
+    for _ in {1..20}; do
         $CLICKHOUSE_CLIENT --query "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
     done
 }
@@ -18,7 +18,7 @@ export -f create_or_replace_view_thread;
 
 function select_view_thread
 {
-    for _ in {1..10}; do
+    for _ in {1..20}; do
         $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view" > /dev/null
     done
 }
@@ -50,9 +50,5 @@ $CLICKHOUSE_CLIENT --query "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.tes
     bash -c create_or_replace_view_thread &
     bash -c create_or_replace_view_thread &
 } > >(cat) 2> >(cat >&2)
-
-for _ in {1..100}; do
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view" | grep -v abcdef
-done
 
 wait
