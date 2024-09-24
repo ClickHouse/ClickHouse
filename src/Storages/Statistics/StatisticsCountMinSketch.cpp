@@ -52,7 +52,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
 
-void StatisticsCountMinSketch::update(const ColumnPtr & column)
+void StatisticsCountMinSketch::build(const ColumnPtr & column)
 {
     for (size_t row = 0; row < column->size(); ++row)
     {
