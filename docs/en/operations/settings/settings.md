@@ -5682,3 +5682,11 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## mongodb_throw_on_unsupported_query
+
+If enabled, MongoDB tables will return an error when a MongoDB query can't be built.
+
+Not applied for the legacy implementation, or when 'allow_experimental_analyzer=0`.
+
+Default value: `true`.
