@@ -307,7 +307,10 @@ void IOResourceManager::deleteWorkload(const String & workload_name)
 {
     std::unique_lock lock{mutex};
     if (auto workload_iter = workloads.find(workload_name); workload_iter != workloads.end())
+    {
+        // Note that we rely of the fact that workload entity storage will not drop workload that is used as a parent
         workloads.erase(workload_iter);
+    }
     else
     {
         // Workload to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless

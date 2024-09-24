@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <list>
 #include <mutex>
+#include <unordered_set>
 
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
@@ -94,6 +95,7 @@ protected:
 
     mutable std::recursive_mutex mutex;
     std::unordered_map<String, ASTPtr> entities; // Maps entity name into CREATE entity query
+    std::unordered_map<String, std::unordered_set<String>> references; // Keep track of references between entities for validation
 
     ContextPtr global_context;
 };

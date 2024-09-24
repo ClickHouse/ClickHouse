@@ -52,6 +52,21 @@ WorkloadEntityType getEntityType(const ASTPtr & ptr)
     return WorkloadEntityType::MAX;
 }
 
+void forEachReference(const ASTPtr & source_entity, std::function<void(String, String)> func)
+{
+    if (auto * res = typeid_cast<ASTCreateWorkloadQuery *>(source_entity.get()))
+    {
+        String parent = res->getWorkloadParent();
+        if (!parent.empty())
+            func(parent, res->getWorkloadName());
+        // TODO(serxa): add references to RESOURCEs mentioned in SETTINGS clause after FOR keyword
+    }
+    if (auto * res = typeid_cast<ASTCreateResourceQuery *>(source_entity.get()))
+    {
+        // RESOURCE has no references to be validated
+    }
+}
+
 void topologicallySortedWorkloadsImpl(const String & name, const ASTPtr & ast, const std::unordered_map<String, ASTPtr> & workloads, std::unordered_set<String> & visited, std::vector<std::pair<String, ASTPtr>> & sorted_workloads)
 {
     if (visited.contains(name))
@@ -162,14 +177,20 @@ bool WorkloadEntityStorageBase::storeEntity(
 
     create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query, global_context);
 
-    auto it = entities.find(entity_name);
-    if (it != entities.end())
+    if (auto it = entities.find(entity_name); it != entities.end())
     {
         if (throw_if_exists)
             throw Exception(ErrorCodes::WORKLOAD_ENTITY_ALREADY_EXISTS, "Workload entity '{}' already exists", entity_name);
         else if (!replace_if_exists)
             return false;
     }
+
+    forEachReference(create_entity_query,
+        [this] (const String & target, const String & source)
+        {
+            if (auto it = entities.find(target); it == entities.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target);
+        });
 
     bool stored = storeEntityImpl(
         current_context,
@@ -182,11 +203,15 @@ bool WorkloadEntityStorageBase::storeEntity(
 
     if (stored)
     {
+        forEachReference(create_entity_query,
+            [this] (const String & target, const String & source)
+            {
+                references[target].insert(source);
+            });
         entities[entity_name] = create_entity_query;
         onEntityAdded(entity_type, entity_name, create_entity_query);
+        unlockAndNotify(lock);
     }
-
-    unlockAndNotify(lock);
 
     return stored;
 }
@@ -207,6 +232,14 @@ bool WorkloadEntityStorageBase::removeEntity(
             return false;
     }
 
+    if (auto reference_it = references.find(entity_name); reference_it != references.end())
+    {
+        String names;
+        for (const String & name : reference_it->second)
+            names += " " + name;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' cannot be dropped. It is referenced by:{}", entity_name, names);
+    }
+
     bool removed = removeEntityImpl(
         current_context,
         entity_type,
@@ -215,11 +248,18 @@ bool WorkloadEntityStorageBase::removeEntity(
 
     if (removed)
     {
-        entities.erase(entity_name);
+        forEachReference(it->second,
+            [this] (const String & target, const String & source)
+            {
+                references[target].erase(source);
+                if (references[target].empty())
+                    references.erase(target);
+            });
+        entities.erase(it);
         onEntityRemoved(entity_type, entity_name);
-    }
 
-    unlockAndNotify(lock);
+        unlockAndNotify(lock);
+    }
 
     return removed;
 }
@@ -300,10 +340,8 @@ std::unique_lock<std::recursive_mutex> WorkloadEntityStorageBase::getLock() cons
     return std::unique_lock{mutex};
 }
 
-
 void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities)
 {
-
     std::unordered_map<String, ASTPtr> normalized_entities;
     for (const auto & [entity_name, create_query] : new_entities)
         normalized_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query, global_context);
@@ -313,6 +351,15 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
     std::unique_lock lock(mutex);
     chassert(entities.empty());
     entities = std::move(normalized_entities);
+    for (const auto & [entity_name, entity] : entities)
+    {
+        forEachReference(entity,
+            [this] (const String & target, const String & source)
+            {
+                references[target].insert(source);
+            });
+    }
+
 
     // Quick check to avoid extra work
     {
@@ -324,7 +371,6 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
     makeEventsForAllEntities(lock);
     unlockAndNotify(lock);
 }
-
 
 void WorkloadEntityStorageBase::makeEventsForAllEntities(std::unique_lock<std::recursive_mutex> &)
 {
@@ -346,7 +392,6 @@ void WorkloadEntityStorageBase::makeEventsForAllEntities(std::unique_lock<std::r
     for (auto & [entity_name, ast] : resources)
         onEntityAdded(WorkloadEntityType::Resource, entity_name, ast);
 }
-
 
 std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::getAllEntities() const
 {
