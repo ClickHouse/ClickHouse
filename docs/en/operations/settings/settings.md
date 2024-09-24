@@ -5686,8 +5686,8 @@ Default value: `false`.
 ## output_format_identifier_quoting_rule
 
 Define identifier quoting behavior:
-- `user_display`: Quote identifiers if they are one of the certain keywords defined in `writeProbablyQuotedStringImpl`
-- `when_necessary`: Quote identifiers if they are one of the certain keywords defined in `writeProbablyQuotedStringImpl`, and ambiguous identifiers passed to `writeIdentifier`
+- `when_necessary`: When the identifiers is one of `{"distinct", "all", "table"}` (defined in `DB::writeProbablyQuotedStringImpl`), and ambiguous identifiers: column names, dictionary attribute names (passed to `DB::FormatSettings::writeIdentifier` with `ambiguous=true`)
 - `always`: Always quote identifiers
+- `user_display`: When the identifiers is one of `{"distinct", "all", "table"}` (defined in `DB::writeProbablyQuotedStringImpl`)
 
 Default value: `when_necessary`.
