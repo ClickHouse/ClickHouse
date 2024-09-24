@@ -1,7 +1,7 @@
 After insert
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+          Prewhere filter column: and(less(b, 10_UInt8), less(a, 10_UInt8)) (removed)
 After drop statistic
         Prewhere info
           Prewhere filter
@@ -9,12 +9,12 @@ After drop statistic
 After add and materialize statistic
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+          Prewhere filter column: and(less(b, 10_UInt8), less(a, 10_UInt8)) (removed)
 After merge
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+          Prewhere filter column: and(less(b, 10_UInt8), less(a, 10_UInt8)) (removed)
 After rename
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10_UInt8), less(c, 10_UInt8)) (removed)
+          Prewhere filter column: and(less(c, 10_UInt8), less(a, 10_UInt8)) (removed)

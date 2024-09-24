@@ -35,6 +35,13 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -105,9 +112,9 @@ BackupEntriesCollector::BackupEntriesCollector(
     , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
     , log(getLogger("BackupEntriesCollector"))
     , global_zookeeper_retries_info(
-          context->getSettingsRef().backup_restore_keeper_max_retries,
-          context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-          context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
+          context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms])
     , threadpool(threadpool_)
 {
 }
@@ -653,7 +660,7 @@ void BackupEntriesCollector::lockTablesForReading()
 
         checkIsQueryCancelled();
 
-        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     }
 
     std::erase_if(

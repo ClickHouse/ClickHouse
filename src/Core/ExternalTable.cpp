@@ -27,6 +27,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 http_max_multipart_form_data_size;
+}
 
 namespace ErrorCodes
 {
@@ -182,10 +186,12 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    if (settings.http_max_multipart_form_data_size)
+    if (settings[Setting::http_max_multipart_form_data_size])
         read_buffer = std::make_unique<LimitReadBuffer>(
-            stream, settings.http_max_multipart_form_data_size,
-            /* trow_exception */ true, /* exact_limit */ std::optional<size_t>(),
+            stream,
+            settings[Setting::http_max_multipart_form_data_size],
+            /* trow_exception */ true,
+            /* exact_limit */ std::optional<size_t>(),
             "the maximum size of multipart/form-data. "
             "This limit can be tuned by 'http_max_multipart_form_data_size' setting");
     else

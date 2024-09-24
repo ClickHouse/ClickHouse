@@ -36,7 +36,8 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B, C")
-        instance.query("DROP TABLE IF EXISTS test.view_1")
+
+        instance.query("DROP TABLE IF EXISTS test.view_1, test.view_2, default.table")
 
 
 def test_smoke():
@@ -144,7 +145,8 @@ def test_allowed_grantees():
 
     instance.query("ALTER USER A GRANTEES ANY EXCEPT B")
     assert (
-        instance.query("SHOW CREATE USER A") == "CREATE USER A GRANTEES ANY EXCEPT B\n"
+        instance.query("SHOW CREATE USER A")
+        == "CREATE USER A IDENTIFIED WITH no_password GRANTEES ANY EXCEPT B\n"
     )
     expected_error = "user `B` is not allowed as grantee"
     assert expected_error in instance.query_and_get_error(
@@ -157,7 +159,10 @@ def test_allowed_grantees():
     instance.query("REVOKE SELECT ON test.table FROM B", user="A")
 
     instance.query("ALTER USER A GRANTEES ANY")
-    assert instance.query("SHOW CREATE USER A") == "CREATE USER A\n"
+    assert (
+        instance.query("SHOW CREATE USER A")
+        == "CREATE USER A IDENTIFIED WITH no_password\n"
+    )
     instance.query("GRANT SELECT ON test.table TO B", user="A")
     assert instance.query("SELECT * FROM test.table", user="B") == "1\t5\n2\t10\n"
 
@@ -169,7 +174,8 @@ def test_allowed_grantees():
 
     instance.query("CREATE USER C GRANTEES ANY EXCEPT C")
     assert (
-        instance.query("SHOW CREATE USER C") == "CREATE USER C GRANTEES ANY EXCEPT C\n"
+        instance.query("SHOW CREATE USER C")
+        == "CREATE USER C IDENTIFIED WITH no_password GRANTEES ANY EXCEPT C\n"
     )
     instance.query("GRANT SELECT ON test.table TO C WITH GRANT OPTION")
     assert instance.query("SELECT * FROM test.table", user="C") == "1\t5\n2\t10\n"
@@ -387,15 +393,22 @@ def test_introspection():
     instance.query("GRANT CREATE ON *.* TO B WITH GRANT OPTION")
 
     assert instance.query("SHOW USERS") == TSV(["A", "B", "default"])
-    assert instance.query("SHOW CREATE USERS A") == TSV(["CREATE USER A"])
-    assert instance.query("SHOW CREATE USERS B") == TSV(["CREATE USER B"])
+    assert instance.query("SHOW CREATE USERS A") == TSV(
+        ["CREATE USER A IDENTIFIED WITH no_password"]
+    )
+    assert instance.query("SHOW CREATE USERS B") == TSV(
+        ["CREATE USER B IDENTIFIED WITH no_password"]
+    )
     assert instance.query("SHOW CREATE USERS A,B") == TSV(
-        ["CREATE USER A", "CREATE USER B"]
+        [
+            "CREATE USER A IDENTIFIED WITH no_password",
+            "CREATE USER B IDENTIFIED WITH no_password",
+        ]
     )
     assert instance.query("SHOW CREATE USERS") == TSV(
         [
-            "CREATE USER A",
-            "CREATE USER B",
+            "CREATE USER A IDENTIFIED WITH no_password",
+            "CREATE USER B IDENTIFIED WITH no_password",
             "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`",
         ]
     )
@@ -454,8 +467,8 @@ def test_introspection():
     assert expected_error in instance.query_and_get_error("SHOW GRANTS FOR B", user="A")
 
     expected_access1 = (
-        "CREATE USER A\n"
-        "CREATE USER B\n"
+        "CREATE USER A IDENTIFIED WITH no_password\n"
+        "CREATE USER B IDENTIFIED WITH no_password\n"
         "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`"
     )
     expected_access2 = (
@@ -473,8 +486,8 @@ def test_introspection():
             [
                 "A",
                 "local_directory",
-                "no_password",
-                "{}",
+                "['no_password']",
+                "['{}']",
                 "['::/0']",
                 "[]",
                 "[]",
@@ -486,8 +499,8 @@ def test_introspection():
             [
                 "B",
                 "local_directory",
-                "no_password",
-                "{}",
+                "['no_password']",
+                "['{}']",
                 "['::/0']",
                 "[]",
                 "[]",
