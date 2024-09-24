@@ -93,3 +93,13 @@ SELECT toStartOfInterval(number % 2 == 0 ? toDateTime64('2023-03-01 15:55:00', 2
 SELECT toStartOfInterval(number % 2 == 0 ? toDateTime('2023-03-01 15:55:00') : toDateTime('2023-02-01 15:55:00'), toIntervalHour(1), toDateTime('2023-01-01 13:55:00'), 'Europe/Amsterdam') from numbers(5);
 SELECT toStartOfInterval(materialize(toDateTime('2023-01-02 14:45:50')), toIntervalHour(1), toDateTime('2023-01-02 14:44:30'), 'Europe/Amsterdam');
 SELECT toStartOfInterval(materialize(toDateTime64('2023-02-01 15:45:50', 2)), toIntervalHour(1), toDateTime64('2023-01-02 14:44:30', 2), 'Europe/Amsterdam');
+
+SELECT 'Aliases (time_bucket, date_bin)';
+SELECT date_bin(toDate('2023-10-09'), toIntervalYear(1), toDate('2022-02-01'));
+SELECT date_bin(toDate('2023-10-09'), toIntervalYear(1));
+SELECT date_BIN(toDateTime('2023-10-09 10:11:12'), toIntervalYear(1), toDateTime('2022-02-01 09:08:07'));
+SELECT date_BIN(toDateTime('2023-10-09 10:11:12'), toIntervalYear(1));
+SELECT time_bucket(toDateTime('2023-10-09 10:11:12'), toIntervalYear(1), toDateTime('2022-02-01 09:08:07'));
+SELECT time_bucket(toDateTime('2023-10-09 10:11:12'), toIntervalYear(1));
+SELECT TIME_bucket(toDateTime('2023-10-09 10:11:12'), toIntervalYear(1), toDateTime('2022-02-01 09:08:07'));
+SELECT TIME_bucket(toDateTime('2023-10-09 10:11:12'), toIntervalYear(1));
