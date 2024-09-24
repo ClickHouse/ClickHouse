@@ -1491,7 +1491,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (command.to_remove == AlterCommand::RemoveProperty::SETTINGS && column_from_table.settings.empty())
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Column {} doesn't have SETTINGS, cannot remove it",
+                        "Column {} doesn't have SETTINGS, cannot remove them",
                         backQuote(column_name));
             }
 
