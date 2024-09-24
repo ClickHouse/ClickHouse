@@ -373,7 +373,7 @@ const std::vector<sql_query_grammar::TableEngineValues> like_engs = {
 int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_grammar::CreateTable *ct) {
 	SQLTable next;
 	sql_query_grammar::TableEngine *te = ct->mutable_engine();
-	const bool replace = tables.size() > 4 && rg.NextMediumNumber() < 5;
+	const bool replace = tables.size() > 3 && rg.NextMediumNumber() < 16;
 	const uint32_t tname = replace ? rg.PickValueRandomlyFromMap(this->tables).tname : this->table_counter++;
 
 	next.tname = tname;
