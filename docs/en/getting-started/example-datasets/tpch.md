@@ -6,7 +6,7 @@ description:  "The TPC-H benchmark data set and queries."
 
 # TPC-H (1999)
 
-A popular benchmark which models the internal data warehouse of a whole sale supplier.
+A popular benchmark which models the internal data warehouse of a wholesale supplier.
 The data is stored into a 3rd normal form representation, requiring lots of joins at query runtime.
 Despite its age and its unrealistic assumption that the data is uniformly and independently distributed, TPC-H remains the most popular OLAP benchmark to date.
 
