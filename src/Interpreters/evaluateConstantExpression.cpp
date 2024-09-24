@@ -90,12 +90,14 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
-    String result_name = ast->getColumnName();
+    String result_name;
 
     ColumnPtr result_column;
     DataTypePtr result_type;
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
+        result_name = ast->getColumnName();
+
         auto execution_context = Context::createCopy(context);
         auto expression = buildQueryTree(ast, execution_context);
 
@@ -131,6 +133,8 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
             && context->getSettingsRef()[Setting::normalize_function_names])
             FunctionNameNormalizer::visit(ast.get());
+
+        result_name = ast->getColumnName();
 
         auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
         if (!syntax_result)
