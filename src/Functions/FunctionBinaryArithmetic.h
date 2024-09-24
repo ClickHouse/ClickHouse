@@ -50,6 +50,7 @@
 #include <base/map.h>
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
+#include "Common/StackTrace.h"
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
@@ -256,7 +257,6 @@ struct BinaryOperation
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr, NullMap * res_nullmap = nullptr)
     {
-
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
@@ -283,6 +283,8 @@ struct BinaryOperation
     }
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+
+    static ResultType process(A a, B b, NullMap::value_type * m) { return Op::template apply<ResultType>(a, b, m); }
 
 private:
     template <OpCase op_case, bool nullable>
@@ -800,6 +802,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
+    static constexpr bool is_modulo_or_null = IsOperation<Op>::modulo_or_null;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
 
@@ -2142,7 +2145,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 {
                     const auto res = right_nullmap && (*right_nullmap)[0] ? ResultType() : OpImpl::process(
                         col_left_const->template getValue<T0>(),
-                        col_right_const->template getValue<T1>());
+                        col_right_const->template getValue<T1>(),
+                        res_nullmap ? &((*res_nullmap)[0]) : nullptr);
 
                     return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
@@ -2250,9 +2254,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
-
-            NullMap res_null_map;
-            res_null_map.resize_fill(nullable_column->getNullMapData().size(), 0);
+            NullMap res_null_map(input_rows_count, 0);
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap, &res_null_map);
             return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
@@ -2646,10 +2648,9 @@ public:
         /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
         /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
         bool division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
-            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
+            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::div_floating_or_null
                 || (IsOperation<Op>::div_floating
                     && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
-
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2
             && ((arguments[0].column && isColumnConst(*arguments[0].column))

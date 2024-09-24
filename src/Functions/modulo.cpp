@@ -52,7 +52,7 @@ struct ModuloByConstantImpl
         }
     }
 
-    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+    static ResultType process(A a, B b, NullMap::value_type * m = nullptr) { return Op::template apply<ResultType>(a, b, m); }
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {

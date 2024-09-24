@@ -2,7 +2,6 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include "Columns/ColumnNullable.h"
 
-
 namespace DB
 {
 namespace

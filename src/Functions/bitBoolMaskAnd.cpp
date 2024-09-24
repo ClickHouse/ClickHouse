@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <DataTypes/NumberTraits.h>
-#include "Core/Types.h"
 
 
 namespace DB

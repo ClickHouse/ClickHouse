@@ -53,7 +53,7 @@ struct DivideIntegralByConstantImpl
         }
     }
 
-    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+    static ResultType process(A a, B b, NullMap::value_type * m = nullptr) { return Op::template apply<ResultType>(a, b, m); }
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
