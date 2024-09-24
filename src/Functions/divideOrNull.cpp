@@ -6,10 +6,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 template <typename A, typename B>
 struct DivideOrNullImpl
