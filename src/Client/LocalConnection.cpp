@@ -236,6 +236,7 @@ void LocalConnection::sendQuery(
 
     try
     {
+        query_context->setSetting("serialize_query_plan", false);
         state->io = executeQuery(state->query, nullptr, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
