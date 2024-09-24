@@ -67,6 +67,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"enable_optimize_query_tree_logical_expression", true, true, "New setting."},
         }
     },
     {"24.9",
