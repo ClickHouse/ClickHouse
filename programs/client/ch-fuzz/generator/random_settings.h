@@ -84,6 +84,12 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"flatten_nested", TrueOrFalse},
 	{"force_optimize_projection", TrueOrFalse},
 	{"fsync_metadata", TrueOrFalse},
+	{"group_by_overflow_mode", [](RandomGenerator &rg, std::string &ret) {
+		const std::vector<std::string> &choices = {"throw", "break", "any"};
+		ret += "'";
+		ret += rg.PickRandomlyFromVector(choices);
+		ret += "'";
+	}},
 	{"group_by_two_level_threshold", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 1000000));
 	}},
@@ -110,6 +116,11 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		const std::vector<std::string> &choices = {"ALL", "ANY", "ASOF"}; /*Don't use empty case*/
 		ret += "'";
 		ret += rg.PickRandomlyFromVector(choices);
+		ret += "'";
+	}},
+	{"join_overflow_mode", [](RandomGenerator &rg, std::string &ret) {
+		ret += "'";
+		ret += rg.NextBool() ? "throw" : "break";
 		ret += "'";
 	}},
 	{"join_use_nulls", TrueOrFalse},
@@ -233,6 +244,12 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += "'";
 	}},
 	{"throw_on_error_from_cache_on_write_operations", TrueOrFalse},
+	{"totals_mode", [](RandomGenerator &rg, std::string &ret) {
+		const std::vector<std::string> &choices = {"before_having", "after_having_exclusive", "after_having_inclusive", "after_having_auto"};
+		ret += "'";
+		ret += rg.PickRandomlyFromVector(choices);
+		ret += "'";
+	}},
 	{"transform_null_in", TrueOrFalse},
 	{"ttl_only_drop_parts", TrueOrFalse},
 	{"update_insert_deduplication_token_in_dependent_materialized_views", TrueOrFalse},
