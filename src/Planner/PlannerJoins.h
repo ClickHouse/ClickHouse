@@ -142,17 +142,17 @@ public:
 
     ActionsDAG::NodeRawConstPtrs & getMixedFilterConditionNodes()
     {
-        return mixed_filter_condition_nodes;
+        return residual_filter_condition_nodes;
     }
 
-    void addMixedCondition(const ActionsDAG::Node * condition_node)
+    void addResidualCondition(const ActionsDAG::Node * condition_node)
     {
-        mixed_filter_condition_nodes.push_back(condition_node);
+        residual_filter_condition_nodes.push_back(condition_node);
     }
 
     const ActionsDAG::NodeRawConstPtrs & getMixedFilterConditionNodes() const
     {
-        return mixed_filter_condition_nodes;
+        return residual_filter_condition_nodes;
     }
 
     /// Dump clause into buffer
@@ -170,7 +170,7 @@ private:
     ActionsDAG::NodeRawConstPtrs left_filter_condition_nodes;
     ActionsDAG::NodeRawConstPtrs right_filter_condition_nodes;
     /// conditions which involve both left and right tables
-    ActionsDAG::NodeRawConstPtrs mixed_filter_condition_nodes;
+    ActionsDAG::NodeRawConstPtrs residual_filter_condition_nodes;
 
     std::unordered_set<size_t> nullsafe_compare_key_indexes;
 };

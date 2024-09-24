@@ -1910,7 +1910,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
       * expressions that have same names as columns in USING clause must be skipped.
       */
 
-    auto table_expressions_stack = buildTableExpressionsStack(nearest_query_scope_query_node->getJoinTree());
+    auto table_expressions_stack = buildTableExpressionsStack(nearest_query_scope->scope_node);
     std::vector<QueryTreeNodesWithNames> table_expressions_column_nodes_with_names_stack;
 
     std::unordered_set<std::string> table_expression_column_names_to_skip;

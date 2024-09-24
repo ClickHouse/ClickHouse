@@ -76,7 +76,8 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   * 4. t2
   * 5. t1
   */
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
+QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & query_node, QueryTreeNodes * out_nearest_query = nullptr);
+
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
