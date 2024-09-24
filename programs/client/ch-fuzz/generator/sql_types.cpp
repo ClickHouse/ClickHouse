@@ -474,7 +474,21 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 			ret += itp->TypeName();
 		}
 	} else if ((ftp = dynamic_cast<FloatType*>(tp))) {
-		ret += std::to_string(rg.NextRandomDouble());
+		const uint32_t next_option = rg.NextLargeNumber();
+
+		if (next_option < 25) {
+			if (next_option < 17) {
+				ret += next_option < 9 ? "+" : "-";
+			}
+			ret += "nan";
+		} else if (next_option < 49) {
+			if (next_option < 41) {
+				ret += next_option < 33 ? "+" : "-";
+			}
+			ret += "inf";
+		} else {
+			ret += std::to_string(rg.NextRandomDouble());
+		}
 		if (rg.NextSmallNumber() < 8) {
 			ret += "::";
 			ret += ftp->TypeName();
