@@ -19,8 +19,15 @@ struct DivideOrNullImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m [[maybe_unused]] = nullptr)
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
+        return static_cast<Result>(a) / b;
+    }
+
+    template <typename Result = ResultType>
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m)
+    {
+        assert(m);
         auto res = static_cast<Result>(a) / b;
         if constexpr (std::is_same_v<ResultType, Float32>)
             if likely(res != std::numeric_limits<Float32>::infinity())
@@ -30,8 +37,7 @@ struct DivideOrNullImpl
             if likely(res != std::numeric_limits<Float64>::infinity())
                 return res;
 
-        if (m)
-            *m = 1;
+        *m = 1;
 
         return res;
     }
