@@ -101,6 +101,7 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
+arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -140,7 +141,6 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arrayUnion
 arrayUniq
 arrayWithConstant
 asinh

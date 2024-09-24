@@ -15,7 +15,7 @@ StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & descrip
 {
 }
 
-void StatisticsTDigest::build(const ColumnPtr & column)
+void StatisticsTDigest::update(const ColumnPtr & column)
 {
     for (size_t row = 0; row < column->size(); ++row)
     {

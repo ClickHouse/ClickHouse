@@ -21,7 +21,7 @@ StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & descripti
 {
 }
 
-void StatisticsMinMax::build(const ColumnPtr & column)
+void StatisticsMinMax::update(const ColumnPtr & column)
 {
     for (size_t row = 0; row < column->size(); ++row)
     {
