@@ -33,6 +33,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool rows_before_aggregation;
+}
 
 namespace ErrorCodes
 {
@@ -547,7 +551,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     initRowsBeforeLimit(format.get());
     for (const auto & context : resources.interpreter_context)
     {
-        if (context->getSettingsRef().rows_before_aggregation)
+        if (context->getSettingsRef()[Setting::rows_before_aggregation])
         {
             initRowsBeforeAggregation(processors, format.get());
             break;

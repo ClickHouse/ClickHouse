@@ -4,11 +4,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --max_memory_usage_in_client=1 -q "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000) -- { clientError MEMORY_LIMIT_EXCEEDED }"
+$CLICKHOUSE_CLIENT --max_result_bytes 0 --max_memory_usage_in_client=1 -q "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000) -- { clientError MEMORY_LIMIT_EXCEEDED }"
 $CLICKHOUSE_CLIENT --max_memory_usage_in_client=0 -q "SELECT * FROM (SELECT * FROM system.numbers LIMIT 600000) as num WHERE num.number=60000"
 
-$CLICKHOUSE_CLIENT --max_memory_usage_in_client='5K' -q "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000) -- { clientError MEMORY_LIMIT_EXCEEDED }"
-$CLICKHOUSE_CLIENT --max_memory_usage_in_client='5k' -q "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000) -- { clientError MEMORY_LIMIT_EXCEEDED }"
+$CLICKHOUSE_CLIENT --max_result_bytes 0 --max_memory_usage_in_client='5K' -q "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000) -- { clientError MEMORY_LIMIT_EXCEEDED }"
+$CLICKHOUSE_CLIENT --max_result_bytes 0 --max_memory_usage_in_client='5k' -q "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000) -- { clientError MEMORY_LIMIT_EXCEEDED }"
 $CLICKHOUSE_CLIENT --max_memory_usage_in_client='1M' -q "SELECT * FROM (SELECT * FROM system.numbers LIMIT 600000) as num WHERE num.number=60000"
 $CLICKHOUSE_CLIENT --max_memory_usage_in_client='23G' -q "SELECT * FROM (SELECT * FROM system.numbers LIMIT 600000) as num WHERE num.number=60000"
 $CLICKHOUSE_CLIENT --max_memory_usage_in_client='11T' -q "SELECT * FROM (SELECT * FROM system.numbers LIMIT 600000) as num WHERE num.number=60000"
