@@ -1,5 +1,5 @@
 ---
-slug: /en/getting-started/example-datasets/star-schema
+slug: /en/getting-started/example-datasets/tpch
 sidebar_label: TPC-H
 description:  "The TPC-H benchmark data set and queries."
 ---
