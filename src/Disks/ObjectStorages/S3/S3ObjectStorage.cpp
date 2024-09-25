@@ -1,21 +1,18 @@
-#include <optional>
-#include <stdexcept>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include "Common/Exception.h"
-#include "Common/ObjectStorageKey.h"
-#include "Common/ThreadPool.h"
-#include "Core/TypeId.h"
-#include "IO/S3/Requests.h"
-#include "Interpreters/Cache/QueryCache.h"
 
 #if USE_AWS_S3
+
+#include <optional>
+#include <stdexcept>
+#include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
+#include <boost/lockfree/stack.hpp>
 
 #include <IO/S3Common.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
@@ -30,12 +27,12 @@
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
-#include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 
-#include <boost/multiprecision/cpp_int.hpp>
-#include <boost/multiprecision/cpp_dec_float.hpp>
-#include <boost/lockfree/stack.hpp>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
+#include <Common/ThreadPool.h>
+#include <IO/S3/Requests.h>
 
 
 namespace ProfileEvents
@@ -68,10 +65,33 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+/** This helps to implement parallel listing of "directories" in S3.
+  *
+  * Listing operation in S3 is extremely slow: it typically takes 0.3 seconds and gives only 1000 items per request.
+  * That's why listing 10,000,000 items requires around one hour.
+  *
+  * But the request accepts the starting key, and we can speculatively do many requests in parallel.
+  * We only need to guess from where to start.
+  *
+  * To do it, we can make a first request and find the distance between the 1st and 1000th keys.
+  * Then, take slightly less than this distance (for example, 0.9) and add it several times.
+  * Make many parallel requests from those starting points. Check if the results of these requests intersect
+  * with the previous sets, and if not, make other requests to fill possible gaps between these results.
+  *
+  * The distance between strings can be calculated if we represent them as fractions in [0..1] in base-64,
+  * where the digits are:
+  *
+  * all below
+  * 0-9
+  * A-Z
+  * a-z
+  * all above
+  */
 namespace FileArithmetics
 {
 
-static constexpr std::string_view alphabet = "-./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+static constexpr std::string_view alphabet = "!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz~";
 
 class FileRepresentation
 {
@@ -81,7 +101,7 @@ public:
     {
     }
 
-    explicit FileRepresentation(const std::string& filename)
+    explicit FileRepresentation(const std::string & filename)
     {
         number_representation = 0;
         for (auto elem : filename)
@@ -100,7 +120,7 @@ public:
         }
     }
 
-    FileRepresentation& operator*=(float value)
+    FileRepresentation & operator*=(float value)
     {
         boost::multiprecision::cpp_dec_float_100 float_representation(number_representation);
         float_representation *= value;
@@ -146,11 +166,6 @@ public:
         return answer;
     }
 
-    std::string toLongInt() const
-    {
-        return number_representation.str();
-    }
-
 private:
     explicit FileRepresentation(boost::multiprecision::cpp_int number_representation_)
         : number_representation(number_representation_)
@@ -161,6 +176,7 @@ private:
 };
 
 }
+
 
 namespace
 {
@@ -274,7 +290,7 @@ private:
             return result;
         }
 
-        void insertObjects(const std::vector<Aws::S3::Model::Object>& objects)
+        void insertObjects(const std::vector<Aws::S3::Model::Object> & objects)
         {
             for (const auto& object : objects)
             {
@@ -307,9 +323,9 @@ private:
         boost::lockfree::stack<Aws::S3::Model::Object> queue_;
     };
 
-    void RunSubrequest(
-        const FileArithmetics::FileRepresentation& start_file,
-        const FileArithmetics::FileRepresentation& end_file)
+    void runSubrequest(
+        const FileArithmetics::FileRepresentation & start_file,
+        const FileArithmetics::FileRepresentation & end_file)
     {
         S3::ListObjectsV2Request current_request;
         current_request.SetBucket(bucket);
@@ -372,7 +388,7 @@ private:
             auto end_file = start_file + distance;
 
             pool_requests.scheduleOrThrow([this, start = std::move(start_file), end = std::move(end_file)] {
-                this->RunSubrequest(start, end);
+                runSubrequest(start, end);
             });
         }
         pool_requests.wait();
