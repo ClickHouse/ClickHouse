@@ -1,5 +1,6 @@
 import pytest
 import uuid
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -68,7 +69,7 @@ def test_skip_replicas_without_table(start_cluster):
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
                 "log_comment": log_comment,
@@ -80,7 +81,7 @@ def test_skip_replicas_without_table(start_cluster):
     node1.query("SYSTEM FLUSH LOGS")
     assert (
         node1.query(
-            f"SELECT ProfileEvents['DistributedConnectionMissingTable'], ProfileEvents['ParallelReplicasUnavailableCount'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id)  SETTINGS allow_experimental_parallel_reading_from_replicas=0"
+            f"SELECT ProfileEvents['DistributedConnectionMissingTable'], ProfileEvents['ParallelReplicasUnavailableCount'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id)  SETTINGS enable_parallel_replicas=0"
         )
         == "1\t1\n"
     )
@@ -103,7 +104,7 @@ def test_skip_unresponsive_replicas(start_cluster):
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
             },
