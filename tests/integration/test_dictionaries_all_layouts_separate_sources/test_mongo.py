@@ -27,17 +27,17 @@ def legacy(request):
     return request.param
 
 
-cluster = ClickHouseCluster(__file__)
+@pytest.fixture(scope="module")
+def cluster(secure_connection):
+    return ClickHouseCluster(__file__)
 
 
 @pytest.fixture(scope="module")
-def source(secure_connection, legacy, started_cluster):
+def source(secure_connection, legacy, cluster):
     return SourceMongo(
         "MongoDB",
         "localhost",
-        started_cluster.mongo_secure_port
-        if secure_connection
-        else started_cluster.mongo_port,
+        cluster.mongo_secure_port if secure_connection else cluster.mongo_port,
         "mongo_secure" if secure_connection else "mongo1",
         27017,
         "root",
@@ -48,27 +48,24 @@ def source(secure_connection, legacy, started_cluster):
 
 
 @pytest.fixture(scope="module")
-def simple_tester(source, started_cluster):
+def simple_tester(source):
     tester = SimpleLayoutTester(test_name)
     tester.cleanup()
     tester.create_dictionaries(source)
-    tester.prepare(started_cluster)
     return tester
 
 
 @pytest.fixture(scope="module")
-def complex_tester(source, started_cluster):
+def complex_tester(source):
     tester = ComplexLayoutTester(test_name)
     tester.create_dictionaries(source)
-    tester.prepare(started_cluster)
     return tester
 
 
 @pytest.fixture(scope="module")
-def ranged_tester(source, started_cluster):
+def ranged_tester(source):
     tester = RangedLayoutTester(test_name)
     tester.create_dictionaries(source)
-    tester.prepare(started_cluster)
     return tester
 
 
@@ -93,25 +90,16 @@ def get_node_name(secure_connection, legacy):
     return f"node_mongo_{secure_connection_suffix}_{legacy_suffix}"
 
 
-clusters = {}
-
-
-def get_cluster(secure_connection, legacy, add_node_func):
-    cluster_name = f"{__file__}_{secure_connection}_{legacy}"
-    if cluster_name not in clusters:
-        clusters[cluster_name] = ClickHouseCluster(__file__)
-        add_node_func(clusters[cluster_name], secure_connection, legacy)
-        try:
-            clusters[cluster_name].start()
-            yield clusters[cluster_name]
-        finally:
-            clusters[cluster_name].shutdown()
-    else:
-        yield clusters[cluster_name]
-
-
 @pytest.fixture(scope="module")
-def started_cluster(secure_connection, legacy, main_config):
+def started_cluster(
+    secure_connection,
+    legacy,
+    cluster,
+    main_config,
+    simple_tester,
+    ranged_tester,
+    complex_tester,
+):
     SOURCE = SourceMongo(
         "MongoDB",
         "localhost",
@@ -123,17 +111,26 @@ def started_cluster(secure_connection, legacy, main_config):
         secure=secure_connection,
         legacy=legacy,
     )
+    dictionaries = simple_tester.list_dictionaries()
 
-    yield from get_cluster(
-        secure_connection,
-        legacy,
-        lambda cluster, secure_connection, legacy: cluster.add_instance(
-            get_node_name(secure_connection, legacy),
-            main_configs=main_config,
-            dictionaries=BaseLayoutTester.get_dict_dictionaries(test_name),
-            with_mongo=True,
-        ),
+    node = cluster.add_instance(
+        get_node_name(secure_connection, legacy),
+        main_configs=main_config,
+        dictionaries=dictionaries,
+        with_mongo=True,
     )
+
+    try:
+        cluster.start()
+
+        simple_tester.prepare(cluster)
+        complex_tester.prepare(cluster)
+        ranged_tester.prepare(cluster)
+
+        yield cluster
+
+    finally:
+        cluster.shutdown()
 
 
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
