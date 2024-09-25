@@ -1895,17 +1895,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
             /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
             chassert(WhichDataType(const_type).isArray());
-            for (const auto & ele : const_value.safeGet<Array>())
+            for (const auto & elem : const_value.safeGet<Array>())
             {
-                if (ele.getType() != Field::Types::Tuple)
+                if (elem.getType() != Field::Types::Tuple)
                     return false;
 
-                const auto & ele_tuple = ele.safeGet<Tuple>();
-                if (ele_tuple.size() != 2)
+                const auto & elem_tuple = elem.safeGet<Tuple>();
+                if (elem_tuple.size() != 2)
                     return false;
 
-                auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[0]);
-                auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[1]);
+                auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
+                auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
                 out.polygon.outer().push_back({x, y});
             }
             boost::geometry::correct(out.polygon);
