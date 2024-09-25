@@ -239,7 +239,43 @@ namespace
     }
 }
 
-
+/** This structure represents all access rights for a specific entity in a RADIX Tree format.
+  * Each node contains a name and access rights for this path or prefix
+  * Example structure:
+  *
+  * <node1 name="db"> -> <node2 name=""> -> <node3 name="table"> -> <node4 name="">
+  *
+  * Here, nodes with empty names represent the specific meaningful paths, and other nodes represent prefixes for these paths.
+  * Let's assume we have these tables available: db_1.table1, db_2.table, db.table, db.table1, db.foo
+  *
+  * node1: GRANT ON db*.*      (matches db_1.table1, db_2.table, db.table, db.table1, db.foo)
+  * node2: GRANT ON db.*       (matches db.table, db.table1, db.foo)
+  * node3: GRANT ON db.table*  (matches db.table, db.table1)
+  * node4: GRANT ON db.table   (matches db.table)
+  *
+  * If too paths have the same prefix, the tree splits in between:
+  *
+  * GRANT ON team.*
+  * GRANT ON test.table
+  *
+  *           <node1 name="te">
+  *              /            \
+  *    <node2 name="am">   <node4 name="st">
+  *           |                  |
+  *     <node3 name="">    <node5 name="">
+  *                              |
+  *                        <node6 name="table">
+  *                              |
+  *                        <node7 name="">
+  *
+  * node1: GRANT ON te*.*
+  * node2: GRANT ON team*.*
+  * node3: GRANT ON team.*
+  * node4: GRANT ON test*.*
+  * node5: GRANT ON test.*
+  * node6: GRANT ON test.table*
+  * node7: GRANT ON test.table
+  */
 struct AccessRights::Node
 {
 public:
@@ -523,6 +559,23 @@ public:
 
     void makeUnion(const Node & other)
     {
+        /// We need these tmp nodes because union/intersect operations are use `getLeaf` function which can't be made const.
+        /// Potentially, we can use tryGetLeaf, but it's very complicated to traverse both trees at the same time:
+        ///
+        /// Tree1:
+        ///              f (SELECT)
+        ///           /            \
+        ///        ancy (SELECT)   oo (SELECT)
+        ///          |                 |
+        ///    "" (SELECT, INSERT)    "" (SELECT, INSERT)
+        ///
+        /// Tree2:
+        ///          foo (SELECT)
+        ///              |
+        ///         "" (SELECT, INSERT)
+        ///
+        /// Here Tree2.getLeaf("f") will return a valid node, but Tree2.tryGetLeaf("f") will return nullptr
+
         Node result;
         Node rhs = other;
         makeUnionRec(result, rhs);

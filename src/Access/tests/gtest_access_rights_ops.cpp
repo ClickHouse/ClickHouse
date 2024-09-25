@@ -224,6 +224,17 @@ TEST(AccessRights, GrantWildcard)
     ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection1"), false);
     ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection2"), false);
     ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "foo"), true);
+
+    root = {};
+    root.grantWildcardWithGrantOption(AccessType::SELECT, "db");
+    root.grant(AccessType::INSERT, "db", "table");
+    ASSERT_EQ(root.isGranted(AccessType::SELECT, "db", "table"), true);
+    ASSERT_EQ(root.hasGrantOption(AccessType::SELECT, "db_1", "table"), true);
+    ASSERT_EQ(root.hasGrantOptionWildcard(AccessType::SELECT, "db", "table"), true);
+    ASSERT_EQ(root.hasGrantOptionWildcard(AccessType::SELECT, "db"), true);
+    ASSERT_EQ(root.isGranted(AccessType::INSERT, "db", "table"), true);
+    ASSERT_EQ(root.isGranted(AccessType::INSERT, "db", "other_table"), false);
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON db*.* WITH GRANT OPTION, GRANT INSERT ON db.`table`");
 }
 
 TEST(AccessRights, Union)

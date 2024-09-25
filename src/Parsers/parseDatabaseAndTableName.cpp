@@ -96,6 +96,9 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
         if (identifier_parser.parse(pos, ast, expected))
         {
             String first_identifier = getIdentifierName(ast);
+            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                wildcard = true;
+
             auto pos_before_dot = pos;
 
             if (ParserToken{TokenType::Dot}.ignore(pos, expected))
@@ -125,7 +128,7 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
             table = std::move(first_identifier);
             default_database = true;
 
-            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+            if (!wildcard && ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                 wildcard = true;
 
             return true;
