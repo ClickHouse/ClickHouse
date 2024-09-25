@@ -346,15 +346,11 @@ public:
 		std::string ret;
 
 		ret += "JSON";
-		if (escape) {
-			for (const auto &c : desc) {
-				if (c == '\'') {
-					ret += '\\';
-				}
-				ret += c;
+		for (const auto &c : desc) {
+			if (escape && c == '\'') {
+				ret += '\\';
 			}
-		} else {
-			ret += desc;
+			ret += c;
 		}
 		return ret;
 	}
@@ -379,6 +375,6 @@ public:
 
 std::tuple<SQLType*, sql_query_grammar::Integers> RandomIntType(RandomGenerator &rg);
 std::tuple<SQLType*, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator &rg);
-std::tuple<SQLType*, sql_query_grammar::Dates> RandomDateType(RandomGenerator &rg);
+std::tuple<SQLType*, sql_query_grammar::Dates> RandomDateType(RandomGenerator &rg, const bool low_card);
 
 }

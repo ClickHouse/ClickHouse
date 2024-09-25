@@ -10,7 +10,7 @@
 using namespace sql_query_grammar;
 
 #define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(std::string &ret, const TYPE& VAR_NAME)
-#define CONV_FN_ESCAPE(TYPE, VAR_NAME) void TYPE##ToString(std::string &ret, const bool escape, const TYPE& VAR_NAME)
+#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string &ret, const bool quote, const TYPE& VAR_NAME)
 
 namespace chfuzz {
 
@@ -22,8 +22,10 @@ CONV_FN(Select, select);
 
 // ~~~~Numbered values to string~~~
 
-CONV_FN(Column, col) {
+CONV_FN_QUOTE(Column, col) {
+  ret += quote ? "`" : "";
   ret += col.column();
+  ret += quote ? "`" : "";
 }
 
 CONV_FN(Index, idx) {
@@ -51,7 +53,7 @@ CONV_FN(ExprColAlias, eca) {
   ExprToString(ret, eca.expr());
   if (eca.has_col_alias()) {
     ret += " AS ";
-    ColumnToString(ret, eca.col_alias());
+    ColumnToString(ret, true, eca.col_alias());
   }
 }
 
@@ -125,16 +127,15 @@ CONV_FN(ExprSchemaTable, st) {
   TableToString(ret, st.table_name());
 }
 
-
-CONV_FN_ESCAPE(TypeName, top);
-CONV_FN_ESCAPE(TopTypeName, top);
+CONV_FN_QUOTE(TypeName, top);
+CONV_FN_QUOTE(TopTypeName, top);
 
 CONV_FN(JSONColumn, jcol) {
   ret += ".";
   if (jcol.has_json_col()) {
     ret += "^";
   }
-  ColumnToString(ret, jcol.col());
+  ColumnToString(ret, true, jcol.col());
   if (jcol.has_json_array()) {
     const uint32_t limit = (jcol.json_array() % 4) + 1;
 
@@ -175,7 +176,7 @@ CONV_FN(FieldAccess, fa) {
       break;
     case FieldType::kArrayKey:
       ret += "['";
-      ColumnToString(ret, fa.array_key());
+      ColumnToString(ret, true, fa.array_key());
       ret += "']";
       break;
     case FieldType::kTupleIndex:
@@ -188,7 +189,7 @@ CONV_FN(FieldAccess, fa) {
 }
 
 CONV_FN(ExprColumn, ec) {
-  ColumnToString(ret, ec.col());
+  ColumnToString(ret, true, ec.col());
   if (ec.has_subcols()) {
     JSONColumnsToString(ret, ec.subcols());
   }
@@ -637,11 +638,11 @@ CONV_FN(ParenthesesExpr, pexpr) {
   ret += ")";
 }
 
-CONV_FN(ColumnPath, ic) {
-  ColumnToString(ret, ic.col());
+CONV_FN_QUOTE(ColumnPath, ic) {
+  ColumnToString(ret, quote, ic.col());
   for (int i = 0; i < ic.sub_cols_size(); i++) {
     ret += ".";
-    ColumnToString(ret, ic.sub_cols(i));
+    ColumnToString(ret, quote, ic.sub_cols(i));
   }
 }
 
@@ -670,7 +671,7 @@ CONV_FN(LowCardinality, lc) {
   }
 }
 
-CONV_FN_ESCAPE(BottomTypeName, btn) {
+CONV_FN_QUOTE(BottomTypeName, btn) {
   using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
   switch (btn.bottom_one_of_case()) {
     case BottomTypeNameType::kIntegers:
@@ -728,13 +729,13 @@ CONV_FN_ESCAPE(BottomTypeName, btn) {
             ret += std::to_string(jspec.max_dynamic_paths() % 1025);
           } else if (jspec.has_skip_path()) {
             ret += "SKIP ";
-            ColumnPathToString(ret, jspec.skip_path());
+            ColumnPathToString(ret, !quote, jspec.skip_path());
           } else if (jspec.has_path_type()) {
             const sql_query_grammar::JsonPathType &jpt = jspec.path_type();
 
-            ColumnPathToString(ret, jpt.col());
+            ColumnPathToString(ret, !quote, jpt.col());
             ret += " ";
-            TopTypeNameToString(ret, escape, jpt.type());
+            TopTypeNameToString(ret, quote, jpt.type());
           } else {
             ret += "max_dynamic_types=8";
           }
@@ -758,30 +759,16 @@ CONV_FN_ESCAPE(BottomTypeName, btn) {
       if (edef.has_bits()) {
         ret += edef.bits() ? "16" : "8";
       }
-      ret += "(";
-      if (escape) {
-        ret += "\\";
-      }
-      ret += "'";
+      ret += "('";
       ret += first_val;
-      if (escape) {
-        ret += "\\";
-      }
       ret += "'";
       ret += " = ";
       ret += first_val;
       for (int i = 0 ; i < edef.other_values_size(); i++) {
         const std::string next_val = std::to_string(edef.other_values(i));
 
-        ret += ", ";
-        if (escape) {
-          ret += "\\";
-        }
-        ret += "'";
+        ret += ", '";
         ret += next_val;
-        if (escape) {
-          ret += "\\";
-        }
         ret += "'";
         ret += " = ";
         ret += next_val;
@@ -796,63 +783,63 @@ CONV_FN_ESCAPE(BottomTypeName, btn) {
   }
 }
 
-CONV_FN_ESCAPE(TypeColumnDef, col_def) {
-  ColumnToString(ret, col_def.col());
+CONV_FN_QUOTE(TypeColumnDef, col_def) {
+  ColumnToString(ret, !quote, col_def.col());
   ret += " ";
-  TopTypeNameToString(ret, escape, col_def.type_name());
+  TopTypeNameToString(ret, quote, col_def.type_name());
 }
 
-CONV_FN_ESCAPE(TopTypeName, ttn) {
+CONV_FN_QUOTE(TopTypeName, ttn) {
   using TopTypeNameType = TopTypeName::TypeOneofCase;
   switch (ttn.type_oneof_case()) {
     case TopTypeNameType::kNonNullable:
-      BottomTypeNameToString(ret, escape, ttn.non_nullable());
+      BottomTypeNameToString(ret, quote, ttn.non_nullable());
       break;
     case TopTypeNameType::kNullable:
       ret += "Nullable(";
-      BottomTypeNameToString(ret, escape, ttn.nullable());
+      BottomTypeNameToString(ret, quote, ttn.nullable());
       ret += ")";
       break;
     case TopTypeNameType::kArray:
       ret += "Array(";
-      TopTypeNameToString(ret, escape, ttn.array());
+      TopTypeNameToString(ret, quote, ttn.array());
       ret += ")";
       break;
     case TopTypeNameType::kMap:
       ret += "Map(";
-      TopTypeNameToString(ret, escape, ttn.map().key());
+      TopTypeNameToString(ret, quote, ttn.map().key());
       ret += ",";
-      TopTypeNameToString(ret, escape, ttn.map().value());
+      TopTypeNameToString(ret, quote, ttn.map().value());
       ret += ")";
       break;
     case TopTypeNameType::kTuple:
       ret += "Tuple(";
-      TypeColumnDefToString(ret, escape, ttn.tuple().value1());
+      TypeColumnDefToString(ret, quote, ttn.tuple().value1());
       ret += ",";
-      TypeColumnDefToString(ret, escape, ttn.tuple().value2());
+      TypeColumnDefToString(ret, quote, ttn.tuple().value2());
       for (int i = 0 ; i < ttn.tuple().others_size(); i++) {
         ret += ",";
-        TypeColumnDefToString(ret, escape, ttn.tuple().others(i));
+        TypeColumnDefToString(ret, quote, ttn.tuple().others(i));
       }
       ret += ")";
       break;
     case TopTypeNameType::kNested:
       ret += "Nested(";
-      TypeColumnDefToString(ret, escape, ttn.nested().type1());
+      TypeColumnDefToString(ret, quote, ttn.nested().type1());
       for (int i = 0 ; i < ttn.nested().others_size(); i++) {
         ret += ", ";
-        TypeColumnDefToString(ret, escape, ttn.nested().others(i));
+        TypeColumnDefToString(ret, quote, ttn.nested().others(i));
       }
       ret += ")";
       break;
     case TopTypeNameType::kVariant:
       ret += "Variant(";
-      TopTypeNameToString(ret, escape, ttn.variant().value1());
+      TopTypeNameToString(ret, quote, ttn.variant().value1());
       ret += ",";
-      TopTypeNameToString(ret, escape, ttn.variant().value2());
+      TopTypeNameToString(ret, quote, ttn.variant().value2());
       for (int i = 0 ; i < ttn.variant().others_size(); i++) {
         ret += ",";
-        TopTypeNameToString(ret, escape, ttn.variant().others(i));
+        TopTypeNameToString(ret, quote, ttn.variant().others(i));
       }
       ret += ")";
       break;
@@ -861,16 +848,16 @@ CONV_FN_ESCAPE(TopTypeName, ttn) {
   }
 }
 
-CONV_FN_ESCAPE(TypeName, tp) {
-  TopTypeNameToString(ret, escape, tp.type());
+CONV_FN_QUOTE(TypeName, tp) {
+  TopTypeNameToString(ret, quote, tp.type());
 }
 
 CONV_FN(CastExpr, cexpr) {
   ret += "CAST(";
   ExprToString(ret, cexpr.expr());
-  ret += ", '";
-  TypeNameToString(ret, true, cexpr.type_name());
-  ret += "')";
+  ret += " AS ";
+  TypeNameToString(ret, false, cexpr.type_name());
+  ret += ")";
 }
 
 CONV_FN(ExprLike, elike) {
@@ -983,10 +970,10 @@ CONV_FN(ExprCase, ecase) {
 }
 
 CONV_FN(ColumnList, cols) {
-  ColumnToString(ret, cols.col());
+  ColumnToString(ret, true, cols.col());
   for (int i = 0 ; i < cols.other_cols_size(); i++) {
     ret += ", ";
-    ColumnToString(ret, cols.other_cols(i));
+    ColumnToString(ret, true, cols.other_cols(i));
   }
 }
 
@@ -1652,7 +1639,7 @@ CONV_FN(SettingValues, setv) {
 }
 
 CONV_FN(ColumnDef, cdf) {
-  ColumnToString(ret, cdf.col());
+  ColumnToString(ret, true, cdf.col());
   ret += " ";
   TypeNameToString(ret, false, cdf.type());
   if (cdf.has_nullable()) {
@@ -1782,7 +1769,7 @@ CONV_FN(TableEngine, te) {
     if (i != 0) {
       ret += ", ";
     }
-    ColumnToString(ret, te.cols(i));
+    ColumnToString(ret, true, te.cols(i));
   }
   ret += ")";
   if (te.has_order()) {
@@ -1875,7 +1862,7 @@ CONV_FN(InsertIntoTable, insert) {
       if (i != 0) {
         ret += ", ";
       }
-      ColumnPathToString(ret, insert.cols(i));
+      ColumnPathToString(ret, true, insert.cols(i));
     }
     ret += ")";
   }
@@ -1978,7 +1965,7 @@ CONV_FN(ExchangeTables, et) {
 }
 
 CONV_FN(UpdateSet, upt) {
-  ColumnPathToString(ret, upt.col());
+  ColumnPathToString(ret, true, upt.col());
   ret += " = ";
   ExprToString(ret, upt.expr());
 }
@@ -1996,7 +1983,7 @@ CONV_FN(Update, upt) {
 CONV_FN(AddWhere, add) {
   if (add.has_col()) {
     ret += " AFTER ";
-    ColumnToString(ret, add.col());
+    ColumnToString(ret, true, add.col());
   } else if (add.has_idx()) {
     ret += " AFTER ";
     IndexToString(ret, add.idx());
@@ -2022,13 +2009,13 @@ CONV_FN(AddStatistics, add) {
 }
 
 CONV_FN(RemoveColumnProperty, rcs) {
-  ColumnToString(ret, rcs.col());
+  ColumnToString(ret, true, rcs.col());
   ret += " REMOVE ";
   ret += RemoveColumnProperty_ColumnProperties_Name(rcs.property());
 }
 
 CONV_FN(ModifyColumnSetting, mcp) {
-  ColumnToString(ret, mcp.col());
+  ColumnToString(ret, true, mcp.col());
   ret += " MODIFY SETTING ";
   SettingValuesToString(ret, mcp.settings());
 }
@@ -2042,7 +2029,7 @@ CONV_FN(SettingList, pl) {
 }
 
 CONV_FN(RemoveColumnSetting, rcp) {
-  ColumnToString(ret, rcp.col());
+  ColumnToString(ret, true, rcp.col());
   ret += " RESET SETTING ";
   SettingListToString(ret, rcp.settings());
 }
@@ -2065,7 +2052,7 @@ CONV_FN(AlterTableItem, alter) {
       break;
     case AlterType::kMaterializeColumn:
       ret += "MATERIALIZE COLUMN ";
-      ColumnToString(ret, alter.materialize_column());
+      ColumnToString(ret, true, alter.materialize_column());
       break;
     case AlterType::kAddColumn:
       ret += "ADD COLUMN ";
@@ -2073,13 +2060,13 @@ CONV_FN(AlterTableItem, alter) {
       break;
     case AlterType::kDropColumn:
       ret += "DROP COLUMN ";
-      ColumnToString(ret, alter.drop_column());
+      ColumnToString(ret, true, alter.drop_column());
       break;
     case AlterType::kRenameColumn:
       ret += "RENAME COLUMN ";
-      ColumnToString(ret, alter.rename_column().old_name());
+      ColumnToString(ret, true, alter.rename_column().old_name());
       ret += " TO ";
-      ColumnToString(ret, alter.rename_column().new_name());
+      ColumnToString(ret, true, alter.rename_column().new_name());
       break;
     case AlterType::kModifyColumn:
       ret += "MODIFY COLUMN ";

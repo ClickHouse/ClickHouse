@@ -54,8 +54,8 @@ RandomFloatType(RandomGenerator &rg) {
 }
 
 std::tuple<SQLType*, sql_query_grammar::Dates>
-RandomDateType(RandomGenerator &rg) {
-	std::uniform_int_distribution<uint32_t> next_dist(1, 4);
+RandomDateType(RandomGenerator &rg, const bool low_card) {
+	std::uniform_int_distribution<uint32_t> next_dist(1, low_card ? 3 : 4);
 	const uint32_t nopt = next_dist(rg.gen);
 
 	switch (nopt) {
@@ -138,7 +138,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 		case 6: {
 			//dates
 			sql_query_grammar::Dates dd;
-			std::tie(res, dd) = RandomDateType(rg);
+			std::tie(res, dd) = RandomDateType(rg, false);
 			if (tp) {
 				tp->set_dates(dd);
 			}
@@ -169,7 +169,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 				case 3: {
 					//dates
 					sql_query_grammar::Dates dd;
-					std::tie(sub, dd) = RandomDateType(rg);
+					std::tie(sub, dd) = RandomDateType(rg, true);
 					if (lcard) {
 						lcard->set_dates(dd);
 					}
@@ -271,8 +271,10 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 							if (j != 0) {
 								desc += ".";
 							}
+							desc += '`';
 							rg.NextJsonCol(nbuf);
 							desc += nbuf;
+							desc += '`';
 							if (tp) {
 								col->set_column(std::move(nbuf));
 							}
@@ -290,8 +292,10 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 							if (j != 0) {
 								desc += ".";
 							}
+							desc += '`';
 							rg.NextJsonCol(nbuf);
 							desc += nbuf;
+							desc += '`';
 							if (tp) {
 								col->set_column(std::move(nbuf));
 							}
