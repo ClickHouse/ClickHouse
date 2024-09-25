@@ -428,8 +428,8 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 		this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 
 		func_call->set_distinct(agg.support_distinct && func_call->args_size() == 1 && rg.NextBool());
-		if (agg.support_nulls_clause && rg.NextBool()) {
-			func_call->set_fnulls(sql_query_grammar::FuncNulls::NIGNORE);
+		if (agg.support_nulls_clause && rg.NextSmallNumber() < 7) {
+			func_call->set_fnulls(rg.NextBool() ? sql_query_grammar::FuncNulls::NRESPECT : sql_query_grammar::FuncNulls::NIGNORE);
 		}
 		func_call->set_func(static_cast<sql_query_grammar::SQLFunc>(agg.fnum));
 	} else {
