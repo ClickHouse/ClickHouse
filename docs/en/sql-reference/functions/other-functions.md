@@ -86,11 +86,11 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-Aliases: `fullHostName`, `FQDN`. 
+Aliases: `fullHostName`, `FQDN`.
 
 **Returned value**
 
-- String with the fully qualified domain name. [String](../data-types/string.md). 
+- String with the fully qualified domain name. [String](../data-types/string.md).
 
 **Example**
 
@@ -245,7 +245,7 @@ Result:
 3. │           5 │
 4. │           5 │
 5. │           5 │
-   └─────────────┘ 
+   └─────────────┘
 ```
 
 ## byteSize
@@ -347,7 +347,7 @@ Result:
 
 Turns a constant into a full column containing a single value.
 Full columns and constants are represented differently in memory.
-Functions usually execute different code for normal and constant arguments, although the result should typically be the same. 
+Functions usually execute different code for normal and constant arguments, although the result should typically be the same.
 This function can be used to debug this behavior.
 
 **Syntax**
@@ -366,8 +366,8 @@ materialize(x)
 
 **Example**
 
-In the example below the `countMatches` function expects a constant second argument. 
-This behaviour can be debugged by using the `materialize` function to turn a constant into a full column, 
+In the example below the `countMatches` function expects a constant second argument.
+This behaviour can be debugged by using the `materialize` function to turn a constant into a full column,
 verifying that the function throws an error for a non-constant argument.
 
 Query:
@@ -1837,7 +1837,7 @@ Returns the default value for the given data type.
 
 Does not include default values for custom columns set by the user.
 
-**Syntax** 
+**Syntax**
 
 ```sql
 defaultValueOfArgumentType(expression)
@@ -2164,7 +2164,7 @@ Result:
 
 ## filesystemCapacity
 
-Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) to the data directory to be configured.
+Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#path) to the data directory to be configured.
 
 **Syntax**
 
@@ -2592,7 +2592,7 @@ joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. 
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
@@ -2917,7 +2917,7 @@ Result:
 
 **See Also**
 
-- [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
+- [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port)
 
 ## currentProfiles
 
@@ -4031,7 +4031,7 @@ displayName()
 
 **Example**
 
-The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production': 
+The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production':
 
 ```xml
 <!-- It is the name that will be shown in the clickhouse-client.
@@ -4279,4 +4279,3 @@ Result:
 1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-

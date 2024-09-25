@@ -21,6 +21,11 @@ If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver))
 
 If your use case involves a particular tool that does not have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
 
+::::note
+To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](../operations/settings/settings.md#prefer-column-name-to-alias).
+This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
+::::
+
 ## Enabling the MySQL Interface On ClickHouse Cloud
 
 1. After creating your ClickHouse Cloud Service, on the credentials screen, select the MySQL tab
@@ -96,7 +101,7 @@ In this case, ensure that the username follows the `mysql4<subdomain>_<username>
 
 ## Enabling the MySQL Interface On Self-managed ClickHouse
 
-Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
+Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
 ``` xml
 <clickhouse>
