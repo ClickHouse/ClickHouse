@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 
 namespace DB
@@ -47,10 +48,13 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , tracked_files_limit(engine_settings.tracked_files_limit)
     , tracked_file_ttl_sec(engine_settings.tracked_file_ttl_sec)
     , buckets(engine_settings.buckets)
-    , processing_threads_num(engine_settings.processing_threads_num)
     , last_processed_path(engine_settings.last_processed_path)
     , loading_retries(engine_settings.loading_retries)
 {
+    if (!engine_settings.processing_threads_num.changed && engine_settings.processing_threads_num <= 1)
+        processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+    else
+        processing_threads_num = engine_settings.processing_threads_num;
 }
 
 String ObjectStorageQueueTableMetadata::toString() const

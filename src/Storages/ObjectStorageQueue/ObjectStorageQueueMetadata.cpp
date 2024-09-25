@@ -10,7 +10,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
@@ -218,11 +217,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     LoggerPtr log)
 {
     ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
-
-    if (!settings.processing_threads_num.changed && settings.processing_threads_num <= 1)
-    {
-        table_metadata.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
-    }
 
     std::vector<std::string> metadata_paths;
     size_t buckets_num = 0;
