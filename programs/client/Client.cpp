@@ -1011,8 +1011,6 @@ bool Client::chFuzz()
     full_query.reserve(8192);
     while (server_up)
     {
-        const uint32_t noption = rg.NextMediumNumber();
-
         sq1.Clear();
         full_query.resize(0);
 
@@ -1026,45 +1024,50 @@ bool Client::chFuzz()
             nsuccessfull += (have_error ? 0 : 1);
             total_create_table_tries++;
         }
-        else if (noption < 21)
-        {
-            //correctness test query
-            (void) gen.GenerateCorrectnessTestFirstQuery(rg, sq1);
-            chfuzz::SQLQueryToString(full_query, sq1);
-            server_up &= ProcessCHFuzzQuery(outf, full_query);
-
-            sq2.Clear();
-            full_query.resize(0);
-            (void) gen.GenerateCorrectnessTestSecondQuery(sq1, sq2);
-            chfuzz::SQLQueryToString(full_query, sq2);
-            server_up &= ProcessCHFuzzQuery(outf, full_query);
-        }
-        else if (noption < 31)
-        {
-            //test in and out formats
-            (void) gen.GenerateExportQuery(rg, sq1);
-            chfuzz::SQLQueryToString(full_query, sq1);
-            server_up &= ProcessCHFuzzQuery(outf, full_query);
-
-            sq2.Clear();
-            full_query.resize(0);
-            (void) gen.GenerateClearQuery(sq1, sq2);
-            chfuzz::SQLQueryToString(full_query, sq2);
-            server_up &= ProcessCHFuzzQuery(outf, full_query);
-
-            sq3.Clear();
-            full_query.resize(0);
-            (void) gen.GenerateImportQuery(sq1, sq2, sq3);
-            chfuzz::SQLQueryToString(full_query, sq3);
-            server_up &= ProcessCHFuzzQuery(outf, full_query);
-        }
         else
         {
-            (void) gen.GenerateNextStatement(rg, sq1);
-            chfuzz::SQLQueryToString(full_query, sq1);
-            server_up &= ProcessCHFuzzQuery(outf, full_query);
+            const uint32_t noption = rg.NextLargeNumber();
 
-            gen.UpdateGenerator(sq1, !have_error);
+            if (noption < 31)
+            {
+                //correctness test query
+                (void) gen.GenerateCorrectnessTestFirstQuery(rg, sq1);
+                chfuzz::SQLQueryToString(full_query, sq1);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                sq2.Clear();
+                full_query.resize(0);
+                (void) gen.GenerateCorrectnessTestSecondQuery(sq1, sq2);
+                chfuzz::SQLQueryToString(full_query, sq2);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+            }
+            else if (noption < 41)
+            {
+                //test in and out formats
+                (void) gen.GenerateExportQuery(rg, sq1);
+                chfuzz::SQLQueryToString(full_query, sq1);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                sq2.Clear();
+                full_query.resize(0);
+                (void) gen.GenerateClearQuery(sq1, sq2);
+                chfuzz::SQLQueryToString(full_query, sq2);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                sq3.Clear();
+                full_query.resize(0);
+                (void) gen.GenerateImportQuery(sq1, sq2, sq3);
+                chfuzz::SQLQueryToString(full_query, sq3);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+            }
+            else
+            {
+                (void) gen.GenerateNextStatement(rg, sq1);
+                chfuzz::SQLQueryToString(full_query, sq1);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                gen.UpdateGenerator(sq1, !have_error);
+            }
         }
     }
     gen.FinishGenerator();

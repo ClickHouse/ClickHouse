@@ -150,6 +150,7 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 			buf += cname;
 			buf += " ";
 			buf += col.second.tp->TypeName(true);
+			buf += !col.second.nullable ? " NOT NULL" : "";
 			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
 			first = false;
 		}

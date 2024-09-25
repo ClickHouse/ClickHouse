@@ -172,6 +172,7 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 		 dynamic_cast<DecimalType*>(tp) || dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp)) && rg.NextSmallNumber() < 4) {
 		cd->set_nullable(rg.NextBool());
 	}
+	col.nullable = cd->nullable();
 	if (rg.NextSmallNumber() < 4) {
 		GenerateNextStatistics(rg, cd->mutable_stats());
 	}

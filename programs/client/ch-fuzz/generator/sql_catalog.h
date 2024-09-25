@@ -12,6 +12,7 @@ using ColumnSpecial = enum ColumnSpecial {
 
 struct SQLColumn {
 public:
+	bool nullable = true;
 	ColumnSpecial special;
 	uint32_t cname;
 	SQLType *tp;
