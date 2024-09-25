@@ -66,6 +66,49 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+template <typename Result, typename Error>
+void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
+{
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw S3Exception(
+            fmt::format("{} (Code: {}, S3 exception: '{}')",
+                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
+            err.GetErrorType());
+    }
+}
+
+template <typename Result, typename Error>
+void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response, bool if_exists)
+{
+    /// In this case even if absence of key may be ok for us,
+    /// the log will be polluted with error messages from aws sdk.
+    /// Looks like there is no way to suppress them.
+
+    if (!response.IsSuccess() && (!if_exists || !S3::isNotFoundError(response.GetError().GetErrorType())))
+    {
+        const auto & err = response.GetError();
+        throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+    }
+}
+
+template <typename Result, typename Error>
+void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::function<String()> && msg)
+{
+    try
+    {
+        throwIfError(response);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, msg());
+    }
+}
+
 /** This helps to implement parallel listing of "directories" in S3.
   *
   * Listing operation in S3 is extremely slow: it typically takes 0.3 seconds and gives only 1000 items per request.
@@ -177,55 +220,6 @@ private:
 
 }
 
-
-namespace
-{
-
-template <typename Result, typename Error>
-void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
-{
-    if (!response.IsSuccess())
-    {
-        const auto & err = response.GetError();
-        throw S3Exception(
-            fmt::format("{} (Code: {}, S3 exception: '{}')",
-                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
-            err.GetErrorType());
-    }
-}
-
-template <typename Result, typename Error>
-void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response, bool if_exists)
-{
-    /// In this case even if absence of key may be ok for us,
-    /// the log will be polluted with error messages from aws sdk.
-    /// Looks like there is no way to suppress them.
-
-    if (!response.IsSuccess() && (!if_exists || !S3::isNotFoundError(response.GetError().GetErrorType())))
-    {
-        const auto & err = response.GetError();
-        throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
-    }
-}
-
-template <typename Result, typename Error>
-void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::function<String()> && msg)
-{
-    try
-    {
-        throwIfError(response);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, msg());
-    }
-}
-
-}
-
-namespace
-{
-
 class S3IteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
@@ -245,7 +239,7 @@ public:
             "ListObjectS3")
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
-        , pool_requests(CurrentMetrics::ObjectStorageS3Threads,
+        , pool(CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
             CurrentMetrics::ObjectStorageS3ThreadsScheduled,
             num_workers_,
@@ -272,7 +266,7 @@ public:
     }
 
 private:
-    class QueryCache
+    class Cache
     {
     public:
         std::vector<Aws::S3::Model::Object> getBatchFrom(const std::string& filename_after, size_t count) const
@@ -375,23 +369,23 @@ private:
         const std::string& first_request_file_start,
         const std::string& first_request_file_end,
         size_t num_requests,
-        float lenght_decrease)
+        float length_decrease)
     {
         auto file_start = FileArithmetics::FileRepresentation(first_request_file_start.substr(path_prefix.size()));
         auto file_end = FileArithmetics::FileRepresentation(first_request_file_end.substr(path_prefix.size()));
         auto distance = file_end - file_start;
-        distance *= lenght_decrease;
+        distance *= length_decrease;
 
         for (size_t i = 0; i < num_requests; ++i)
         {
             auto start_file = file_end + FileArithmetics::FileRepresentation(1) + distance * i;
             auto end_file = start_file + distance;
 
-            pool_requests.scheduleOrThrow([this, start = std::move(start_file), end = std::move(end_file)] {
+            pool.scheduleOrThrow([this, start = std::move(start_file), end = std::move(end_file)] {
                 runSubrequest(start, end);
             });
         }
-        pool_requests.wait();
+        pool.wait();
         cache.build();
     }
 
@@ -446,12 +440,16 @@ private:
                           backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
 
-    bool cache_built = true;
-
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
-    QueryCache cache;
-    ThreadPool pool_requests;
+
+    /// When we do parallel listing requests, they could intersect in the listed ranges
+    /// and return data for the same object multiple times. So we remember the first one.
+    bool cache_built = true;
+    Cache cache;
+
+    /// A thread pool for parallel requests.
+    ThreadPool pool;
     std::string bucket;
     std::string path_prefix;
     size_t max_list_size;
