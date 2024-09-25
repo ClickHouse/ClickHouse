@@ -82,7 +82,7 @@ private:
 
     NATSHandler event_handler;
 
-    NATSConnectionPtr connection; /// Connection for all consumers
+    NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
     size_t num_created_consumers = 0;
@@ -98,7 +98,7 @@ private:
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder connection_task;
+    BackgroundSchedulePool::TaskHolder reconnection_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -129,7 +129,7 @@ private:
     /// Functions working in the background
     void streamingToViewsFunc();
     void loopingFunc();
-    void connectionFunc();
+    void reconnectionFunc();
 
     bool subscribeConsumers();
 

@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <queue>
 #include <nats.h>
 #include <base/types.h>
 #include <Common/Logger.h>
@@ -25,12 +26,17 @@ using LockPtr = std::unique_ptr<std::lock_guard<std::mutex>>;
 
 class NATSHandler
 {
+    using Task = std::function<void ()>;
+
 public:
     NATSHandler(LoggerPtr log_);
 
     /// Loop for background thread worker.
     void runLoop();
     void stopLoop();
+
+    /// Execute task on event loop thread
+    void post(Task task);
 
     UInt8 getLoopState() { return loop_state.load(); }
 
@@ -41,6 +47,9 @@ private:
     LoggerPtr log;
 
     std::atomic<UInt8> loop_state;
+
+    std::mutex tasks_mutex;
+    std::queue<Task> tasks;
 };
 
 }

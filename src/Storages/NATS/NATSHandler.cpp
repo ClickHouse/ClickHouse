@@ -16,8 +16,6 @@ NATSHandler::NATSHandler(LoggerPtr log_)
     : log(log_)
     , loop_state(Loop::STOP)
 {
-    natsLibuv_Init();
-    natsLibuv_SetThreadLocalLoop(loop.getLoop());
 }
 
 void NATSHandler::runLoop()
@@ -26,14 +24,36 @@ void NATSHandler::runLoop()
         return;
     }
 
+    natsLibuv_Init();
     natsLibuv_SetThreadLocalLoop(loop.getLoop());
+
     loop_state.store(Loop::RUN);
 
     LOG_DEBUG(log, "Background loop started");
 
-    int num_pending_callbacks = 0;
-    while (loop_state.load() == Loop::RUN || num_pending_callbacks != 0)
+    std::size_t num_pending_tasks = 0;
     {
+        std::lock_guard<std::mutex> lock(tasks_mutex);
+        num_pending_tasks = tasks.size();
+    }
+
+    int num_pending_callbacks = 0;
+    while (loop_state.load() == Loop::RUN || num_pending_callbacks != 0 || num_pending_tasks != 0)
+    {
+        std::queue<Task> executed_tasks;
+        {
+            std::lock_guard<std::mutex> lock(tasks_mutex);
+            std::swap(executed_tasks, tasks);
+
+            num_pending_tasks = tasks.size();
+        }
+
+        while(!executed_tasks.empty()){
+            const auto & task = executed_tasks.front();
+            task();
+            executed_tasks.pop();
+        }
+
         num_pending_callbacks = uv_run(loop.getLoop(), UV_RUN_NOWAIT);
     }
     loop_state.store(Loop::CLOSED);
@@ -49,6 +69,12 @@ void NATSHandler::stopLoop()
 
     LOG_DEBUG(log, "Implicit loop stop.");
     loop_state.store(Loop::STOP);
+}
+
+void NATSHandler::post(Task task)
+{
+    std::lock_guard<std::mutex> lock(tasks_mutex);
+    tasks.push(std::move(task));
 }
 
 NATSOptionsPtr NATSHandler::createOptions()

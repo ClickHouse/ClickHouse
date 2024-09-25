@@ -91,33 +91,7 @@ StorageNATS::StorageNATS(
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
 
-    try
-    {
-        size_t num_tries = nats_settings->nats_startup_connect_tries;
-        for (size_t i = 0; i < num_tries; ++i)
-        {
-            connection = std::make_shared<NATSConnection>(configuration, log, event_handler.createOptions());
-
-            if (connection->connect())
-                break;
-
-            if (i == num_tries - 1)
-            {
-                throw Exception(
-                    ErrorCodes::CANNOT_CONNECT_NATS,
-                    "Cannot connect to {}. Nats last error: {}",
-                    connection->connectionInfoForLog(), nats_GetLastError(nullptr));
-            }
-
-            LOG_DEBUG(log, "Connect attempt #{} failed, error: {}. Reconnecting...", i + 1, nats_GetLastError(nullptr));
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        if (throw_on_startup_failure)
-            throw;
-    }
+    consumers_connection = std::make_shared<NATSConnection>(configuration, log, event_handler.createOptions());
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     looping_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSLoopingTask", [this] { loopingFunc(); });
@@ -126,8 +100,8 @@ StorageNATS::StorageNATS(
     streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    connection_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConnectionManagerTask", [this] { connectionFunc(); });
-    connection_task->deactivate();
+    reconnection_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConnectionManagerTask", [this] { reconnectionFunc(); });
+    reconnection_task->deactivate();
 }
 
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
@@ -232,21 +206,26 @@ void StorageNATS::decrementReader()
 }
 
 
-void StorageNATS::connectionFunc()
+void StorageNATS::reconnectionFunc()
 {
     if (consumers_ready)
         return;
 
-    bool needs_rescheduling = true;
-    if (connection->reconnect())
-        needs_rescheduling &= !subscribeConsumers();
+    /// Connecting to NATS server must be called from event loop thread
+    event_handler.post(
+        [&](){
+            bool needs_rescheduling = true;
+            if (consumers_connection->reconnect())
+                needs_rescheduling &= !subscribeConsumers();
 
-    if (needs_rescheduling)
-        connection_task->scheduleAfter(RESCHEDULE_MS);
+            if (needs_rescheduling)
+                reconnection_task->scheduleAfter(RESCHEDULE_MS);
+        });
 }
 
 bool StorageNATS::subscribeConsumers()
 {
+    std::unique_lock lock(consumers_mutex);
     size_t num_initialized = 0;
     for (auto & consumer : consumers)
     {
@@ -261,6 +240,7 @@ bool StorageNATS::subscribeConsumers()
             break;
         }
     }
+    lock.unlock();
 
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
@@ -318,10 +298,10 @@ void StorageNATS::read(
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
-    if (!connection->isConnected())
+    if (!consumers_connection->isConnected())
     {
-        if (!connection->reconnect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", connection->connectionInfoForLog());
+        reconnection_task->activateAndSchedule();
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", consumers_connection->connectionInfoForLog());
     }
 
     Pipes pipes;
@@ -416,8 +396,8 @@ void StorageNATS::startup()
     }
     looping_task->activateAndSchedule();
 
-    if (!connection->isConnected() || !subscribeConsumers())
-        connection_task->activateAndSchedule();
+    if (!consumers_connection->isConnected() || !subscribeConsumers())
+        reconnection_task->activateAndSchedule();
 }
 
 
@@ -425,12 +405,12 @@ void StorageNATS::shutdown(bool /* is_drop */)
 {
     shutdown_called = true;
 
-    /// In case it has not yet been able to setup connection;
-    deactivateTask(connection_task, false);
-
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
     deactivateTask(streaming_task, false);
+
+    /// In case it has not yet been able to setup connection;
+    deactivateTask(reconnection_task, false);
 
     /// Just a paranoid try catch, it is not actually needed.
     try
@@ -441,7 +421,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
                 consumer->unsubscribe();
         }
 
-        connection->disconnect();
+        consumers_connection->disconnect();
 
         for (size_t i = 0; i < num_created_consumers; ++i)
             popConsumer();
@@ -491,7 +471,7 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 NATSConsumerPtr StorageNATS::createConsumer()
 {
     return std::make_shared<NATSConsumer>(
-        connection, *this, subjects,
+        consumers_connection, *this, subjects,
         nats_settings->nats_queue_group.changed ? nats_settings->nats_queue_group.value : getStorageID().getFullTableName(),
         log, queue_size, shutdown_called);
 }
@@ -575,7 +555,10 @@ void StorageNATS::streamingToViewsFunc()
 
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        bool nats_connected = connection->isConnected() || connection->reconnect();
+        bool nats_connected = consumers_connection->isConnected();
+        if(!nats_connected){
+            reconnection_task->activateAndSchedule();
+        }
 
         if (num_views && nats_connected)
         {
@@ -676,20 +659,15 @@ bool StorageNATS::streamToViews()
 
     size_t queue_empty = 0;
 
-    if (!connection->isConnected())
+    if (!consumers_connection->isConnected())
     {
         if (shutdown_called)
             return true;
 
-        if (connection->reconnect())
-        {
-            LOG_DEBUG(log, "Connection restored");
-        }
-        else
-        {
-            LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
-            return true;
-        }
+        reconnection_task->activateAndSchedule();
+
+        LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
+        return true;
     }
     else
     {
