@@ -31,7 +31,7 @@ test1() {
         GROUP BY CounterID, URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3"
     check_replicas_read_in_order $query_id
 }
 
@@ -48,14 +48,14 @@ test2() {
         GROUP BY URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1"
     check_replicas_read_in_order $query_id
 }
 
 test3() {
     $CLICKHOUSE_CLIENT -q "
         SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-        SET max_threads = 16, prefer_localhost_replica = 1, read_in_order_two_level_merge_threshold = 1000, query_plan_aggregation_in_order = 1, distributed_aggregation_memory_efficient = 1;
+        SET max_threads = 16, read_in_order_two_level_merge_threshold = 1000, query_plan_aggregation_in_order = 1, distributed_aggregation_memory_efficient = 1;
 
         SELECT replaceRegexpOne(explain, '^ *(\w+).*', '\\1')
         FROM (
@@ -64,7 +64,7 @@ test3() {
             FROM test.hits
             WHERE CounterID = 1704509 AND UserID = 4322253409885123546
             GROUP BY URL, EventDate
-            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3
+            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, parallel_replicas_local_plan=1
         )
         WHERE explain LIKE '%Aggr%Transform%' OR explain LIKE '%InOrder%'"
 }

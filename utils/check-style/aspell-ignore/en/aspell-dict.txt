@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2983
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -47,6 +47,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AzureQueue
 BIGINT
 BIGSERIAL
 BORO
@@ -99,6 +100,7 @@ BlockWriteBytes
 BlockWriteMerges
 BlockWriteOps
 BlockWriteTime
+Boncz
 Bool
 BrokenDistributedFilesToInsert
 Bugfix
@@ -114,6 +116,7 @@ CESU
 CIDR
 CIDRToRange
 CKMAN
+CKibana
 CLOB
 CLion
 CMPLNT
@@ -183,6 +186,7 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+CountMin
 Covid
 Cramer's
 Criteo
@@ -245,6 +249,7 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
+Dresseler
 Durre
 ECMA
 ETag
@@ -252,6 +257,7 @@ Ecto
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
+ElasticSearch
 EmbeddedRocksDB
 Embeddings
 Encodings
@@ -419,9 +425,9 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
-JSONCompactWithProgress
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -438,11 +444,11 @@ JSONExtractUInt
 JSONHas
 JSONLength
 JSONObjectEachRow
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
-JSONSharedDataPaths
-JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -472,6 +478,7 @@ KeeperMap
 KeeperOutstandingRequests
 Kerberos
 Khanna
+Kibana
 KittenHouse
 Klickhouse
 Kolmogorov
@@ -481,6 +488,7 @@ Kubernetes
 LDAP
 LGPL
 LIMITs
+LINEITEM
 LLDB
 LLVM's
 LOCALTIME
@@ -578,6 +586,7 @@ MinHash
 MinIO
 MinMax
 MindsDB
+Mongo
 Mongodb
 Monotonicity
 MsgPack
@@ -606,6 +615,7 @@ NVMe
 NYPD
 NaNs
 Nagios
+Nambiar
 Namenode
 NamesAndTypesList
 Nano
@@ -729,10 +739,12 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
+PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
 PlantUML
+Poess
 PointDistKm
 PointDistM
 PointDistRads
@@ -788,6 +800,7 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
+RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders
@@ -795,6 +808,7 @@ RWLockActiveWriters
 RWLockWaitingReaders
 RWLockWaitingWriters
 RabbitMQ
+Rabl
 RangeHashed
 RawBLOB
 ReDoS
@@ -976,8 +990,8 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
-TimescaleDB's
 TimeSeries
+TimescaleDB's
 Timeunit
 TinyLog
 Tkachenko
@@ -1159,6 +1173,7 @@ arrayDifference
 arrayDistinct
 arrayDotProduct
 arrayElement
+arrayElementOrNull
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -1208,6 +1223,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip
@@ -1369,6 +1385,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckibana
 ckman
 clangd
 cli
@@ -1541,6 +1558,7 @@ dequeues
 deserialization
 deserialized
 deserializing
+dest
 destructor
 destructors
 detectCharset
@@ -1566,12 +1584,12 @@ disjunction
 disjunctions
 displayName
 displaySecretsInShowAndSelect
-distro
-distinctdynamictypes
 distinctDynamicTypes
-distinctjsonpaths
 distinctJSONPaths
 distinctJSONPathsAndTypes
+distinctdynamictypes
+distinctjsonpaths
+distro
 divideDecimal
 dmesg
 doesnt
@@ -1993,6 +2011,7 @@ linearizable
 linearized
 lineasstring
 linefeeds
+lineitem
 lineorder
 linestring
 linux
@@ -2066,6 +2085,7 @@ metasymbols
 metrica
 metroHash
 mfedotov
+mflix
 minMap
 minMappedArrays
 minSampleSizeContinuous
@@ -2086,6 +2106,8 @@ mmapped
 modularization
 moduli
 moduloOrZero
+mongoc
+mongocxx
 mongodb
 monotonicity
 monthName
@@ -2476,7 +2498,6 @@ rewritable
 rightPad
 rightPadUTF
 rightUTF
-ripeMD
 risc
 riscv
 ro
@@ -2844,6 +2865,8 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+tpcds
+tpch
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot

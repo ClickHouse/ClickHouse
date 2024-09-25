@@ -385,11 +385,8 @@ size_t HashJoin::getTotalRowCount() const
     return res;
 }
 
-size_t HashJoin::getTotalByteCount() const
+void HashJoin::doDebugAsserts() const
 {
-    if (!data)
-        return 0;
-
 #if !defined(NDEBUG) && 0
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
@@ -413,6 +410,14 @@ size_t HashJoin::getTotalByteCount() const
             data->blocks_nullmaps_allocated_size,
             debug_blocks_nullmaps_allocated_size);
 #endif
+}
+
+size_t HashJoin::getTotalByteCount() const
+{
+    if (!data)
+        return 0;
+
+    doDebugAsserts();
 
     size_t res = 0;
 
@@ -607,8 +612,10 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         /// In case of scattered block we account proportional share of the source block bytes.
         /// For not scattered columns it will be trivial (bytes * N / N) calculation.
         data->blocks_allocated_size += block_to_save.rows() ? block_to_save.allocatedBytes() * rows / block_to_save.rows() : 0;
+        doDebugAsserts();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
+        doDebugAsserts();
 
         if (rows)
             data->empty = false;
@@ -701,9 +708,11 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
 
             if (!flag_per_row && !is_inserted)
             {
+                doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->blocks_allocated_size -= stored_block->allocatedBytes();
                 data->blocks.pop_back();
+                doDebugAsserts();
             }
 
             if (!check_limits)
@@ -716,7 +725,6 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
     }
     data->keys_to_join = total_rows;
     shrinkStoredBlocksToFit(total_bytes);
-
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
@@ -754,6 +762,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
     for (auto & stored_block : data->blocks)
     {
+        doDebugAsserts();
+
         size_t old_size = stored_block.allocatedBytes();
         stored_block = stored_block.shrinkToFit();
         size_t new_size = stored_block.allocatedBytes();
@@ -774,6 +784,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         else
             /// Sometimes after clone resized block can be bigger than original
             data->blocks_allocated_size += new_size - old_size;
+
+        doDebugAsserts();
     }
 
     auto new_total_bytes_in_join = getTotalByteCount();
@@ -1382,6 +1394,7 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
 
 void HashJoin::reuseJoinedData(const HashJoin & join)
 {
+    have_compressed = join.have_compressed;
     data = join.data;
     from_storage_join = true;
 
@@ -1515,6 +1528,104 @@ bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table
     if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
         return true;
     return false;
+}
+
+template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
+void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
+{
+    constexpr JoinFeatures<KIND, STRICTNESS, Map> join_features;
+    if constexpr (!join_features.is_all_join || (!join_features.left && !join_features.inner))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only left or inner join table can be reranged.");
+    else
+    {
+        auto merge_rows_into_one_block = [&](BlocksList & blocks, RowRefList & rows_ref)
+        {
+            auto it = rows_ref.begin();
+            if (it.ok())
+            {
+                if (blocks.empty() || blocks.back().rows() >= DEFAULT_BLOCK_SIZE)
+                    blocks.emplace_back(it->block->cloneEmpty());
+            }
+            else
+            {
+                return;
+            }
+            auto & block = blocks.back();
+            size_t start_row = block.rows();
+            for (; it.ok(); ++it)
+            {
+                for (size_t i = 0; i < block.columns(); ++i)
+                {
+                    auto & col = block.getByPosition(i).column->assumeMutableRef();
+                    col.insertFrom(*it->block->getByPosition(i).column, it->row_num);
+                }
+            }
+            if (block.rows() > start_row)
+            {
+                RowRefList new_rows_ref(&block, start_row, block.rows() - start_row);
+                rows_ref = std::move(new_rows_ref);
+            }
+        };
+
+        auto visit_rows_map = [&](BlocksList & blocks, MapsAll & rows_map)
+        {
+            switch (data->type)
+            {
+        #define M(TYPE) \
+                case Type::TYPE: \
+                {\
+                    rows_map.TYPE->forEachMapped([&](RowRefList & rows_ref) { merge_rows_into_one_block(blocks, rows_ref); }); \
+                    break; \
+                }
+                APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
+                default:
+                    break;
+            }
+        };
+        BlocksList sorted_blocks;
+        visit_rows_map(sorted_blocks, map);
+        doDebugAsserts();
+        data->blocks.swap(sorted_blocks);
+        size_t new_blocks_allocated_size = 0;
+        for (const auto & block : data->blocks)
+            new_blocks_allocated_size += block.allocatedBytes();
+        data->blocks_allocated_size = new_blocks_allocated_size;
+        doDebugAsserts();
+    }
+}
+
+void HashJoin::tryRerangeRightTableData()
+{
+    if (!table_join->allowJoinSorting() || table_join->getMixedJoinExpression() || !isInnerOrLeft(kind) || strictness != JoinStrictness::All)
+        return;
+
+    /// We should not rerange the right table on such conditions:
+    /// 1. the right table is already reranged by key or it is empty.
+    /// 2. the join clauses size is greater than 1, like `...join on a.key1=b.key1 or a.key2=b.key2`, we can not rerange the right table on different set of keys.
+    /// 3. the number of right table rows exceed the threshold, which may result in a significant cost for reranging and lead to performance degradation.
+    /// 4. the keys of right table is very sparse, which may result in insignificant performance improvement after reranging by key.
+    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightMaximumTableRows() ||  data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
+        return;
+
+    if (data->keys_to_join == 0)
+        data->keys_to_join = getTotalRowCount();
+
+    /// If the there is no columns to add, means no columns to output, then the rerange would not improve performance by using column's `insertRangeFrom`
+    /// to replace column's `insertFrom` to make the output.
+    if (sample_block_with_columns_to_add.columns() == 0)
+    {
+        LOG_DEBUG(log, "The joined right table total rows :{}, total keys :{}", data->rows_to_join, data->keys_to_join);
+        return;
+    }
+    [[maybe_unused]] bool result = joinDispatch(
+        kind,
+        strictness,
+        data->maps.front(),
+        /*prefer_use_maps_all*/ false,
+        [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
+    chassert(result);
+    data->sorted = true;
 }
 
 }

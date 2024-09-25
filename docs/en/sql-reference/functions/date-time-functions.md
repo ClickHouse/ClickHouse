@@ -83,7 +83,7 @@ Result:
 ```
 ## makeDate32
 
-Creates a date of type [Date32](../../sql-reference/data-types/date32.md) from a year, month, day (or optionally a year and a day). 
+Creates a date of type [Date32](../../sql-reference/data-types/date32.md) from a year, month, day (or optionally a year and a day).
 
 **Syntax**
 
@@ -153,7 +153,7 @@ makeDateTime(year, month, day, hour, minute, second[, timezone])
 - `hour` — Hour. [Integer](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 - `minute` — Minute. [Integer](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 - `second` — Second. [Integer](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
-- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional).
 
 **Returned value**
 
@@ -186,11 +186,11 @@ makeDateTime64(year, month, day, hour, minute, second[, precision])
 **Arguments**
 
 - `year` — Year (0-9999). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `month` — Month (1-12). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `month` — Month (1-12). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 - `day` — Day (1-31). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 - `hour` — Hour (0-23). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `minute` — Minute (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
-- `second` — Second (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `minute` — Minute (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `second` — Second (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 - `precision` — Optional precision of the sub-second component (0-9). [Integer](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
@@ -294,7 +294,7 @@ Result:
 
 ## serverTimeZone
 
-Returns the timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+Returns the timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#timezone).
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
 
 **Syntax**
@@ -1269,7 +1269,7 @@ toStartOfSecond(value, [timezone])
 **Arguments**
 
 - `value` — Date and time. [DateTime64](../data-types/datetime64.md).
-- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1309,7 +1309,7 @@ Result:
 
 **See also**
 
-- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+- [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) server configuration parameter.
 
 ## toStartOfMillisecond
 
@@ -1324,7 +1324,7 @@ toStartOfMillisecond(value, [timezone])
 **Arguments**
 
 - `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
-- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -1376,7 +1376,7 @@ toStartOfMicrosecond(value, [timezone])
 **Arguments**
 
 - `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
-- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -1416,7 +1416,7 @@ Result:
 
 **See also**
 
-- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+- [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) server configuration parameter.
 
 ## toStartOfNanosecond
 
@@ -1431,7 +1431,7 @@ toStartOfNanosecond(value, [timezone])
 **Arguments**
 
 - `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
-- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -1471,7 +1471,7 @@ Result:
 
 **See also**
 
-- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+- [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) server configuration parameter.
 
 ## toStartOfFiveMinutes
 
@@ -1636,37 +1636,329 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
+**Syntax**
+
+```sql
+toTime(date[,timezone])
+```
+
+**Arguments**
+
+- `date` — Date to convert to a time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+- `timezone` (optional) — Timezone for the returned value. [String](../data-types/string.md).
+
+**Returned value**
+
+- DateTime with date equated to `1970-01-02` while preserving the time. [DateTime](../data-types/datetime.md).
+
+:::note
+If the `date` input argument contained sub-second components,
+they will be dropped in the returned `DateTime` value with second-accuracy.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000',3)) AS result, toTypeName(result);
+```
+
+Result:
+
+```response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
+```
+
 ## toRelativeYearNum
 
-Converts a date, or date with time, to the number of the year, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of years elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeYearNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of years from a fixed reference point in the past. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toRelativeYearNum(toDate('2002-12-08')) AS y1,
+    toRelativeYearNum(toDate('2010-10-26')) AS y2
+```
+
+Result:
+
+```response
+┌───y1─┬───y2─┐
+│ 2002 │ 2010 │
+└──────┴──────┘
+```
 
 ## toRelativeQuarterNum
 
-Converts a date, or date with time, to the number of the quarter, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of quarters elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeQuarterNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of quarters from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeQuarterNum(toDate('1993-11-25')) AS q1,
+  toRelativeQuarterNum(toDate('2005-01-05')) AS q2
+```
+
+Result:
+
+```response
+┌───q1─┬───q2─┐
+│ 7975 │ 8020 │
+└──────┴──────┘
+```
 
 ## toRelativeMonthNum
 
-Converts a date, or date with time, to the number of the month, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of months elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeMonthNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of months from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeMonthNum(toDate('2001-04-25')) AS m1,
+  toRelativeMonthNum(toDate('2009-07-08')) AS m2
+```
+
+Result:
+
+```response
+┌────m1─┬────m2─┐
+│ 24016 │ 24115 │
+└───────┴───────┘
+```
 
 ## toRelativeWeekNum
 
-Converts a date, or date with time, to the number of the week, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of weeks elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeWeekNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of weeks from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeWeekNum(toDate('2000-02-29')) AS w1,
+  toRelativeWeekNum(toDate('2001-01-12')) AS w2
+```
+
+Result:
+
+```response
+┌───w1─┬───w2─┐
+│ 1574 │ 1619 │
+└──────┴──────┘
+```
 
 ## toRelativeDayNum
 
-Converts a date, or date with time, to the number of the day, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of days elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeDayNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of days from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeDayNum(toDate('1993-10-05')) AS d1,
+  toRelativeDayNum(toDate('2000-09-20')) AS d2
+```
+
+Result:
+
+```response
+┌───d1─┬────d2─┐
+│ 8678 │ 11220 │
+└──────┴───────┘
+```
 
 ## toRelativeHourNum
 
-Converts a date, or date with time, to the number of the hour, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of hours elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeHourNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of hours from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeHourNum(toDateTime('1993-10-05 05:20:36')) AS h1,
+  toRelativeHourNum(toDateTime('2000-09-20 14:11:29')) AS h2
+```
+
+Result:
+
+```response
+┌─────h1─┬─────h2─┐
+│ 208276 │ 269292 │
+└────────┴────────┘
+```
 
 ## toRelativeMinuteNum
 
-Converts a date, or date with time, to the number of the minute, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of minutes elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeMinuteNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of minutes from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeMinuteNum(toDateTime('1993-10-05 05:20:36')) AS m1,
+  toRelativeMinuteNum(toDateTime('2000-09-20 14:11:29')) AS m2
+```
+
+Result:
+
+```response
+┌───────m1─┬───────m2─┐
+│ 12496580 │ 16157531 │
+└──────────┴──────────┘
+```
 
 ## toRelativeSecondNum
 
-Converts a date, or date with time, to the number of the second, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the seconds elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeSecondNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of seconds from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeSecondNum(toDateTime('1993-10-05 05:20:36')) AS s1,
+  toRelativeSecondNum(toDateTime('2000-09-20 14:11:29')) AS s2
+```
+
+Result:
+
+```response
+┌────────s1─┬────────s2─┐
+│ 749794836 │ 969451889 │
+└───────────┴───────────┘
+```
 
 ## toISOYear
 
@@ -1886,7 +2178,7 @@ age('unit', startdate, enddate, [timezone])
 
 - `enddate` — The second time value to subtract from (the minuend). [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
 
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1962,7 +2254,7 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 
 - `enddate` — The second time value to subtract from (the minuend). [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
 
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -2031,7 +2323,7 @@ Alias: `dateTrunc`.
     `unit` argument is case-insensitive.
 
 - `value` — Date and time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -2411,7 +2703,7 @@ now([timezone])
 
 **Arguments**
 
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -2460,7 +2752,7 @@ now64([scale], [timezone])
 **Arguments**
 
 - `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -2494,7 +2786,7 @@ nowInBlock([timezone])
 
 **Arguments**
 
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -2683,7 +2975,7 @@ YYYYMMDDhhmmssToDateTime(yyyymmddhhmmss[, timezone]);
 **Arguments**
 
 - `yyyymmddhhmmss` - A number representing the year, month and day. [Integer](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
-- `timezone` - [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional).
+- `timezone` - [Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional).
 
 **Returned value**
 
@@ -3339,7 +3631,7 @@ addInterval(interval_1, interval_2)
 - Returns a tuple of intervals. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 
 :::note
-Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(1)` and `toIntervalDay(2)` are passed then the result will be `(3)` rather than `(1,1)`. 
+Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(1)` and `toIntervalDay(2)` are passed then the result will be `(3)` rather than `(1,1)`.
 :::
 
 **Example**
@@ -3390,7 +3682,7 @@ addTupleOfIntervals(interval_1, interval_2)
 Query:
 
 ```sql
-WITH toDate('2018-01-01') AS date 
+WITH toDate('2018-01-01') AS date
 SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 MONTH, INTERVAL 1 YEAR))
 ```
 
@@ -4510,4 +4802,3 @@ timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'));
 ## Related content
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-

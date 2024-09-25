@@ -215,4 +215,3 @@ extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Semi, Hash
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Anti, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Asof, HashJoin::MapsAsof>;
 }
-

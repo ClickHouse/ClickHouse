@@ -15,6 +15,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool allow_experimental_query_deduplication;
+    extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 select_sequential_consistency;
+}
 
 namespace ErrorCodes
 {
@@ -44,16 +52,16 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     const auto & query_settings = reading->getContext()->getSettingsRef();
 
     // Currently projection don't support deduplication when moving parts between shards.
-    if (query_settings.allow_experimental_query_deduplication)
+    if (query_settings[Setting::allow_experimental_query_deduplication])
         return false;
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
-    if (query_settings.aggregate_functions_null_for_empty)
+    if (query_settings[Setting::aggregate_functions_null_for_empty])
         return false;
 
     /// Don't use projections if have mutations to apply
     /// because we need to apply them on original data.
-    if (query_settings.apply_mutations_on_fly && reading->getMutationsSnapshot()->hasDataMutations())
+    if (query_settings[Setting::apply_mutations_on_fly] && reading->getMutationsSnapshot()->hasDataMutations())
         return false;
 
     return true;
@@ -63,7 +71,7 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
 {
     ContextPtr context = reading->getContext();
 
-    if (context->getSettingsRef().select_sequential_consistency)
+    if (context->getSettingsRef()[Setting::select_sequential_consistency])
     {
         if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&reading->getMergeTreeData()))
             return std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
@@ -248,7 +256,7 @@ bool analyzeProjectionCandidate(
         candidate.projection->metadata,
         projection_query_info,
         context,
-        context->getSettingsRef().max_threads,
+        context->getSettingsRef()[Setting::max_threads],
         max_added_blocks);
 
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
