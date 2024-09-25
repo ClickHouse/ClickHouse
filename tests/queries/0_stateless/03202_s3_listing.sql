@@ -1,4 +1,4 @@
--- Tags: no-fastest
+-- Tags: no-fasttest
 
 -- A smoke test: checks that the listing still works with parallelization options.
 SET remote_filesystem_read_method = 'read', max_download_threads=1;
