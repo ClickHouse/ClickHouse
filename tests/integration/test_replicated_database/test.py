@@ -1491,7 +1491,7 @@ def test_auto_recovery(started_cluster):
     bad_settings_node.query(
         "DROP DATABASE IF EXISTS auto_recovery",
         settings={
-            "throw_on_unsupported_query_inside_transaction": 0,
+            "implicit_transaction": 0,
         },
     )
 
