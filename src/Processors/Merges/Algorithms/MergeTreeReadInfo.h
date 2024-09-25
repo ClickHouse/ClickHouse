@@ -54,7 +54,7 @@ inline void setVirtualRow(Chunk & chunk, const Block & header)
         const ColumnWithTypeAndName & type_and_name = header.getByPosition(i);
         ColumnPtr current_column = type_and_name.type->createColumn();
 
-        size_t pos = type_and_name.name.find_last_of(".");
+        size_t pos = type_and_name.name.find_last_of('.');
         String column_name = (pos == String::npos) ? type_and_name.name : type_and_name.name.substr(pos + 1);
 
         const ColumnWithTypeAndName * column = pk_block.findByName(column_name, true);
