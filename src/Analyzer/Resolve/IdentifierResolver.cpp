@@ -412,41 +412,27 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
         table_name = table_identifier[0];
     }
 
-    const int max_retry = 5;
-    for (int i = 0; i < max_retry; ++i)
-    {
-        StorageID storage_id(database_name, table_name);
-        storage_id = context->resolveStorageID(storage_id);
-        bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+    StorageID storage_id(database_name, table_name);
+    storage_id = context->resolveStorageID(storage_id);
+    bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
-        StoragePtr storage;
+    StoragePtr storage;
 
-        if (is_temporary_table)
-            storage = DatabaseCatalog::instance().getTable(storage_id, context);
-        else
-            storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    if (is_temporary_table)
+        storage = DatabaseCatalog::instance().getTable(storage_id, context);
+    else
+        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
-        if (!storage)
-            return {};
+    if (!storage)
+        return {};
 
-        auto storage_lock
-            = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-        /// If storage is dropped or detached, it is unable to get the lock. We retry with the new table if exists.
-        if (!storage_lock)
-            continue;
+    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+    auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+    if (is_temporary_table)
+        result->setTemporaryTableName(table_name);
 
-        auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-        auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
-        if (is_temporary_table)
-            result->setTemporaryTableName(table_name);
-
-        return result;
-    }
-
-    throw Exception(
-        ErrorCodes::INVALID_IDENTIFIER,
-        "Unable to resolve table identifier: {}, the table is dropped or detached",
-        table_identifier.getFullName());
+    return result;
 }
 
 /// Resolve identifier from compound expression
