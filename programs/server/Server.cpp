@@ -2217,14 +2217,23 @@ try
         if (has_zookeeper && config().has("distributed_ddl"))
         {
             /// DDL worker should be started after all tables were loaded
-            String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+            String ddl_queue_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+            String ddl_replicas_path = config().getString("distributed_ddl.replicas_path", "/clickhouse/task_queue/replicas/");
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
-            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker",
-                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
-                                         load_metadata_tasks);
+            global_context->setDDLWorker(
+                std::make_unique<DDLWorker>(
+                    pool_size,
+                    ddl_queue_path,
+                    ddl_replicas_path,
+                    global_context,
+                    &config(),
+                    "distributed_ddl",
+                    "DDLWorker",
+                    &CurrentMetrics::MaxDDLEntryID,
+                    &CurrentMetrics::MaxPushedDDLEntryID),
+                load_metadata_tasks);
         }
 
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
