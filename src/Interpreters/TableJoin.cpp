@@ -41,6 +41,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_join_right_table_sorting;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
     extern const SettingsUInt64 default_max_bytes_in_join;
@@ -143,7 +144,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
-    , enable_analyzer(settings.allow_experimental_analyzer)
+    , enable_analyzer(settings[Setting::allow_experimental_analyzer])
 {
 }
 

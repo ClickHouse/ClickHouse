@@ -788,7 +788,7 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
 def get_localzone():
     return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
-
+# Refer to `tests/integration/helpers/random_settings.py` for integration test random settings
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: (
