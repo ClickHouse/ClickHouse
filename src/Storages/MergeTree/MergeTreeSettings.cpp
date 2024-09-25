@@ -257,4 +257,8 @@ std::vector<String> MergeTreeSettings::getAllRegisteredNames() const
     return all_settings;
 }
 
+std::string_view MergeTreeSettings::resolveName(std::string_view name)
+{
+    return MergeTreeSettings::Traits::resolveName(name);
+}
 }

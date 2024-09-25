@@ -19,7 +19,9 @@
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
+#    include <openssl/evp.h>
 #    include <openssl/md5.h>
+#    include <openssl/ripemd.h>
 #endif
 
 #include <bit>
@@ -196,6 +198,34 @@ T combineHashesFunc(T t1, T t2)
     return HashFunction::apply(reinterpret_cast<const char *>(hashes), sizeof(hashes));
 }
 
+#if USE_SSL
+struct RipeMD160Impl
+{
+    static constexpr auto name = "RIPEMD160";
+    using ReturnType = UInt256;
+
+    static UInt256 apply(const char * begin, size_t size)
+    {
+        UInt8 digest[RIPEMD160_DIGEST_LENGTH];
+
+        RIPEMD160(reinterpret_cast<const unsigned char *>(begin), size, reinterpret_cast<unsigned char *>(digest));
+
+        std::reverse(digest, digest + RIPEMD160_DIGEST_LENGTH);
+
+        UInt256 res = 0;
+        std::memcpy(&res, digest, RIPEMD160_DIGEST_LENGTH);
+
+        return res;
+    }
+
+    static UInt256 combineHashes(UInt256 h1, UInt256 h2)
+    {
+        return combineHashesFunc<UInt256, RipeMD160Impl>(h1, h2);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+#endif
 
 struct SipHash64Impl
 {
@@ -1624,6 +1654,7 @@ using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 #if USE_SSL
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+using FunctionRipeMD160Hash = FunctionAnyHash<RipeMD160Impl>;
 #endif
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
 using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key, SipHash128KeyedImpl::KeyColumns>;
@@ -1652,6 +1683,7 @@ using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
+
 }
 
 #pragma clang diagnostic pop

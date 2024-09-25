@@ -302,8 +302,12 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
-                /// If we couldn't infer any type or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
-                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)))
+                /// Return String type if one of the following conditions apply
+                ///  - we couldn't infer any type
+                ///  - it's a number and csv.try_infer_numbers_from_strings = 0
+                ///  - it's a tuple and try_infer_strings_from_quoted_tuples = 0
+                ///  - it's a Bool type (we don't allow reading bool values from strings)
+                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)) || isBool(type))
                     return std::make_shared<DataTypeString>();
 
                 return type;

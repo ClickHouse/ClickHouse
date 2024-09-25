@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsLogsLevel send_logs_level;
+}
+
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
@@ -47,7 +52,7 @@ RemoteInserter::RemoteInserter(
     /// and will not consume Log packets.
     ///
     /// So that is why send_logs_level had been disabled here.
-    settings.send_logs_level = "none";
+    settings[Setting::send_logs_level] = "none";
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
