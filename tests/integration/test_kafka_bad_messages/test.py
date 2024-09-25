@@ -124,6 +124,7 @@ def kafka_cluster():
         cluster.shutdown()
 
 
+# check_method for bad_messages_parsing_mode
 def view_test(expected_num_messages, *_):
     attempt = 0
     rows = 0
@@ -137,6 +138,7 @@ def view_test(expected_num_messages, *_):
     assert rows == expected_num_messages
 
 
+# check_method for bad_messages_parsing_mode
 def dead_letter_queue_test(expected_num_messages, topic_name):
     view_test(expected_num_messages)
     instance.query("SYSTEM FLUSH LOGS")
