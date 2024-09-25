@@ -145,7 +145,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
 
     try
     {
-        /// This function can throw mysql exception, we don't have enough context to handle it
+        /// This function can throw mysql exception, we don't have enough context to handle it.
         /// So we just catch and re-throw as known exception if needed.
         fetchTablesIntoLocalCache(local_context);
     }
