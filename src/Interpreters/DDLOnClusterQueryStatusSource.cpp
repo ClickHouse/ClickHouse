@@ -11,6 +11,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
+}
 
 namespace ErrorCodes
 {
@@ -107,7 +111,7 @@ void DDLOnClusterQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatu
 {
     assert(status.code != 0);
 
-    if (!first_exception && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
+    if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {
         auto [host, port] = parseHostAndPort(host_id);
         first_exception
@@ -128,7 +132,7 @@ void DDLOnClusterQueryStatusSource::fillHostStatus(const String & host_id, const
 
 Block DDLOnClusterQueryStatusSource::getSampleBlock(ContextPtr context_)
 {
-    auto output_mode = context_->getSettingsRef().distributed_ddl_output_mode;
+    auto output_mode = context_->getSettingsRef()[Setting::distributed_ddl_output_mode];
 
     auto maybe_make_nullable = [&](const DataTypePtr & type) -> DataTypePtr
     {

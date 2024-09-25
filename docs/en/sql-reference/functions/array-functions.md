@@ -2088,13 +2088,14 @@ Calculate AUC (Area Under the Curve, which is a concept in machine learning, see
 **Syntax**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels)
+arrayAUC(arr_scores, arr_labels[, scale])
 ```
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
 
 **Returned value**
 

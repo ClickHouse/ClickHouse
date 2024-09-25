@@ -12,7 +12,11 @@
 
 namespace DB
 {
-
+namespace Setting
+{
+extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
+extern const SettingsInt64 distributed_ddl_task_timeout;
+}
 namespace ErrorCodes
 {
 extern const int UNFINISHED;
@@ -22,7 +26,7 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     const String & zk_node_path, Block block, ContextPtr context_, const Strings & hosts_to_wait, const char * logger_name)
     : ISource(block), node_path(zk_node_path), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(getLogger(logger_name))
 {
-    auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
+    auto output_mode = context->getSettingsRef()[Setting::distributed_ddl_output_mode];
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
     throw_on_timeout_only_active
         = output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
@@ -34,7 +38,7 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
         || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
 
     addTotalRowsApprox(waiting_hosts.size());
-    timeout_seconds = context->getSettingsRef().distributed_ddl_task_timeout;
+    timeout_seconds = context->getSettingsRef()[Setting::distributed_ddl_task_timeout];
 }
 
 

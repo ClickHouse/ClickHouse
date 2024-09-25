@@ -1,6 +1,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 
+#include "base/defines.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -1540,7 +1541,7 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
     using Node = typename Storage::Node;
     Node node{};
     node.setData(data);
-    node.setEphemeralOwner(ephemeral_owner);
+    node.stats.setEphemeralOwner(ephemeral_owner);
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
     auto child_path = DB::getBaseNodeName(child_it->key);
@@ -1549,7 +1550,7 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
         [&](auto & parent)
         {
             parent.addChild(child_path);
-            parent.increaseNumChildren();
+            parent.stats.increaseNumChildren();
         });
 }
 
@@ -1570,9 +1571,9 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     addNode(storage, "/hello1", "world", 1);
     addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
-    storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello2"};
-    storage.ephemerals[1] = {"/hello1"};
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
+    storage.committed_ephemerals[3] = {"/hello2"};
+    storage.committed_ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -1601,10 +1602,10 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
     EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
-    EXPECT_EQ(restored_storage->zxid, 2);
-    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
-    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
-    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
+    EXPECT_EQ(restored_storage->getZXID(), 2);
+    EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
+    EXPECT_EQ(restored_storage->committed_ephemerals[3].size(), 1);
+    EXPECT_EQ(restored_storage->committed_ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
@@ -2027,7 +2028,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->commit(1, entry_c->get_buf());
     const auto & storage = state_machine->getStorageUnsafe();
 
-    EXPECT_EQ(storage.ephemerals.size(), 1);
+    EXPECT_EQ(storage.committed_ephemerals.size(), 1);
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
     request_d->path = "/hello";
     /// Delete from other session
@@ -2035,7 +2036,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->pre_commit(2, entry_d->get_buf());
     state_machine->commit(2, entry_d->get_buf());
 
-    EXPECT_EQ(storage.ephemerals.size(), 0);
+    EXPECT_EQ(storage.committed_ephemerals.size(), 0);
 }
 
 
@@ -2278,6 +2279,62 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
 
         reset_node_value(node_without_acl);
     }
+}
+
+TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+    int64_t session_without_auth = 1;
+    int64_t session_with_auth = 2;
+    size_t term = 0;
+
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+
+    auto & storage = state_machine->getStorageUnsafe();
+
+    auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = "test_user:test_password";
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+    state_machine->commit(1, auth_entry->get_buf());
+
+    std::string node_with_acl = "/node_with_acl";
+    {
+        auto create_req = std::make_shared<ZooKeeperCreateRequest>();
+        create_req->path = node_with_acl;
+        create_req->data = "notmodified";
+        create_req->acls = {{.permissions = ACL::Read, .scheme = "auth", .id = ""}};
+        auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
+        state_machine->pre_commit(3, create_entry->get_buf());
+        state_machine->commit(3, create_entry->get_buf());
+        ASSERT_TRUE(storage.container.contains(node_with_acl));
+    }
+    Requests ops;
+    ops.push_back(zkutil::makeSetRequest(node_with_acl, "modified", -1));
+    ops.push_back(zkutil::makeCheckRequest("/nonexistentnode", -1));
+    auto multi_req = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+    auto multi_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), multi_req);
+    state_machine->pre_commit(4, multi_entry->get_buf());
+    state_machine->commit(4, multi_entry->get_buf());
+
+    auto node_it = storage.container.find(node_with_acl);
+    ASSERT_FALSE(node_it == storage.container.end());
+    ASSERT_TRUE(node_it->value.getData() == "notmodified");
 }
 
 TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
@@ -2534,9 +2591,9 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     addNode(storage, "/hello1", "world", 1);
     addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
-    storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello2"};
-    storage.ephemerals[1] = {"/hello1"};
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
+    storage.committed_ephemerals[3] = {"/hello2"};
+    storage.committed_ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -2561,10 +2618,10 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
     EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
-    EXPECT_EQ(restored_storage->zxid, 2);
-    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
-    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
-    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
+    EXPECT_EQ(restored_storage->getZXID(), 2);
+    EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
+    EXPECT_EQ(restored_storage->committed_ephemerals[3].size(), 1);
+    EXPECT_EQ(restored_storage->committed_ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
@@ -2749,13 +2806,13 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
 
         storage.session_id_counter = 5;
 
-        storage.ephemerals[3] = {"/hello"};
-        storage.ephemerals[1] = {"/hello/somepath"};
+        storage.committed_ephemerals[3] = {"/hello"};
+        storage.committed_ephemerals[1] = {"/hello/somepath"};
 
         for (size_t j = 0; j < 3333; ++j)
             storage.getSessionID(130 * j);
 
-        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, storage.zxid);
+        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, storage.getZXID());
 
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
 
@@ -3259,7 +3316,7 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     create_path("/test_node");
     auto node_it = storage.container.find("/test_node");
     ASSERT_NE(node_it, storage.container.end());
-    auto node_version = node_it->value.version;
+    auto node_version = node_it->value.stats.version;
 
     {
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
@@ -3510,12 +3567,12 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
     {
         SCOPED_TRACE("Recursive Remove Ephemeral");
         create("/T7", zkutil::CreateMode::Ephemeral);
-        ASSERT_EQ(storage.ephemerals.size(), 1);
+        ASSERT_EQ(storage.committed_ephemerals.size(), 1);
 
         auto responses = remove_recursive("/T7", 100);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
-        ASSERT_EQ(storage.ephemerals.size(), 0);
+        ASSERT_EQ(storage.committed_ephemerals.size(), 0);
         ASSERT_FALSE(exists("/T7"));
     }
 
@@ -3525,12 +3582,12 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
         create("/T8/A", zkutil::CreateMode::Persistent);
         create("/T8/B", zkutil::CreateMode::Ephemeral);
         create("/T8/A/C", zkutil::CreateMode::Ephemeral);
-        ASSERT_EQ(storage.ephemerals.size(), 1);
+        ASSERT_EQ(storage.committed_ephemerals.size(), 1);
 
         auto responses = remove_recursive("/T8", 4);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
-        ASSERT_EQ(storage.ephemerals.size(), 0);
+        ASSERT_EQ(storage.committed_ephemerals.size(), 0);
         ASSERT_FALSE(exists("/T8"));
         ASSERT_FALSE(exists("/T8/A"));
         ASSERT_FALSE(exists("/T8/B"));
@@ -3682,6 +3739,72 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
         ASSERT_FALSE(exists("/A/B"));
         ASSERT_FALSE(exists("/A/B/D"));
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove For Subtree With Updated Node");
+        int create_zxid = ++zxid;
+        auto ops = prepare_create_tree();
+
+        /// First create nodes
+        const auto create_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(create_request, 1, 0, create_zxid);
+        auto create_responses = storage.processRequest(create_request, 1, create_zxid);
+        ASSERT_EQ(create_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(create_responses[0].response));
+
+        /// Small limit
+        int remove_zxid = ++zxid;
+        ops = {
+            zkutil::makeSetRequest("/A/B", "", -1),
+            zkutil::makeRemoveRecursiveRequest("/A", 3),
+        };
+        auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        auto remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_FALSE(is_multi_ok(remove_responses[0].response));
+
+        /// Big limit
+        remove_zxid = ++zxid;
+        ops[1] = zkutil::makeRemoveRecursiveRequest("/A", 4);
+        remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        remove_responses = storage.processRequest(remove_request, 1, remove_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(remove_responses[0].response));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/C"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("[BUG] Recursive Remove Level Sorting");
+        int new_zxid = ++zxid;
+
+        Coordination::Requests ops = {
+            zkutil::makeCreateRequest("/a", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/a/bbbbbb", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/B", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/A/CCCCCCCCCCCC", "", zkutil::CreateMode::Persistent),
+            zkutil::makeRemoveRecursiveRequest("/A", 3),
+        };
+        auto remove_request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid);
+        auto remove_responses = storage.processRequest(remove_request, 1, new_zxid);
+
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_TRUE(is_multi_ok(remove_responses[0].response));
+        ASSERT_TRUE(exists("/a"));
+        ASSERT_TRUE(exists("/a/bbbbbb"));
+        ASSERT_FALSE(exists("/A"));
+        ASSERT_FALSE(exists("/A/B"));
+        ASSERT_FALSE(exists("/A/CCCCCCCCCCCC"));
+    }
+
 }
 
 TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
@@ -3767,14 +3890,26 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
     auto responses = storage.processRequest(remove_request, 1, new_zxid);
 
     ASSERT_EQ(responses.size(), 7);
+    /// request response is last
+    ASSERT_EQ(dynamic_cast<Coordination::ZooKeeperWatchResponse *>(responses.back().response.get()), nullptr);
 
-    for (size_t i = 0; i < 7; ++i)
+    std::unordered_map<std::string, std::vector<Coordination::Event>> expected_watch_responses
+    {
+        {"/A/B/D", {Coordination::Event::DELETED}},
+        {"/A/B", {Coordination::Event::CHILD, Coordination::Event::DELETED}},
+        {"/A/C", {Coordination::Event::DELETED}},
+        {"/A", {Coordination::Event::CHILD, Coordination::Event::DELETED}},
+    };
+
+    std::unordered_map<std::string, std::vector<Coordination::Event>> actual_watch_responses;
+    for (size_t i = 0; i < 6; ++i)
     {
         ASSERT_EQ(responses[i].response->error, Coordination::Error::ZOK);
 
-        if (const auto * watch_response = dynamic_cast<Coordination::ZooKeeperWatchResponse *>(responses[i].response.get()))
-            ASSERT_EQ(watch_response->type, Coordination::Event::DELETED);
+        const auto & watch_response = dynamic_cast<Coordination::ZooKeeperWatchResponse &>(*responses[i].response);
+        actual_watch_responses[watch_response.path].push_back(static_cast<Coordination::Event>(watch_response.type));
     }
+    ASSERT_EQ(expected_watch_responses, actual_watch_responses);
 
     ASSERT_EQ(storage.watches.size(), 0);
     ASSERT_EQ(storage.list_watches.size(), 0);

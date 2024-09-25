@@ -9,9 +9,12 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/Context_fwd.h>
+#include <Poco/Event.h>
 
 #include <atomic>
 #include <filesystem>
+#include <list>
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_set>

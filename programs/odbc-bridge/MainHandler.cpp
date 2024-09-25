@@ -1,27 +1,28 @@
 #include "MainHandler.h"
 
-#include "validateODBCConnectionString.h"
-#include "ODBCSource.h"
-#include "ODBCSink.h"
-#include "getIdentifierQuote.h"
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <Core/Settings.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTMLForm.h>
-#include <Poco/ThreadPool.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Poco/Net/HTMLForm.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/ThreadPool.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
-#include <Server/HTTP/HTMLForm.h>
+#include "ODBCSink.h"
+#include "ODBCSource.h"
 #include "config.h"
+#include "getIdentifierQuote.h"
+#include "validateODBCConnectionString.h"
 
 #include <mutex>
 #include <memory>
@@ -29,6 +30,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 odbc_bridge_connection_pool_size;
+}
 
 namespace
 {
@@ -139,7 +144,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         nanodbc::ConnectionHolderPtr connection_handler;
         if (use_connection_pooling)
             connection_handler = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef()[Setting::odbc_bridge_connection_pool_size]);
         else
             connection_handler = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 

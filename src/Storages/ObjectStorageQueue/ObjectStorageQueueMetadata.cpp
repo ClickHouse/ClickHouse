@@ -110,16 +110,19 @@ private:
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     const fs::path & zookeeper_path_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
-    const ObjectStorageQueueSettings & settings_)
-    : settings(settings_)
-    , table_metadata(table_metadata_)
+    size_t cleanup_interval_min_ms_,
+    size_t cleanup_interval_max_ms_)
+    : table_metadata(table_metadata_)
+    , mode(table_metadata.getMode())
     , zookeeper_path(zookeeper_path_)
-    , buckets_num(getBucketsNum(settings_))
+    , buckets_num(getBucketsNum(table_metadata_))
+    , cleanup_interval_min_ms(cleanup_interval_min_ms_)
+    , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
-    if (settings.mode == ObjectStorageQueueMode::UNORDERED
-        && (settings.tracked_files_limit || settings.tracked_file_ttl_sec))
+    if (mode == ObjectStorageQueueMode::UNORDERED
+        && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
             "ObjectStorageQueueCleanupFunc",
@@ -128,10 +131,10 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
         task->activate();
         task->scheduleAfter(
             generateRescheduleInterval(
-                settings.cleanup_interval_min_ms, settings.cleanup_interval_max_ms));
+                cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
     LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-              settings.mode.toString(), settings.buckets, settings.processing_threads_num, buckets_num);
+              table_metadata.mode, table_metadata.buckets, table_metadata.processing_threads_num, buckets_num);
 
 }
 
@@ -162,7 +165,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
     ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
 {
     auto file_status = local_file_statuses->get(path, /* create */true);
-    switch (settings.mode.value)
+    switch (mode)
     {
         case ObjectStorageQueueMode::ORDERED:
             return std::make_shared<ObjectStorageQueueOrderedFileMetadata>(
@@ -171,39 +174,28 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 file_status,
                 bucket_info,
                 buckets_num,
-                settings.loading_retries,
+                table_metadata.loading_retries,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
                 zookeeper_path,
                 path,
                 file_status,
-                settings.loading_retries,
+                table_metadata.loading_retries,
                 log);
     }
 }
 
-size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueSettings & settings)
+size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueTableMetadata & metadata)
 {
-    if (settings.buckets)
-        return settings.buckets;
-    if (settings.processing_threads_num)
-        return settings.processing_threads_num;
-    return 0;
-}
-
-size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueTableMetadata & settings)
-{
-    if (settings.buckets)
-        return settings.buckets;
-    if (settings.processing_threads_num)
-        return settings.processing_threads_num;
-    return 0;
+    if (metadata.buckets)
+        return metadata.buckets;
+    return metadata.processing_threads_num;
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 {
-    return settings.mode == ObjectStorageQueueMode::ORDERED && (buckets_num > 1);
+    return mode == ObjectStorageQueueMode::ORDERED && (buckets_num > 1);
 }
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
@@ -217,18 +209,35 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-void ObjectStorageQueueMetadata::syncWithKeeper(
+ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const fs::path & zookeeper_path,
-    const ObjectStorageQueueTableMetadata & table_metadata,
     const ObjectStorageQueueSettings & settings,
+    const ColumnsDescription & columns,
+    const std::string & format,
     LoggerPtr log)
 {
-    const auto table_metadata_path = zookeeper_path / "metadata";
-    const auto buckets_num = getBucketsNum(settings);
-    const auto metadata_paths = settings.mode == ObjectStorageQueueMode::ORDERED
-        ? ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num)
-        : ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
+    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
 
+    std::vector<std::string> metadata_paths;
+    size_t buckets_num = 0;
+    if (settings.mode == ObjectStorageQueueMode::ORDERED)
+    {
+        buckets_num = getBucketsNum(table_metadata);
+        if (buckets_num == 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot have zero values of `processing_threads_num` and `buckets`");
+
+        LOG_TRACE(log, "Local buckets num: {}", buckets_num);
+
+        metadata_paths = ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num);
+    }
+    else
+    {
+        metadata_paths = ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
+    }
+
+    const auto table_metadata_path = zookeeper_path / "metadata";
     auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(zookeeper_path);
 
@@ -242,7 +251,7 @@ void ObjectStorageQueueMetadata::syncWithKeeper(
             LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
 
             table_metadata.checkEquals(metadata_from_zk);
-            return;
+            return table_metadata;
         }
 
         Coordination::Requests requests;
@@ -256,15 +265,15 @@ void ObjectStorageQueueMetadata::syncWithKeeper(
             requests.emplace_back(zkutil::makeCreateRequest(zk_path, "", zkutil::CreateMode::Persistent));
         }
 
-        if (!settings.last_processed_path.value.empty())
+        if (!table_metadata.last_processed_path.empty())
         {
             ObjectStorageQueueOrderedFileMetadata(
                 zookeeper_path,
-                settings.last_processed_path,
+                table_metadata.last_processed_path,
                 std::make_shared<FileStatus>(),
                 /* bucket_info */nullptr,
                 buckets_num,
-                settings.loading_retries,
+                table_metadata.loading_retries,
                 log).setProcessedAtStartRequests(requests, zookeeper);
         }
 
@@ -283,7 +292,7 @@ void ObjectStorageQueueMetadata::syncWithKeeper(
         else if (code != Coordination::Error::ZOK)
             zkutil::KeeperMultiException::check(code, requests, responses);
 
-        return;
+        return table_metadata;
     }
 
     throw Exception(
@@ -295,7 +304,7 @@ void ObjectStorageQueueMetadata::syncWithKeeper(
 void ObjectStorageQueueMetadata::cleanupThreadFunc()
 {
     /// A background task is responsible for maintaining
-    /// settings.tracked_files_limit and max_set_age settings for `unordered` processing mode.
+    /// table_metadata.tracked_files_limit and max_set_age settings for `unordered` processing mode.
 
     if (shutdown_called)
         return;
@@ -314,7 +323,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFunc()
 
     task->scheduleAfter(
         generateRescheduleInterval(
-            settings.cleanup_interval_min_ms, settings.cleanup_interval_max_ms));
+            cleanup_interval_min_ms, cleanup_interval_max_ms));
 }
 
 void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
@@ -357,11 +366,11 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    chassert(settings.tracked_files_limit || settings.tracked_file_ttl_sec);
-    const bool check_nodes_limit = settings.tracked_files_limit > 0;
-    const bool check_nodes_ttl = settings.tracked_file_ttl_sec > 0;
+    chassert(table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec);
+    const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
+    const bool check_nodes_ttl = table_metadata.tracked_files_ttl_sec > 0;
 
-    const bool nodes_limit_exceeded = nodes_num > settings.tracked_files_limit;
+    const bool nodes_limit_exceeded = nodes_num > table_metadata.tracked_files_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
         LOG_TEST(log, "No limit exceeded");
@@ -434,9 +443,11 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             wb << fmt::format("Node: {}, path: {}, timestamp: {};\n", node, metadata.file_path, metadata.last_processed_timestamp);
         return wb.str();
     };
-    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}", settings.tracked_files_limit, settings.tracked_file_ttl_sec, get_nodes_str());
 
-    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - settings.tracked_files_limit : 0;
+    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
+             table_metadata.tracked_files_limit, table_metadata.tracked_files_ttl_sec, get_nodes_str());
+
+    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - table_metadata.tracked_files_limit : 0;
     for (const auto & node : sorted_nodes)
     {
         if (nodes_to_remove)
@@ -455,7 +466,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         else if (check_nodes_ttl)
         {
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
-            if (node_age >= settings.tracked_file_ttl_sec)
+            if (node_age >= table_metadata.tracked_files_ttl_sec)
             {
                 LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);

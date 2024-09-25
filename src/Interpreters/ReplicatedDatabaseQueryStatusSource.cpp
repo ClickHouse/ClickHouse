@@ -8,7 +8,11 @@
 
 namespace DB
 {
-
+namespace Setting
+{
+extern const SettingsBool database_replicated_enforce_synchronous_settings;
+extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
+}
 namespace ErrorCodes
 {
 extern const int TIMEOUT_EXCEEDED;
@@ -62,7 +66,7 @@ Chunk ReplicatedDatabaseQueryStatusSource::generateChunkWithUnfinishedHosts() co
 Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
 {
     String node_to_wait = "finished";
-    if (context->getSettingsRef().database_replicated_enforce_synchronous_settings)
+    if (context->getSettingsRef()[Setting::database_replicated_enforce_synchronous_settings])
     {
         node_to_wait = "synced";
     }
@@ -123,7 +127,7 @@ void ReplicatedDatabaseQueryStatusSource::handleNonZeroStatusCode(const Executio
 {
     assert(status.code != 0);
 
-    if (!first_exception && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
+    if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
     }
