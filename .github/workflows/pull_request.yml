@@ -25,14 +25,14 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get a version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Cancel previous Sync PR workflow
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
@@ -142,8 +142,13 @@ jobs:
   # Reports should run even if Builds_1/2 fail - run them separately (not in Tests_1/2/3)
   Builds_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
-    needs: [RunConfig, StyleCheck, Builds_1, Builds_2]
+    if: ${{ !cancelled()
+      && needs.RunConfig.result == 'success'
+      && needs.StyleCheck.result != 'failure'
+      && needs.FastTest.result != 'failure'
+      && needs.BuildDockers.result != 'failure'
+      && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Builds
@@ -165,14 +170,15 @@ jobs:
         if: ${{ needs.StyleCheck.result == 'success' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
-      - name: Check Workflow results
-        run: |
           export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
           cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
           ${{ toJson(needs) }}
           EOF
-          python3 ./tests/ci/ci_buddy.py --check-wf-status
+          python3 merge_pr.py --set-ci-status
+      - name: Check Workflow results
+        uses: ./.github/actions/check_workflow
+        with:
+          needs: ${{ toJson(needs) }}
 
   ################################# Stage Final #################################
   #

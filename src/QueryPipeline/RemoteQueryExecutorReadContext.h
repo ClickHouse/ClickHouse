@@ -39,6 +39,8 @@ public:
 
     Packet getPacket() { return std::move(packet); }
 
+    UInt64 getPacketType() const { return packet.type; }
+
 private:
     bool checkTimeout(bool blocking = false);
 

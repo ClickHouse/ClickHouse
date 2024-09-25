@@ -39,6 +39,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_compress_block_size;
+}
 
 namespace ErrorCodes
 {
@@ -161,6 +165,9 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
+    /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
+    /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
+    snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
 
     if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
@@ -481,7 +488,7 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
 {
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
 
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),

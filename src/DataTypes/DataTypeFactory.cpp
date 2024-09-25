@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -17,12 +17,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
-    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
@@ -83,15 +86,9 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
-    if (const auto * func = ast->as<ASTFunction>())
+    if (const auto * type = ast->as<ASTDataType>())
     {
-        if (func->parameters)
-        {
-            if constexpr (nullptr_on_error)
-                return nullptr;
-            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Data type cannot have multiple parenthesized parameters.");
-        }
-        return getImpl<nullptr_on_error>(func->name, func->arguments);
+        return getImpl<nullptr_on_error>(type->name, type->arguments);
     }
 
     if (const auto * ident = ast->as<ASTIdentifier>())
@@ -107,7 +104,7 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 
     if constexpr (nullptr_on_error)
         return nullptr;
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type.");
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type: {}.", ast->getID());
 }
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
@@ -157,6 +154,12 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
     return type;
 }
 
+DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomDescPtr customization) const
+{
+    auto type = get(base_name);
+    type->setCustomization(std::move(customization));
+    return type;
+}
 
 void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
 {
@@ -222,7 +225,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef().log_queries)
+            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
             return &it->second;
         }
@@ -234,7 +237,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef().log_queries)
+            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
             return &it->second;
         }
@@ -274,9 +277,10 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
-    registerDataTypeObject(*this);
+    registerDataTypeObjectDeprecated(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
+    registerDataTypeJSON(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

@@ -75,6 +75,8 @@ struct QueryPlanOptimizationSettings
     String force_projection_name;
     bool optimize_use_implicit_projections = false;
 
+    bool build_sets = true;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

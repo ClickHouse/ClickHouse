@@ -26,6 +26,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsUInt64 s3_max_redirects;
+    extern const SettingsUInt64 s3_retry_attempts;
+    extern const SettingsBool s3_use_parallel_listing;
+    extern const SettingsUInt64 s3_parallel_listing_max_threads;
+    extern const SettingsUInt64 s3_parallel_listing_num_requests;
+    extern const SettingsDouble s3_parallel_listing_multiplication_ratio;
+}
+
 namespace ErrorCodes
 {
 extern const int NO_ELEMENTS_IN_CONFIG;
@@ -53,10 +64,10 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
         config.getBool(config_prefix + ".readonly", false),
-        settings.s3_use_parallel_listing,
-        settings.s3_num_workers,
-        settings.s3_num_parallel_requests,
-        settings.s3_multiplication_length);
+        settings[Setting::s3_use_parallel_listing],
+        settings[Setting::s3_parallel_listing_max_threads],
+        settings[Setting::s3_parallel_listing_num_requests],
+        settings[Setting::s3_parallel_listing_multiplication_ratio]);
 }
 
 std::unique_ptr<S3::Client> getClient(
@@ -92,9 +103,9 @@ std::unique_ptr<S3::Client> getClient(
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
-        static_cast<int>(global_settings.s3_max_redirects),
-        static_cast<int>(global_settings.s3_retry_attempts),
-        global_settings.enable_s3_requests_logging,
+        static_cast<int>(global_settings[Setting::s3_max_redirects]),
+        static_cast<int>(global_settings[Setting::s3_retry_attempts]),
+        global_settings[Setting::enable_s3_requests_logging],
         for_disk_s3,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler,
