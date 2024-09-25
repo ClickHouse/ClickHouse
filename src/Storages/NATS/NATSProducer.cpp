@@ -24,24 +24,26 @@ NATSProducer::NATSProducer(
     NATSOptionsPtr options_,
     const String & subject_,
     std::atomic<bool> & shutdown_called_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    ReconnectCallback reconnect_callback_)
     : AsynchronousMessageProducer(log_)
-    , connection(configuration_, log_, std::move(options_))
+    , connection(std::make_shared<NATSConnection>(configuration_, log_, std::move(options_)))
     , subject(subject_)
     , shutdown_called(shutdown_called_)
+    , reconnect_callback(std::move(reconnect_callback_))
     , payloads(BATCH)
 {
 }
 
 void NATSProducer::initialize()
 {
-    if (!connection.connect())
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS {}", connection.connectionInfoForLog());
+    if (!connection->isConnected())
+        reconnect_callback(connection);
 }
 
 void NATSProducer::finishImpl()
 {
-    connection.disconnect();
+    connection->disconnect();
 }
 
 
@@ -53,34 +55,25 @@ void NATSProducer::produce(const String & message, size_t, const Columns &, size
 
 void NATSProducer::publish()
 {
-    uv_thread_t flush_thread;
-
-    uv_thread_create(&flush_thread, publishThreadFunc, static_cast<void *>(this));
-    uv_thread_join(&flush_thread);
-}
-
-void NATSProducer::publishThreadFunc(void * arg)
-{
-    NATSProducer * producer = static_cast<NATSProducer *>(arg);
     String payload;
 
     natsStatus status;
-    while (!producer->payloads.empty())
+    while (!payloads.empty())
     {
-        if (natsConnection_Buffered(producer->connection.getConnection()) > MAX_BUFFERED)
+        if (natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
             break;
-        bool pop_result = producer->payloads.pop(payload);
+        bool pop_result = payloads.pop(payload);
 
         if (!pop_result)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
 
-        status = natsConnection_Publish(producer->connection.getConnection(), producer->subject.c_str(), payload.c_str(), static_cast<int>(payload.size()));
+        status = natsConnection_Publish(connection->getConnection(), subject.c_str(), payload.c_str(), static_cast<int>(payload.size()));
 
         if (status != NATS_OK)
         {
-            LOG_DEBUG(producer->log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
+            LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), nats_GetLastError(nullptr));
-            if (!producer->payloads.push(std::move(payload)))
+            if (!payloads.pushFront(payload))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
             break;
         }
@@ -98,12 +91,12 @@ void NATSProducer::startProducingTaskLoop()
 {
     try
     {
-        while ((!payloads.isFinishedAndEmpty() || natsConnection_Buffered(connection.getConnection()) != 0) && !shutdown_called.load())
+        while ((!payloads.isFinishedAndEmpty() || natsConnection_Buffered(connection->getConnection()) != 0) && !shutdown_called.load())
         {
-            publish();
-
-            if (!connection.isConnected())
-                connection.reconnect();
+            if (!connection->isConnected())
+                reconnect_callback(connection);
+            else
+                publish();
         }
     }
     catch (...)

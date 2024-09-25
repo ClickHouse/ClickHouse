@@ -136,6 +136,8 @@ private:
     void stopLoop();
     void stopLoopIfNoReaders();
 
+    void startReconnection(NATSConnectionPtr connection_);
+
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);

@@ -15,13 +15,16 @@ namespace DB
 
 class NATSProducer : public AsynchronousMessageProducer
 {
+    using ReconnectCallback = std::function<void (NATSConnectionPtr)>;
+
 public:
     NATSProducer(
         const NATSConfiguration & configuration_,
         NATSOptionsPtr options_,
         const String & subject_,
         std::atomic<bool> & shutdown_called_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        ReconnectCallback reconnect_callback_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
@@ -36,15 +39,15 @@ private:
 
     void publish();
 
-    static void publishThreadFunc(void * arg);
-
-    NATSConnection connection;
+    NATSConnectionPtr connection;
     const String subject;
 
     /* false: when shutdown is called
      * true: in all other cases
      */
     std::atomic<bool> & shutdown_called;
+
+    ReconnectCallback reconnect_callback;
 
     /* payloads.queue:
      *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once

@@ -33,8 +33,10 @@ public:
 
     bool isConnected();
 
+    /// Must bse called from event loop thread
     bool connect();
 
+    /// Must bse called from event loop thread
     bool reconnect();
 
     void disconnect();

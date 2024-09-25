@@ -211,7 +211,7 @@ void StorageNATS::reconnectionFunc()
     if (consumers_ready)
         return;
 
-    /// Connecting to NATS server must be called from event loop thread
+    /// Connecting and reconnecting to NATS server must be called from event loop thread
     event_handler.post(
         [&](){
             bool needs_rescheduling = true;
@@ -220,6 +220,19 @@ void StorageNATS::reconnectionFunc()
 
             if (needs_rescheduling)
                 reconnection_task->scheduleAfter(RESCHEDULE_MS);
+        });
+}
+
+void StorageNATS::startReconnection(DB::NATSConnectionPtr connection_)
+{
+    /// Connecting and reconnecting to NATS server must be called from event loop thread
+    event_handler.post(
+        [&, connection = std::move(connection_)](){
+            if(connection->isConnected()){
+                return;
+            }
+
+            connection->reconnect();
         });
 }
 
@@ -368,7 +381,15 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto producer = std::make_unique<NATSProducer>(configuration, event_handler.createOptions(), subject, shutdown_called, log);
+    auto producer = std::make_unique<NATSProducer>(
+        configuration,
+        event_handler.createOptions(),
+        subject,
+        shutdown_called,
+        log,
+        [&](NATSConnectionPtr connection){
+            startReconnection(std::move(connection));
+        });
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
