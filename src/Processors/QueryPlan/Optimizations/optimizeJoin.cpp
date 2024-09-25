@@ -52,7 +52,7 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     const auto & join = join_step->getJoin();
-    if (join->pipelineType() != JoinPipelineType::FillRightFirst || !join->isCloneSupported() || typeid_cast<const HashJoin *>(join.get()))
+    if (join->pipelineType() != JoinPipelineType::FillRightFirst || !join->isCloneSupported())
         return;
 
     const auto & table_join = join->getTableJoin();

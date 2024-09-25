@@ -4,7 +4,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Common/logger_useful.h>
 
 #include <stack>
 

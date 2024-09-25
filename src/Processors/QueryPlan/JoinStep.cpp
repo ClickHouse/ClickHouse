@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Processors/Transforms/ColumnPermuteTransform.h>
 
 namespace DB
 {
@@ -36,6 +37,53 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     return description;
 }
 
+size_t getPrefixLength(const NameSet & prefix, const Names & names)
+{
+    size_t i = 0;
+    for (; i < names.size(); ++i)
+    {
+        if (!prefix.contains(names[i]))
+            break;
+    }
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: [{}] [{}] -> {}", __FILE__, __LINE__, fmt::join(names, ", "), fmt::join(prefix, ", "), i);
+    return i;
+}
+
+std::vector<size_t> getPermutationToRotate(size_t prefix_size, size_t total_size)
+{
+    std::vector<size_t> permutation(total_size);
+    size_t i = prefix_size;
+    for (auto & elem : permutation)
+    {
+        elem = i;
+        i = (i + 1) % total_size;
+    }
+    return permutation;
+}
+
+Block rotateBlock(const Block & block, size_t prefix_size)
+{
+    auto columns = block.getColumnsWithTypeAndName();
+    std::rotate(columns.begin(), columns.begin() + prefix_size, columns.end());
+    auto res = Block(std::move(columns));
+    return res;
+}
+
+NameSet getNameSetFromBlock(const Block & block)
+{
+    NameSet names;
+    for (const auto & column : block)
+        names.insert(column.name);
+    return names;
+}
+
+Block rotateBlock(const Block & block, const Block & prefix_block)
+{
+    NameSet prefix_names_set = getNameSetFromBlock(prefix_block);
+    size_t prefix_size = getPrefixLength(prefix_names_set, block.getNames());
+    return rotateBlock(block, prefix_size);
+}
+
 }
 
 JoinStep::JoinStep(
@@ -54,6 +102,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
+
+    NameSet rhs_names = getNameSetFromBlock(pipelines[1]->getHeader());
 
     if (swap_streams)
         std::swap(pipelines[0], pipelines[1]);
@@ -75,6 +125,18 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         max_streams,
         keep_left_read_in_order,
         &processors);
+
+    const auto & result_names = pipeline->getHeader().getNames();
+    size_t prefix_size = getPrefixLength(rhs_names, result_names);
+    if (0 < prefix_size && prefix_size < result_names.size())
+    {
+        auto column_permutation = getPermutationToRotate(prefix_size, result_names.size());
+        pipeline->addSimpleTransform([column_perm = std::move(column_permutation)](const Block & header)
+        {
+            return std::make_shared<ColumnPermuteTransform>(header, std::move(column_perm));
+        });
+    }
+
     return pipeline;
 }
 
@@ -105,7 +167,12 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 void JoinStep::updateOutputStream()
 {
     const auto & header = swap_streams ? input_streams[1].header : input_streams[0].header;
-    const auto & result_header = JoiningTransform::transformHeader(header, join);
+
+    Block result_header = JoiningTransform::transformHeader(header, join);
+
+    if (swap_streams)
+        result_header = rotateBlock(result_header, input_streams[1].header);
+
     output_stream = DataStream { .header = result_header };
 }
 
