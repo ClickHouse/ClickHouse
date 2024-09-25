@@ -1,4 +1,6 @@
-SET query_profiler_cpu_time_period_ns=10000000;
+-- Tags: no-fastest
+
+-- A smoke test: checks that the listing still works with parallelization options.
 SET s3_use_parallel_listing = 1;
 SET s3_num_workers = 100;
 SET s3_num_parallel_requests = 200;
