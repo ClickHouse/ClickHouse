@@ -186,19 +186,24 @@ class BaseLayoutTester:
         self.test_name = test_name
         self.layouts = []
 
-    def get_dict_directory(self):
-        return os.path.join(DICT_CONFIG_PATH, self.test_name)
+    @staticmethod
+    def get_dict_directory(test_name):
+        return os.path.join(DICT_CONFIG_PATH, test_name)
 
     def cleanup(self):
-        shutil.rmtree(self.get_dict_directory(), ignore_errors=True)
-        os.makedirs(self.get_dict_directory())
+        shutil.rmtree(self.get_dict_directory(self.test_name), ignore_errors=True)
+        os.makedirs(self.get_dict_directory(self.test_name))
 
-    def list_dictionaries(self):
+    @staticmethod
+    def get_dict_dictionaries(test_name):
         dictionaries = []
-        directory = self.get_dict_directory()
+        directory = BaseLayoutTester.get_dict_directory(test_name)
         for fname in os.listdir(directory):
             dictionaries.append(os.path.join(directory, fname))
         return dictionaries
+
+    def list_dictionaries(self):
+        return BaseLayoutTester.get_dict_dictionaries(self.test_name)
 
     def create_dictionaries(self, source_):
         for layout in self.layouts:
@@ -215,7 +220,9 @@ class BaseLayoutTester:
     def get_dict(self, source, layout, fields, suffix_name=""):
         structure = DictionaryStructure(layout, fields)
         dict_name = source.name + "_" + layout.name + "_" + suffix_name
-        dict_path = os.path.join(self.get_dict_directory(), dict_name + ".xml")
+        dict_path = os.path.join(
+            self.get_dict_directory(self.test_name), dict_name + ".xml"
+        )
         dictionary = Dictionary(
             dict_name, structure, source, dict_path, "table_" + dict_name, fields
         )
