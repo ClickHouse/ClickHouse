@@ -56,8 +56,8 @@ public:
 	}
 
 	bool SupportsFinal() const {
-		return teng != sql_query_grammar::TableEngineValues::Memory &&
-			   teng != sql_query_grammar::TableEngineValues::MergeTree;
+		return teng >= sql_query_grammar::TableEngineValues::ReplacingMergeTree &&
+			   teng <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree;
 	}
 
 	bool HasSignColumn() const {
