@@ -1723,11 +1723,10 @@ std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts
 
 String extractZooKeeperName(const String & path)
 {
-    static constexpr auto default_zookeeper_name = "default";
     if (path.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
     if (path[0] == '/')
-        return default_zookeeper_name;
+        return String(DEFAULT_ZOOKEEPER_NAME);
     auto pos = path.find(":/");
     if (pos != String::npos && pos < path.find('/'))
     {
@@ -1736,7 +1735,7 @@ String extractZooKeeperName(const String & path)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
         return zookeeper_name;
     }
-    return default_zookeeper_name;
+    return String(DEFAULT_ZOOKEEPER_NAME);
 }
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)
