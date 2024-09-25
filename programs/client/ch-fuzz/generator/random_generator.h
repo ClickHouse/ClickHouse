@@ -84,7 +84,7 @@ public:
 	RandomGenerator(const uint32_t in_seed) : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()),
 											  uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max()),
 											  digits(static_cast<uint8_t>('0'), static_cast<uint8_t>('9')),
-											  hex_digits_dist(0, 16),
+											  hex_digits_dist(0, 15),
 											  ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()),
 											  uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max()),
 											  ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max()),

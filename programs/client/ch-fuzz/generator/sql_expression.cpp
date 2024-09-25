@@ -166,7 +166,11 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator &rg, sql_query_gram
 	} else if (noption < 601) {
 		buf.resize(0);
 		buf += "'";
-		rg.NextString(buf, 100000);
+		if (rg.NextMediumNumber() < 6) {
+			rg.NextUUID(buf);
+		} else {
+			rg.NextString(buf, 100000);
+		}
 		buf += "'";
 		lv->set_no_quote_str(buf);
 	} else if (noption < 701) {
