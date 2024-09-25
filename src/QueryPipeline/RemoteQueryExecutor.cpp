@@ -412,7 +412,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Addresses: {}\n{}", connections->dumpAddresses(), StackTrace().toString());
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "");
 
 #if defined(OS_LINUX)
     std::lock_guard lock(was_cancelled_mutex);
@@ -483,7 +483,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Addresses: {}", connections->dumpAddresses());
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "");
 
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
