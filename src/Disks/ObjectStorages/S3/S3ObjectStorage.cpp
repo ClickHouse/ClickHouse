@@ -366,8 +366,8 @@ private:
     }
 
     void fillCache(
-        const std::string& first_request_file_start,
-        const std::string& first_request_file_end,
+        const std::string & first_request_file_start,
+        const std::string & first_request_file_end,
         size_t num_requests,
         float length_decrease)
     {
@@ -381,7 +381,14 @@ private:
             auto start_file = file_end + FileArithmetics::FileRepresentation(1) + distance * i;
             auto end_file = start_file + distance;
 
-            pool.scheduleOrThrow([this, start = std::move(start_file), end = std::move(end_file)] {
+            pool.scheduleOrThrow([this, start = std::move(start_file), end = std::move(end_file), thread_group = CurrentThread::getGroup()]
+            {
+                setThreadName("S3ParallelList");
+
+                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+
                 runSubrequest(start, end);
             });
         }
