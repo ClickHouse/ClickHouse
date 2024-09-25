@@ -15,7 +15,7 @@ expect rows_read = select count()
   "rows": 2,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
 bloom filter is on, some row groups should be skipped
@@ -34,7 +34,7 @@ expect rows_read much less than select count()
   "rows": 2,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 19112
+    "bytes_read": 18944
   }
 }
 bloom filter is on, but where predicate contains data from 2 row groups out of 3.
@@ -53,7 +53,7 @@ Rows read should be less than select count, but greater than previous selects
   "rows": 2,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 22829
+    "bytes_read": 22549
   }
 }
 bloom filter is on, but where predicate contains data from all row groups
@@ -65,30 +65,38 @@ expect rows_read = select count()
       "flba": "GKJC"
     },
     {
-      "string": "EAWV",
-      "flba": "MEVK"
+      "string": "CPKP",
+      "flba": "BEAQ"
     },
     {
-      "string": "PDTJ",
-      "flba": "YXSF"
+      "string": "JQDK",
+      "flba": "DDEE"
     },
     {
-      "string": "UVVK",
-      "flba": "MIMZ"
+      "string": "LTSO",
+      "flba": "QWWO"
     },
     {
-      "string": "CPQO",
-      "flba": "DDZM"
+      "string": "EIYH",
+      "flba": "BRCO"
+    },
+    {
+      "string": "ELRK",
+      "flba": "BVLD"
     },
     {
       "string": "ZHZK",
       "flba": "HRWD"
+    },
+    {
+      "string": "AQRQ",
+      "flba": "OPXK"
     }
   ],
-  "rows": 6,
+  "rows": 8,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
 IN check
@@ -106,7 +114,7 @@ IN check
   "rows": 2,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 22829
+    "bytes_read": 22549
   }
 }
 tuple in case, bf is off.
@@ -120,7 +128,7 @@ tuple in case, bf is off.
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
 tuple in case, bf is on.
@@ -134,7 +142,7 @@ tuple in case, bf is on.
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 19112
+    "bytes_read": 18944
   }
 }
 complex tuple in case, bf is off
@@ -148,7 +156,7 @@ complex tuple in case, bf is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
 complex tuple in case, bf is on
@@ -162,7 +170,7 @@ complex tuple in case, bf is on
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 19112
+    "bytes_read": 18944
   }
 }
 complex tuple in case, bf is on. Non existent
@@ -184,7 +192,7 @@ Bloom filter for json column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
 Bloom filter for json column. BF is on
@@ -197,7 +205,7 @@ Bloom filter for json column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 3717
+    "bytes_read": 3605
   }
 }
 Bloom filter for ipv4 column. BF is off
@@ -210,7 +218,7 @@ Bloom filter for ipv4 column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
 Bloom filter for ipv4 column. BF is on
@@ -223,7 +231,7 @@ Bloom filter for ipv4 column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 3717
+    "bytes_read": 3605
   }
 }
 Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') is not supported. Should read everything
@@ -236,7 +244,7 @@ Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') i
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
 Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143')) is not supported. Should read everything
@@ -249,6 +257,6 @@ Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41936
+    "bytes_read": 41492
   }
 }
