@@ -1,10 +1,4 @@
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
-
-if(OS_DARWIN)
-    message(STATUS "Not using libmongoc and libbson on macOS")
-    set (USE_MONGODB OFF)
-endif()
-
 if(NOT USE_MONGODB)
     message(STATUS "Not using libmongoc and libbson")
     return()
