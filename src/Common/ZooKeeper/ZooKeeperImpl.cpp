@@ -679,7 +679,17 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
     read(length);
     size_t count_before_event = in->count();
-    read(read_xid);
+    if (use_xid_64)
+    {
+        read(read_xid);
+    }
+    else
+    {
+        int32_t xid_32{0};
+        read(xid_32);
+        read_xid = xid_32;
+    }
+
     read(zxid);
     read(err);
 
