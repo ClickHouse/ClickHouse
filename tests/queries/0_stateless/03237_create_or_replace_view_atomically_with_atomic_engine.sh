@@ -24,30 +24,29 @@ function select_view_thread
 export -f select_view_thread;
 
 $CLICKHOUSE_CLIENT --query "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
-{
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
-    bash -c select_view_thread &
 
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-    bash -c create_or_replace_view_thread &
-} > >(cat) 2> >(cat >&2)
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+bash -c select_view_thread &
+
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
+bash -c create_or_replace_view_thread &
 
 wait
