@@ -139,7 +139,7 @@ def started_cluster():
             "instance_24.5",
             with_zookeeper=True,
             image="clickhouse/clickhouse-server",
-            tag="24.4",
+            tag="24.5",
             stay_alive=True,
             user_configs=[
                 "configs/users.xml",
