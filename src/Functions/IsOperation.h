@@ -53,7 +53,7 @@ struct IsOperation
     static constexpr bool minus = IsSameOperation<Op, MinusImpl>::value;
     static constexpr bool multiply = IsSameOperation<Op, MultiplyImpl>::value;
     static constexpr bool div_floating = IsSameOperation<Op, DivideFloatingImpl>::value;
-    static constexpr bool div_floating_or_null = IsSameOperation<Op, DivideOrNullImpl>::value;
+    static constexpr bool divide_or_null = IsSameOperation<Op, DivideOrNullImpl>::value;
     static constexpr bool int_div = IsSameOperation<Op, DivideIntegralImpl>::value;
     static constexpr bool int_div_or_zero = IsSameOperation<Op, DivideIntegralOrZeroImpl>::value;
     static constexpr bool modulo = IsSameOperation<Op, ModuloImpl>::value;

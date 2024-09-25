@@ -800,6 +800,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_minus = IsOperation<Op>::minus;
     static constexpr bool is_multiply = IsOperation<Op>::multiply;
     static constexpr bool is_division = IsOperation<Op>::division;
+    static constexpr bool is_divide_or_null = IsOperation<Op>::divide_or_null;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
     static constexpr bool is_modulo_or_null = IsOperation<Op>::modulo_or_null;
@@ -1762,6 +1763,10 @@ public:
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();
+
+                    if (is_divide_or_null || is_modulo_or_null)
+                        type_res = std::make_shared<DataTypeNullable>(type_res);
+
                     return true;
                 }
             }
@@ -2237,6 +2242,14 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
         }
 
+        /// Result can be nullable enven if input arguments are not nullable
+        if (is_divide_or_null || is_modulo_or_null)
+        {
+            NullMap res_null_map(input_rows_count, 0);
+            auto res = executeImpl2(arguments, result_type, input_rows_count, nullptr, &res_null_map);
+            return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
+        }
+
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
@@ -2254,10 +2267,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
-            NullMap res_null_map(input_rows_count, 0);
+            //NullMap res_null_map(input_rows_count, 0);
             const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap, &res_null_map);
-            return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap, res_nullmap);
+            return wrapInNullable(res, arguments, result_type, input_rows_count, res_nullmap);
         }
 
         /// Special case - one or both arguments are IPv4
@@ -2648,7 +2661,7 @@ public:
         /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
         /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
         bool division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
-            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::div_floating_or_null
+            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::divide_or_null
                 || (IsOperation<Op>::div_floating
                     && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
         /// More efficient specialization for two numeric arguments.
