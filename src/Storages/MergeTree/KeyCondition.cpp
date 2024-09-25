@@ -3160,11 +3160,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 continue;
             }
 
-            std::vector<RPNElement::Point> points_by_minmax_index;
-            points_by_minmax_index.push_back({x_min, y_min});
-            points_by_minmax_index.push_back({x_min, y_max});
-            points_by_minmax_index.push_back({x_max, y_max});
-            points_by_minmax_index.push_back({x_max, y_min});
+            std::vector<RPNElement::Point> points_by_minmax_index
+            {
+                {x_min, y_min},
+                {x_min, y_max},
+                {x_max, y_max},
+                {x_max, y_min}
+            };
 
             RPNElement::Polygon polygon_by_minmax_index;
             for (const auto & point : points_by_minmax_index)
