@@ -6,17 +6,17 @@ add_headers_and_sources(clickhouse_functions .)
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
 set(DBMS_FUNCTIONS
-    IFunction.cpp
-    FunctionFactory.cpp
-    FunctionHelpers.cpp
-    extractTimeZoneFromFunctionArguments.cpp
-    FunctionsLogical.cpp
-    if.cpp
-    multiIf.cpp
-    multiMatchAny.cpp
-    checkHyperscanRegexp.cpp
-    CastOverloadResolver.cpp
-    FunctionsConversion.cpp # createFunctionBaseCast
+    IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
+    FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
+    FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
+    FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
+    if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
+    multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
+    multiMatchAny.cpp # createInternalMultiMatchAnyOverloadResolver (Used by ConvertOrLikeChainPass.cpp)
+    checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
+    CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
+    FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
+    extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers

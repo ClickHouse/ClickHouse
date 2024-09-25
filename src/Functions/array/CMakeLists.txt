@@ -3,6 +3,8 @@ include(CMakePrintHelpers)
 
 add_headers_and_sources(clickhouse_functions_array .)
 
+# createInternalFunctionHasOverloadResolver, FunctionArrayResize,  FunctionEmptyArrayToSingle
+# Used by ArrayExistsToHasPass.cpp and ArrayJoinAction.cpp
 set(DBMS_ARRAY_FUNCTIONS
     arrayResize.cpp
     has.cpp

@@ -2,6 +2,7 @@ include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 
 add_headers_and_sources(clickhouse_functions_gatherutils .)
 
+# Used by arrayResize.cpp
 set(DBMS_GATHERUTILS_FUNCTIONS
     createArraySource.cpp
     createValueSource.cpp
