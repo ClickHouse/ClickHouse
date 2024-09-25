@@ -123,6 +123,18 @@ def started_cluster():
             ],
             stay_alive=True,
         )
+        cluster.add_instance(
+            "instance_24.5",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            tag="24.5",
+            stay_alive=True,
+            user_configs=[
+                "configs/users.xml",
+            ],
+            with_installed_binary=True,
+            use_old_analyzer=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -1799,3 +1811,46 @@ def test_commit_on_limit(started_cluster):
     for value in expected_failed:
         assert value not in processed
         assert value in failed
+
+
+def test_upgrade_2(started_cluster):
+    node = started_cluster.instances["instance_24.5"]
+
+    table_name = f"test_upgrade_2_{uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_current_shard_num": 0,
+            "s3queue_processing_threads_num": 2,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = 10
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+
+    node.restart_with_latest_version()
+    assert table_name in node.query("SHOW TABLES")
