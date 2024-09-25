@@ -67,6 +67,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
         }
     },
     {"24.9",
