@@ -13,24 +13,7 @@ struct ModuloOrNullImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
-    {
-        if constexpr (std::is_floating_point_v<ResultType>)
-        {
-            /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
-            return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);
-        }
-        else
-        {
-            if (unlikely(divisionLeadsToFPE(a, b)))
-                return Result();
-
-            return ModuloImpl<A, B>::template apply<Result>(a, b);
-        }
-    }
-
-    template <typename Result = ResultType>
-    static Result apply(A a, B b, NullMap::value_type * m)
+    static Result apply(A a, B b, NullMap::value_type * m = nullptr)
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {
@@ -41,7 +24,9 @@ struct ModuloOrNullImpl
         {
             if (unlikely(divisionLeadsToFPE(a, b)))
             {
-                *m = 1;
+                if (m)
+                    *m = 1;
+
                 return Result();
             }
 
