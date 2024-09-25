@@ -9,7 +9,7 @@ INSERT INTO test FORMAT JSONEachRow {"answer": 1};
 
 INSERT INTO test FORMAT JSONEachRow {"answer": "2"};
 
-SELECT * FROM test;
+SELECT * FROM test ORDER BY ALL;
 
 DROP TABLE test;
 CREATE TABLE test
@@ -22,4 +22,4 @@ INSERT INTO test FORMAT JSONEachRow {"answer": 1};
 
 INSERT INTO test FORMAT JSONEachRow {"answer": "2"};
 
-SELECT * FROM test;
+SELECT * FROM test ORDER BY ALL;
