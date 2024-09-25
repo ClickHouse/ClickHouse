@@ -216,6 +216,19 @@ Possible values:
 
 Default value: 1.
 
+## use_skip_indexes_if_final {#use_skip_indexes_if_final}
+
+Controls whether skipping indexes are used when executing a query with the FINAL modifier.
+
+By default, this setting is disabled because skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results. When enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
 ## force_data_skipping_indices {#force_data_skipping_indices}
 
 Disables query execution if passed data skipping indices wasn't used.
