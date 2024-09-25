@@ -39,7 +39,11 @@ struct ReplaceStringImpl
         size_t input_rows_count)
     {
         if (needle.empty())
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+        {
+            res_data.assign(haystack_data.begin(), haystack_data.end());
+            res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+            return;
+        }
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -146,7 +150,14 @@ struct ReplaceStringImpl
             const size_t cur_needle_length = needle_offsets[i] - prev_needle_offset - 1;
 
             if (cur_needle_length == 0)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+            {
+                copyToOutput(cur_haystack_data, cur_haystack_length, res_data, res_offset);
+                res_offsets[i] = res_offset + 1;  // count the zero byte at the end of the string
+
+                prev_haystack_offset = haystack_offsets[i];
+                prev_needle_offset = needle_offsets[i];
+                continue;
+            }
 
             /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
             StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
@@ -200,7 +211,11 @@ struct ReplaceStringImpl
         chassert(haystack_offsets.size() == replacement_offsets.size());
 
         if (needle.empty())
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+        {
+            res_data.assign(haystack_data.begin(), haystack_data.end());
+            res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+            return;
+        }
 
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
@@ -292,7 +307,15 @@ struct ReplaceStringImpl
             const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset - 1;
 
             if (cur_needle_length == 0)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+            {
+                copyToOutput(cur_haystack_data, cur_haystack_length, res_data, res_offset);
+                res_offsets[i] = res_offset + 1; // count the zero byte at the end of the string
+
+                prev_haystack_offset = haystack_offsets[i];
+                prev_needle_offset = needle_offsets[i];
+                prev_replacement_offset = replacement_offsets[i];
+                continue;
+            }
 
             /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
             StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
@@ -346,7 +369,14 @@ struct ReplaceStringImpl
         size_t input_rows_count)
     {
         if (needle.empty())
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+        {
+            res_data.assign(haystack_data.begin(), haystack_data.end());
+            res_offsets.resize(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_offsets[i] = (i + 1) * (n + 1); // need count tailing zero byte
+
+            return;
+        }
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
