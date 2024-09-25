@@ -17,6 +17,7 @@ namespace Loop
 {
     static const UInt8 RUN = 1;
     static const UInt8 STOP = 2;
+    static const UInt8 CLOSED = 3;
 }
 
 using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
@@ -27,21 +28,10 @@ class NATSHandler
 public:
     NATSHandler(LoggerPtr log_);
 
-    ~NATSHandler();
-
     /// Loop for background thread worker.
-    void startLoop();
-
-    /// Loop to wait for small tasks in a non-blocking mode.
-    /// Adds synchronization with main background loop.
-    void iterateLoop();
-
-    LockPtr setThreadLocalLoop();
-
+    void runLoop();
     void stopLoop();
-    bool loopRunning() const { return loop_running.load(); }
 
-    void updateLoopState(UInt8 state) { loop_state.store(state); }
     UInt8 getLoopState() { return loop_state.load(); }
 
     NATSOptionsPtr createOptions();
@@ -50,9 +40,7 @@ private:
     UVLoop loop;
     LoggerPtr log;
 
-    std::atomic<bool> loop_running;
     std::atomic<UInt8> loop_state;
-    std::mutex startup_mutex;
 };
 
 }

@@ -12,64 +12,43 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_NATS;
 }
 
-/* The object of this class is shared between concurrent consumers (who share the same connection == share the same
- * event loop and handler).
- */
-
-static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
-
 NATSHandler::NATSHandler(LoggerPtr log_)
     : log(log_)
-    , loop_running(false)
     , loop_state(Loop::STOP)
 {
     natsLibuv_Init();
     natsLibuv_SetThreadLocalLoop(loop.getLoop());
 }
 
-void NATSHandler::startLoop()
+void NATSHandler::runLoop()
 {
-    std::lock_guard lock(startup_mutex);
+    if(loop_state.load() != Loop::STOP){
+        return;
+    }
+
     natsLibuv_SetThreadLocalLoop(loop.getLoop());
+    loop_state.store(Loop::RUN);
 
     LOG_DEBUG(log, "Background loop started");
-    loop_running.store(true);
-    auto start_time = std::chrono::steady_clock::now();
-    auto end_time = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-    while (loop_state.load() == Loop::RUN && duration.count() < MAX_THREAD_WORK_DURATION_MS)
+    int num_pending_callbacks = 0;
+    while (loop_state.load() == Loop::RUN || num_pending_callbacks != 0)
     {
-        uv_run(loop.getLoop(), UV_RUN_NOWAIT);
-        end_time = std::chrono::steady_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        num_pending_callbacks = uv_run(loop.getLoop(), UV_RUN_NOWAIT);
     }
+    loop_state.store(Loop::CLOSED);
 
     LOG_DEBUG(log, "Background loop ended");
-    loop_running.store(false);
-}
-
-void NATSHandler::iterateLoop()
-{
-    std::unique_lock lock(startup_mutex, std::defer_lock);
-    if (lock.try_lock())
-    {
-        natsLibuv_SetThreadLocalLoop(loop.getLoop());
-        uv_run(loop.getLoop(), UV_RUN_NOWAIT);
-    }
-}
-
-LockPtr NATSHandler::setThreadLocalLoop()
-{
-    auto lock = std::make_unique<std::lock_guard<std::mutex>>(startup_mutex);
-    natsLibuv_SetThreadLocalLoop(loop.getLoop());
-    return lock;
 }
 
 void NATSHandler::stopLoop()
 {
+    if(loop_state.load() != Loop::RUN){
+        return;
+    }
+
     LOG_DEBUG(log, "Implicit loop stop.");
-    uv_stop(loop.getLoop());
+    loop_state.store(Loop::STOP);
 }
 
 NATSOptionsPtr NATSHandler::createOptions()
@@ -100,14 +79,6 @@ NATSOptionsPtr NATSHandler::createOptions()
     natsOptions_SetSendAsap(result.get(), true);
 
     return result;
-}
-
-NATSHandler::~NATSHandler()
-{
-    auto lock = setThreadLocalLoop();
-
-    LOG_DEBUG(log, "Blocking loop started.");
-    uv_run(loop.getLoop(), UV_RUN_DEFAULT);
 }
 
 }

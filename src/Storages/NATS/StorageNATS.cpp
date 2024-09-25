@@ -197,14 +197,13 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
 
 void StorageNATS::loopingFunc()
 {
-    event_handler.startLoop();
-    looping_task->activateAndSchedule();
+    event_handler.runLoop();
 }
 
 
 void StorageNATS::stopLoop()
 {
-    event_handler.updateLoopState(Loop::STOP);
+    event_handler.stopLoop();
 }
 
 void StorageNATS::stopLoopIfNoReaders()
@@ -218,15 +217,8 @@ void StorageNATS::stopLoopIfNoReaders()
     std::lock_guard lock(loop_mutex);
     if (readers_count)
         return;
-    event_handler.updateLoopState(Loop::STOP);
+    event_handler.stopLoop();
 }
-
-void StorageNATS::startLoop()
-{
-    event_handler.updateLoopState(Loop::RUN);
-    looping_task->activateAndSchedule();
-}
-
 
 void StorageNATS::incrementReader()
 {
@@ -247,13 +239,13 @@ void StorageNATS::connectionFunc()
 
     bool needs_rescheduling = true;
     if (connection->reconnect())
-        needs_rescheduling &= !initBuffers();
+        needs_rescheduling &= !subscribeConsumers();
 
     if (needs_rescheduling)
         connection_task->scheduleAfter(RESCHEDULE_MS);
 }
 
-bool StorageNATS::initBuffers()
+bool StorageNATS::subscribeConsumers()
 {
     size_t num_initialized = 0;
     for (auto & consumer : consumers)
@@ -270,7 +262,6 @@ bool StorageNATS::initBuffers()
         }
     }
 
-    startLoop();
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
         consumers_ready.store(true);
@@ -352,9 +343,6 @@ void StorageNATS::read(
         pipes.back().addTransform(std::move(converting_transform));
     }
 
-    if (!event_handler.loopRunning() && connection->isConnected())
-        startLoop();
-
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -426,8 +414,9 @@ void StorageNATS::startup()
             tryLogCurrentException(log);
         }
     }
+    looping_task->activateAndSchedule();
 
-    if (!connection->isConnected() || !initBuffers())
+    if (!connection->isConnected() || !subscribeConsumers())
         connection_task->activateAndSchedule();
 }
 
@@ -442,7 +431,6 @@ void StorageNATS::shutdown(bool /* is_drop */)
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
     deactivateTask(streaming_task, false);
-    deactivateTask(looping_task, true);
 
     /// Just a paranoid try catch, it is not actually needed.
     try
@@ -462,6 +450,8 @@ void StorageNATS::shutdown(bool /* is_drop */)
     {
         tryLogCurrentException(log);
     }
+
+    deactivateTask(looping_task, true);
 }
 
 void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
@@ -679,9 +669,6 @@ bool StorageNATS::streamToViews()
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
-    if (!event_handler.loopRunning())
-        startLoop();
-
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -710,8 +697,6 @@ bool StorageNATS::streamToViews()
         {
             if (source->queueEmpty())
                 ++queue_empty;
-
-            event_handler.iterateLoop();
         }
     }
 
@@ -719,10 +704,6 @@ bool StorageNATS::streamToViews()
     {
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return true;
-    }
-    else
-    {
-        startLoop();
     }
 
     /// Do not reschedule, do not stop event loop.

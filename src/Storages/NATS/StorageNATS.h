@@ -131,9 +131,8 @@ private:
     void loopingFunc();
     void connectionFunc();
 
-    bool initBuffers();
+    bool subscribeConsumers();
 
-    void startLoop();
     void stopLoop();
     void stopLoopIfNoReaders();
 
