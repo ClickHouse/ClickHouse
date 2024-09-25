@@ -67,6 +67,10 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
+            {"merge_tree_min_read_task_size", 1, 1, "New setting"},
+            {"merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", (20 * 8192), 0, "Setting is deprecated"},
+            {"merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", (24 * 10 * 1024 * 1024), 0, "Setting is deprecated"},
         }
     },
     {"24.9",
@@ -86,9 +90,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"join_to_sort_minimum_perkey_rows", 0, 40, "The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys"},
             {"join_to_sort_maximum_table_rows", 0, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join"},
             {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"},
-            {"merge_tree_min_read_task_size", 1, 1, "New setting"},
-            {"merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", (20 * 8192), 0, "Setting is deprecated"},
-            {"merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", (24 * 10 * 1024 * 1024), 0, "Setting is deprecated"},
         }
     },
     {"24.8",

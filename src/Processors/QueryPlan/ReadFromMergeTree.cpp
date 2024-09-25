@@ -418,13 +418,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
 {
     const auto & client_info = context->getClientInfo();
 
-    auto extension = ParallelReadingExtension
-    {
-        .all_callback = all_ranges_callback.value(),
-        .callback = read_task_callback.value(),
-        .number_of_current_replica = number_of_current_replica.value_or(client_info.number_of_current_replica),
-        .total_nodes_count = context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-    };
+    auto extension = ParallelReadingExtension{
+        all_ranges_callback.value(), read_task_callback.value(), number_of_current_replica.value_or(client_info.number_of_current_replica), context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
@@ -591,13 +586,10 @@ Pipe ReadFromMergeTree::readInOrder(
     if (is_parallel_reading_from_replicas)
     {
         const auto & client_info = context->getClientInfo();
-        ParallelReadingExtension extension
-        {
-            .all_callback = all_ranges_callback.value(),
-            .callback = read_task_callback.value(),
-            .number_of_current_replica = number_of_current_replica.value_or(client_info.number_of_current_replica),
-            .total_nodes_count = context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        };
+        ParallelReadingExtension extension{
+            all_ranges_callback.value(),
+            read_task_callback.value(),
+            number_of_current_replica.value_or(client_info.number_of_current_replica), context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
 
         auto multiplier = context->getSettingsRef()[Setting::parallel_replicas_single_task_marks_count_multiplier];
         const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;

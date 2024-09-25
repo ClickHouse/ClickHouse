@@ -933,7 +933,7 @@ Default value: `1`.
 
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query-log) server configuration parameter.
 
 Example:
 
@@ -978,7 +978,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -997,7 +997,7 @@ log_query_threads=1
 
 Setting up query views logging.
 
-When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_views_log) server configuration parameter.
+When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#query_views_log) server configuration parameter.
 
 Example:
 
@@ -4773,7 +4773,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
 The setting takes precedence over the globally configured (server-level) implicit time zone.
-A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#timezone).
 
 You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
 
@@ -4829,7 +4829,7 @@ This happens due to different parsing pipelines:
 
 **See also**
 
-- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [timezone](../server-configuration-parameters/settings.md#timezone)
 
 ## final {#final}
 
@@ -5682,3 +5682,11 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## mongodb_throw_on_unsupported_query
+
+If enabled, MongoDB tables will return an error when a MongoDB query can't be built.
+
+Not applied for the legacy implementation, or when 'allow_experimental_analyzer=0`.
+
+Default value: `true`.

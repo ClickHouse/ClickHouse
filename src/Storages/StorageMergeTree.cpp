@@ -1795,7 +1795,7 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
 
     for (auto & part: new_parts)
     {
-        DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction);
+        DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
 
         if (covered_parts_by_one_part.size() > 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1805,10 +1805,10 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
 
         std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
     }
-
     LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
              covered_parts.size(), new_parts.size(), transaction.getTID());
 
+    transaction.renameParts();
     transaction.commit();
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
@@ -2071,7 +2071,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         {
             auto lock = lockParts();
             fillNewPartNameAndResetLevel(loaded_parts[i], lock);
-            renameTempPartAndAdd(loaded_parts[i], transaction, lock);
+            renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(&lock);
         }
 
@@ -2203,7 +2203,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             for (auto part : dst_parts)
             {
                 fillNewPartName(part, data_parts_lock);
-                renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock);
+                renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
             /// Populate transaction
             transaction.commit(&data_parts_lock);
@@ -2307,9 +2307,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             for (auto & part : dst_parts)
             {
                 dest_table_storage->fillNewPartName(part, dest_data_parts_lock);
-                dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock);
+                dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
             }
-
 
             removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, src_data_parts_lock);
             transaction.commit(&src_data_parts_lock);
@@ -2470,7 +2469,7 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
         {
             auto lock = lockParts();
             fillNewPartName(part, lock);
-            renameTempPartAndAdd(part, transaction, lock);
+            renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(&lock);
         }
     }

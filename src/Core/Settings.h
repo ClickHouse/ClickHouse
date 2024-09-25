@@ -64,6 +64,7 @@ class WriteBuffer;
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
     M(CLASS_NAME, LogQueriesType) \
