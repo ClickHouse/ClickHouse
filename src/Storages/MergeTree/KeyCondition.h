@@ -217,7 +217,7 @@ public:
         struct MultiColumnsFunctionDescription
         {
             String function_name;
-            std::vector<size_t> key_column_poss;
+            std::vector<size_t> key_column_positions;
             std::vector<String> key_columns;
         };
         std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
