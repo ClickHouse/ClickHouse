@@ -48,6 +48,11 @@ private:
         statistics.rows_before_limit = rows_before_limit_;
     }
 
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.applied_aggregation = true;
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+    }
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
     void onProgress(const Progress & value) override;
@@ -56,6 +61,7 @@ private:
 
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();
+    void writeRowsBeforeAggregationAtLeast();
     void writeStatistics();
     void writeException();
 

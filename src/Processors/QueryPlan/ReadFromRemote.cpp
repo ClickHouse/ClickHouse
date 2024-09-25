@@ -22,10 +22,20 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
 
-#include <boost/algorithm/string/join.hpp>
+#include <fmt/format.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool extremes;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+}
 
 namespace ErrorCodes
 {
@@ -144,13 +154,13 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    const bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+    const bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
 
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
     auto lazily_create_stream = [
@@ -164,7 +174,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     {
         auto current_settings = my_context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
-                            .getSaturated(current_settings.max_execution_time);
+                            .getSaturated(current_settings[Setting::max_execution_time]);
 
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
         try
@@ -231,12 +241,12 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+    bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
     scalars["_shard_num"]
@@ -244,9 +254,9 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     if (context->canUseTaskBasedParallelReplicas())
     {
-        if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+        if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed)
         {
-            const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
+            const String cluster_for_parallel_replicas = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
             if (cluster_for_parallel_replicas != cluster_name)
                 LOG_INFO(
                     log,
@@ -370,7 +380,9 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     LoggerPtr log_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    std::vector<ConnectionPoolPtr> pools_to_use_,
+    std::optional<size_t> exclude_pool_index_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -383,16 +395,24 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , external_tables{external_tables_}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
+    , pools_to_use(std::move(pools_to_use_))
+    , exclude_pool_index(exclude_pool_index_)
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> description;
-    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
+    std::vector<String> replicas;
+    replicas.reserve(pools_to_use.size());
 
-    for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
-        description.push_back(fmt::format("Replica: {}", pool->getHost()));
+    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
+    {
+        if (exclude_pool_index.has_value() && i == exclude_pool_index)
+            continue;
 
-    setStepDescription(boost::algorithm::join(description, ", "));
+        replicas.push_back(pools_to_use[i]->getAddress());
+    }
+
+    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
+    setStepDescription(std::move(description));
 }
 
 void ReadFromParallelRemoteReplicasStep::enforceSorting(SortDescription output_sort_description)
@@ -408,45 +428,29 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
-    const Settings & current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-    const auto & shard = cluster->getShardsInfo().at(0);
-    size_t max_replicas_to_use = current_settings.max_parallel_replicas;
-    if (max_replicas_to_use > shard.getAllNodeCount())
+    std::vector<std::string_view> addresses;
+    addresses.reserve(pools_to_use.size());
+    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
-        LOG_INFO(
-            getLogger("ReadFromParallelRemoteReplicasStep"),
-            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
-            "Will use the latter number to execute the query.",
-            current_settings.max_parallel_replicas,
-            shard.getAllNodeCount());
-        max_replicas_to_use = shard.getAllNodeCount();
-    }
+        if (exclude_pool_index.has_value() && i == exclude_pool_index)
+            continue;
 
-    std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
-    if (max_replicas_to_use < shard.getAllNodeCount())
-    {
-        shuffled_pool = shard.pool->getShuffledPools(current_settings);
-        shuffled_pool.resize(max_replicas_to_use);
+        addresses.emplace_back(pools_to_use[i]->getAddress());
     }
-    else
-    {
-        /// try to preserve replicas order if all replicas in cluster are used for query execution
-        /// it's important for data locality during query execution
-        auto priority_func = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
-        shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
-    }
+    LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
-    for (size_t i=0; i < max_replicas_to_use; ++i)
+    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
-        IConnections::ReplicaInfo replica_info
-        {
+        if (exclude_pool_index.has_value() && i == exclude_pool_index)
+            continue;
+
+        IConnections::ReplicaInfo replica_info{
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, shuffled_pool[i].pool, replica_info);
+        addPipeForSingeReplica(pipes, pools_to_use[i], replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -464,13 +468,13 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+    bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
 
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
     String query_string = formattedAST(query_ast);

@@ -241,6 +241,7 @@ Hierarchy of privileges:
     - `JDBC`
     - `HDFS`
     - `S3`
+    - `POSTGRES`
 - [dictGet](#dictget)
 - [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
 - [NAMED COLLECTION ADMIN](#named-collection-admin)
@@ -517,6 +518,7 @@ Allows using external data sources. Applies to [table engines](../../engines/tab
     - `JDBC`. Level: `GLOBAL`
     - `HDFS`. Level: `GLOBAL`
     - `S3`. Level: `GLOBAL`
+    - `POSTGRES`. Level: `GLOBAL`
 
 The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
 

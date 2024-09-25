@@ -267,7 +267,7 @@ bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
 #else
 void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t start, size_t length)
@@ -330,7 +330,38 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 
 void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
 {
-    expandDataByMask<char *>(data, mask, inverted);
+    ensureOwnership();
+    Arena & arena = createOrGetArena();
+
+    if (mask.size() < data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+
+    ssize_t from = data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    data.resize(mask.size());
+    while (index >= 0)
+    {
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+
+            /// Copy only if it makes sense.
+            if (index != from)
+                data[index] = data[from];
+            --from;
+        }
+        else
+        {
+            data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+            func->create(data[index]);
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
@@ -366,13 +397,10 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnAggregateFunction::getWeakHash32() const
 {
     auto s = data.size();
-    if (hash.getData().size() != data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), hash.getData().size());
-
+    WeakHash32 hash(s);
     auto & hash_data = hash.getData();
 
     std::vector<UInt8> v;
@@ -383,6 +411,8 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
         wbuf.finalize();
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
+
+    return hash;
 }
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
@@ -427,9 +457,9 @@ MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = AggregateFunctionStateData();
-    field.get<AggregateFunctionStateData &>().name = type_string;
+    field.safeGet<AggregateFunctionStateData &>().name = type_string;
     {
-        WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer(field.safeGet<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer, version);
     }
     return field;
@@ -437,12 +467,7 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
-    res = AggregateFunctionStateData();
-    res.get<AggregateFunctionStateData &>().name = type_string;
-    {
-        WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
-        func->serialize(data[n], buffer, version);
-    }
+    res = operator[](n);
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
@@ -466,7 +491,7 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     insertMergeFrom(from, n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
 #else
 void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
@@ -522,7 +547,7 @@ void ColumnAggregateFunction::insert(const Field & x)
             "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
-    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.safeGet<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
                 field_name, type_string);
@@ -530,7 +555,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
+    ReadBufferFromString read_buffer(x.safeGet<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
 }
 
@@ -539,14 +564,14 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
     if (x.getType() != Field::Types::AggregateFunctionState)
         return false;
 
-    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.safeGet<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         return false;
 
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
+    ReadBufferFromString read_buffer(x.safeGet<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
     return true;
 }

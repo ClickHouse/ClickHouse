@@ -233,7 +233,11 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
 
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
-
+String AccessRightsElement::toStringForAccessTypeSource() const
+{
+    String result{access_flags.toKeywords().front()};
+    return result + " ON *.*";
+}
 
 bool AccessRightsElements::empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
 

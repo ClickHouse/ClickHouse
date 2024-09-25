@@ -464,9 +464,9 @@ public:
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
     /// Was disk created to be used without storage configuration?
-    bool isCustomDisk() const { return is_custom_disk; }
-
-    void markDiskAsCustom() { is_custom_disk = true; }
+    bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
+    UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
+    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
@@ -504,7 +504,8 @@ protected:
 
 private:
     ThreadPool copying_thread_pool;
-    bool is_custom_disk = false;
+    // 0 means the disk is not custom, the disk is predefined in the config
+    UInt128 custom_disk_settings_hash = 0;
 
     /// Check access to the disk.
     void checkAccess();

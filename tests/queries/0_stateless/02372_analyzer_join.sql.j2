@@ -1,6 +1,6 @@
 -- Tags: long
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET single_join_prefer_left_table = 0;
 
 DROP TABLE IF EXISTS test_table_join_1;
@@ -45,59 +45,59 @@ SELECT 'JOIN {{ join_type }}';
 SELECT 'JOIN ON without conditions';
 
 SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_2.id, test_table_join_2.value
-FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id;
+FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, test_table_join_1.id, t1.value, test_table_join_1.value, t2.id, test_table_join_2.id, t2.value, test_table_join_2.value
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.value, t2.value
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id ORDER BY ALL;
 
-SELECT id FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT id FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id ORDER BY ALL; -- { serverError AMBIGUOUS_IDENTIFIER }
 
-SELECT value FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT value FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id ORDER BY ALL; -- { serverError AMBIGUOUS_IDENTIFIER }
 
 SELECT 'JOIN ON with conditions';
 
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0';
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0' ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t2.value = 'Join_2_Value_0';
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t2.value = 'Join_2_Value_0' ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0' AND t2.value = 'Join_2_Value_0';
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0' AND t2.value = 'Join_2_Value_0' ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON toString(t1.id) = toString(t2.id) AND t1.value = 'Join_1_Value_0' AND t2.value = 'Join_2_Value_0';
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON toString(t1.id) = toString(t2.id) AND t1.value = 'Join_1_Value_0' AND t2.value = 'Join_2_Value_0' ORDER BY ALL;
 
 SELECT 'JOIN multiple clauses';
 
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id;
+FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id ORDER BY ALL;
 
 SELECT 'JOIN expression aliases';
 
-SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id);
+SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) ORDER BY ALL;
 
 SELECT '--';
 
-SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1_id = t2_id;
+SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1_id = t2_id ORDER BY ALL;
 
 {% endfor %}
 
@@ -110,56 +110,56 @@ SELECT 'JOIN ON without conditions';
 
 SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_2.id, test_table_join_2.value, test_table_join_3.id, test_table_join_3.value
 FROM test_table_join_1 {{ first_join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id
-{{ second_join_type }} JOIN test_table_join_3 ON test_table_join_2.id = test_table_join_3.id;
+{{ second_join_type }} JOIN test_table_join_3 ON test_table_join_2.id = test_table_join_3.id  ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON test_table_join_1.id = test_table_join_2.id
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON test_table_join_2.id = test_table_join_3.id;
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON test_table_join_2.id = test_table_join_3.id  ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, test_table_join_1.id, t1.value, test_table_join_1.value, t2.id, test_table_join_2.id, t2.value, test_table_join_2.value,
 t3.id, test_table_join_3.id, t3.value, test_table_join_3.value
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON test_table_join_1.id = test_table_join_2.id
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON test_table_join_2.id = test_table_join_3.id;
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON test_table_join_2.id = test_table_join_3.id  ORDER BY ALL;
 
 SELECT '--';
 SELECT t1.value, t2.value, t3.value
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON test_table_join_1.id = test_table_join_2.id
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON test_table_join_2.id = test_table_join_3.id;
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON test_table_join_2.id = test_table_join_3.id  ORDER BY ALL;
 
 SELECT 'JOIN ON with conditions';
 
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0'
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0';
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0' ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id AND t1.value == 'Join_1_Value_0' AND t2.value == 'Join_2_Value_0'
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0' AND t3.value == 'Join_3_Value_0';
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2.id = t3.id AND t2.value == 'Join_2_Value_0' AND t3.value == 'Join_3_Value_0' ORDER BY ALL;
 
 SELECT 'JOIN multiple clauses';
 
 SELECT t1.value, t2.value, t3.value
 FROM test_table_join_1 AS t1
 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2.id = t3.id OR t3.id = t2.id;
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2.id = t3.id OR t3.id = t2.id ORDER BY ALL;
 
 SELECT 'JOIN expression aliases';
 
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id) ORDER BY ALL;
 
 SELECT '--';
 
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1_id = t2_id
-{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2_id = t3_id;
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t2_id = t3_id ORDER BY ALL;
 
 {% endfor %}
 {% endfor %}

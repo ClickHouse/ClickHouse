@@ -1,3 +1,3 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT (NULL IN (SELECT 9223372036854775806 IN (SELECT 65536), inf, NULL IN (NULL))) IN (SELECT NULL IN (NULL));

@@ -57,24 +57,9 @@ namespace
 
     void formatCurrentGrantsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
-        for (size_t i = 0; i != elements.size(); ++i)
-        {
-            const auto & element = elements[i];
-
-            bool next_element_on_same_db_and_table = false;
-            if (i != elements.size() - 1)
-            {
-                const auto & next_element = elements[i + 1];
-                if (element.sameDatabaseAndTableAndParameter(next_element))
-                    next_element_on_same_db_and_table = true;
-            }
-
-            if (!next_element_on_same_db_and_table)
-            {
-                settings.ostr << " ";
-                element.formatONClause(settings.ostr, settings.hilite);
-            }
-        }
+        settings.ostr << "(";
+        formatElementsWithoutOptions(elements, settings);
+        settings.ostr << ")";
     }
 }
 

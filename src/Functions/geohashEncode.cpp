@@ -53,7 +53,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * longitude = arguments[0].column.get();
         const IColumn * latitude = arguments[1].column.get();
@@ -65,26 +65,24 @@ public:
             precision = arguments[2].column;
 
         ColumnPtr res_column;
-        vector(longitude, latitude, precision.get(), res_column);
+        vector(longitude, latitude, precision.get(), res_column, input_rows_count);
         return res_column;
     }
 
 private:
-    void vector(const IColumn * lon_column, const IColumn * lat_column, const IColumn * precision_column, ColumnPtr & result) const
+    void vector(const IColumn * lon_column, const IColumn * lat_column, const IColumn * precision_column, ColumnPtr & result, size_t input_rows_count) const
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-        const size_t size = lat_column->size();
-
-        out_offsets.resize(size);
-        out_vec.resize(size * (GEOHASH_MAX_TEXT_LENGTH + 1));
+        out_offsets.resize(input_rows_count);
+        out_vec.resize(input_rows_count * (GEOHASH_MAX_TEXT_LENGTH + 1));
 
         char * begin = reinterpret_cast<char *>(out_vec.data());
         char * pos = begin;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const Float64 longitude_value = lon_column->getFloat64(i);
             const Float64 latitude_value = lat_column->getFloat64(i);

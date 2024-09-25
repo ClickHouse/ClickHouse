@@ -78,7 +78,9 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         LoggerPtr log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
+        std::vector<ConnectionPoolPtr> pools_to_use,
+        std::optional<size_t> exclude_pool_index_ = std::nullopt);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -101,6 +103,8 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
+    std::vector<ConnectionPoolPtr> pools_to_use;
+    std::optional<size_t> exclude_pool_index;
 };
 
 }

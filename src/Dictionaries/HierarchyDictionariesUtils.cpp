@@ -50,7 +50,7 @@ namespace
         std::optional<UInt64> null_value;
 
         if (!hierarchical_attribute.null_value.isNull())
-            null_value = hierarchical_attribute.null_value.get<UInt64>();
+            null_value = hierarchical_attribute.null_value.safeGet<UInt64>();
 
         ColumnPtr key_to_request_column = ColumnVector<UInt64>::create();
         auto * key_to_request_column_typed = static_cast<ColumnVector<UInt64> *>(key_to_request_column->assumeMutable().get());
@@ -190,7 +190,7 @@ ColumnPtr getKeysHierarchyDefaultImplementation(
     std::optional<UInt64> null_value;
 
     if (!hierarchical_attribute.null_value.isNull())
-        null_value = hierarchical_attribute.null_value.get<UInt64>();
+        null_value = hierarchical_attribute.null_value.safeGet<UInt64>();
 
     auto get_parent_key_func = [&](auto & key)
     {
@@ -252,7 +252,7 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     std::optional<UInt64> null_value;
 
     if (!hierarchical_attribute.null_value.isNull())
-        null_value = hierarchical_attribute.null_value.get<UInt64>();
+        null_value = hierarchical_attribute.null_value.safeGet<UInt64>();
 
     auto get_parent_key_func = [&](auto & key)
     {

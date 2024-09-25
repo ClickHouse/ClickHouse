@@ -3,7 +3,7 @@
 #include "config.h"
 #include <set>
 
-#if USE_AWS_S3 && USE_PARQUET
+#if USE_PARQUET
 
 #include <Common/logger_useful.h>
 #include <Columns/ColumnString.h>
@@ -207,18 +207,28 @@ struct DeltaLakeMetadataImpl
             Poco::Dynamic::Var json = parser.parse(json_str);
             Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
+            if (!object)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
+
+#ifdef ABORT_ON_LOGICAL_ERROR
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             object->stringify(oss);
             LOG_TEST(log, "Metadata: {}", oss.str());
+#endif
 
             if (object->has("metaData"))
             {
                 const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
+                if (!metadata_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `metaData` field");
+
                 const auto schema_object = metadata_object->getValue<String>("schemaString");
 
                 Poco::JSON::Parser p;
                 Poco::Dynamic::Var fields_json = parser.parse(schema_object);
                 const Poco::JSON::Object::Ptr & fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
+                if (!fields_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `fields` field");
 
                 auto current_schema = parseMetadata(fields_object);
                 if (file_schema.empty())
@@ -237,6 +247,9 @@ struct DeltaLakeMetadataImpl
             if (object->has("add"))
             {
                 auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
+                if (!add_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
+
                 auto path = add_object->getValue<String>("path");
                 result.insert(fs::path(configuration->getPath()) / path);
 
@@ -247,6 +260,9 @@ struct DeltaLakeMetadataImpl
                     if (add_object->has("partitionValues"))
                     {
                         auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
+                        if (!partition_values)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `partitionValues` field");
+
                         if (partition_values->size())
                         {
                             auto & current_partition_columns = file_partition_columns[filename];
@@ -262,10 +278,11 @@ struct DeltaLakeMetadataImpl
                                         partition_name, file_schema.toNamesAndTypesDescription());
                                 }
 
+                                LOG_TEST(log, "Partition {} value is {} (data type: {}, file: {})",
+                                         partition_name, value, name_and_type->type->getName(), filename);
+
                                 auto field = getFieldValue(value, name_and_type->type);
                                 current_partition_columns.emplace_back(*name_and_type, field);
-
-                                LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
                             }
                         }
                     }
@@ -273,7 +290,11 @@ struct DeltaLakeMetadataImpl
             }
             else if (object->has("remove"))
             {
-                auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
+                auto remove_object = object->get("remove").extract<Poco::JSON::Object::Ptr>();
+                if (!remove_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
+
+                auto path = remove_object->getValue<String>("path");
                 result.erase(fs::path(configuration->getPath()) / path);
             }
         }
@@ -332,6 +353,8 @@ struct DeltaLakeMetadataImpl
         WhichDataType which(check_type->getTypeId());
         if (which.isStringOrFixedString())
             return value;
+        else if (isBool(check_type))
+            return parse<bool>(value);
         else if (which.isInt8())
             return parse<Int8>(value);
         else if (which.isUInt8())
@@ -422,8 +445,9 @@ struct DeltaLakeMetadataImpl
             {
                 auto field = fields->getObject(static_cast<Int32>(i));
                 element_names.push_back(field->getValue<String>("name"));
-                auto required = field->getValue<bool>("required");
-                element_types.push_back(getFieldType(field, "type", required));
+
+                auto is_nullable = field->getValue<bool>("nullable");
+                element_types.push_back(getFieldType(field, "type", is_nullable));
             }
 
             return std::make_shared<DataTypeTuple>(element_types, element_names);
@@ -431,16 +455,16 @@ struct DeltaLakeMetadataImpl
 
         if (type_name == "array")
         {
-            bool is_nullable = type->getValue<bool>("containsNull");
-            auto element_type = getFieldType(type, "elementType", is_nullable);
+            bool element_nullable = type->getValue<bool>("containsNull");
+            auto element_type = getFieldType(type, "elementType", element_nullable);
             return std::make_shared<DataTypeArray>(element_type);
         }
 
         if (type_name == "map")
         {
-            bool is_nullable = type->getValue<bool>("containsNull");
             auto key_type = getFieldType(type, "keyType", /* is_nullable */false);
-            auto value_type = getFieldType(type, "valueType", is_nullable);
+            bool value_nullable = type->getValue<bool>("valueContainsNull");
+            auto value_type = getFieldType(type, "valueType", value_nullable);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
 

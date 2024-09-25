@@ -103,8 +103,6 @@ Default: 2
 
 The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
-## background_merges_mutations_scheduling_policy
-
 Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
 Could be applied from the `default` profile for backward compatibility.
 
@@ -492,6 +490,14 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 Type: Double
 
 Default: 0.9
+
+## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
+
+The maximum number of threads to use for building vector indexes. 0 means all cores.
+
+Type: UInt64
+
+Default: 16
 
 ## cgroups_memory_usage_observer_wait_time
 
@@ -1402,6 +1408,16 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
+## max_keep_alive_requests {#max-keep-alive-requests}
+
+Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server. Default to 10000.
+
+**Example**
+
+``` xml
+<max_keep_alive_requests>10</max_keep_alive_requests>
+```
+
 ## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
@@ -1455,26 +1471,29 @@ Examples:
 
 ## logger {#logger}
 
-Logging settings.
+The location and format of log messages.
 
 Keys:
 
-- `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
-- `log` – The log file. Contains all the entries according to `level`.
-- `errorlog` – Error log file.
-- `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
-- `count` – The number of archived log files that ClickHouse stores.
-- `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
-- `console_log_level` – Logging level for console. Default to `level`.
-- `use_syslog` - Log to syslog as well.
-- `syslog_level` - Logging level for logging to syslog.
-- `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
-- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
+- `level` – Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,
+  `debug`, `trace`, `test`
+- `log` – The path to the log file.
+- `errorlog` – The path to the error log file.
+- `size` – Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.
+- `count` – Rotation policy: How many historical log files Clickhouse are kept at most.
+- `stream_compress` – Compress log messages using LZ4. Set to `1` or `true` to enable.
+- `console` – Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is
+  `1` if Clickhouse does not run in daemon mode, `0` otherwise.
+- `console_log_level` – Log level for console output. Defaults to `level`.
+- `formatting` – Log format for console output. Currently, only `json` is supported).
+- `use_syslog` - Also forward log output to syslog.
+- `syslog_level` - Log level for logging to syslog.
 
-Both log and error log file names (only file names, not directories) support date and time format specifiers.
+**Log format specifiers**
 
-**Format specifiers**
-Using the following format specifiers, you can define a pattern for the resulting file name. “Example” column shows possible results for `2023-07-06 18:32:07`.
+File names in `log` and `errorLog` paths support below format specifiers for the resulting file name (the directory part does not support them).
+
+Column “Example” shows the output at `2023-07-06 18:32:07`.
 
 | Specifier   | Description                                                                                                         | Example                  |
 |-------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
@@ -1529,18 +1548,37 @@ Using the following format specifiers, you can define a pattern for the resultin
 </logger>
 ```
 
-Writing to the console can be configured. Config example:
+To print log messages only in the console:
 
 ``` xml
 <logger>
     <level>information</level>
-    <console>1</console>
+    <console>true</console>
+</logger>
+```
+
+**Per-level Overrides**
+
+The log level of individual log names can be overridden. For example, to mute all messages of loggers "Backup" and "RBAC".
+
+```xml
+<logger>
+    <levels>
+        <logger>
+            <name>Backup</name>
+            <level>none</level>
+        </logger>
+        <logger>
+            <name>RBAC</name>
+            <level>none</level>
+        </logger>
+    </levels>
 </logger>
 ```
 
 ### syslog
 
-Writing to the syslog is also supported. Config example:
+To write log messages additionally to syslog:
 
 ``` xml
 <logger>
@@ -1554,14 +1592,12 @@ Writing to the syslog is also supported. Config example:
 </logger>
 ```
 
-Keys for syslog:
+Keys for `<syslog>`:
 
-- use_syslog — Required setting if you want to write to the syslog.
-- address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
-- hostname — Optional. The name of the host that logs are sent from.
-- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
-    Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
-- format – Message format. Possible values: `bsd` and `syslog.`
+- `address` — The address of syslog in format `host\[:port\]`. If omitted, the local daemon is used.
+- `hostname` — The name of the host from which logs are send. Optional.
+- `facility` — The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a “LOG_” prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
+- `format` – Log message format. Possible values: `bsd` and `syslog.`
 
 ### Log formats
 
@@ -1580,6 +1616,7 @@ You can specify the log format that will be outputted in the console log. Curren
   "source_line": "192"
 }
 ```
+
 To enable JSON logging support, use the following snippet:
 
 ```xml
@@ -2112,48 +2149,6 @@ The trailing slash is mandatory.
 
 ``` xml
 <path>/var/lib/clickhouse/</path>
-```
-
-## Prometheus {#prometheus}
-
-:::note
-ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
-:::
-
-Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
-
-Settings:
-
-- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
-- `port` – Port for `endpoint`.
-- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
-- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
-
-**Example**
-
-``` xml
-<clickhouse>
-    <listen_host>0.0.0.0</listen_host>
-    <http_port>8123</http_port>
-    <tcp_port>9000</tcp_port>
-    <!-- highlight-start -->
-    <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>9363</port>
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
-        <errors>true</errors>
-    </prometheus>
-    <!-- highlight-end -->
-</clickhouse>
-```
-
-Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
-```bash
-curl 127.0.0.1:9363/metrics
 ```
 
 ## query_log {#query-log}
@@ -3155,3 +3150,23 @@ Default value: "default"
 
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
+
+The maximum number of authentication methods a user can be created with or altered to.
+Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
+Non authentication create/alter queries will succeed.
+
+Type: UInt64
+
+Default value: 100
+
+Zero means unlimited
+
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.
