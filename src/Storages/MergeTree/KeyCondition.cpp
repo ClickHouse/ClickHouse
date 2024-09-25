@@ -1889,7 +1889,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 if (it == key_columns.end())
                     return false;
                 column_desc.key_columns.push_back(name);
-                column_desc.key_column_poss.push_back(key_columns[name]);
+                column_desc.key_column_positions.push_back(key_columns[name]);
             }
             out.point_in_polygon_column_description = column_desc;
 
@@ -3147,12 +3147,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
             bool has_intersection = false;
-            const auto & key_column_poss = element.point_in_polygon_column_description->key_column_poss;
+            const auto & key_column_positions = element.point_in_polygon_column_description->key_column_positions;
 
-            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[0]].left);
-            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[0]].right);
-            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].left);
-            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].right);
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[0]].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[0]].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[1]].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[1]].right);
 
             if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
             {
