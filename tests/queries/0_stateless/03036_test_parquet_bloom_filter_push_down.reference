@@ -174,3 +174,81 @@ complex tuple in case, bf is on. Non existent
     "bytes_read": 0
   }
 }
+Bloom filter for json column. BF is off
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 41936
+  }
+}
+Bloom filter for json column. BF is on
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 72,
+    "bytes_read": 3717
+  }
+}
+Bloom filter for ipv4 column. BF is off
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 41936
+  }
+}
+Bloom filter for ipv4 column. BF is on
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 72,
+    "bytes_read": 3717
+  }
+}
+Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') is not supported. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 41936
+  }
+}
+Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143')) is not supported. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 41936
+  }
+}
