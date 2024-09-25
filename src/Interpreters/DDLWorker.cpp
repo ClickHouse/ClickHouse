@@ -77,7 +77,8 @@ constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already proces
 
 DDLWorker::DDLWorker(
     int pool_size_,
-    const std::string & zk_root_dir,
+    const std::string & zk_queue_dir,
+    const std::string & zk_replicas_dir,
     ContextPtr context_,
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
@@ -103,15 +104,14 @@ DDLWorker::DDLWorker(
         worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
     }
 
-    queue_dir = zk_root_dir;
+    queue_dir = zk_queue_dir;
     if (queue_dir.back() == '/')
         queue_dir.resize(queue_dir.size() - 1);
 
-    // replicas_dir is at the same level as queue_dir
-    // E.g:
-    //  queue_dir:      /clickhouse/task_queue/ddl
-    //  replicas_dir:   /clickhouse/task_queue/replicas
-    replicas_dir = fs::path(queue_dir).parent_path() / "replicas";
+    replicas_dir = zk_replicas_dir;
+    if (replicas_dir.back() == '/')
+        replicas_dir.resize(replicas_dir.size() - 1);
+
 
     if (config)
     {
@@ -1238,7 +1238,7 @@ void DDLWorker::initializeReplication()
 {
     auto zookeeper = getAndSetZooKeeper();
 
-    zookeeper->createAncestors(replicas_dir / "");
+    zookeeper->createAncestors(fs::path(replicas_dir) / "");
 
     NameSet host_id_set;
     for (const auto & it : context->getClusters())
@@ -1255,7 +1255,7 @@ void DDLWorker::initializeReplication()
 void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
 {
     for (const auto & host_id : host_ids)
-        zookeeper->createAncestors(replicas_dir / host_id / "");
+        zookeeper->createAncestors(fs::path(replicas_dir) / host_id / "");
 }
 
 void DDLWorker::markReplicasActive(bool reinitialized)
@@ -1312,7 +1312,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         }
 
         /// Create "active" node (remove previous one if necessary)
-        String active_path = replicas_dir / host_id / "active";
+        String active_path = fs::path(replicas_dir) / host_id / "active";
         String active_id = toString(ServerUUID::get());
         zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
 

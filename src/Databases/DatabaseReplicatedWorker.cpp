@@ -27,7 +27,14 @@ namespace ErrorCodes
 static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
-    : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
+    : DDLWorker(
+          /* pool_size */ 1,
+          db->zookeeper_path + "/log",
+          db->zookeeper_path + "/replicas",
+          context_,
+          nullptr,
+          {},
+          fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
     /// Pool size must be 1 to avoid reordering of log entries.

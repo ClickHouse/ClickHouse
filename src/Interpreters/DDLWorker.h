@@ -13,13 +13,11 @@
 #include <Poco/Event.h>
 
 #include <atomic>
-#include <filesystem>
 #include <list>
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_set>
 
-namespace fs = std::filesystem;
 
 namespace zkutil
 {
@@ -54,8 +52,16 @@ class AccessRightsElements;
 class DDLWorker
 {
 public:
-    DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr, const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
+    DDLWorker(
+        int pool_size_,
+        const std::string & zk_queue_dir,
+        const std::string & zk_replicas_dir,
+        ContextPtr context_,
+        const Poco::Util::AbstractConfiguration * config,
+        const String & prefix,
+        const String & logger_name = "DDLWorker",
+        const CurrentMetrics::Metric * max_entry_metric_ = nullptr,
+        const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -166,7 +172,7 @@ protected:
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
     std::string queue_dir; /// dir with queue of queries
-    fs::path replicas_dir;
+    std::string replicas_dir;
 
     mutable std::mutex zookeeper_mutex;
     ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
