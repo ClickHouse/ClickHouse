@@ -559,7 +559,7 @@ class CI:
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_label="pr-bugfix",
             run_command="bugfix_validate_check.py",
-            timeout=2400,
+            timeout=900,
             runner_type=Runners.STYLE_CHECKER,
         ),
     }
