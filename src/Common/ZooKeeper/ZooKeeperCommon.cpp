@@ -58,7 +58,7 @@ void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64) const
     else
         request_size += sizeof(int32_t);
 
-    request_size = Coordination::size(getOpNum()) + sizeImpl();
+    request_size += Coordination::size(getOpNum()) + sizeImpl();
 
     Coordination::write(static_cast<int32_t>(request_size), out);
     if (use_xid_64)
