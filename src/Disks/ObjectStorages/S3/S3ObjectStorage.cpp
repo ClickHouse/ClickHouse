@@ -426,7 +426,7 @@ private:
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
             request->SetStartAfter(objects.back().GetKey());
-            if (use_parallel_listing && outcome.GetResult().GetIsTruncated() && cache_builded)
+            if (use_parallel_listing && outcome.GetResult().GetIsTruncated() && cache_built)
             {
                 cache.clear();
                 fillCache(
@@ -434,7 +434,7 @@ private:
                     objects.back().GetKey(),
                     num_parallel_requests,
                     multiplication_length);
-                cache_builded = false;
+                cache_built = false;
             }
             /// It returns false when all objects were returned
             return outcome.GetResult().GetIsTruncated();
@@ -446,7 +446,7 @@ private:
                           backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
 
-    bool cache_builded = true;
+    bool cache_built = true;
 
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
