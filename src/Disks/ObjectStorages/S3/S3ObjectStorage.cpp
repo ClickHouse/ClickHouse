@@ -134,7 +134,7 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
 namespace FileArithmetics
 {
 
-static constexpr std::string_view alphabet = "!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz~";
+static constexpr std::string_view alphabet = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
 
 class FileRepresentation
 {
@@ -157,7 +157,7 @@ public:
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support symbol ");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support symbol `{}`", elem);
             }
             number_representation = number_representation * alphabet.size() + converted_number;
         }
@@ -345,7 +345,7 @@ private:
 
             if (outcome.IsSuccess())
             {
-                const auto& result = outcome.GetResult();
+                const auto & result = outcome.GetResult();
                 cache.insertObjects(result.GetContents());
                 if (!result.GetIsTruncated()
                     || result.GetContents().empty()
