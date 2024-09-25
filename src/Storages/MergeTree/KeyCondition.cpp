@@ -1882,7 +1882,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
                 return false;
 
-            for (size_t i =0; i< first_argument.getArgumentsSize(); i++)
+            for (size_t i = 0; i < 2; ++i)
             {
                 auto name = first_argument.getArgumentAt(i).getColumnName();
                 auto it = key_columns.find(name);
