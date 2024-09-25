@@ -1,5 +1,5 @@
 ---
-slug: /en/getting-started/example-datasets/star-schema
+slug: /en/getting-started/example-datasets/tpcds
 sidebar_label: TPC-DS
 description:  "The TPC-DS benchmark data set and queries."
 ---
