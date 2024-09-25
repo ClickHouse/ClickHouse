@@ -43,7 +43,7 @@ struct DDLQueryOnClusterParams
 /// Returns DDLQueryStatusSource, which reads results of query execution on each host in the cluster.
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const DDLQueryOnClusterParams & params = {});
 
-BlockIO getDDLOnClusterStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context);
+BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_path, const DDLLogEntry & entry, ContextPtr context);
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context);
 

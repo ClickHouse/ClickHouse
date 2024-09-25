@@ -20,8 +20,9 @@ extern const int LOGICAL_ERROR;
 }
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
-    const String & zk_node_path, ContextPtr context_, const Strings & hosts_to_wait)
-    : DistributedQueryStatusSource(zk_node_path, getSampleBlock(), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
+    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
+    : DistributedQueryStatusSource(
+          zk_node_path, zk_replicas_path, getSampleBlock(), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
 {
 }
 

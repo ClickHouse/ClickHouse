@@ -10,7 +10,8 @@ namespace DB
 class DDLOnClusterQueryStatusSource final : public DistributedQueryStatusSource
 {
 public:
-    DDLOnClusterQueryStatusSource(const String & zk_node_path, ContextPtr context_, const Strings & hosts_to_wait);
+    DDLOnClusterQueryStatusSource(
+        const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait);
 
     String getName() const override { return "DDLOnClusterQueryStatus"; }
 

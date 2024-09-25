@@ -10,7 +10,8 @@ namespace DB
 class ReplicatedDatabaseQueryStatusSource final : public DistributedQueryStatusSource
 {
 public:
-    ReplicatedDatabaseQueryStatusSource(const String & zk_node_path, ContextPtr context_, const Strings & hosts_to_wait);
+    ReplicatedDatabaseQueryStatusSource(
+        const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait);
 
     String getName() const override { return "ReplicatedDatabaseQueryStatus"; }
 

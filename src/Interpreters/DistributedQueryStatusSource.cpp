@@ -23,8 +23,18 @@ extern const int UNFINISHED;
 }
 
 DistributedQueryStatusSource::DistributedQueryStatusSource(
-    const String & zk_node_path, Block block, ContextPtr context_, const Strings & hosts_to_wait, const char * logger_name)
-    : ISource(block), node_path(zk_node_path), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(getLogger(logger_name))
+    const String & zk_node_path,
+    const String & zk_replicas_path,
+    Block block,
+    ContextPtr context_,
+    const Strings & hosts_to_wait,
+    const char * logger_name)
+    : ISource(block)
+    , node_path(zk_node_path)
+    , replicas_path(zk_replicas_path)
+    , context(context_)
+    , watch(CLOCK_MONOTONIC_COARSE)
+    , log(getLogger(logger_name))
 {
     auto output_mode = context->getSettingsRef()[Setting::distributed_ddl_output_mode];
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
@@ -66,18 +76,12 @@ IProcessor::Status DistributedQueryStatusSource::prepare()
 
 NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_wait, const ZooKeeperPtr & zookeeper)
 {
-    fs::path replicas_path;
-    if (node_path.ends_with('/'))
-        replicas_path = fs::path(node_path).parent_path().parent_path().parent_path() / "replicas";
-    else
-        replicas_path = fs::path(node_path).parent_path().parent_path() / "replicas";
-
     Strings paths;
     Strings hosts_array;
     for (const auto & host : hosts_to_wait)
     {
         hosts_array.push_back(host);
-        paths.push_back(replicas_path / host / "active");
+        paths.push_back(fs::path(replicas_path) / host / "active");
     }
 
     NameSet offline;

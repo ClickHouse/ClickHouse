@@ -79,6 +79,8 @@ public:
         return queue_dir;
     }
 
+    std::string getReplicasDir() const { return replicas_dir; }
+
     void startup();
     virtual void shutdown();
 

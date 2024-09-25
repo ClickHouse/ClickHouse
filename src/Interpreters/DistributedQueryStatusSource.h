@@ -14,7 +14,12 @@ class DistributedQueryStatusSource : public ISource
 {
 public:
     DistributedQueryStatusSource(
-        const String & zk_node_path, Block block, ContextPtr context_, const Strings & hosts_to_wait, const char * logger_name);
+        const String & zk_node_path,
+        const String & zk_replicas_path,
+        Block block,
+        ContextPtr context_,
+        const Strings & hosts_to_wait,
+        const char * logger_name);
 
     Chunk generate() override;
     Status prepare() override;
@@ -37,6 +42,7 @@ protected:
     static std::pair<String, UInt16> parseHostAndPort(const String & host_id);
 
     String node_path;
+    String replicas_path;
     ContextPtr context;
     Stopwatch watch;
     LoggerPtr log;
