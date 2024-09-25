@@ -2861,6 +2861,7 @@ topLevelDomainRFC
 topk
 topkweighted
 tpcds
+tpch
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
