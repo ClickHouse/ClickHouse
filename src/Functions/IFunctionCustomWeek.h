@@ -8,6 +8,9 @@
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -115,7 +118,6 @@ protected:
                 "Number of arguments for function {} doesn't match: passed {}, expected 1, 2 or 3.",
                 getName(), arguments.size());
     }
-
 };
 
 }
