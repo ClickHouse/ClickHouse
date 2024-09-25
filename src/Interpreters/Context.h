@@ -1,29 +1,23 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
-#include <Common/RemoteHostFilter.h>
-#include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Formats/FormatSettings.h>
-#include <IO/AsyncReadCounters.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 
 #include "config.h"
@@ -34,7 +28,11 @@
 #include <optional>
 
 
-namespace Poco::Net { class IPAddress; }
+namespace Poco::Net
+{
+class IPAddress;
+class SocketAddress;
+}
 namespace zkutil
 {
     class ZooKeeper;
@@ -134,10 +132,11 @@ class ICompressionCodec;
 class AccessControl;
 class GSSAcceptorContext;
 struct Settings;
+struct SettingChange;
+class SettingsChanges;
 struct SettingsConstraintsAndProfileIDs;
 class SettingsProfileElements;
 class RemoteHostFilter;
-struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
@@ -152,6 +151,8 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class HTTPHeaderFilter;
+struct AsyncReadCounters;
 struct ICgroupsReader;
 
 struct TemporaryTableHolder;
@@ -1004,6 +1005,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+    /// If name == "default", same as getZooKeeper(), otherwise same as getAuxiliaryZooKeeper().
+    std::shared_ptr<zkutil::ZooKeeper> getDefaultOrAuxiliaryZooKeeper(const String & name) const;
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 

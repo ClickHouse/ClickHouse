@@ -32,6 +32,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -93,8 +99,8 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
                     object_create_query.data() + object_create_query.size(),
                     "",
                     0,
-                    global_context->getSettingsRef().max_parser_depth,
-                    global_context->getSettingsRef().max_parser_backtracks);
+                    global_context->getSettingsRef()[Setting::max_parser_depth],
+                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
                 return ast;
             }
         }
@@ -214,7 +220,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
         WriteBufferFromFile out(temp_file_path, create_statement.size());
         writeString(create_statement, out);
         out.next();
-        if (settings.fsync_metadata)
+        if (settings[Setting::fsync_metadata])
             out.sync();
         out.close();
 

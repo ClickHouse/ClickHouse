@@ -1,18 +1,6 @@
 /* src/include/pg_config.h.  Generated from pg_config.h.in by configure.  */
 /* src/include/pg_config.h.in.  Generated from configure.in by autoheader.  */
 
-/* Define to the type of arg 1 of 'accept' */
-#define ACCEPT_TYPE_ARG1 int
-
-/* Define to the type of arg 2 of 'accept' */
-#define ACCEPT_TYPE_ARG2 struct sockaddr *
-
-/* Define to the type of arg 3 of 'accept' */
-#define ACCEPT_TYPE_ARG3 size_t
-
-/* Define to the return type of 'accept' */
-#define ACCEPT_TYPE_RETURN int
-
 /* Define if building universal (internal helper macro) */
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
@@ -49,6 +37,9 @@
 /* Define to the default TCP port number as a string constant. */
 #define DEF_PGPORT_STR "5432"
 
+/* Define to the file name extension of dynamically-loadable modules. */
+#define DLSUFFIX ".so"
+
 /* Define to build with GSSAPI support. (--with-gssapi) */
 //#define ENABLE_GSS 0
 
@@ -74,13 +65,6 @@
 /* float8, int8, and related values are passed by value if 'true', by
    reference if 'false' */
 #define FLOAT8PASSBYVAL false
-
-/* Define to 1 if gettimeofday() takes only 1 argument. */
-/* #undef GETTIMEOFDAY_1ARG */
-
-#ifdef GETTIMEOFDAY_1ARG
-# define gettimeofday(a,b) gettimeofday(a)
-#endif
 
 /* Define to 1 if you have the `append_history' function. */
 /* #undef HAVE_APPEND_HISTORY */
@@ -145,20 +129,11 @@
 /* Define to 1 if you have the <dld.h> header file. */
 /* #undef HAVE_DLD_H */
 
-/* Define to 1 if you have the `dlopen' function. */
-#define HAVE_DLOPEN 1
-
 /* Define to 1 if you have the <editline/history.h> header file. */
 /* #undef HAVE_EDITLINE_HISTORY_H */
 
 /* Define to 1 if you have the <editline/readline.h> header file. */
 #define HAVE_EDITLINE_READLINE_H 1
-
-/* Define to 1 if you have the `fdatasync' function. */
-#define HAVE_FDATASYNC 1
-
-/* Define to 1 if you have the `fls' function. */
-/* #undef HAVE_FLS */
 
 /* Define to 1 if you have the `fpclass' function. */
 /* #undef HAVE_FPCLASS */
@@ -174,12 +149,6 @@
 
 /* Define to 1 if fseeko (and presumably ftello) exists and is declared. */
 #define HAVE_FSEEKO 1
-
-/* Define to 1 if your compiler understands __func__. */
-#define HAVE_FUNCNAME__FUNC 1
-
-/* Define to 1 if your compiler understands __FUNCTION__. */
-/* #undef HAVE_FUNCNAME__FUNCTION */
 
 /* Define to 1 if you have __atomic_compare_exchange_n(int *, int *, int). */
 /* #undef HAVE_GCC__ATOMIC_INT32_CAS */
@@ -200,12 +169,6 @@
 /* Define to 1 if you have __sync_compare_and_swap(int64 *, int64, int64). */
 /* #undef HAVE_GCC__SYNC_INT64_CAS */
 
-/* Define to 1 if you have the `getaddrinfo' function. */
-#define HAVE_GETADDRINFO 1
-
-/* Define to 1 if you have the `gethostbyname_r' function. */
-#define HAVE_GETHOSTBYNAME_R 1
-
 /* Define to 1 if you have the `getifaddrs' function. */
 #define HAVE_GETIFADDRS 1
 
@@ -224,17 +187,11 @@
 /* Define to 1 if you have the `getpeerucred' function. */
 /* #undef HAVE_GETPEERUCRED */
 
-/* Define to 1 if you have the `getpwuid_r' function. */
-#define HAVE_GETPWUID_R 1
+/* Define to 1 if you have the <gssapi_ext.h> header file. */
+/* #undef HAVE_GSSAPI_EXT_H */
 
-/* Define to 1 if you have the `getrlimit' function. */
-#define HAVE_GETRLIMIT 1
-
-/* Define to 1 if you have the `getrusage' function. */
-#define HAVE_GETRUSAGE 1
-
-/* Define to 1 if you have the `gettimeofday' function. */
-/* #undef HAVE_GETTIMEOFDAY */
+/* Define to 1 if you have the <gssapi/gssapi_ext.h> header file. */
+/* #undef HAVE_GSSAPI_GSSAPI_EXT_H */
 
 /* Define to 1 if you have the <gssapi/gssapi.h> header file. */
 //#define HAVE_GSSAPI_GSSAPI_H 0
@@ -257,6 +214,9 @@
 /* Define to 1 if you have the `inet_aton' function. */
 #define HAVE_INET_ATON 1
 
+/* Define to 1 if you have the `inet_pton' function. */
+#define HAVE_INET_PTON 1
+
 /* Define to 1 if the system has the type `int64'. */
 /* #undef HAVE_INT64 */
 
@@ -278,17 +238,11 @@
 /* Define to 1 if you have the global variable 'int timezone'. */
 #define HAVE_INT_TIMEZONE 1
 
-/* Define to 1 if you have support for IPv6. */
-#define HAVE_IPV6 1
-
 /* Define to 1 if you have isinf(). */
 #define HAVE_ISINF 1
 
 /* Define to 1 if you have the <langinfo.h> header file. */
 #define HAVE_LANGINFO_H 1
-
-/* Define to 1 if you have the <ldap.h> header file. */
-//#define HAVE_LDAP_H 0
 
 /* Define to 1 if you have the `crypto' library (-lcrypto). */
 #define HAVE_LIBCRYPTO 1
@@ -323,6 +277,9 @@
 /* Define to 1 if you have the `z' library (-lz). */
 #define HAVE_LIBZ 1
 
+/* Define to 1 if you have the `zstd' library (-lzstd). */
+/* #undef HAVE_LIBZSTD */
+
 /* Define to 1 if constants of type 'long long int' should have the suffix LL.
    */
 #define HAVE_LL_CONSTANTS 1
@@ -351,17 +308,8 @@
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
 
-/* Define to 1 if the system has the type `MINIDUMP_TYPE'. */
-/* #undef HAVE_MINIDUMP_TYPE */
-
 /* Define to 1 if you have the `mkdtemp' function. */
 #define HAVE_MKDTEMP 1
-
-/* Define to 1 if you have the <netinet/in.h> header file. */
-#define HAVE_NETINET_IN_H 1
-
-/* Define to 1 if you have the <netinet/tcp.h> header file. */
-#define HAVE_NETINET_TCP_H 1
 
 /* Define to 1 if you have the <net/if.h> header file. */
 #define HAVE_NET_IF_H 1
@@ -371,12 +319,6 @@
 
 /* Define to 1 if you have the <pam/pam_appl.h> header file. */
 /* #undef HAVE_PAM_PAM_APPL_H */
-
-/* Define to 1 if you have the `poll' function. */
-#define HAVE_POLL 1
-
-/* Define to 1 if you have the <poll.h> header file. */
-#define HAVE_POLL_H 1
 
 /* Define to 1 if you have the `posix_fadvise' function. */
 #define HAVE_POSIX_FADVISE 1
@@ -396,20 +338,11 @@
 /* Define to 1 if the assembler supports PPC's LWARX mutex hint bit. */
 /* #undef HAVE_PPC_LWARX_MUTEX_HINT */
 
-/* Define to 1 if you have the `pstat' function. */
-/* #undef HAVE_PSTAT */
-
-/* Define to 1 if the PS_STRINGS thing exists. */
-/* #undef HAVE_PS_STRINGS */
-
 /* Define to 1 if you have the `pthread_is_threaded_np' function. */
 /* #undef HAVE_PTHREAD_IS_THREADED_NP */
 
 /* Define to 1 if you have the <pwd.h> header file. */
 #define HAVE_PWD_H 1
-
-/* Define to 1 if you have the `random' function. */
-#define HAVE_RANDOM 1
 
 /* Define to 1 if you have the <readline.h> header file. */
 /* #undef HAVE_READLINE_H */
@@ -420,15 +353,8 @@
 /* Define to 1 if you have the <readline/readline.h> header file. */
 /* #undef HAVE_READLINE_READLINE_H */
 
-/* Define to 1 if you have the `readlink' function. */
-#define HAVE_READLINK 1
-
 /* Define to 1 if you have the `rint' function. */
 #define HAVE_RINT 1
-
-/* Define to 1 if you have the global variable
-   'rl_completion_append_character'. */
-/* #undef HAVE_RL_COMPLETION_APPEND_CHARACTER */
 
 /* Define to 1 if you have the `rl_completion_matches' function. */
 #define HAVE_RL_COMPLETION_MATCHES 1
@@ -439,17 +365,17 @@
 /* Define to 1 if you have the `rl_reset_screen_size' function. */
 /* #undef HAVE_RL_RESET_SCREEN_SIZE */
 
+/* Define to 1 if you have the `rl_variable_bind' function. */
+#define HAVE_RL_VARIABLE_BIND 1
+
 /* Define to 1 if you have the <security/pam_appl.h> header file. */
 #define HAVE_SECURITY_PAM_APPL_H 1
 
 /* Define to 1 if you have the `setproctitle' function. */
 /* #undef HAVE_SETPROCTITLE */
 
-/* Define to 1 if you have the `setsid' function. */
-#define HAVE_SETSID 1
-
-/* Define to 1 if you have the `shm_open' function. */
-#define HAVE_SHM_OPEN 1
+/* Define to 1 if the system has the type `socklen_t'. */
+#define HAVE_SOCKLEN_T 1
 
 /* Define to 1 if you have the `sigprocmask' function. */
 #define HAVE_SIGPROCMASK 1
@@ -466,8 +392,8 @@
 /* Define to 1 if you have spinlocks. */
 #define HAVE_SPINLOCKS 1
 
-/* Define to 1 if you have the `srandom' function. */
-#define HAVE_SRANDOM 1
+/* Define to 1 if you have the `SSL_CTX_set_cert_cb' function. */
+#define HAVE_SSL_CTX_SET_CERT_CB 1
 
 /* Define to 1 if you have the `SSL_CTX_set_num_tickets' function. */
 /* #define HAVE_SSL_CTX_SET_NUM_TICKETS */
@@ -499,27 +425,9 @@
 /* Define to 1 if you have the `strlcpy' function. */
 /* #undef HAVE_STRLCPY */
 
-/* Define to 1 if you have the `strtoll' function. */
-#define HAVE_STRTOLL 1
-
 #if (!OS_DARWIN)
 #define HAVE_STRCHRNUL 1
 #endif
-
-/* Define to 1 if you have the `strtoq' function. */
-/* #undef HAVE_STRTOQ */
-
-/* Define to 1 if you have the `strtoull' function. */
-#define HAVE_STRTOULL 1
-
-/* Define to 1 if you have the `strtouq' function. */
-/* #undef HAVE_STRTOUQ */
-
-/* Define to 1 if the system has the type `struct addrinfo'. */
-#define HAVE_STRUCT_ADDRINFO 1
-
-/* Define to 1 if the system has the type `struct cmsgcred'. */
-/* #undef HAVE_STRUCT_CMSGCRED */
 
 /* Define to 1 if the system has the type `struct option'. */
 #define HAVE_STRUCT_OPTION 1
@@ -527,26 +435,8 @@
 /* Define to 1 if `sa_len' is a member of `struct sockaddr'. */
 /* #undef HAVE_STRUCT_SOCKADDR_SA_LEN */
 
-/* Define to 1 if the system has the type `struct sockaddr_storage'. */
-#define HAVE_STRUCT_SOCKADDR_STORAGE 1
-
-/* Define to 1 if `ss_family' is a member of `struct sockaddr_storage'. */
-#define HAVE_STRUCT_SOCKADDR_STORAGE_SS_FAMILY 1
-
-/* Define to 1 if `ss_len' is a member of `struct sockaddr_storage'. */
-/* #undef HAVE_STRUCT_SOCKADDR_STORAGE_SS_LEN */
-
-/* Define to 1 if `__ss_family' is a member of `struct sockaddr_storage'. */
-/* #undef HAVE_STRUCT_SOCKADDR_STORAGE___SS_FAMILY */
-
-/* Define to 1 if `__ss_len' is a member of `struct sockaddr_storage'. */
-/* #undef HAVE_STRUCT_SOCKADDR_STORAGE___SS_LEN */
-
 /* Define to 1 if `tm_zone' is a member of `struct tm'. */
 #define HAVE_STRUCT_TM_TM_ZONE 1
-
-/* Define to 1 if you have the `symlink' function. */
-#define HAVE_SYMLINK 1
 
 /* Define to 1 if you have the `sync_file_range' function. */
 /* #undef HAVE_SYNC_FILE_RANGE */
@@ -557,29 +447,11 @@
 /* Define to 1 if you have the <sys/ioctl.h> header file. */
 #define HAVE_SYS_IOCTL_H 1
 
-/* Define to 1 if you have the <sys/ipc.h> header file. */
-#define HAVE_SYS_IPC_H 1
-
 /* Define to 1 if you have the <sys/personality.h> header file. */
 /* #undef HAVE_SYS_PERSONALITY_H */
 
 /* Define to 1 if you have the <sys/poll.h> header file. */
 #define HAVE_SYS_POLL_H 1
-
-/* Define to 1 if you have the <sys/pstat.h> header file. */
-/* #undef HAVE_SYS_PSTAT_H */
-
-/* Define to 1 if you have the <sys/resource.h> header file. */
-#define HAVE_SYS_RESOURCE_H 1
-
-/* Define to 1 if you have the <sys/select.h> header file. */
-#define HAVE_SYS_SELECT_H 1
-
-/* Define to 1 if you have the <sys/sem.h> header file. */
-#define HAVE_SYS_SEM_H 1
-
-/* Define to 1 if you have the <sys/shm.h> header file. */
-#define HAVE_SYS_SHM_H 1
 
 /* Define to 1 if you have the <sys/signalfd.h> header file. */
 /* #undef HAVE_SYS_SIGNALFD_H */
@@ -587,14 +459,8 @@
 /* Define to 1 if you have the <sys/socket.h> header file. */
 #define HAVE_SYS_SOCKET_H 1
 
-/* Define to 1 if you have the <sys/sockio.h> header file. */
-/* #undef HAVE_SYS_SOCKIO_H */
-
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #define HAVE_SYS_STAT_H 1
-
-/* Define to 1 if you have the <sys/tas.h> header file. */
-/* #undef HAVE_SYS_TAS_H */
 
 /* Define to 1 if you have the <sys/time.h> header file. */
 #define HAVE_SYS_TIME_H 1
@@ -608,7 +474,6 @@
 #endif
 
 /* Define to 1 if you have the <sys/un.h> header file. */
-#define HAVE_SYS_UN_H 1
 #define _GNU_SOURCE 1 /* Needed for glibc struct ucred */
 
 /* Define to 1 if you have the <termios.h> header file. */
@@ -645,9 +510,6 @@
 /* Define to 1 if you have unix sockets. */
 #define HAVE_UNIX_SOCKETS 1
 
-/* Define to 1 if you have the `unsetenv' function. */
-#define HAVE_UNSETENV 1
-
 /* Define to 1 if the system has the type `unsigned long long int'. */
 #define HAVE_UNSIGNED_LONG_LONG_INT 1
 
@@ -675,6 +537,9 @@
 /* Define to 1 if you have the <uuid/uuid.h> header file. */
 /* #undef HAVE_UUID_UUID_H */
 
+/* Define to 1 if your compiler knows the visibility("hidden") attribute. */
+/* #undef HAVE_VISIBILITY_ATTRIBUTE */
+
 /* Define to 1 if you have the `vsnprintf' function. */
 #define HAVE_VSNPRINTF 1
 
@@ -686,12 +551,6 @@
 
 /* Define to 1 if you have the `wcstombs_l' function. */
 /* #undef HAVE_WCSTOMBS_L */
-
-/* Define to 1 if you have the <wctype.h> header file. */
-#define HAVE_WCTYPE_H 1
-
-/* Define to 1 if you have the <winldap.h> header file. */
-/* #undef HAVE_WINLDAP_H */
 
 /* Define to 1 if your compiler understands __builtin_bswap32. */
 /* #undef HAVE__BUILTIN_BSWAP32 */
@@ -884,6 +743,9 @@
 
 /* Define to select Win32-style shared memory. */
 /* #undef USE_WIN32_SHARED_MEMORY */
+
+/* Define to 1 to build with ZSTD support. (--with-zstd) */
+/* #undef USE_ZSTD */
 
 /* Define to 1 if `wcstombs_l' requires <xlocale.h>. */
 /* #undef WCSTOMBS_L_IN_XLOCALE */
