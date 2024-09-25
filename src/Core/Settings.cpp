@@ -48,7 +48,7 @@ namespace ErrorCodes
 
 // clang-format off
 #if defined(__CLION_IDE__)
-/// CLion freezes for a minute every time is processes this
+/// CLion freezes for a minute every time it processes this
 #define COMMON_SETTINGS(M, ALIAS)
 #define OBSOLETE_SETTINGS(M, ALIAS)
 #else
