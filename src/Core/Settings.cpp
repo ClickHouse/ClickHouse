@@ -153,6 +153,11 @@ namespace ErrorCodes
     M(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries", 0) \
     M(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.", 0) \
     M(UInt64, s3_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "Connection timeout for host from s3 disks.", 0) \
+    M(Bool, s3_use_parallel_listing, false, "Either to use parallel listing in S3", 0) \
+    M(UInt64, s3_parallel_listing_max_threads, 1, "Number of threads in parallel S3 listing", 0) \
+    M(UInt64, s3_parallel_listing_num_requests, 1, "Number of parallel requests in S3 listing", 0) \
+    M(Double, s3_parallel_listing_multiplication_ratio, 0.9, "Ratio of the range length of first request for S3 listing and subsequent requests", 0) \
+    \
     M(Bool, enable_s3_requests_logging, false, "Enable very explicit logging of S3 requests. Makes sense for debug only.", 0) \
     M(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", "Default zookeeper path prefix for S3Queue engine", 0) \
     M(Bool, s3queue_enable_logging_to_s3queue_log, false, "Enable writing to system.s3queue_log. The value can be overwritten per table with table settings", 0) \

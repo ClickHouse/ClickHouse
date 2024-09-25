@@ -67,6 +67,10 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"s3_use_parallel_listing", false, false, "Either to use parallel listing in S3"},
+            {"s3_parallel_listing_max_threads", 1, 1, "Number of threads in parallel S3 listing"},
+            {"s3_parallel_listing_num_requests", 1, 1, "Number of parallel requests in S3 listing"},
+            {"s3_parallel_listing_multiplication_ratio", 0.9, 0.9, "Ratio of the range length of first request for S3 listing and subsequent requests"},
         }
     },
     {"24.9",

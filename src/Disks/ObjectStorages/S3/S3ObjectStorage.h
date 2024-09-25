@@ -25,13 +25,21 @@ struct S3ObjectStorageSettings
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
-        bool read_only_)
+        bool read_only_,
+        bool use_parallel_listing_,
+        int32_t num_workers_,
+        int32_t num_parallel_requests_,
+        float multiplication_length_)
         : request_settings(request_settings_)
         , auth_settings(auth_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
         , read_only(read_only_)
+        , use_parallel_listing(use_parallel_listing_)
+        , num_workers(num_workers_)
+        , num_parallel_requests(num_parallel_requests_)
+        , multiplication_length(multiplication_length_)
     {}
 
     S3::RequestSettings request_settings;
@@ -41,6 +49,11 @@ struct S3ObjectStorageSettings
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
     bool read_only;
+
+    bool use_parallel_listing;
+    int32_t num_workers;
+    int32_t num_parallel_requests;
+    float multiplication_length;
 };
 
 class S3ObjectStorage : public IObjectStorage

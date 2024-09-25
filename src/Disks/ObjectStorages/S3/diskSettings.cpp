@@ -31,6 +31,10 @@ namespace Setting
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
+    extern const SettingsBool s3_use_parallel_listing;
+    extern const SettingsUInt64 s3_parallel_listing_max_threads;
+    extern const SettingsUInt64 s3_parallel_listing_num_requests;
+    extern const SettingsDouble s3_parallel_listing_multiplication_ratio;
 }
 
 namespace ErrorCodes
@@ -59,7 +63,11 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
-        config.getBool(config_prefix + ".readonly", false));
+        config.getBool(config_prefix + ".readonly", false),
+        settings[Setting::s3_use_parallel_listing],
+        settings[Setting::s3_parallel_listing_max_threads],
+        settings[Setting::s3_parallel_listing_num_requests],
+        settings[Setting::s3_parallel_listing_multiplication_ratio]);
 }
 
 std::unique_ptr<S3::Client> getClient(

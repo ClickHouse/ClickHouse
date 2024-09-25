@@ -669,7 +669,7 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'min_key_length' argument must be less or equal than "
-                "the value of the 'max_key_lenght' argument.");
+                "the value of the 'max_key_length' argument.");
 
         configuration.min_key_length = min_key_length;
         configuration.max_key_length = std::max(configuration.max_key_length, configuration.min_key_length);
