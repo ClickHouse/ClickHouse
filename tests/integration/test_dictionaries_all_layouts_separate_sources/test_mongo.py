@@ -8,13 +8,13 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMongo
 
+SOURCE = None
+cluster = None
+node = None
 simple_tester = None
 complex_tester = None
 ranged_tester = None
-TEST_NAME = "mongo"
-
-cluster_legacy = ClickHouseCluster(f"{__file__}_legacy")
-cluster_new = ClickHouseCluster(f"{__file__}_new")
+test_name = "mongo"
 
 
 @pytest.fixture(scope="module")
@@ -28,12 +28,16 @@ def legacy(request):
 
 
 @pytest.fixture(scope="module")
-def source(secure_connection, legacy, started_cluster):
-    print(f"XXXXX: {started_cluster.mongo_secure_port} {started_cluster.mongo_port} {secure_connection} {legacy}")
+def cluster(secure_connection):
+    return ClickHouseCluster(__file__)
+
+
+@pytest.fixture(scope="module")
+def source(secure_connection, legacy, cluster):
     return SourceMongo(
-        f"MongoDB",
+        "MongoDB",
         "localhost",
-        started_cluster.mongo_secure_port if secure_connection else started_cluster.mongo_port,
+        cluster.mongo_secure_port if secure_connection else cluster.mongo_port,
         "mongo_secure" if secure_connection else "mongo1",
         27017,
         "root",
@@ -44,31 +48,29 @@ def source(secure_connection, legacy, started_cluster):
 
 
 @pytest.fixture(scope="module")
-def simple_tester(source, started_cluster):
-    tester = SimpleLayoutTester(TEST_NAME)
+def simple_tester(source):
+    tester = SimpleLayoutTester(test_name)
     tester.cleanup()
     tester.create_dictionaries(source)
-    tester.prepare(started_cluster)
     return tester
 
 
 @pytest.fixture(scope="module")
-def complex_tester(source, started_cluster):
-    tester = ComplexLayoutTester(TEST_NAME)
+def complex_tester(source):
+    tester = ComplexLayoutTester(test_name)
     tester.create_dictionaries(source)
-    tester.prepare(started_cluster)
     return tester
 
 
 @pytest.fixture(scope="module")
-def ranged_tester(source, started_cluster):
-    tester = RangedLayoutTester(TEST_NAME)
+def ranged_tester(source):
+    tester = RangedLayoutTester(test_name)
     tester.create_dictionaries(source)
-    tester.prepare(started_cluster)
     return tester
 
 
-def get_config(secure_connection, legacy):
+@pytest.fixture(scope="module")
+def main_config(secure_connection, legacy):
     if legacy:
         main_config = [os.path.join("configs", "mongo", "legacy.xml")]
     else:
@@ -82,51 +84,51 @@ def get_config(secure_connection, legacy):
     return main_config
 
 
-def node_name(secure_connection, legacy):
-    secure_connection_suffix = "secure" if secure_connection else "non_secure"
-    legacy_suffix = "legacy" if legacy else "new"
+def get_node_name(secure_connection, legacy):
+    secure_connection_suffix = "_secure" if secure_connection else "non_secure"
+    legacy_suffix = "_legacy" if legacy else "_new"
     return f"node_mongo_{secure_connection_suffix}_{legacy_suffix}"
 
 
-def setup_nodes(is_secure, is_legacy):
-    cluster = cluster_legacy if is_legacy else cluster_new
-    return cluster.add_instance(
-        node_name(is_secure, is_legacy),
-        main_configs=get_config(is_secure, is_legacy),
-        dictionaries=BaseLayoutTester.list_dictionaries(TEST_NAME),
+@pytest.fixture(scope="module")
+def started_cluster(
+    secure_connection,
+    legacy,
+    cluster,
+    main_config,
+    simple_tester,
+    ranged_tester,
+    complex_tester,
+):
+    SOURCE = SourceMongo(
+        "MongoDB",
+        "localhost",
+        27017,
+        "mongo_secure" if secure_connection else "mongo1",
+        27017,
+        "root",
+        "clickhouse",
+        secure=secure_connection,
+        legacy=legacy,
+    )
+    dictionaries = simple_tester.list_dictionaries()
+
+    node = cluster.add_instance(
+        get_node_name(secure_connection, legacy),
+        main_configs=main_config,
+        dictionaries=dictionaries,
         with_mongo=True,
     )
 
-all_nodes = [
-    setup_nodes(is_secure, is_legacy)
-    for is_secure in [False, True]
-    for is_legacy in [False, True]
-]
-
-
-# mongo_sources = [
-#     SourceMongo(
-#         "MongoDB",
-#         "localhost",
-#         27017,
-#         "mongo_secure" if is_secure else "mongo1",
-#         27017,
-#         "root",
-#         "clickhouse",
-#         secure=is_secure,
-#         legacy=is_legacy,
-#     )
-#     for is_secure in [False, True]
-#     for is_legacy in [False, True]
-# ]
-
-
-@pytest.fixture(scope="module")
-def started_cluster(legacy):
-    cluster = cluster_legacy if legacy else cluster_new
     try:
         cluster.start()
+
+        simple_tester.prepare(cluster)
+        complex_tester.prepare(cluster)
+        ranged_tester.prepare(cluster)
+
         yield cluster
+
     finally:
         cluster.shutdown()
 
@@ -136,7 +138,7 @@ def started_cluster(legacy):
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple(secure_connection, legacy, started_cluster, layout_name, simple_tester):
     simple_tester.execute(
-        layout_name, started_cluster.instances[node_name(secure_connection, legacy)]
+        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
     )
 
 
@@ -147,7 +149,7 @@ def test_complex(
     secure_connection, legacy, started_cluster, layout_name, complex_tester
 ):
     complex_tester.execute(
-        layout_name, started_cluster.instances[node_name(secure_connection, legacy)]
+        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
     )
 
 
@@ -156,7 +158,7 @@ def test_complex(
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(secure_connection, legacy, started_cluster, layout_name, ranged_tester):
     ranged_tester.execute(
-        layout_name, started_cluster.instances[node_name(secure_connection, legacy)]
+        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
     )
 
 
@@ -167,5 +169,5 @@ def test_simple_ssl(
     secure_connection, legacy, started_cluster, layout_name, simple_tester
 ):
     simple_tester.execute(
-        layout_name, started_cluster.instances[node_name(secure_connection, legacy)]
+        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
     )
