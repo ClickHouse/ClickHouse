@@ -595,7 +595,6 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 Get the element with the index `n` from the array `arr`. `n` must be any integer type.
 Indexes in an array begin from one.
-
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
@@ -615,27 +614,6 @@ SELECT has([1, 2, NULL], NULL)
 ┌─has([1, 2, NULL], NULL)─┐
 │                       1 │
 └─────────────────────────┘
-```
-
-## arrayElementOrNull(arr, n)
-
-Get the element with the index `n`from the array `arr`. `n` must be any integer type.
-Indexes in an array begin from one.
-
-Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
-
-If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
-
-### Examples
-
-``` sql
-SELECT arrayElementOrNull([1, 2, 3], 2), arrayElementOrNull([1, 2, 3], 4)
-```
-
-``` text
- ┌─arrayElementOrNull([1, 2, 3], 2)─┬─arrayElementOrNull([1, 2, 3], 4)─┐
- │                                2 │                             ᴺᵁᴸᴸ │
- └──────────────────────────────────┴──────────────────────────────────┘
 ```
 
 ## hasAll {#hasall}
@@ -1737,24 +1715,6 @@ Result:
 
 ``` text
 [[1,1,2,3],[1,2,3,4]]
-```
-
-## arrayUnion(arr)
-
-Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays.
-
-Example:
-```sql
-SELECT
-    arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
-    arrayUnion(['hi'], [], ['hello', 'hi']) as str_example,
-    arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
-```
-
-```text
-┌─num_example─┬─str_example────┬─null_example─┐
-│ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
-└─────────────┴────────────────┴──────────────┘
 ```
 
 ## arrayIntersect(arr)
