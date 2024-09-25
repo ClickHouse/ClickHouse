@@ -90,7 +90,7 @@ divide(a, b)
 Alias: `a / b` (operator)
 
 ## divideOrNull
-Like [divide](#divide) but returns NULL when the divisor is zero and return type is Nullable.
+Like [divide](#divide) but returns NULL when the divisor is zero.
 **Syntax**
 
 ```sql
@@ -273,7 +273,7 @@ Result:
 ```
 
 ## moduloOrNull
-Like [modulo](#modulo) but returns NULL when the divisor is zero and return type is Nullable.
+Like [modulo](#modulo) but returns NULL when the divisor is zero.
 
 **Syntax**
 
