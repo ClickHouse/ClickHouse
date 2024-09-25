@@ -4,8 +4,6 @@
 #include "sql_types.h"
 
 #include <algorithm>
-#include <cstddef>
-#include <cstdint>
 #include <sys/types.h>
 
 namespace chfuzz {
@@ -762,11 +760,11 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 						   drop_column = 2 * static_cast<uint32_t>(t.cols.size() > 1),
 						   rename_column = 2,
 						   modify_column = 2,
-						   add_stats = 3,
-						   mod_stats = 3,
-						   drop_stats = 3,
-						   clear_stats = 3,
-						   mat_stats = 3,
+						   add_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+						   mod_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+						   drop_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+						   clear_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+						   mat_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
 						   delete_mask = 8 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
 						   add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3),
 						   materialize_idx = 2 * static_cast<uint32_t>(!t.idxs.empty()),

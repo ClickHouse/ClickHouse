@@ -2,8 +2,6 @@
 #include "sql_funcs.h"
 #include "statement_generator.h"
 
-#include <cstdint>
-#include <string>
 #include <sys/types.h>
 
 namespace chfuzz {
@@ -20,10 +18,9 @@ int StatementGenerator::AddFieldAccess(RandomGenerator &rg, sql_query_grammar::E
 		} else if (noption < 71) {
 			fa->set_tuple_index(rg.NextRandomUInt32() % 5);
 		} else if (this->depth >= this->max_depth || noption < 81) {
-			std::string ret = "c";
-
-			ret += rg.NextJsonCol();
-			fa->mutable_array_key()->set_column(ret);
+			buf.resize(0);
+			rg.NextJsonCol(buf);
+			fa->mutable_array_key()->set_column(buf);
 		} else {
 			this->GenerateExpression(rg, fa->mutable_array_expr());
 		}
@@ -42,7 +39,6 @@ int StatementGenerator::AddColNestedAccess(RandomGenerator &rg, sql_query_gramma
 					   nvalues = std::max(std::min(this->max_width - this->width, rg.NextSmallNumber() % 5), UINT32_C(1));
 
 		for (uint32_t i = 0; i < nvalues; i++) {
-			std::string ret = "c";
 			const uint32_t noption2 = rg.NextMediumNumber();
 			sql_query_grammar::JSONColumn *jcol = i == 0 ? subcols->mutable_jcol() : subcols->add_other_jcols();
 
@@ -52,8 +48,9 @@ int StatementGenerator::AddColNestedAccess(RandomGenerator &rg, sql_query_gramma
 			} else if (noption2 < 61) {
 				jcol->set_json_array(0);
 			}
-			ret += rg.NextJsonCol();
-			jcol->mutable_col()->set_column(ret);
+			buf.resize(0);
+			rg.NextJsonCol(buf);
+			jcol->mutable_col()->set_column(buf);
 		}
 		if (noption < 4) {
 			tpn = subcols->mutable_json_cast();

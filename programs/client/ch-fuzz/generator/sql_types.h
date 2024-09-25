@@ -3,12 +3,8 @@
 #include "random_generator.h"
 #include "sql_grammar.pb.h"
 
-#include <cstdint>
-#include <string>
 #include <optional>
 #include <memory>
-#include <vector>
-#include <tuple>
 
 namespace chfuzz {
 
@@ -260,6 +256,7 @@ public:
 			if (i != 0) {
 				ret += ",";
 			}
+			ret += "c";
 			ret += std::to_string(subtypes[i].cname);
 			ret += " ";
 			ret += subtypes[i].subtype->TypeName(escape);
@@ -323,6 +320,7 @@ public:
 			if (i != 0) {
 				ret += ",";
 			}
+			ret += "c";
 			ret += std::to_string(subtypes[i].cname);
 			ret += " ";
 			ret += subtypes[i].subtype->TypeName(escape);

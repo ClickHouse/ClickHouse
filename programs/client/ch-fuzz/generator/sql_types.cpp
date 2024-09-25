@@ -1,8 +1,6 @@
 #include "sql_types.h"
 #include "statement_generator.h"
 
-#include <cstdint>
-
 namespace chfuzz {
 
 std::tuple<SQLType*, sql_query_grammar::Integers>
@@ -267,18 +265,17 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 
 						desc += "SKIP ";
 						for (uint32_t j = 0 ; j < nskips; j++) {
+							std::string nbuf;
 							sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
 
 							if (j != 0) {
 								desc += ".";
 							}
-							buf.resize(0);
-							buf += "c";
-							buf += rg.NextJsonCol();
+							rg.NextJsonCol(nbuf);
+							desc += nbuf;
 							if (tp) {
-								col->set_column(buf);
+								col->set_column(std::move(nbuf));
 							}
-							desc += buf;
 						}
 					} else {
 						uint32_t col_counter = 0;
@@ -287,18 +284,17 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 						sql_query_grammar::ColumnPath *cp = tp ? jpt->mutable_col() : nullptr;
 
 						for (uint32_t j = 0 ; j < nskips; j++) {
+							std::string nbuf;
 							sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
 
 							if (j != 0) {
 								desc += ".";
 							}
-							buf.resize(0);
-							buf += "c";
-							buf += rg.NextJsonCol();
+							rg.NextJsonCol(nbuf);
+							desc += nbuf;
 							if (tp) {
-								col->set_column(buf);
+								col->set_column(std::move(nbuf));
 							}
-							desc += buf;
 						}
 						this->depth++;
 						SQLType *jtp = RandomNextType(rg, ~(allow_nested|allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
@@ -760,8 +756,8 @@ void StatementGenerator::StrBuildJSON(RandomGenerator &rg, const int jdepth, con
 			if (i != 0) {
 				ret += ",";
 			}
-			ret += "\"c";
-			ret += rg.NextJsonCol();
+			ret += "\"";
+			rg.NextJsonCol(ret);
 			ret += "\":";
 			switch (noption) {
 			case 1: //object

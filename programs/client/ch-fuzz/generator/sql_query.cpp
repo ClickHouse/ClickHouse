@@ -1,8 +1,5 @@
 #include "statement_generator.h"
 
-#include <cstdint>
-#include <string>
-
 namespace chfuzz {
 
 int StatementGenerator::GenerateArrayJoin(RandomGenerator &rg, sql_query_grammar::ArrayJoin *aj) {

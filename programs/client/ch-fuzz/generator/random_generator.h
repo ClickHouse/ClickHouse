@@ -28,7 +28,7 @@ private:
 
 	std::uniform_int_distribution<int8_t> ints8;
 
-	std::uniform_int_distribution<uint8_t> uints8, digits, json_cols;
+	std::uniform_int_distribution<uint8_t> uints8, digits;
 
 	std::uniform_int_distribution<int16_t> ints16;
 
@@ -74,13 +74,14 @@ private:
 	std::vector<std::string> common_chinese{"认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人",
 		"爸爸", "兄弟姐妹", "漂亮", "照片"};
 
+	std::vector<std::string> json_cols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+
 public:
 	std::mt19937 gen;
 
 	RandomGenerator(const uint32_t in_seed) : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()),
 											  uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max()),
 											  digits(static_cast<uint8_t>('0'), static_cast<uint8_t>('9')),
-											  json_cols(static_cast<uint8_t>('0'), static_cast<uint8_t>('4')),
 											  ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()),
 											  uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max()),
 											  ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max()),
@@ -149,10 +150,6 @@ public:
 
 	char NextDigit() {
 		return static_cast<char>(digits(gen));
-	}
-
-	char NextJsonCol() {
-		return static_cast<char>(json_cols(gen));
 	}
 
 	double NextRandomDouble() {
@@ -336,6 +333,12 @@ public:
 		auto it = vals.begin();
 		std::advance(it, d(gen));
 		return std::make_tuple(it->first, it->second);
+	}
+
+	void NextJsonCol(std::string &ret) {
+		const std::string &pick = PickRandomlyFromVector(json_cols);
+
+		ret += pick;
 	}
 
 	void NextString(std::string &ret, const uint32_t limit) {

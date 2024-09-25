@@ -4,9 +4,6 @@
 #include "random_settings.h"
 #include "sql_catalog.h"
 
-#include <cstdint>
-#include <string>
-
 namespace chfuzz {
 
 class SQLRelationCol {
