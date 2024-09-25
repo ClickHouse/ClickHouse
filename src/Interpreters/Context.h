@@ -8,6 +8,7 @@
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
 #include <Core/UUID.h>
+#include <Core/ParallelReplicasMode.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -1351,15 +1352,6 @@ public:
     void disableOffsetParallelReplicas();
 
     ClusterPtr getClusterForParallelReplicas() const;
-
-    enum class ParallelReplicasMode : uint8_t
-    {
-        SAMPLE_KEY,
-        CUSTOM_KEY,
-        READ_TASKS,
-    };
-
-    ParallelReplicasMode getParallelReplicasMode() const;
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
