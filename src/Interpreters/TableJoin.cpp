@@ -209,8 +209,8 @@ size_t TableJoin::rightKeyInclusion(const String & name) const
 
 void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns)
 {
-    columns_from_left_table = left_output_columns;
-    columns_from_joined_table = right_output_columns;
+    columns_from_left_table = std::move(left_output_columns);
+    columns_from_joined_table = std::move(right_output_columns);
 }
 
 
