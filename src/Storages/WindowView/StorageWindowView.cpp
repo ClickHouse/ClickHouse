@@ -62,6 +62,20 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_window_view;
+    extern const SettingsBool insert_null_as_default;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsBool use_concurrency_control;
+    extern const SettingsSeconds wait_for_window_view_fire_signal_timeout;
+    extern const SettingsSeconds window_view_clean_interval;
+    extern const SettingsSeconds window_view_heartbeat_interval;
+}
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -634,13 +648,14 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         return std::make_shared<MaterializingTransform>(current_header);
     });
-    builder.addSimpleTransform([&](const Block & current_header)
-    {
-        return std::make_shared<SquashingTransform>(
-            current_header,
-            getContext()->getSettingsRef().min_insert_block_size_rows,
-            getContext()->getSettingsRef().min_insert_block_size_bytes);
-    });
+    builder.addSimpleTransform(
+        [&](const Block & current_header)
+        {
+            return std::make_shared<SquashingTransform>(
+                current_header,
+                getContext()->getSettingsRef()[Setting::min_insert_block_size_rows],
+                getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes]);
+        });
 
     auto header = builder.getHeader();
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
@@ -698,7 +713,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             /* allow_materialized */ false,
             /* no_squash */ false,
             /* no_destination */ false,
-            /* async_isnert */ false);
+            /* async_insert */ false);
         auto block_io = interpreter.execute();
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
@@ -708,7 +723,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             block_io.pipeline.getHeader().getNamesAndTypesList(),
             getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
             getContext(),
-            getContext()->getSettingsRef().insert_null_as_default);
+            getContext()->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
@@ -1144,7 +1159,7 @@ void StorageWindowView::read(
         return;
 
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
 
@@ -1197,7 +1212,7 @@ Pipe StorageWindowView::watch(
         window_view_timezone,
         has_limit,
         limit,
-        local_context->getSettingsRef().window_view_heartbeat_interval.totalSeconds());
+        local_context->getSettingsRef()[Setting::window_view_heartbeat_interval].totalSeconds());
 
     std::lock_guard lock(fire_signal_mutex);
     watch_streams.push_back(reader);
@@ -1216,10 +1231,10 @@ StorageWindowView::StorageWindowView(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
-    , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
-    , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
+    , fire_signal_timeout_s(context_->getSettingsRef()[Setting::wait_for_window_view_fire_signal_timeout].totalSeconds())
+    , clean_interval_usec(context_->getSettingsRef()[Setting::window_view_clean_interval].totalMicroseconds())
 {
-    if (context_->getSettingsRef().allow_experimental_analyzer)
+    if (context_->getSettingsRef()[Setting::allow_experimental_analyzer])
         disabled_due_to_analyzer = true;
 
     if (mode <= LoadingStrictnessLevel::CREATE)
@@ -1594,13 +1609,14 @@ void StorageWindowView::writeIntoWindowView(
     });
 #endif
 
-    builder.addSimpleTransform([&](const Block & current_header)
-    {
-        return std::make_shared<SquashingTransform>(
-            current_header,
-            local_context->getSettingsRef().min_insert_block_size_rows,
-            local_context->getSettingsRef().min_insert_block_size_bytes);
-    });
+    builder.addSimpleTransform(
+        [&](const Block & current_header)
+        {
+            return std::make_shared<SquashingTransform>(
+                current_header,
+                local_context->getSettingsRef()[Setting::min_insert_block_size_rows],
+                local_context->getSettingsRef()[Setting::min_insert_block_size_bytes]);
+        });
 
     if (!window_view.is_proctime)
     {
@@ -1641,8 +1657,7 @@ void StorageWindowView::writeIntoWindowView(
 #endif
 
     auto inner_table = window_view.getInnerTable();
-    auto lock = inner_table->lockForShare(
-        local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto lock = inner_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
     auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
     output->addTableLock(lock);
@@ -1673,7 +1688,7 @@ void StorageWindowView::writeIntoWindowView(
     });
 
     auto executor = builder.execute();
-    executor->execute(builder.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
+    executor->execute(builder.getNumThreads(), local_context->getSettingsRef()[Setting::use_concurrency_control]);
 
     LOG_TRACE(window_view.log, "Wrote {} rows into inner table ({})", block_rows, inner_table->getStorageID().getFullTableName());
 }
@@ -1780,22 +1795,26 @@ StoragePtr StorageWindowView::getTargetTable() const
 
 void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) const
 {
-    if (disabled_due_to_analyzer || (local_context && local_context->getSettingsRef().allow_experimental_analyzer))
+    if (disabled_due_to_analyzer || (local_context && local_context->getSettingsRef()[Setting::allow_experimental_analyzer]))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Experimental WINDOW VIEW feature is not supported "
                         "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 }
 
 void registerStorageWindowView(StorageFactory & factory)
 {
-    factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
-    {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Experimental WINDOW VIEW feature "
-                            "is not enabled (the setting 'allow_experimental_window_view')");
+    factory.registerStorage(
+        "WindowView",
+        [](const StorageFactory::Arguments & args)
+        {
+            if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_window_view])
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Experimental WINDOW VIEW feature "
+                    "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment, args.mode);
-    });
+            return std::make_shared<StorageWindowView>(
+                args.table_id, args.getLocalContext(), args.query, args.columns, args.comment, args.mode);
+        });
 }
 
 }

@@ -544,7 +544,6 @@ class ClickHouseCluster:
         self.with_hdfs = False
         self.with_kerberized_hdfs = False
         self.with_mongo = False
-        self.with_mongo_secure = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -624,8 +623,10 @@ class ClickHouseCluster:
         # available when with_mongo == True
         self.mongo_host = "mongo1"
         self._mongo_port = 0
-        self.mongo_no_cred_host = "mongo2"
+        self.mongo_no_cred_host = "mongo_no_cred"
         self._mongo_no_cred_port = 0
+        self.mongo_secure_host = "mongo_secure"
+        self._mongo_secure_port = 0
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -836,6 +837,13 @@ class ClickHouseCluster:
             return self._mongo_no_cred_port
         self._mongo_no_cred_port = self.port_pool.get_port()
         return self._mongo_no_cred_port
+
+    @property
+    def mongo_secure_port(self):
+        if self._mongo_secure_port:
+            return self._mongo_secure_port
+        self._mongo_secure_port = get_free_port()
+        return self._mongo_secure_port
 
     @property
     def redis_port(self):
@@ -1447,29 +1455,6 @@ class ClickHouseCluster:
         ]
         return self.base_nats_cmd
 
-    def setup_mongo_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_mongo = self.with_mongo_secure = True
-        env_variables["MONGO_HOST"] = self.mongo_host
-        env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
-        env_variables["MONGO_INTERNAL_PORT"] = "27017"
-        env_variables["MONGO_CONFIG_PATH"] = HELPERS_DIR
-        self.base_cmd.extend(
-            [
-                "--file",
-                p.join(docker_compose_yml_dir, "docker_compose_mongo_secure.yml"),
-            ]
-        )
-        self.base_mongo_cmd = [
-            "docker-compose",
-            "--env-file",
-            instance.env_file,
-            "--project-name",
-            self.project_name,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_mongo_secure.yml"),
-        ]
-        return self.base_mongo_cmd
-
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
@@ -1477,6 +1462,11 @@ class ClickHouseCluster:
         env_variables["MONGO_INTERNAL_PORT"] = "27017"
         env_variables["MONGO_NO_CRED_EXTERNAL_PORT"] = str(self.mongo_no_cred_port)
         env_variables["MONGO_NO_CRED_INTERNAL_PORT"] = "27017"
+        env_variables["MONGO_SECURE_EXTERNAL_PORT"] = str(self.mongo_secure_port)
+        env_variables["MONGO_SECURE_INTERNAL_PORT"] = "27017"
+        env_variables["MONGO_SECURE_CONFIG_DIR"] = (
+            instance.path + "/" + "mongo_secure_config"
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mongo.yml")]
         )
@@ -1709,7 +1699,6 @@ class ClickHouseCluster:
         with_hdfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
-        with_mongo_secure=False,
         with_nginx=False,
         with_redis=False,
         with_minio=False,
@@ -1762,8 +1751,7 @@ class ClickHouseCluster:
 
         if name in self.instances:
             raise Exception(
-                "Can't add instance `%s': there is already an instance with the same name!"
-                % name
+                f"Can't add instance '{name}': there is already an instance with the same name in [{self.instances.keys()}]"
             )
 
         if tag is None:
@@ -1813,7 +1801,7 @@ class ClickHouseCluster:
             or with_kerberized_hdfs
             or with_kerberos_kdc
             or with_kerberized_kafka,
-            with_mongo=with_mongo or with_mongo_secure,
+            with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
@@ -1988,21 +1976,10 @@ class ClickHouseCluster:
                 )
             )
 
-        if (with_mongo or with_mongo_secure) and not (
-            self.with_mongo or self.with_mongo_secure
-        ):
-            if with_mongo_secure:
-                cmds.append(
-                    self.setup_mongo_secure_cmd(
-                        instance, env_variables, docker_compose_yml_dir
-                    )
-                )
-            else:
-                cmds.append(
-                    self.setup_mongo_cmd(
-                        instance, env_variables, docker_compose_yml_dir
-                    )
-                )
+        if with_mongo and not self.with_mongo:
+            cmds.append(
+                self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
 
         if with_coredns and not self.with_coredns:
             cmds.append(
@@ -2626,7 +2603,9 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 connection.list_database_names()
-                logging.debug(f"Connected to Mongo dbs: {connection.database_names()}")
+                logging.debug(
+                    f"Connected to Mongo dbs: {connection.list_database_names()}"
+                )
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
@@ -3080,7 +3059,7 @@ class ClickHouseCluster:
                 logging.debug("Setup Mongo")
                 run_and_check(self.base_mongo_cmd + common_opts)
                 self.up_called = True
-                self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
+                self.wait_mongo_to_start(30)
 
             if self.with_coredns and self.base_coredns_cmd:
                 logging.debug("Setup coredns")
@@ -3527,6 +3506,9 @@ class ClickHouseInstance:
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
+        self.mongo_secure_config_dir = p.abspath(
+            p.join(base_path, "mongo_secure_config")
+        )
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
@@ -4100,7 +4082,7 @@ class ClickHouseInstance:
         exclusion_substring="",
     ):
         if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
+            # We check first file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
@@ -4654,6 +4636,12 @@ class ClickHouseInstance:
                 dirs_exist_ok=True,
             )
 
+        if self.with_mongo and os.path.exists(self.mongo_secure_config_dir):
+            shutil.copytree(
+                self.mongo_secure_config_dir,
+                p.abspath(p.join(self.path, "mongo_secure_config")),
+            )
+
         if self.with_coredns:
             shutil.copytree(
                 self.coredns_config_dir, p.abspath(p.join(self.path, "coredns_config"))
@@ -4726,6 +4714,9 @@ class ClickHouseInstance:
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")
+
+        if self.with_ldap:
+            depends_on.append("openldap")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")
