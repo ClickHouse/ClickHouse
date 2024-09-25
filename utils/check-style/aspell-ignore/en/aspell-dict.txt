@@ -2008,6 +2008,7 @@ linearizable
 linearized
 lineasstring
 linefeeds
+lineitem
 lineorder
 linestring
 linux
