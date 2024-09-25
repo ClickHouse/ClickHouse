@@ -17,7 +17,7 @@ node = None
 simple_tester = None
 complex_tester = None
 ranged_tester = None
-test_name = "hashed"
+TEST_NAME = "hashed"
 
 
 def setup_module(module):
@@ -27,14 +27,14 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    simple_tester = SimpleLayoutTester(test_name)
+    simple_tester = SimpleLayoutTester(TEST_NAME)
     simple_tester.cleanup()
     simple_tester.create_dictionaries(SOURCE)
 
-    complex_tester = ComplexLayoutTester(test_name)
+    complex_tester = ComplexLayoutTester(TEST_NAME)
     complex_tester.create_dictionaries(SOURCE)
 
-    ranged_tester = RangedLayoutTester(test_name)
+    ranged_tester = RangedLayoutTester(TEST_NAME)
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
@@ -43,7 +43,7 @@ def setup_module(module):
     main_configs = []
     main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))
 
-    dictionaries = simple_tester.list_dictionaries()
+    dictionaries = simple_tester.list_dictionaries(TEST_NAME)
 
     node = cluster.add_instance(
         "hashed_node", main_configs=main_configs, dictionaries=dictionaries
