@@ -175,6 +175,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_uncompressed_cache;
+    extern const SettingsUInt64 merge_tree_min_read_task_size;
 }
 
 namespace ErrorCodes
@@ -797,6 +798,8 @@ struct PartRangesReadInfo
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
             data_settings.index_granularity, index_granularity_bytes, sum_marks);
+
+        min_marks_for_concurrent_read = std::max<size_t>(min_marks_for_concurrent_read, settings[Setting::merge_tree_min_read_task_size]);
 
         use_uncompressed_cache = settings[Setting::use_uncompressed_cache];
         if (sum_marks > max_marks_to_use_cache)
