@@ -20,6 +20,7 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
@@ -2292,6 +2293,9 @@ void TCPHandler::decreaseCancellationStatus(const std::string & log_message)
     {
         state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
     }
+
+    if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
+        CancellationChecker::getInstance().addToCancelledTasks(state.io.process_list_entry->getQueryStatus());
 
     auto current_status = magic_enum::enum_name(state.cancellation_status);
     LOG_INFO(log, "Change cancellation status from {} to {}. Log message: {}", prev_status, current_status, log_message);

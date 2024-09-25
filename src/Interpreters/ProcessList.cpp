@@ -374,6 +374,8 @@ ProcessListEntry::~ProcessListEntry()
     if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
         parent.queries_to_user.erase(query_user);
 
+    CancellationChecker::getInstance().appendDoneTasks(*it);
+
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
 
