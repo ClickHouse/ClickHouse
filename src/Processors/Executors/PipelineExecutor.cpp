@@ -28,6 +28,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_processors_profiles;
+    extern const SettingsBool opentelemetry_trace_processors;
+}
 
 namespace ErrorCodes
 {
@@ -40,8 +45,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 {
     if (process_list_element)
     {
-        profile_processors = process_list_element->getContext()->getSettingsRef().log_processors_profiles;
-        trace_processors = process_list_element->getContext()->getSettingsRef().opentelemetry_trace_processors;
+        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles];
+        trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
     }
     try
     {
