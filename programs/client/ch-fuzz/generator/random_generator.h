@@ -8,7 +8,6 @@
 #include <string>
 #include <tuple>
 #include <cassert>
-#include <sstream>
 
 namespace chfuzz {
 
@@ -23,15 +22,15 @@ make_tm(int year, int month, int day) {
 
 const constexpr int seconds_per_day = 60*60*24;
 
+const constexpr char hex_digits[] = "0123456789abcdef";
+
 class RandomGenerator {
 private:
 	uint32_t seed;
 
-	std::stringstream ss;
-
 	std::uniform_int_distribution<int8_t> ints8;
 
-	std::uniform_int_distribution<uint8_t> uints8, digits, uuid_digits;
+	std::uniform_int_distribution<uint8_t> uints8, digits, hex_digits_dist;
 
 	std::uniform_int_distribution<int16_t> ints16;
 
@@ -85,7 +84,7 @@ public:
 	RandomGenerator(const uint32_t in_seed) : ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()),
 											  uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max()),
 											  digits(static_cast<uint8_t>('0'), static_cast<uint8_t>('9')),
-											  uuid_digits(0, 15),
+											  hex_digits_dist(0, 16),
 											  ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()),
 											  uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max()),
 											  ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max()),
@@ -356,30 +355,25 @@ public:
 	}
 
 	void NextUUID(std::string &ret) {
-		ss.str("");
-		ss.clear(); // Clear state flags
-		ss << std::hex;
-
 		for (uint32_t i = 0; i < 8; i++) {
-			ss << uuid_digits(gen);
+			ret += hex_digits[hex_digits_dist(gen)];
 		}
-		ss << "-";
+		ret += "-";
 		for (uint32_t i = 0; i < 4; i++) {
-			ss << uuid_digits(gen);
+			ret += hex_digits[hex_digits_dist(gen)];
 		}
-		ss << "-";
+		ret += "-";
 		for (uint32_t i = 0; i < 4; i++) {
-			ss << uuid_digits(gen);
+			ret += hex_digits[hex_digits_dist(gen)];
 		}
-		ss << "-";
+		ret += "-";
 		for (uint32_t i = 0; i < 4; i++) {
-			ss << uuid_digits(gen);
+			ret += hex_digits[hex_digits_dist(gen)];
 		}
-		ss << "-";
+		ret += "-";
 		for (uint32_t i = 0; i < 12; i++) {
-			ss << uuid_digits(gen);
+			ret += hex_digits[hex_digits_dist(gen)];
 		}
-		ret += ss.str();
 	}
 };
 
