@@ -12,6 +12,7 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsBool merge_tree_flag;
 }
 
 namespace ErrorCodes
@@ -194,9 +195,13 @@ MergeTreeReadPoolBase::createTask(MergeTreeReadTaskInfoPtr read_info, MergeTreeR
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
         : nullptr; /// make a copy
 
+    const auto & settings = getContext()->getSettingsRef();
     auto block_size_copy = params;
     /// I strongly suspect this should be removed now
-    block_size_copy.min_marks_to_read = read_info->min_marks_per_task;
+    if (settings[Setting::merge_tree_flag])
+        block_size_copy.min_marks_to_read = read_info->min_marks_per_task;
+    else
+        block_size_copy.min_marks_to_read = 0;
 
     return std::make_unique<MergeTreeReadTask>(
         read_info, std::move(task_readers), std::move(ranges), block_size_copy, std::move(task_size_predictor));
