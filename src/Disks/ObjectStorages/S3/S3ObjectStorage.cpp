@@ -229,8 +229,8 @@ public:
         std::shared_ptr<const S3::Client> client_,
         size_t max_list_size_,
         bool use_parallel_listing_,
-        int num_workers_,
-        int num_parallel_requests_,
+        size_t num_workers_,
+        size_t num_parallel_requests_,
         float multiplication_length_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
@@ -269,7 +269,7 @@ private:
     class Cache
     {
     public:
-        std::vector<Aws::S3::Model::Object> getBatchFrom(const std::string& filename_after, size_t count) const
+        std::vector<Aws::S3::Model::Object> getBatchFrom(const std::string & filename_after, size_t count) const
         {
             std::vector<Aws::S3::Model::Object> result;
             result.reserve(count);
@@ -462,7 +462,7 @@ private:
     size_t max_list_size;
 
     bool use_parallel_listing;
-    int32_t num_parallel_requests;
+    size_t num_parallel_requests;
     float multiplication_length;
 };
 
