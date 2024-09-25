@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/ColumnConst.h>
@@ -23,32 +22,45 @@ namespace ErrorCodes
 
 namespace
 {
-    template <typename IntegerType, typename ColumnType = IntegerType>
-    void hashInt(const IColumn * data_column, ColumnUInt64::Container & hashes_internal_data)
+    template <typename HashingType, typename FieldType>
+    uint64_t hashInt(Field & field)
     {
         parquet::XxHasher hasher;
-
-        const auto * internal_column = assert_cast<const ColumnVector<ColumnType> *>(data_column);
-
-        for (size_t i = 0u; i < internal_column->size(); i++)
-        {
-            IntegerType element = internal_column->getElement(i);
-            hashes_internal_data[i] = hasher.Hash(element);
-        }
+        return hasher.Hash(static_cast<HashingType>(field.safeGet<FieldType>()));
     }
 
-    template <typename StringType>
-    void hashString(const IColumn * data_column, ColumnUInt64::Container & hashes_internal_data)
+    uint64_t hashString(Field & field)
     {
         parquet::XxHasher hasher;
+        parquet::ByteArray ba { field.safeGet<std::string>() };
+        return hasher.Hash(&ba);
+    }
 
-        const auto * internal_column = assert_cast<const StringType *>(data_column);
-
-        for (size_t i = 0u; i < internal_column->size(); i++)
+    std::optional<uint64_t> hash(Field & field, const DataTypePtr & clickhouse_type)
+    {
+        switch (clickhouse_type->getTypeId())
         {
-            auto element = internal_column->getDataAt(i).toView();
-            auto byte_array = parquet::ByteArray {element};
-            hashes_internal_data[i] = hasher.Hash(&byte_array);
+            case TypeIndex::UInt8:
+                return hashInt<int32_t, uint8_t>(field);
+            case TypeIndex::UInt16:
+                return hashInt<int32_t, uint16_t>(field);
+            case TypeIndex::UInt32:
+                return hashInt<int32_t, uint32_t>(field);
+            case TypeIndex::UInt64:
+                return hashInt<int64_t, uint64_t>(field);
+            case TypeIndex::Int8:
+                return hashInt<int32_t, int8_t>(field);
+            case TypeIndex::Int16:
+                return hashInt<int32_t, uint16_t>(field);
+            case TypeIndex::Int32:
+                return hashInt<int32_t, uint32_t>(field);
+            case TypeIndex::Int64:
+                return hashInt<int64_t, uint64_t>(field);
+            case TypeIndex::String:
+            case TypeIndex::FixedString:
+                return hashString(field);
+            default:
+                return std::nullopt;
         }
     }
 
@@ -59,40 +71,22 @@ namespace
         auto hashes_column = ColumnUInt64::create(column_size);
         ColumnUInt64::Container & hashes_internal_data = hashes_column->getData();
 
-        switch (clickhouse_type->getTypeId())
+        for (size_t i = 0u; i < data_column->size(); i++)
         {
-            case TypeIndex::UInt8:
-                hashInt<int32_t, uint8_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::UInt16:
-                hashInt<int32_t, uint16_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::UInt32:
-                hashInt<int32_t, uint32_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::UInt64:
-                hashInt<int64_t, uint64_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::Int8:
-                hashInt<int32_t, int8_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::Int16:
-                hashInt<int32_t, int16_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::Int32:
-                hashInt<int32_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::Int64:
-                hashInt<int64_t>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::String:
-                hashString<ColumnString>(data_column, hashes_internal_data);
-                break;
-            case TypeIndex::FixedString:
-                hashString<ColumnFixedString>(data_column, hashes_internal_data);
-                break;
-            default:
-                break;
+            Field f;
+            data_column->get(i, f);
+
+            Field converted_field = tryConvertFieldToType(f, *clickhouse_type);
+
+            if (converted_field.isNull())
+            {
+                return nullptr;
+            }
+
+            if (auto hashed_value = hash(converted_field, clickhouse_type))
+            {
+                hashes_internal_data.push_back(*hashed_value);
+            }
         }
 
         return hashes_column;
@@ -382,11 +376,19 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            auto column = actual_type->createColumn();
-            column->insert(rpn_element.range.left);
+            auto hashed_value = hash(field, actual_type);
 
-            auto hashed = hash(column.get(), actual_type);
-            columns.emplace_back(std::move(hashed));
+            if (!hashed_value)
+            {
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
+                continue;
+            }
+
+            auto hashes_column = ColumnUInt64::create(1);
+            ColumnUInt64::Container & hashes_internal_data = hashes_column->getData();
+            hashes_internal_data.push_back(*hashed_value);
+
+            columns.emplace_back(std::move(hashes_column));
 
             auto function = rpn_element.function == RPNElement::FUNCTION_IN_RANGE
                 ? ParquetBloomFilterCondition::ConditionElement::Function::FUNCTION_EQUALS
@@ -446,7 +448,14 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                     column = nullable_column->getNestedColumnPtr();
                 }
 
-                columns.emplace_back(hash(column.get(), actual_type));
+                auto hashes_column = hash(column.get(), actual_type);
+
+                if (!hashes_column)
+                {
+                    continue;
+                }
+
+                columns.emplace_back(hashes_column);
 
                 key_columns.push_back(indexes_mapping[i].key_index);
             }
