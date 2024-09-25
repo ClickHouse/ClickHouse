@@ -22,6 +22,7 @@ class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 using ContextAccessPtr = std::shared_ptr<const ContextAccess>;
+class AuthenticationData;
 
 /** A struct which will be inserted as row into session_log table.
   *
@@ -71,17 +72,21 @@ struct SessionLogElement
 class SessionLog : public SystemLog<SessionLogElement>
 {
     using SystemLog<SessionLogElement>::SystemLog;
-
 public:
     void addLoginSuccess(const UUID & auth_id,
                          const String & session_id,
                          const Settings & settings,
                          const ContextAccessPtr & access,
                          const ClientInfo & client_info,
-                         const UserPtr & login_user);
+                         const UserPtr & login_user,
+                         const AuthenticationData & user_authenticated_with);
 
     void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const std::optional<String> & user, const Exception & reason);
-    void addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info);
+    void addLogOut(
+        const UUID & auth_id,
+        const UserPtr & login_user,
+        const AuthenticationData & user_authenticated_with,
+        const ClientInfo & client_info);
 };
 
 }

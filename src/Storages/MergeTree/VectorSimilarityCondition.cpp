@@ -13,6 +13,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_limit_for_ann_queries;
+}
 
 namespace ErrorCodes
 {
@@ -40,10 +44,12 @@ void extractReferenceVectorFromLiteral(std::vector<Float64> & reference_vector, 
     }
 }
 
-VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(std::string_view distance_function)
+VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(const String & distance_function)
 {
     if (distance_function == "L2Distance")
         return VectorSimilarityCondition::Info::DistanceFunction::L2;
+    else if (distance_function == "cosineDistance")
+        return VectorSimilarityCondition::Info::DistanceFunction::Cosine;
     else
         return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
 }
@@ -53,11 +59,11 @@ VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(std::
 VectorSimilarityCondition::VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context)
     : block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context))
     , index_granularity(context->getMergeTreeSettings().index_granularity)
-    , max_limit_for_ann_queries(context->getSettingsRef().max_limit_for_ann_queries)
+    , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
     , index_is_useful(checkQueryStructure(query_info))
 {}
 
-bool VectorSimilarityCondition::alwaysUnknownOrTrue(String distance_function) const
+bool VectorSimilarityCondition::alwaysUnknownOrTrue(const String & distance_function) const
 {
     if (!index_is_useful)
         return true; /// query isn't supported

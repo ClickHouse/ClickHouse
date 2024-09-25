@@ -347,7 +347,7 @@ Result:
 ## intHash64
 
 Calculates a 64-bit hash code from any type of integer.
-This is a relatively fast non-cryptographic hash function of average quality for numbers. 
+This is a relatively fast non-cryptographic hash function of average quality for numbers.
 It works faster than [intHash32](#inthash32).
 
 **Syntax**
@@ -651,7 +651,7 @@ For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1
 
 ## kostikConsistentHash
 
-An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`.
 
 **Syntax**
 
@@ -672,7 +672,7 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Implementation details**
 
-It is efficient only if n <= 32768. 
+It is efficient only if n <= 32768.
 
 **Example**
 
@@ -686,6 +686,40 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 ┌─kostikConsistentHash(16045690984833335023, 2)─┐
 │                                             1 │
 └───────────────────────────────────────────────┘
+```
+
+## RIPEMD160
+
+Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
+
+**Syntax**
+
+```sql
+RIPEMD160(input)
+```
+
+**Parameters**
+
+- `input`: Input string. [String](../data-types/string.md)
+
+**Returned value**
+
+- A [UInt256](../data-types/int-uint.md) hash value where the 160-bit RIPEMD-160 hash is stored in the first 20 bytes. The remaining 12 bytes are zero-padded.
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+```sql
+SELECT hex(RIPEMD160('The quick brown fox jumps over the lazy dog'));
+```
+
+```response
+┌─hex(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ## murmurHash2_32, murmurHash2_64
@@ -903,7 +937,7 @@ SELECT xxHash64('')
 
 **Returned value**
 
-- Hash value. [UInt32/64](../data-types/int-uint.md).  
+- Hash value. [UInt32/64](../data-types/int-uint.md).
 
 :::note
 The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.

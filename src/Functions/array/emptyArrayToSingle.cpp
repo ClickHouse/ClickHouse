@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/array/emptyArrayToSingle.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -19,35 +19,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-
-/** emptyArrayToSingle(arr) - replace empty arrays with arrays of one element with a default value.
-  */
-class FunctionEmptyArrayToSingle : public IFunction
-{
-public:
-    static constexpr auto name = "emptyArrayToSingle";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
-
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
-
-        return arguments[0];
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
-};
-
 
 namespace
 {
@@ -366,6 +337,14 @@ namespace
     }
 }
 
+DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+    if (!array_type)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
+
+    return arguments[0];
+}
 
 ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {

@@ -8,7 +8,7 @@ CURDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 drop table if exists r1;
 drop table if exists r2;
 
@@ -64,7 +64,7 @@ function insert_duplicates() {
 
   wait
 
-  $CLICKHOUSE_CLIENT -nm -q "
+  $CLICKHOUSE_CLIENT -m -q "
 system sync replica r1;
 system sync replica r2;
 "
@@ -84,7 +84,7 @@ function loop()
   do
     while ! insert_duplicates
     do
-       $CLICKHOUSE_CLIENT -nm -q "
+       $CLICKHOUSE_CLIENT -m -q "
 truncate table r1;
 truncate table r2;
 system sync replica r1;
@@ -137,8 +137,8 @@ function list_keeper_nodes() {
 
 list_keeper_nodes "${table_shared_id}"
 
-$CLICKHOUSE_CLIENT -nm -q "drop table r1;" --allow_repeated_settings --send_logs_level="error"  &
-$CLICKHOUSE_CLIENT -nm -q "drop table r2;" --allow_repeated_settings --send_logs_level="error"  &
+$CLICKHOUSE_CLIENT -m -q "drop table r1;" --allow_repeated_settings --send_logs_level="error"  &
+$CLICKHOUSE_CLIENT -m -q "drop table r2;" --allow_repeated_settings --send_logs_level="error"  &
 wait
 
 list_keeper_nodes "${table_shared_id}"
