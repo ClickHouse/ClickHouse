@@ -112,6 +112,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
+    const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
@@ -123,6 +124,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         reader_settings_,
         column_names_,
         settings_,
+        params_,
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)

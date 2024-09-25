@@ -39,7 +39,6 @@ public:
         MergeTreeSelectAlgorithmPtr algorithm_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
-        const MergeTreeReadTask::BlockSizeParams & block_size_params_,
         const MergeTreeReaderSettings & reader_settings_);
 
     String getName() const;

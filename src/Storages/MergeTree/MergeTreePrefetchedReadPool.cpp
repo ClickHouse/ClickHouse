@@ -1,6 +1,6 @@
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -8,13 +8,13 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
-#include <Core/Settings.h>
+#include <Common/logger_useful.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 namespace ProfileEvents
@@ -102,6 +102,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
+    const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
@@ -113,9 +114,12 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         reader_settings_,
         column_names_,
         settings_,
+        params_,
         context_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
-    , log(getLogger("MergeTreePrefetchedReadPool(" + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
+    , log(getLogger(
+          "MergeTreePrefetchedReadPool("
+          + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
 {
     /// Tasks creation might also create a lost of readers - check they do not
     /// do any time consuming operations in ctor.
@@ -304,13 +308,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
     if (task.isValidReadersFuture())
-    {
-        auto size_predictor = task.read_info->shared_size_predictor
-            ? std::make_unique<MergeTreeBlockSizePredictor>(*task.read_info->shared_size_predictor)
-            : nullptr;
-
-        return std::make_unique<MergeTreeReadTask>(task.read_info, task.readers_future->get(), task.ranges, std::move(size_predictor));
-    }
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges);
 
     return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, previous_task);
 }

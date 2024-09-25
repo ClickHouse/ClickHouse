@@ -28,7 +28,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeSelectAlgorithmPtr algorithm_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
-    const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
@@ -36,7 +35,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , actions_settings(actions_settings_)
     , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
     , reader_settings(reader_settings_)
-    , block_size_params(block_size_params_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
     if (reader_settings.apply_deleted_mask)
@@ -132,7 +130,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
 
-        auto res = algorithm->readFromTask(*task, block_size_params);
+        auto res = algorithm->readFromTask(*task, task->getBlockSizeParams());
 
         if (res.row_count)
         {

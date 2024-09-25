@@ -26,10 +26,12 @@ MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
     MarkRanges mark_ranges_,
+    const BlockSizeParams & block_size_params_,
     MergeTreeBlockSizePredictorPtr size_predictor_)
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
+    , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))
 {
 }

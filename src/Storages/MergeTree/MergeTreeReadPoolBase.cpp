@@ -1,3 +1,4 @@
+#include <cmath>
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
@@ -28,6 +29,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & pool_settings_,
+    const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_)
     : WithContext(context_)
     , parts_ranges(std::move(parts_))
@@ -39,6 +41,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , reader_settings(reader_settings_)
     , column_names(column_names_)
     , pool_settings(pool_settings_)
+    , params(params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
@@ -184,15 +187,24 @@ std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
     return per_part_sum_marks;
 }
 
-MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
-    MergeTreeReadTaskInfoPtr read_info,
-    MarkRanges ranges,
-    MergeTreeReadTask * previous_task) const
+MergeTreeReadTaskPtr
+MergeTreeReadPoolBase::createTask(MergeTreeReadTaskInfoPtr read_info, MergeTreeReadTask::Readers task_readers, MarkRanges ranges) const
 {
     auto task_size_predictor = read_info->shared_size_predictor
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
         : nullptr; /// make a copy
 
+    auto block_size_copy = params;
+    /// I strongly suspect this should be removed now
+    block_size_copy.min_marks_to_read = read_info->min_marks_per_task;
+
+    return std::make_unique<MergeTreeReadTask>(
+        read_info, std::move(task_readers), std::move(ranges), block_size_copy, std::move(task_size_predictor));
+}
+
+MergeTreeReadTaskPtr
+MergeTreeReadPoolBase::createTask(MergeTreeReadTaskInfoPtr read_info, MarkRanges ranges, MergeTreeReadTask * previous_task) const
+{
     auto get_part_name = [](const auto & task_info) -> String
     {
         const auto & data_part = task_info.data_part;
@@ -231,11 +243,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         task_readers = previous_task->releaseReaders();
     }
 
-    return std::make_unique<MergeTreeReadTask>(
-        read_info,
-        std::move(task_readers),
-        std::move(ranges),
-        std::move(task_size_predictor));
+    return createTask(read_info, std::move(task_readers), std::move(ranges));
 }
 
 MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const

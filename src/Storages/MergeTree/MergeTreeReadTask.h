@@ -127,7 +127,7 @@ public:
         MergeTreeReadTaskInfoPtr info_,
         Readers readers_,
         MarkRanges mark_ranges_,
-
+        const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
     void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions);
@@ -138,6 +138,7 @@ public:
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
     const MergeTreeRangeReader & getMainRangeReader() const { return range_readers.main; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
+    const BlockSizeParams & getBlockSizeParams() const { return block_size_params; }
 
     Readers releaseReaders() { return std::move(readers); }
 
@@ -159,6 +160,8 @@ private:
 
     /// Ranges to read from data_part
     MarkRanges mark_ranges;
+
+    BlockSizeParams block_size_params;
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;

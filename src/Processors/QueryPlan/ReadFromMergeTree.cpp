@@ -456,10 +456,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
         reader_settings,
         required_columns,
         pool_settings,
+        block_size,
         context);
-
-    auto block_size_copy = block_size;
-    block_size_copy.min_marks_to_read = pool_settings.min_marks_for_concurrent_read;
 
     Pipes pipes;
 
@@ -467,9 +465,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
-        auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size_copy, reader_settings);
+        auto processor
+            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, actions_settings, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -536,6 +533,7 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             required_columns,
             pool_settings,
+            block_size,
             context);
     }
     else
@@ -550,25 +548,19 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             required_columns,
             pool_settings,
+            block_size,
             context);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
-
-    /// The reason why we change this setting is because MergeTreeReadPool takes the full task
-    /// ignoring min_marks_to_read setting in case of remote disk (see MergeTreeReadPool::getTask).
-    /// In this case, we won't limit the number of rows to read based on adaptive granularity settings.
-    auto block_size_copy = block_size;
-    block_size_copy.min_marks_to_read = pool_settings.min_marks_for_concurrent_read;
 
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
-        auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size_copy, reader_settings);
+        auto processor
+            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, actions_settings, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -640,6 +632,7 @@ Pipe ReadFromMergeTree::readInOrder(
             reader_settings,
             required_columns,
             pool_settings,
+            block_size,
             context);
     }
     else
@@ -656,6 +649,7 @@ Pipe ReadFromMergeTree::readInOrder(
             reader_settings,
             required_columns,
             pool_settings,
+            block_size,
             context);
     }
 
@@ -689,9 +683,8 @@ Pipe ReadFromMergeTree::readInOrder(
         else
             algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
-        auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size, reader_settings);
+        auto processor
+            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, actions_settings, reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
