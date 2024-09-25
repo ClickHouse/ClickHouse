@@ -362,7 +362,8 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 		//aggregate
 		const CHAggregate &agg = CHAggrs[nopt - (allow_funcs ? CHFuncs.size() : 0)];
 		const uint32_t max_params = std::min(this->max_width - this->width, std::min(agg.max_params, UINT32_C(5))),
-					   max_args = std::min(this->max_width - this->width, std::min(agg.max_args, UINT32_C(5)));
+					   max_args = std::min(this->max_width - this->width, std::min(agg.max_args, UINT32_C(5))),
+					   ncombinators = rg.NextSmallNumber() < 4 ? std::min(this->max_width - this->width, (rg.NextSmallNumber() % 3) + 1) : 0;
 		const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
 				   prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
@@ -396,6 +397,32 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 			for (uint32_t i = 0 ; i < agg.min_args; i++) {
 				GenerateLiteralValue(rg, func_call->add_args()->mutable_expr());
 			}
+		}
+
+		for (uint32_t i = 0 ; i < ncombinators; i++) {
+			sql_query_grammar::SQLFuncCall_AggregateCombinator comb =
+				static_cast<sql_query_grammar::SQLFuncCall_AggregateCombinator>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::SQLFuncCall::AggregateCombinator_MAX)) + 1);
+
+			switch (comb) {
+				case sql_query_grammar::SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_If:
+					if (rg.NextSmallNumber() < 9) {
+						this->GeneratePredicate(rg, func_call->add_args()->mutable_expr());
+					} else {
+						this->GenerateExpression(rg, func_call->add_args()->mutable_expr());
+					}
+					this->width++;
+					generated_params++;
+					break;
+				case sql_query_grammar::SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_ArgMin:
+				case sql_query_grammar::SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_ArgMax:
+					this->GenerateExpression(rg, func_call->add_args()->mutable_expr());
+					this->width++;
+					generated_params++;
+					break;
+				default:
+					break;
+			}
+			func_call->add_combinators(comb);
 		}
 		this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
 		this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;

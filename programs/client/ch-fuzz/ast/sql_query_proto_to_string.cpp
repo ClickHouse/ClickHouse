@@ -985,6 +985,9 @@ CONV_FN(LambdaExpr, lambda) {
 
 CONV_FN(SQLFuncCall, sfc) {
   ret += SQLFunc_Name(sfc.func()).substr(4);
+  for (int i = 0 ; i < sfc.combinators_size(); i++) {
+    ret += SQLFuncCall_AggregateCombinator_Name(sfc.combinators(i));
+  }
   if (sfc.params_size()) {
     ret += '(';
     for (int i = 0 ; i < sfc.params_size(); i++) {

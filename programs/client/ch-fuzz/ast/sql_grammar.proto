@@ -4564,11 +4564,27 @@ enum FuncNulls {
 }
 
 message SQLFuncCall {
+  enum AggregateCombinator {
+    If = 1;
+    Array = 2;
+    Map = 3;
+    SimpleState = 4;
+    State = 5;
+    Merge = 6;
+    MergeState = 7;
+    ForEach = 8;
+    Distinct = 9;
+    OrDefault = 10;
+    OrNull = 11;
+    ArgMin = 12;
+    ArgMax = 13;
+  }
   required SQLFunc func = 1;
-  optional bool distinct = 2;
-  repeated Expr params = 3;
-  repeated SQLFuncArg args = 4;
-  optional FuncNulls fnulls = 5;
+  repeated AggregateCombinator combinators = 2;
+  optional bool distinct = 3;
+  repeated Expr params = 4;
+  repeated SQLFuncArg args = 5;
+  optional FuncNulls fnulls = 6;
 }
 
 message Window {
