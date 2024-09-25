@@ -116,9 +116,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 
 			jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 			jt->mutable_table_alias()->set_table(name);
-			jt->set_final(t.teng != sql_query_grammar::TableEngineValues::Memory &&
-						  t.teng != sql_query_grammar::TableEngineValues::MergeTree &&
-						  rg.NextSmallNumber() < 3);
+			jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
 			AddTableRelation(rg, true, name, t);
 		} else if (view && nopt < (derived_table + cte + table + view + 1)) {
 			SQLRelation rel(name);

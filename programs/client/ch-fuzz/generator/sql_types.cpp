@@ -231,52 +231,87 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 		case 11: {
 			if ((allowed_types & allow_json) && (!(allowed_types & allow_dynamic) || nopt < 11)) {
 				//json
-				if (tp) {
-					sql_query_grammar::JsonDef *jdef = tp->mutable_json();
-					const uint32_t nclauses = rg.NextMediumNumber() % 7;
+				std::string desc = "";
+				sql_query_grammar::JsonDef *jdef = tp ? tp->mutable_json() : nullptr;
+				const uint32_t nclauses = rg.NextMediumNumber() % 7;
 
-					for (uint32_t i = 0 ; i < nclauses; i++) {
-						const uint32_t noption = rg.NextSmallNumber();
-						sql_query_grammar::JsonDefItem *jdi = jdef->add_spec();
+				if (nclauses) {
+					desc += "(";
+				}
+				for (uint32_t i = 0 ; i < nclauses; i++) {
+					const uint32_t noption = rg.NextSmallNumber();
+					sql_query_grammar::JsonDefItem *jdi = tp ? jdef->add_spec() : nullptr;
 
-						if (noption < 4) {
-							jdi->set_max_dynamic_paths(rg.NextBool() ? (rg.NextSmallNumber() % 5) : rg.NextRandomUInt32());
-						} else if (noption < 7) {
-							jdi->set_max_dynamic_types(rg.NextBool() ? (rg.NextSmallNumber() % 5) : rg.NextRandomUInt32());
-						} else if (this->depth >= this->max_depth || noption < 9) {
-							const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
-							sql_query_grammar::ColumnPath *cp = jdi->mutable_skip_path();
+					if (i != 0) {
+						desc += ", ";
+					}
+					if (noption < 4) {
+						const uint32_t max_dpaths = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 1025);
 
-							for (uint32_t j = 0 ; j < nskips; j++) {
-								sql_query_grammar::Column *col = j == 0 ? cp->mutable_col() : cp->add_sub_cols();
-
-								buf.resize(0);
-								buf += "c";
-								buf += rg.NextJsonCol();
-								col->set_column(buf);
-							}
-						} else {
-							uint32_t col_counter = 0;
-							const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
-							sql_query_grammar::JsonPathType *jpt = jdi->mutable_path_type();
-							sql_query_grammar::ColumnPath *cp = jpt->mutable_col();
-
-							for (uint32_t j = 0 ; j < nskips; j++) {
-								sql_query_grammar::Column *col = j == 0 ? cp->mutable_col() : cp->add_sub_cols();
-
-								buf.resize(0);
-								buf += "c";
-								buf += rg.NextJsonCol();
-								col->set_column(buf);
-							}
-							this->depth++;
-							SQLType* jtp = RandomNextType(rg, ~(allow_nested|allow_enum), col_counter, jpt->mutable_type());
-							this->depth--;
-							delete jtp;
+						if (tp) {
+							jdi->set_max_dynamic_paths(max_dpaths);
 						}
+						desc += "max_dynamic_paths=";
+						desc += std::to_string(max_dpaths);
+					} else if (noption < 7) {
+						const uint32_t max_dtypes = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 33);
+
+						if (tp) {
+							jdi->set_max_dynamic_types(max_dtypes);
+						}
+						desc += "max_dynamic_types=";
+						desc += std::to_string(max_dtypes);
+					} else if (this->depth >= this->max_depth || noption < 9) {
+						const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
+						sql_query_grammar::ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
+
+						desc += "SKIP ";
+						for (uint32_t j = 0 ; j < nskips; j++) {
+							sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
+
+							if (j != 0) {
+								desc += ".";
+							}
+							buf.resize(0);
+							buf += "c";
+							buf += rg.NextJsonCol();
+							if (tp) {
+								col->set_column(buf);
+							}
+							desc += buf;
+						}
+					} else {
+						uint32_t col_counter = 0;
+						const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
+						sql_query_grammar::JsonPathType *jpt = tp ? jdi->mutable_path_type() : nullptr;
+						sql_query_grammar::ColumnPath *cp = tp ? jpt->mutable_col() : nullptr;
+
+						for (uint32_t j = 0 ; j < nskips; j++) {
+							sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
+
+							if (j != 0) {
+								desc += ".";
+							}
+							buf.resize(0);
+							buf += "c";
+							buf += rg.NextJsonCol();
+							if (tp) {
+								col->set_column(buf);
+							}
+							desc += buf;
+						}
+						this->depth++;
+						SQLType *jtp = RandomNextType(rg, ~(allow_nested|allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
+						desc += " ";
+						desc += jtp->TypeName(false);
+						this->depth--;
+						delete jtp;
 					}
 				}
-				res = new JSONType();
+				if (nclauses) {
+					desc += ")";
+				}
+				res = new JSONType(std::move(desc));
 			} else if ((allowed_types & allow_dynamic) && (!(allowed_types & allow_json) || nopt == 11)) {
 				//dynamic
 				sql_query_grammar::Dynamic *dyn = tp ? tp->mutable_dynamic() : nullptr;

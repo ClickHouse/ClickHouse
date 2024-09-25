@@ -583,9 +583,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query
 			ids.clear();
 		}
 	}
-	ot->set_final(t.teng != sql_query_grammar::TableEngineValues::Memory &&
-				  t.teng != sql_query_grammar::TableEngineValues::MergeTree &&
-				  rg.NextSmallNumber() < 4);
+	ot->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
 	ot->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 	return 0;
 }

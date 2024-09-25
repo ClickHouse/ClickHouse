@@ -1,3 +1,4 @@
+#include "sql_types.h"
 #include "statement_generator.h"
 
 #include <filesystem>
@@ -150,7 +151,7 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 			buf += cname;
 			buf += " ";
 			buf += col.second.tp->TypeName(true);
-			buf += !col.second.nullable ? " NOT NULL" : "";
+			buf += !dynamic_cast<Nullable*>(col.second.tp) && !col.second.nullable ? " NOT NULL" : "";
 			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
 			first = false;
 		}
@@ -163,7 +164,7 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 	//Set the table on select
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
-	jt->set_final(rg.NextSmallNumber() < 3);
+	jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
 	return 0;
 }
 

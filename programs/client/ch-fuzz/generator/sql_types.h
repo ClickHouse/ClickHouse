@@ -341,9 +341,24 @@ public:
 
 class JSONType : public SQLType {
 public:
+	const std::string desc;
+	JSONType(const std::string &s) : desc(s) {}
+
 	const std::string TypeName(const bool escape) override {
-		(void) escape;
-		return "JSON";
+		std::string ret;
+
+		ret += "JSON";
+		if (escape) {
+			for (const auto &c : desc) {
+				if (c == '\'') {
+					ret += '\\';
+				}
+				ret += c;
+			}
+		} else {
+			ret += desc;
+		}
+		return ret;
 	}
 	~JSONType() override = default;
 };
