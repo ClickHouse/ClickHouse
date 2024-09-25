@@ -8,7 +8,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMongoURI
 
-TEST_NAME = "mongo_uri"
+test_name = "mongo_uri"
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,7 @@ def source(secure_connection, legacy, cluster):
 
 @pytest.fixture(scope="module")
 def simple_tester(source):
-    tester = SimpleLayoutTester(TEST_NAME)
+    tester = SimpleLayoutTester(test_name)
     tester.cleanup()
     tester.create_dictionaries(source)
     return tester
@@ -66,7 +66,7 @@ def main_config(secure_connection, legacy):
 
 @pytest.fixture(scope="module")
 def started_cluster(secure_connection, legacy, cluster, main_config, simple_tester):
-    dictionaries = simple_tester.list_dictionaries(TEST_NAME)
+    dictionaries = simple_tester.list_dictionaries()
 
     node = cluster.add_instance(
         "uri_node",
