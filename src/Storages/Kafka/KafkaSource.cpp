@@ -242,11 +242,13 @@ Chunk KafkaSource::generateImpl()
                                 .event_time_microseconds = timeInMicroseconds(time_now),
                                 .database_name = storage_id.database_name,
                                 .table_name = storage_id.table_name,
-                                .topic_name = consumer->currentTopic(),
-                                .partition = consumer->currentPartition(),
-                                .offset = consumer->currentPartition(),
                                 .raw_message = consumer->currentPayload(),
                                 .error = exception_message.value(),
+                                .details = DeadLetterQueueElement::KafkaDetails{
+                                    .topic_name = consumer->currentTopic(),
+                                    .partition = consumer->currentPartition(),
+                                    .offset = consumer->currentPartition()
+                                }
                             });
                     }
 
