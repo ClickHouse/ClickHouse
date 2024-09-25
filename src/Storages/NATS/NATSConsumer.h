@@ -63,7 +63,6 @@ private:
     LoggerPtr log;
     const std::atomic<bool> & stopped;
 
-    bool subscribed = false;
     String queue_name;
 
     String channel_id;

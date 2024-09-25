@@ -36,9 +36,10 @@ NATSConsumer::NATSConsumer(
 
 void NATSConsumer::subscribe()
 {
-    if (subscribed)
+    if (!subscriptions.empty())
         return;
 
+    std::vector<NATSSubscriptionPtr> created_subscriptions;
     for (const auto & subject : subjects)
     {
         natsSubscription * ns;
@@ -48,20 +49,20 @@ void NATSConsumer::subscribe()
         {
             LOG_DEBUG(log, "Subscribed to subject {}", subject);
             natsSubscription_SetPendingLimits(ns, -1, -1);
-            subscriptions.emplace_back(ns, &natsSubscription_Destroy);
+            created_subscriptions.emplace_back(ns, &natsSubscription_Destroy);
         }
         else
         {
             throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe to subject {}", subject);
         }
     }
-    subscribed = true;
+
+    subscriptions = std::move(created_subscriptions);
 }
 
 void NATSConsumer::unsubscribe()
 {
-    for (const auto & subscription : subscriptions)
-        natsSubscription_Unsubscribe(subscription.get());
+    subscriptions.clear();
 }
 
 ReadBufferPtr NATSConsumer::consume()
