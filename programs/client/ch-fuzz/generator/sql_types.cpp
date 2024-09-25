@@ -74,7 +74,7 @@ RandomDateType(RandomGenerator &rg, const bool low_card) {
 
 SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allowed_types, sql_query_grammar::BottomTypeName *tp) {
 	SQLType* res = nullptr;
-	const uint32_t top_limit = 8 + ((allowed_types & allow_json) ? 2 : 0) + ((allowed_types & allow_dynamic) ? 1 : 0);
+	const uint32_t top_limit = 9 + ((allowed_types & allow_json) ? 2 : 0) + ((allowed_types & allow_dynamic) ? 1 : 0);
 	std::uniform_int_distribution<uint32_t> next_dist(1, top_limit);
 	const uint32_t nopt = next_dist(rg.gen);
 
@@ -112,13 +112,13 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 			}
 			res = new DecimalType(precision, scale);
 		} break;
-		case 4: {
+		case 4:
 			//boolean
 			if (tp) {
 				tp->set_boolean(true);
 			}
 			res = new BoolType();
-		} break;
+			break;
 		case 5: {
 			//string
 			std::optional<uint32_t> swidth = std::nullopt;
@@ -193,7 +193,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 			}
 			res = new LowCardinality(sub);
 		} break;
-		case 8: {
+		case 8:
 			if (allowed_types & allow_enum) {
 				//Enum
 				const bool bits = rg.NextBool();
@@ -223,10 +223,17 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 					tp->set_integers(nint);
 				}
 			}
-		} break;
+			break;
 		case 9:
+			//uuid
+			if (tp) {
+				tp->set_uuid(true);
+			}
+			res = new UUIDType();
+			break;
 		case 10:
-		case 11: {
+		case 11:
+		case 12: {
 			if ((allowed_types & allow_json) && (!(allowed_types & allow_dynamic) || nopt < 11)) {
 				//json
 				std::string desc = "";
@@ -582,6 +589,10 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 			ret += "::";
 			ret += etp->TypeName(false);
 		}
+	} else if (dynamic_cast<UUIDType*>(tp)) {
+		ret += "'";
+		rg.NextUUID(ret);
+		ret += "'";
 	} else {
 		assert(0);
 	}
@@ -793,7 +804,7 @@ void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret
 		ret += "NULL";
 	} else if (dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) ||
 			   dynamic_cast<DecimalType*>(tp) || dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) ||
-			   dynamic_cast<EnumType*>(tp)) {
+			   dynamic_cast<EnumType*>(tp) || dynamic_cast<UUIDType*>(tp)) {
 		StrAppendBottomValue(rg, ret, tp);
 	} else if ((lc = dynamic_cast<LowCardinality*>(tp))) {
 		StrAppendBottomValue(rg, ret, lc->subtype);

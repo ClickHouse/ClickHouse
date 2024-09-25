@@ -166,8 +166,8 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 	col.tp = tp;
 	col.special = special;
 	if (col.special == ColumnSpecial::NONE &&
-		(dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) ||
-		 dynamic_cast<DecimalType*>(tp) || dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp)) && rg.NextSmallNumber() < 4) {
+		(dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) || dynamic_cast<DecimalType*>(tp) ||
+		 dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) || dynamic_cast<UUIDType*>(tp)) && rg.NextSmallNumber() < 4) {
 		cd->set_nullable(rg.NextBool());
 	}
 	col.nullable = cd->nullable();

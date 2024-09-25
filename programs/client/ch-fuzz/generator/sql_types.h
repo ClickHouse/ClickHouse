@@ -129,6 +129,15 @@ public:
 	~StringType() override = default;
 };
 
+class UUIDType : public SQLType {
+public:
+	const std::string TypeName(const bool escape) override {
+		(void) escape;
+		return "UUID";
+	}
+	~UUIDType() override = default;
+};
+
 class EnumType : public SQLType {
 public:
 	const uint32_t size;
