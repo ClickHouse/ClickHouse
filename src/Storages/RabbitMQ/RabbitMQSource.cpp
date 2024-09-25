@@ -4,6 +4,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
@@ -49,7 +50,7 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    StreamingHandleErrorMode handle_error_mode_,
+    ExtStreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_)
@@ -76,7 +77,7 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    StreamingHandleErrorMode handle_error_mode_,
+    ExtStreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_)
@@ -167,22 +168,27 @@ Chunk RabbitMQSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
-        if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+        switch(handle_error_mode)
         {
-            exception_message = e.message();
-            for (size_t i = 0; i < result_columns.size(); ++i)
+        case ExtStreamingHandleErrorMode::STREAM:
+        case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
-                // We could already push some rows to result_columns before exception, we need to fix it.
-                result_columns[i]->rollback(*checkpoints[i]);
+                exception_message = e.message();
+                for (size_t i = 0; i < result_columns.size(); ++i)
+                {
+                    // We could already push some rows to result_columns before exception, we need to fix it.
+                    result_columns[i]->rollback(*checkpoints[i]);
 
-                // All data columns will get default value in case of error.
-                result_columns[i]->insertDefault();
+                    // All data columns will get default value in case of error.
+                    result_columns[i]->insertDefault();
+                }
+
+                break;
             }
-
-            return 1;
+        case ExtStreamingHandleErrorMode::DEFAULT:
+            throw std::move(e);
         }
-
-        throw std::move(e);
+        return 1;
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
@@ -233,7 +239,7 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[3]->insert(message.redelivered);
                 virtual_columns[4]->insert(message.message_id);
                 virtual_columns[5]->insert(message.timestamp);
-                if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+                if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
@@ -244,6 +250,30 @@ Chunk RabbitMQSource::generateImpl()
                     {
                         virtual_columns[6]->insertDefault();
                         virtual_columns[7]->insertDefault();
+                    }
+                }
+                else if (handle_error_mode == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+                {
+                    if (exception_message)
+                    {
+
+                        const auto time_now = std::chrono::system_clock::now();
+                        auto storage_id = storage.getStorageID();
+
+                        auto dead_letter_queue = context->getDeadLetterQueue();
+                        dead_letter_queue->add(
+                            DeadLetterQueueElement{
+                                .stream_type = DeadLetterQueueElement::StreamType::RabbitMQ,
+                                .event_time = timeInSeconds(time_now),
+                                .event_time_microseconds = timeInMicroseconds(time_now),
+                                .database_name = storage_id.database_name,
+                                .table_name = storage_id.table_name,
+                                .topic_name = "",  //
+                                .partition = 0, // message.channel_id,
+                                .offset = 0, // message.message_id,
+                                .raw_message = message.message,
+                                .error = exception_message.value(),
+                            });
                     }
                 }
             }

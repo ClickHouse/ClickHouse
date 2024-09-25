@@ -19,11 +19,12 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
     auto stream_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values{
             {"Kafka", static_cast<Int8>(StreamType::Kafka)},
+            {"RabbitMQ", static_cast<Int8>(StreamType::RabbitMQ)},
         });
 
     return ColumnsDescription
     {
-        {"stream_type", stream_type, "Stream type. Possible values: 'Kafka'."},
+        {"stream_type", stream_type, "Stream type. Possible values: 'Kafka', 'RabbitMQ'."},
         {"event_date", std::make_shared<DataTypeDate>(), "Message consuming date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Message consuming date and time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query starting time with microseconds precision."},

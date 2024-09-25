@@ -25,6 +25,7 @@ struct DeadLetterQueueElement
     enum class StreamType : int8_t
     {
         Kafka = 1,
+        RabbitMQ = 2,
     };
 
     StreamType stream_type;
