@@ -45,10 +45,12 @@ def restart_clickhouse():
     node.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node)
 
+
 def start_clean_clickhouse():
     node.stop_clickhouse()
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination"])
     node.start_clickhouse()
+
 
 def test_mntr_data_size_after_restart(started_cluster):
     start_clean_clickhouse()
