@@ -386,11 +386,7 @@ String transformQueryForExternalDatabaseImpl(
 
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
-    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::WhenNecessary;
-    if (identifier_quoting_style != IdentifierQuotingStyle::None)
-    {
-        identifier_quoting_rule = IdentifierQuotingRule::Always;
-    }
+    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::Always;
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(
         /*ostr_=*/out,

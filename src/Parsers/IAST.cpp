@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Poco/String.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 
@@ -220,23 +221,18 @@ String IAST::getColumnNameWithoutAlias() const
 
 void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
 {
+    if (!ambiguous && identifier_quoting_rule == IdentifierQuotingRule::UserDisplay)
+    {
+        // Treat `name` as ambiguous if it is one of the keywords
+        const auto & keywords = getAllKeyWords();
+        ambiguous = std::find(keywords.begin(), keywords.end(), Poco::toUpper(name)) != keywords.end();
+    }
+
     bool must_quote
         = (identifier_quoting_rule == IdentifierQuotingRule::Always
            || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary));
     switch (identifier_quoting_style)
     {
-        case IdentifierQuotingStyle::None:
-        {
-            if (must_quote)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Incompatible arguments: identifier_quoting_rule = {} && identifier_quoting_style == {} && ambiguous = {}",
-                    identifier_quoting_rule,
-                    identifier_quoting_style,
-                    ambiguous);
-            writeString(name, ostr);
-            break;
-        }
         case IdentifierQuotingStyle::Backticks:
         {
             if (must_quote)
