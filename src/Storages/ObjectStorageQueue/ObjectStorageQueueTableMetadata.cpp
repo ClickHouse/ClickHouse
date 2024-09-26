@@ -51,7 +51,8 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , last_processed_path(engine_settings.last_processed_path)
     , loading_retries(engine_settings.loading_retries)
 {
-    if (!engine_settings.processing_threads_num.changed && engine_settings.processing_threads_num <= 1)
+    processing_threads_num_changed = engine_settings.processing_threads_num.changed;
+    if (!processing_threads_num_changed && engine_settings.processing_threads_num <= 1)
         processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
     else
         processing_threads_num = engine_settings.processing_threads_num;
@@ -106,9 +107,9 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
     , buckets(getOrDefault(json, "buckets", "", 0))
-    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10))
+    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
 {
     validateMode(mode);
 }
@@ -124,9 +125,15 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
 {
     if (processing_threads_num != from_zk.processing_threads_num)
     {
-        LOG_TRACE(getLogger("ObjectStorageQueueTableMetadata"),
-                  "Using `processing_threads_num` from keeper: {} (local: {})",
-                  from_zk.processing_threads_num, processing_threads_num);
+        auto log = getLogger("ObjectStorageQueueTableMetadata");
+        const std::string message = fmt::format(
+            "Using `processing_threads_num` from keeper: {} (local: {})",
+            from_zk.processing_threads_num, processing_threads_num);
+
+        if (processing_threads_num_changed)
+            LOG_WARNING(log, "{}", message);
+        else
+            LOG_TRACE(log, "{}", message);
 
         processing_threads_num = from_zk.processing_threads_num;
     }

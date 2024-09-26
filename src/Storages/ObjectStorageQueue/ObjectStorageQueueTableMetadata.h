@@ -25,9 +25,11 @@ struct ObjectStorageQueueTableMetadata
     const UInt64 tracked_files_limit;
     const UInt64 tracked_files_ttl_sec;
     const UInt64 buckets;
-    UInt64 processing_threads_num; /// Can be changed from keeper.
     const String last_processed_path;
     const UInt64 loading_retries;
+
+    UInt64 processing_threads_num; /// Can be changed from keeper.
+    bool processing_threads_num_changed = false;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
