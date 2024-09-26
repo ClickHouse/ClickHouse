@@ -7,10 +7,6 @@ max-branches=50
 max-nested-blocks=10
 max-statements=200
 
-[tool.isort]
-profile = "black"
-src_paths = ["src", "tests/ci", "tests/sqllogic"]
-
 [tool.pylint.FORMAT]
 #ignore-long-lines = (# )?<?https?://\S+>?$
 
@@ -31,6 +27,13 @@ disable = '''
           broad-except,
           bare-except,
           '''
+
+[tool.isort]
+profile = "black"
+src_paths = ["src", "tests/ci", "tests/sqllogic"]
+
+[tool.black]
+required-version = 24
 
 [tool.pylint.SIMILARITIES]
 # due to SQL
