@@ -1295,13 +1295,15 @@ void StorageDistributed::initializeFromDisk()
 
 void StorageDistributed::shutdown(bool)
 {
-    async_insert_blocker.cancelForever();
+    auto holder = async_insert_blocker.cancel();
 
     std::lock_guard lock(cluster_nodes_mutex);
 
     LOG_DEBUG(log, "Joining background threads for async INSERT");
     cluster_nodes_data.clear();
     LOG_DEBUG(log, "Background threads for async INSERT joined");
+
+    async_insert_blocker.cancelForever();
 }
 
 void StorageDistributed::drop()
