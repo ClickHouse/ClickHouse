@@ -8616,7 +8616,10 @@ void MergeTreeData::updateSerializationHints(const DataPartPtr & part, const Dat
 SerializationInfoByName MergeTreeData::getSerializationHints() const
 {
     auto lock = lockParts();
-    return serialization_hints;
+    SerializationInfoByName res;
+    for (const auto & [name, info] : serialization_hints)
+        res.emplace(name, info->clone());
+    return res;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
