@@ -1184,64 +1184,97 @@ def test_partial_table(started_cluster):
     )
 
 
-def test_partial_and_full_table(started_cluster):
+# it is important to check case when table name, with subset of columns, is substring of table with full set of columns
+@pytest.mark.parametrize(
+    "table_list",
+    [
+        "{}(key, x, z), {}_full, {}_full1",
+        "{}_full, {}(key, x, z), {}_full1",
+        "{}_full,{}(key, x, z),{}_full1",
+        "{}_full,{}_full1,{}(key, x, z)",
+    ],
+)
+def test_partial_and_full_table(started_cluster, table_list):
     table = "test_partial_and_full_table"
+    table_list = table_list.format(table, table, table)
+    print(table_list)
 
     pg_manager.create_postgres_table(
         table,
         "",
-        f"""CREATE TABLE {table}1 (
+        f"""CREATE TABLE {table} (
              key integer PRIMARY KEY,
              x integer DEFAULT 0,
              y integer,
              z text DEFAULT 'z');
          """,
     )
-    pg_manager.execute(f"insert into {table}1 (key, x, y, z) values (1,1,1,'1');")
-    pg_manager.execute(f"insert into {table}1 (key, x, y, z) values (2,2,2,'2');")
+    pg_manager.execute(f"insert into {table} (key, x, y, z) values (1,1,1,'1');")
+    pg_manager.execute(f"insert into {table} (key, x, y, z) values (2,2,2,'2');")
+
     pg_manager.create_postgres_table(
-        table,
+        table + "_full",
         "",
-        f"""CREATE TABLE {table}2 (
+        f"""CREATE TABLE {table}_full (
              key integer PRIMARY KEY,
              x integer DEFAULT 0,
              y integer,
              z text DEFAULT 'z');
          """,
     )
-    pg_manager.execute(f"insert into {table}2 (key, x, y, z) values (3,3,3,'3');")
-    pg_manager.execute(f"insert into {table}2 (key, x, y, z) values (4,4,4,'4');")
+    pg_manager.execute(f"insert into {table}_full (key, x, y, z) values (3,3,3,'3');")
+    pg_manager.execute(f"insert into {table}_full (key, x, y, z) values (4,4,4,'4');")
+
+    pg_manager.create_postgres_table(
+        table + "_full1",
+        "",
+        f"""CREATE TABLE {table}_full1 (
+             key integer PRIMARY KEY,
+             x integer DEFAULT 0,
+             y integer,
+             z text DEFAULT 'z');
+         """,
+    )
+    pg_manager.execute(f"insert into {table}_full1 (key, x, y, z) values (5,5,5,'5');")
+    pg_manager.execute(f"insert into {table}_full1 (key, x, y, z) values (6,6,6,'6');")
 
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
         settings=[
-            f"materialized_postgresql_tables_list = '{table}1(key, x, z), {table}2'",
+            f"materialized_postgresql_tables_list = '{table_list}'",
             "materialized_postgresql_backoff_min_ms = 100",
             "materialized_postgresql_backoff_max_ms = 100",
         ],
     )
     check_tables_are_synchronized(
         instance,
-        f"{table}1",
+        f"{table}",
         postgres_database=pg_manager.get_default_database(),
         columns=["key", "x", "z"],
     )
     check_tables_are_synchronized(
-        instance, f"{table}2", postgres_database=pg_manager.get_default_database()
+        instance, f"{table}_full", postgres_database=pg_manager.get_default_database()
+    )
+    check_tables_are_synchronized(
+        instance, f"{table}_full1", postgres_database=pg_manager.get_default_database()
     )
 
-    pg_manager.execute(f"insert into {table}1 (key, x, z) values (3,3,'3');")
-    pg_manager.execute(f"insert into {table}2 (key, x, z) values (5,5,'5');")
+    pg_manager.execute(f"insert into {table} (key, x, z) values (7,7,'7');")
+    pg_manager.execute(f"insert into {table}_full (key, x, z) values (8,8,'8');")
+    pg_manager.execute(f"insert into {table}_full1 (key, x, z) values (9,9,'9');")
 
     check_tables_are_synchronized(
         instance,
-        f"{table}1",
+        f"{table}",
         postgres_database=pg_manager.get_default_database(),
         columns=["key", "x", "z"],
     )
     check_tables_are_synchronized(
-        instance, f"{table}2", postgres_database=pg_manager.get_default_database()
+        instance, f"{table}_full", postgres_database=pg_manager.get_default_database()
+    )
+    check_tables_are_synchronized(
+        instance, f"{table}_full1", postgres_database=pg_manager.get_default_database()
     )
 
 
