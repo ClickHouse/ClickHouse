@@ -253,7 +253,7 @@ BF off for parquet uint64 logical type. Should read everything
     "bytes_read": 47419
   }
 }
-BF on for parquet uint64 logical type. Should read everything
+BF on for parquet uint64 logical type. Uint64 is stored as a signed int 64, but with logical annotation. Make sure a value greater than int64 can be queried
 {
   "data": [
     {
@@ -264,5 +264,88 @@ BF on for parquet uint64 logical type. Should read everything
   "statistics": {
     "rows_read": 464,
     "bytes_read": 21711
+  }
+}
+Uint16 is stored as physical type int32 with bidwidth = 16  and sign = false. Make sure a value greater than int16 can be queried. BF is on.
+{
+  "data": [
+    {
+      "json": "{\"key\":874, \"value\":\"JENHW\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21703
+  }
+}
+BF off for parquet int8 logical type. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":89, \"value\":\"MFIYP\"}"
+    },
+    {
+      "json": "{\"key\":321, \"value\":\"JNOIA\"}"
+    },
+    {
+      "json": "{\"key\":938, \"value\":\"UBMLO\"}"
+    },
+    {
+      "json": "{\"key\":252, \"value\":\"ZVLKF\"}"
+    }
+  ],
+  "rows": 4,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+BF on for parquet int8 logical type. Should skip row groups
+{
+  "data": [
+    {
+      "json": "{\"key\":89, \"value\":\"MFIYP\"}"
+    },
+    {
+      "json": "{\"key\":321, \"value\":\"JNOIA\"}"
+    },
+    {
+      "json": "{\"key\":938, \"value\":\"UBMLO\"}"
+    },
+    {
+      "json": "{\"key\":252, \"value\":\"ZVLKF\"}"
+    }
+  ],
+  "rows": 4,
+  "statistics": {
+    "rows_read": 536,
+    "bytes_read": 25716
+  }
+}
+BF off for parquet UUID logical type. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":208, \"value\":\"LOCNZ\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+BF on for parquet UUID logical type. Should skip row groups
+{
+  "data": [
+    {
+      "json": "{\"key\":208, \"value\":\"LOCNZ\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21703
   }
 }
