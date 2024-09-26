@@ -201,7 +201,7 @@ T combineHashesFunc(T t1, T t2)
 #if USE_SSL
 struct RipeMD160Impl
 {
-    static constexpr auto name = "RIPEMD160";
+    static constexpr auto name = "ripeMD160";
     using ReturnType = UInt256;
 
     static UInt256 apply(const char * begin, size_t size)

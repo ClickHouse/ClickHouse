@@ -586,6 +586,8 @@ MinHash
 MinIO
 MinMax
 MindsDB
+mongoc
+mongocxx
 Mongo
 Mongodb
 Monotonicity
@@ -800,7 +802,6 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
-RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders
@@ -2084,7 +2085,6 @@ metasymbols
 metrica
 metroHash
 mfedotov
-mflix
 minMap
 minMappedArrays
 minSampleSizeContinuous
@@ -2094,6 +2094,7 @@ minimalistic
 mininum
 miniselect
 minmap
+mflix
 minmax
 mins
 misconfiguration
@@ -2105,8 +2106,6 @@ mmapped
 modularization
 moduli
 moduloOrZero
-mongoc
-mongocxx
 mongodb
 monotonicity
 monthName
@@ -2497,6 +2496,7 @@ rewritable
 rightPad
 rightPadUTF
 rightUTF
+ripeMD
 risc
 riscv
 ro
