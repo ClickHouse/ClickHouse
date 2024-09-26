@@ -36,13 +36,18 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
     }
 }
 
+bool FilterTransform::canUseType(const DataTypePtr & filter_type)
+{
+    return filter_type->onlyNull() || isUInt8(removeNullable(removeLowCardinality(filter_type)));
+}
+
 Block FilterTransform::transformHeader(
     const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
 {
     Block result = expression ? expression->updateHeader(header) : header;
 
     auto filter_type = result.getByName(filter_column_name).type;
-    if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
+    if (!canUseType(filter_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
