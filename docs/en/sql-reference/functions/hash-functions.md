@@ -689,8 +689,9 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 ```
 
 ## ripeMD160
+Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash of a string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
-Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
+
 
 **Syntax**
 
@@ -704,7 +705,7 @@ ripeMD160('input')
 
 **Returned value**
 
-- A [UInt256]((../data-types/int-uint.md)) hash value where the 160-bit RIPEMD-160 hash is stored in the first 20 bytes. The remaining 12 bytes are zero-padded.
+- A [UInt256](../data-types/int-uint.md) hash value
 
 **Example**
 Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
