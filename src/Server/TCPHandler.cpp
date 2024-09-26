@@ -34,6 +34,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/NetException.h>
@@ -980,7 +981,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), query_context);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Oh, wise CI gods, please help me find out how this could happen?!");
     }
 
     auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
