@@ -222,7 +222,8 @@ void StorageNATS::reconnectionFunc()
 
     /// Connecting and reconnecting to NATS server must be called from event loop thread
     event_handler.post(
-        [&](){
+        [&]()
+        {
             bool needs_rescheduling = true;
             if (consumers_connection->reconnect())
                 needs_rescheduling &= !subscribeConsumers();
@@ -236,8 +237,10 @@ void StorageNATS::startReconnection(DB::NATSConnectionPtr connection_)
 {
     /// Connecting and reconnecting to NATS server must be called from event loop thread
     event_handler.post(
-        [&, connection = std::move(connection_)](){
-            if(connection->isConnected()){
+        [&, connection = std::move(connection_)]()
+        {
+            if(connection->isConnected())
+            {
                 return;
             }
 
@@ -396,7 +399,8 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
         subject,
         shutdown_called,
         log,
-        [&](NATSConnectionPtr connection){
+        [&](NATSConnectionPtr connection)
+        {
             startReconnection(std::move(connection));
         });
     size_t max_rows = max_rows_per_message;
@@ -586,7 +590,8 @@ void StorageNATS::streamingToViewsFunc()
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         bool nats_connected = consumers_connection->isConnected();
-        if(!nats_connected){
+        if(!nats_connected)
+        {
             reconnection_task->activateAndSchedule();
         }
 

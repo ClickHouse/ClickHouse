@@ -11,11 +11,6 @@ namespace DB
 
 static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_CONNECT_NATS;
-}
-
 NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
     : configuration(configuration_)
     , log(std::move(log_))
@@ -62,7 +57,8 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
 }
 NATSConnection::~NATSConnection()
 {
-    if(connection && !natsConnection_IsClosed(connection.get())){
+    if(connection && !natsConnection_IsClosed(connection.get()))
+    {
         natsConnection_Close(connection.get());
     }
 }
@@ -131,7 +127,8 @@ void NATSConnection::connectImpl()
 
 void NATSConnection::disconnectImpl()
 {
-    if(!isConnectedImpl()){
+    if(!isConnectedImpl())
+    {
         return;
     }
 

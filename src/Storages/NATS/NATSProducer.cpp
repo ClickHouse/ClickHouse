@@ -15,7 +15,6 @@ static const auto MAX_BUFFERED = 131072;
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CONNECT_NATS;
     extern const int LOGICAL_ERROR;
 }
 

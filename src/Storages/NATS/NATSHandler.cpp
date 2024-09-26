@@ -20,7 +20,8 @@ NATSHandler::NATSHandler(LoggerPtr log_)
 
 void NATSHandler::runLoop()
 {
-    if(loop_state.load() != Loop::STOP){
+    if(loop_state.load() != Loop::STOP)
+    {
         return;
     }
 
@@ -48,7 +49,8 @@ void NATSHandler::runLoop()
             num_pending_tasks = tasks.size();
         }
 
-        while(!executed_tasks.empty()){
+        while(!executed_tasks.empty())
+        {
             const auto & task = executed_tasks.front();
             task();
             executed_tasks.pop();
@@ -63,7 +65,8 @@ void NATSHandler::runLoop()
 
 void NATSHandler::stopLoop()
 {
-    if(loop_state.load() != Loop::RUN){
+    if(loop_state.load() != Loop::RUN)
+    {
         return;
     }
 
@@ -81,7 +84,8 @@ NATSOptionsPtr NATSHandler::createOptions()
 {
     natsOptions * options = nullptr;
     auto er = natsOptions_Create(&options);
-    if(er){
+    if(er)
+    {
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_NATS,
             "Can not initialize NATS options. Nats error: {}",
@@ -94,7 +98,8 @@ NATSOptionsPtr NATSHandler::createOptions()
                                   natsLibuv_Read,
                                   natsLibuv_Write,
                                   natsLibuv_Detach);
-    if(er){
+    if(er)
+    {
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_NATS,
             "Can not set event loop. Nats error: {}",
