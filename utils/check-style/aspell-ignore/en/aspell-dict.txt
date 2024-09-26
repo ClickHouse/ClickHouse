@@ -1134,12 +1134,12 @@ addressToLineWithInlines
 addressToSymbol
 adviced
 agg
-aggThrow
 aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
 aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1923,8 +1923,8 @@ joinGet
 joinGetOrNull
 json
 jsonMergePatch
-jsonasobject
 jsonasstring
+jsonasobject
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -1965,8 +1965,8 @@ kurtSamp
 kurtosis
 kurtpop
 kurtsamp
-lagInFrame
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
@@ -2069,6 +2069,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2266,8 +2267,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
-partitionID
 partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2496,7 +2497,6 @@ rewritable
 rightPad
 rightPadUTF
 rightUTF
-ripeMD
 risc
 riscv
 ro
@@ -2748,6 +2748,7 @@ themself
 threadpool
 throwIf
 timeDiff
+TimeSeries
 timeSeriesData
 timeSeriesMetrics
 timeSeriesTags
