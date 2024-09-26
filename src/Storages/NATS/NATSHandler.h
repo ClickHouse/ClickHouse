@@ -29,7 +29,7 @@ class NATSHandler
     using Task = std::function<void ()>;
 
 public:
-    NATSHandler(LoggerPtr log_);
+    explicit NATSHandler(LoggerPtr log_);
 
     /// Loop for background thread worker.
     void runLoop();
