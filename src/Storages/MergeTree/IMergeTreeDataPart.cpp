@@ -848,7 +848,7 @@ void IMergeTreeDataPart::loadProjections(
     for (const auto & projection : metadata_snapshot->projections)
     {
         auto path = projection.name + ".proj";
-        if (getDataPartStorage().existsFile(path))
+        if (getDataPartStorage().existsDirectory(path))
         {
             if (hasProjection(projection.name))
             {
