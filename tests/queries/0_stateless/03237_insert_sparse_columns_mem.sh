@@ -25,7 +25,7 @@ filename="test_data_sparse_$CLICKHOUSE_DATABASE.json"
 
 $CLICKHOUSE_CLIENT --query "
     INSERT INTO FUNCTION file('$filename', LineAsString)
-    SELECT format('{{ \"id\": {}, \"c{}\": \"{}\" }}', number, number % 250, hex(number * 1000000)) FROM numbers(100000)
+    SELECT format('{{ \"id\": {}, \"c{}\": \"{}\" }}', number, number % 250, hex(number * 1000000)) FROM numbers(30000)
     SETTINGS engine_file_truncate_on_insert = 1;
 
     INSERT INTO FUNCTION s3(s3_conn, filename='$filename', format='LineAsString')
@@ -53,7 +53,7 @@ $CLICKHOUSE_CLIENT --query "
 
     SYSTEM FLUSH LOGS;
 
-    SELECT written_bytes <= 10000000 FROM system.query_log
+    SELECT written_bytes <= 3000000 FROM system.query_log
     WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds;
 
