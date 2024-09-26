@@ -62,8 +62,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         if (!isVirtualRow(input.chunk))
             continue;
 
-        setVirtualRow(input.chunk, apply_virtual_row_conversions);
-        input.skip_last_row = true;
+        setVirtualRow(input.chunk, header, apply_virtual_row_conversions);
     }
 
     removeConstAndSparse(inputs);

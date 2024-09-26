@@ -701,9 +701,10 @@ Pipe ReadFromMergeTree::readInOrder(
             size_t mark_range_begin = part_with_ranges.ranges.front().begin;
 
             ColumnsWithTypeAndName pk_columns;
-            pk_columns.reserve(index->size());
+            size_t num_columns = virtual_row_conversion->getSampleBlock().columns();
+            pk_columns.reserve(num_columns);
 
-            for (size_t j = 0; j < index->size(); ++j)
+            for (size_t j = 0; j < num_columns; ++j)
             {
                 auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
                 column->insert((*(*index)[j])[mark_range_begin]);

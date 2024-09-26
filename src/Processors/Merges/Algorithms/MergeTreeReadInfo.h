@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// To carry part level and virtual row if chunk is produced by a merge tree source
 class MergeTreeReadInfo : public ChunkInfoCloneable<MergeTreeReadInfo>
 {
@@ -41,33 +46,49 @@ inline bool isVirtualRow(const Chunk & chunk)
     return false;
 }
 
-inline void setVirtualRow(Chunk & chunk, bool apply_virtual_row_conversions)
+inline void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
 {
-    auto read_info = chunk.getChunkInfos().extract<MergeTreeReadInfo>();
+    auto read_info = chunk.getChunkInfos().get<MergeTreeReadInfo>();
     chassert(read_info);
 
     Block & pk_block = read_info->pk_block;
+
+    // std::cerr << apply_virtual_row_conversions << std::endl;
+    // std::cerr << read_info->virtual_row_conversions->dumpActions() << std::endl;
+
     if (apply_virtual_row_conversions)
         read_info->virtual_row_conversions->execute(pk_block);
 
-    chunk.setColumns(pk_block.getColumns(), 1);
+    // std::cerr << "++++" << pk_block.dumpStructure() << std::endl;
 
-    // Columns ordered_columns;
-    // ordered_columns.reserve(pk_block.columns());
+    Columns ordered_columns;
+    ordered_columns.reserve(pk_block.columns());
 
-    // for (size_t i = 0; i < header.columns(); ++i)
-    // {
-    //     const ColumnWithTypeAndName & type_and_name = header.getByPosition(i);
-    //     ColumnPtr current_column = type_and_name.type->createColumn();
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const ColumnWithTypeAndName & col = header.getByPosition(i);
+        if (const auto * pk_col = pk_block.findByName(col.name))
+        {
+            if (!col.type->equals(*pk_col->type))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Virtual row has different tupe for {}. Expected {}, got {}",
+                    col.name, col.dumpStructure(), pk_col->dumpStructure());
 
-    //     size_t pos = type_and_name.name.find_last_of('.');
-    //     String column_name = (pos == String::npos) ? type_and_name.name : type_and_name.name.substr(pos + 1);
+            ordered_columns.push_back(pk_col->column);
+        }
+        else
+            ordered_columns.push_back(col.type->createColumnConstWithDefaultValue(1));
 
-    //     const ColumnWithTypeAndName * column = pk_block.findByName(column_name, true);
-    //     ordered_columns.push_back(column ? column->column : current_column->cloneResized(1));
-    // }
+        // ColumnPtr current_column = type_and_name.type->createColumn();
 
-    // chunk.setColumns(ordered_columns, 1);
+        // size_t pos = type_and_name.name.find_last_of('.');
+        // String column_name = (pos == String::npos) ? type_and_name.name : type_and_name.name.substr(pos + 1);
+
+        // const ColumnWithTypeAndName * column = pk_block.findByName(column_name, true);
+        // ordered_columns.push_back(column ? column->column : current_column->cloneResized(1));
+    }
+
+    chunk.setColumns(ordered_columns, 1);
 }
 
 }

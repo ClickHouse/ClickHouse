@@ -339,20 +339,20 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
     }
 }
 
-static const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::Node * node, const MatchedTrees::Match * match)
+static const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::Node * node, const MatchedTrees::Match * match, const std::string & input_name)
 {
     if (!match->monotonicity)
-        return &dag.addInput(node->result_name, node->result_type);
+        return &dag.addInput(input_name, node->result_type);
 
     if (node->type == ActionsDAG::ActionType::ALIAS)
-        return &dag.addAlias(*addMonotonicChain(dag, node->children.front(), match), node->result_name);
+        return &dag.addAlias(*addMonotonicChain(dag, node->children.front(), match, input_name), node->result_name);
 
     ActionsDAG::NodeRawConstPtrs args;
     args.reserve(node->children.size());
     for (const auto * child : node->children)
     {
         if (child == match->monotonicity->child_node)
-            args.push_back(addMonotonicChain(dag, match->monotonicity->child_node, match->monotonicity->child_match));
+            args.push_back(addMonotonicChain(dag, match->monotonicity->child_node, match->monotonicity->child_match, input_name));
         else
             args.push_back(&dag.addColumn({child->column, child->result_type, child->result_name}));
     }
@@ -571,15 +571,25 @@ SortingInputOrder buildInputOrderInfo(
     {
         ActionsDAG virtual_row_dag;
         virtual_row_dag.getOutputs().reserve(match_infos.size());
+        size_t next_pk_name = 0;
         for (const auto & info : match_infos)
         {
             const ActionsDAG::Node * output;
             if (info.fixed_column)
                 output = &virtual_row_dag.addColumn({info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name});
-            else if (info.monotonic)
-                output = addMonotonicChain(virtual_row_dag, info.source, info.monotonic);
             else
-                output = &virtual_row_dag.addInput(info.source->result_name, info.source->result_type);
+            {
+                if (info.monotonic)
+                    output = addMonotonicChain(virtual_row_dag, info.source, info.monotonic, pk_column_names[next_pk_name]);
+                else
+                {
+                    output = &virtual_row_dag.addInput(pk_column_names[next_pk_name], info.source->result_type);
+                    if (pk_column_names[next_pk_name] != info.source->result_name)
+                        output = &virtual_row_dag.addAlias(*output, info.source->result_name);
+                }
+
+                ++next_pk_name;
+            }
 
             virtual_row_dag.getOutputs().push_back(output);
         }
