@@ -42,6 +42,8 @@ public:
 
 private:
     void updateOutputStream() override;
+    /// Header that expected to be returned from IJoin
+    Block join_algorithm_header;
 
     JoinPtr join;
     size_t max_block_size;
