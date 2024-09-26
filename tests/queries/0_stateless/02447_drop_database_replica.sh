@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: This test is not parallel because when we execute system-wide SYSTEM DROP REPLICA,
 #  other tests might shut down the storage in parallel and the test will fail.
+# no-fasttest: It has several tests with timeouts for inactive replicas
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -45,9 +46,13 @@ timeout 60s $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=1000 --distributed
 # And that it still throws TIMEOUT_EXCEEDED for active replicas
 echo 'timeout on active'
 db9="${db}_9"
-$CLICKHOUSE_CLIENT -q "create database $db9 engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's9', 'r9')"
+REPLICA_UUID=$($CLICKHOUSE_CLIENT -q "select serverUUID()")
+if ! [[ $REPLICA_UUID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+  echo "Weird UUID ${REPLICA_UUID}"
+fi
+$CLICKHOUSE_CLIENT -q "create database $db9 engine=Replicated('/test/${CLICKHOUSE_DATABASE}/rdb', 's9', 'r9')"
 $CLICKHOUSE_CLIENT -q "detach database $db9"
-$CLICKHOUSE_CLIENT -q "insert into system.zookeeper(name, path, value) values ('active', '/test/$CLICKHOUSE_DATABASE/rdb/replicas/s9|r9', '$($CLICKHOUSE_CLIENT -q "select serverUUID()")')"
+$CLICKHOUSE_CLIENT -q "insert into system.zookeeper(name, path, value) values ('active', '/test/${CLICKHOUSE_DATABASE}/rdb/replicas/s9|r9', '${REPLICA_UUID}')"
 
 $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=5 --distributed_ddl_output_mode=none_only_active -q "create table $db.t22 (n int) engine=Log" 2>&1| grep -Fac "TIMEOUT_EXCEEDED"
 $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=5 --distributed_ddl_output_mode=throw_only_active -q "create table $db.t33 (n int) engine=Log" 2>&1| grep -Fac "TIMEOUT_EXCEEDED"

@@ -43,20 +43,20 @@ def test_persistence():
     error_message = instance.query_and_get_error("SELECT MySum1(1, 2)")
     assert (
         "Unknown function MySum1" in error_message
-        or "Function with name 'MySum1' does not exist. In scope SELECT MySum1(1, 2)"
+        or "Function with name `MySum1` does not exist. In scope SELECT MySum1(1, 2)"
         in error_message
     )
 
     error_message = instance.query_and_get_error("SELECT MySum2(1, 2)")
     assert (
         "Unknown function MySum2" in error_message
-        or "Function with name 'MySum2' does not exist. In scope SELECT MySum2(1, 2)"
+        or "Function with name `MySum2` does not exist. In scope SELECT MySum2(1, 2)"
         in error_message
     )
 
     error_message = instance.query_and_get_error("SELECT MyUnion()")
     assert (
         "Unknown function MyUnion" in error_message
-        or "Function with name 'MyUnion' does not exist. In scope SELECT MyUnion"
+        or "Function with name `MyUnion` does not exist. In scope SELECT MyUnion"
         in error_message
     )

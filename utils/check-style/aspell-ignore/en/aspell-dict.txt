@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2942 
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -47,6 +47,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AzureQueue
 BIGINT
 BIGSERIAL
 BORO
@@ -99,6 +100,7 @@ BlockWriteBytes
 BlockWriteMerges
 BlockWriteOps
 BlockWriteTime
+Boncz
 Bool
 BrokenDistributedFilesToInsert
 Bugfix
@@ -114,6 +116,7 @@ CESU
 CIDR
 CIDRToRange
 CKMAN
+CKibana
 CLOB
 CLion
 CMPLNT
@@ -183,6 +186,7 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+CountMin
 Covid
 Cramer's
 Criteo
@@ -245,12 +249,15 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
+Dresseler
 Durre
 ECMA
+ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
+ElasticSearch
 EmbeddedRocksDB
 Embeddings
 Encodings
@@ -384,12 +391,26 @@ IntelliJ
 IntelliSense
 InterserverConnection
 InterserverThreads
+IntervalDay
+IntervalHour
+IntervalMicrosecond
+IntervalMillisecond
+IntervalMilliseconds
+IntervalMinute
+IntervalMonth
+IntervalNanosecond
+IntervalQuarter
+IntervalSecond
+IntervalWeek
+IntervalYear
 IsPentagon
 IsResClassIII
 IsValid
 JBOD
 JOINed
 JOINs
+JSONAllPaths
+JSONAllPathsWithTypes
 JSONArrayLength
 JSONAsObject
 JSONAsString
@@ -404,6 +425,9 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactWithProgress
+JSONDynamicPaths
+JSONDynamicPathsWithTypes
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -420,6 +444,8 @@ JSONExtractUInt
 JSONHas
 JSONLength
 JSONObjectEachRow
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
@@ -452,6 +478,7 @@ KeeperMap
 KeeperOutstandingRequests
 Kerberos
 Khanna
+Kibana
 KittenHouse
 Klickhouse
 Kolmogorov
@@ -461,6 +488,7 @@ Kubernetes
 LDAP
 LGPL
 LIMITs
+LINEITEM
 LLDB
 LLVM's
 LOCALTIME
@@ -558,9 +586,11 @@ MinHash
 MinIO
 MinMax
 MindsDB
+Mongo
 Mongodb
 Monotonicity
 MsgPack
+MultiLineString
 MultiPolygon
 Multiline
 Multiqueries
@@ -585,6 +615,7 @@ NVMe
 NYPD
 NaNs
 Nagios
+Nambiar
 Namenode
 NamesAndTypesList
 Nano
@@ -708,10 +739,12 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
+PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
 PlantUML
+Poess
 PointDistKm
 PointDistM
 PointDistRads
@@ -767,6 +800,7 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
+RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders
@@ -774,6 +808,7 @@ RWLockActiveWriters
 RWLockWaitingReaders
 RWLockWaitingWriters
 RabbitMQ
+Rabl
 RangeHashed
 RawBLOB
 ReDoS
@@ -955,6 +990,8 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+TimeSeries
+TimescaleDB's
 Timeunit
 TinyLog
 Tkachenko
@@ -1096,12 +1133,12 @@ addressToLineWithInlines
 addressToSymbol
 adviced
 agg
+aggThrow
 aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
 aggthrow
-aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1136,6 +1173,7 @@ arrayDifference
 arrayDistinct
 arrayDotProduct
 arrayElement
+arrayElementOrNull
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -1185,9 +1223,11 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip
+arrayZipUnaligned
 ascii
 asin
 asinh
@@ -1345,6 +1385,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckibana
 ckman
 clangd
 cli
@@ -1517,6 +1558,7 @@ dequeues
 deserialization
 deserialized
 deserializing
+dest
 destructor
 destructors
 detectCharset
@@ -1542,6 +1584,11 @@ disjunction
 disjunctions
 displayName
 displaySecretsInShowAndSelect
+distinctDynamicTypes
+distinctJSONPaths
+distinctJSONPathsAndTypes
+distinctdynamictypes
+distinctjsonpaths
 distro
 divideDecimal
 dmesg
@@ -1587,6 +1634,7 @@ enum's
 enums
 erfc
 errorCodeToName
+etag
 evalMLMethod
 exFAT
 expiryMsec
@@ -1672,6 +1720,7 @@ fuzzQuery
 fuzzer
 fuzzers
 gRPC
+gaugehistogram
 gccMurmurHash
 gcem
 generateRandom
@@ -1698,6 +1747,8 @@ getOSKernelVersion
 getServerPort
 getSetting
 getSizeOfEnumType
+getSubcolumn
+getTypeSerializationStreams
 getblockinfo
 getevents
 ghcnd
@@ -1871,8 +1922,8 @@ joinGet
 joinGetOrNull
 json
 jsonMergePatch
-jsonasstring
 jsonasobject
+jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -1884,6 +1935,7 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
+jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -1913,8 +1965,8 @@ kurtSamp
 kurtosis
 kurtpop
 kurtsamp
-laion
 lagInFrame
+laion
 lang
 laravel
 largestTriangleThreeBuckets
@@ -1959,6 +2011,7 @@ linearizable
 linearized
 lineasstring
 linefeeds
+lineitem
 lineorder
 linestring
 linux
@@ -2016,7 +2069,6 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
-minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2033,6 +2085,7 @@ metasymbols
 metrica
 metroHash
 mfedotov
+mflix
 minMap
 minMappedArrays
 minSampleSizeContinuous
@@ -2053,6 +2106,8 @@ mmapped
 modularization
 moduli
 moduloOrZero
+mongoc
+mongocxx
 mongodb
 monotonicity
 monthName
@@ -2087,6 +2142,7 @@ multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
+multilinestring
 multiplyDecimal
 multipolygon
 multisearchany
@@ -2110,11 +2166,14 @@ namenode
 namepassword
 nameprofile
 namequota
+namespace
 namespaces
 natively
 nats
+ness
 nestjs
 netloc
+newjson
 ngram
 ngramDistance
 ngramDistanceCaseInsensitive
@@ -2182,6 +2241,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overlayUTF
 overparallelization
 packetpool
 packetsize
@@ -2208,8 +2268,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
-partitionId
 partitionID
+partitionId
 pathFull
 pclmulqdq
 pcre
@@ -2364,6 +2424,7 @@ rankCorr
 rapidjson
 rawblob
 readWKTLineString
+readWKTMultiLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2556,6 +2617,7 @@ startsWithUTF
 startswith
 statbox
 stateful
+stateset
 stddev
 stddevPop
 stddevPopStable
@@ -2687,6 +2749,9 @@ themself
 threadpool
 throwIf
 timeDiff
+timeSeriesData
+timeSeriesMetrics
+timeSeriesTags
 timeSlot
 timeSlots
 timeZone
@@ -2695,6 +2760,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
@@ -2718,6 +2784,17 @@ toISOWeek
 toISOYear
 toInt
 toInterval
+toIntervalDay
+toIntervalHour
+toIntervalMicrosecond
+toIntervalMillisecond
+toIntervalMinute
+toIntervalMonth
+toIntervalNanosecond
+toIntervalQuarter
+toIntervalSecond
+toIntervalWeek
+toIntervalYear
 toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
@@ -2788,6 +2865,8 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+tpcds
+tpch
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot

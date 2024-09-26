@@ -7,7 +7,7 @@ import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Callable
+from typing import Callable, Dict, List, Optional, Union
 
 from github import Github
 from github.Commit import Commit
@@ -497,9 +497,9 @@ def trigger_mergeable_check(
     description = format_description(description)
 
     if set_from_sync:
-        # update Mergeable Check from sync WF only if its status already present or its new status is not SUCCESS
+        # update Mergeable Check from sync WF only if its status already present or its new status is FAILURE
         #   to avoid false-positives
-        if mergeable_status or state != SUCCESS:
+        if mergeable_status or state == FAILURE:
             set_mergeable_check(commit, description, state)
     elif mergeable_status is None or mergeable_status.description != description:
         set_mergeable_check(commit, description, state)

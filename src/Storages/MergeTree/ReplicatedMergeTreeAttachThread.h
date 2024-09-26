@@ -48,6 +48,8 @@ private:
     void runImpl();
 
     void finalizeInitialization();
+
+    Int32 fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 };
 
 }
