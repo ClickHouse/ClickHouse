@@ -26,7 +26,7 @@ StatisticsUniq::~StatisticsUniq()
     collector->destroy(data);
 }
 
-void StatisticsUniq::build(const ColumnPtr & column)
+void StatisticsUniq::update(const ColumnPtr & column)
 {
     /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
     /// Here we intend to avoid crash in CI.
