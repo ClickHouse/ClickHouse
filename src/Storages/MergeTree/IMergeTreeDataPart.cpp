@@ -1668,8 +1668,8 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
                         "CreationTID of part {} (table {}) is set to unexpected value {}, it's a bug. Current transaction: {}",
                         name, storage.getStorageID().getNameForLogs(), version.creation_tid, txn ? txn->dumpDescription() : "<none>");
 
-    assert(!txn || storage.supportsTransactions());
-    assert(!txn || getDataPartStorage().exists(TXN_VERSION_METADATA_FILE_NAME));
+    chassert(!txn || storage.supportsTransactions());
+    chassert(!txn || getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME));
 }
 
 void IMergeTreeDataPart::storeVersionMetadata(bool force) const
