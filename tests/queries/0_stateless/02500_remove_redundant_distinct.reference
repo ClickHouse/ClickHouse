@@ -53,7 +53,7 @@ Expression (Projection)
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
                   ReadFromSystemNumbers
-          Expression ((Before ORDER BY + Projection))
+          Expression (( + Projection))
             Distinct
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
@@ -536,7 +536,7 @@ Expression (Projection)
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
                   ReadFromSystemNumbers
-          Expression ((Before ORDER BY + Projection))
+          Expression (( + Projection))
             Distinct
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)

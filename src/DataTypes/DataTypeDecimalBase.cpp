@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <Interpreters/Context.h>
 #include <type_traits>

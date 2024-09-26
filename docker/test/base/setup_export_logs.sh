@@ -124,10 +124,11 @@ function setup_logs_replication
     check_logs_credentials || return 0
     __set_connection_args
 
-    echo "My hostname is ${HOSTNAME}"
-
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
+
+    # It's doesn't make sense to try creating tables if SYNC fails
+    echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client "${CONNECTION_ARGS[@]}" || return 0
 
     debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
@@ -142,7 +143,7 @@ function setup_logs_replication
             time DateTime COMMENT 'The time of test run',
             test_name String COMMENT 'The name of the test',
             coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
-        ) ENGINE = MergeTree ORDER BY test_name COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
+        ) ENGINE = Null COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
     "
 
     # For each system log table:
@@ -186,17 +187,7 @@ function setup_logs_replication
             /^TTL /d
             ')
 
-        echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
-
-        echo "::group::${table}"
-        # there's the only way big "$statement" can be printed without causing EAGAIN error
-        # cat: write error: Resource temporarily unavailable
-        statement_print="${statement}"
-        if [ "${#statement_print}" -gt 4000 ]; then
-          statement_print="${statement::1999}\n…\n${statement:${#statement}-1999}"
-        fi
-        echo -e "$statement_print"
-        echo "::endgroup::"
+        echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
@@ -230,6 +221,6 @@ function stop_logs_replication
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --query "drop table {}"
+        xargs -n1 -r -i clickhouse-client --query "drop table {}"
     }
 }

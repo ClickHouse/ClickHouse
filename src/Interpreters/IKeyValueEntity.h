@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Processors/Chunk.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {

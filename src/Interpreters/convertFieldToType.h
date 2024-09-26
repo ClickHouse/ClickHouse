@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -16,13 +15,13 @@ class IDataType;
   * Checks for the compatibility of types, checks values fall in the range of valid values of the type, makes type conversion.
   * If the value does not fall into the range - returns Null.
   */
-Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {});
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr);
 
 /// Does the same, but throws ARGUMENT_OUT_OF_BOUND if value does not fall into the range.
-Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {});
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr);
 
 /// Applies stricter rules than convertFieldToType, doesn't allow loss of precision converting to Decimal.
 /// Returns `Field` if the conversion was successful and the result is equal to the original value, otherwise returns nullopt.
-std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type, const FormatSettings & format_settings = {});
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type);
 
 }

@@ -157,7 +157,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     checkReplicationSlot(replication_slot);
 
-    LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, publication_name);
+    LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
     startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
     consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
@@ -437,13 +437,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
     auto insert_context = materialized_storage->getNestedTableContext();
 
-    InterpreterInsertQuery interpreter(
-        insert,
-        insert_context,
-        /* allow_materialized */ false,
-        /* no_squash */ false,
-        /* no_destination */ false,
-        /* async_isnert */ false);
+    InterpreterInsertQuery interpreter(insert, insert_context);
     auto block_io = interpreter.execute();
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
@@ -543,7 +537,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         /// This is a case for single Materialized storage. In case of database engine this check is done in advance.
         LOG_WARNING(log,
                     "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
-                    publication_name);
+                    doubleQuoteString(publication_name));
 
         dropPublication(tx);
     }
@@ -573,7 +567,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         try
         {
             tx.exec(query_str);
-            LOG_DEBUG(log, "Created publication {} with tables list: {}", publication_name, tables_list);
+            LOG_DEBUG(log, "Created publication {} with tables list: {}", doubleQuoteString(publication_name), tables_list);
         }
         catch (Exception & e)
         {
@@ -583,7 +577,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
     }
     else
     {
-        LOG_DEBUG(log, "Using existing publication ({}) version", publication_name);
+        LOG_DEBUG(log, "Using existing publication ({}) version", doubleQuoteString(publication_name));
     }
 }
 
@@ -659,15 +653,15 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
 
 void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", doubleQuoteString(publication_name));
+    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
     tx.exec(query_str);
-    LOG_DEBUG(log, "Dropped publication: {}", publication_name);
+    LOG_DEBUG(log, "Dropped publication: {}", doubleQuoteString(publication_name));
 }
 
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", publication_name, doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
 }
@@ -677,7 +671,7 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 {
     try
     {
-        std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", publication_name, doubleQuoteWithSchema(table_name));
+        std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
         ntx.exec(query_str);
         LOG_TRACE(log, "Removed table `{}` from publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
     }
@@ -764,7 +758,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
         {
             LOG_WARNING(log,
                         "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
-                        publication_name);
+                        doubleQuoteString(publication_name));
 
             connection.execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
         }
@@ -774,7 +768,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
             {
                 LOG_WARNING(log,
                             "Publication {} already exists and tables list is empty. Assuming publication is correct.",
-                            publication_name);
+                            doubleQuoteString(publication_name));
 
                 {
                     pqxx::nontransaction tx(connection.getRef());
@@ -825,7 +819,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                               "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
                               "Or you can you ALTER SETTING. "
                               "\nPublication tables: {}.\nTables list: {}",
-                              publication_name, diff_tables, publication_tables, listed_tables);
+                              doubleQuoteString(publication_name), diff_tables, publication_tables, listed_tables);
 
                     return std::set(expected_tables.begin(), expected_tables.end());
                 }

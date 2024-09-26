@@ -2,9 +2,7 @@
 
 #if USE_MYSQL
 #include <vector>
-
 #include <Core/MySQL/MySQLReplication.h>
-#include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -219,11 +217,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
+                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).get<Int8>());
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
+                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).get<Int16>());
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:
@@ -243,7 +241,8 @@ namespace
                 ReadBufferFromString in(value);
                 time_t time = 0;
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
-                time = std::max<time_t>(time, 0);
+                if (time < 0)
+                    time = 0;
                 assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                 read_bytes_size += 4;
                 break;
@@ -276,6 +275,7 @@ namespace
                 /// 8 bytes for double-precision X coordinate
                 /// 8 bytes for double-precision Y coordinate
                 ReadBufferFromMemory payload(value.data(), value.size());
+                String val;
                 payload.ignore(4);
 
                 UInt8 endian;
