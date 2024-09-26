@@ -1059,16 +1059,16 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
     : Step({})
-    , array_join(std::move(array_join_))
+    , array_join_columns(array_join_columns_.begin(), array_join_columns_.end())
     , result_columns(std::move(required_columns_))
 {
     for (auto & column : result_columns)
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.contains(column.name))
+        if (array_join_columns.contains(column.name))
         {
             const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
@@ -1085,12 +1085,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
