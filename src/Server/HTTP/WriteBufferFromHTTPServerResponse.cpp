@@ -276,13 +276,10 @@ void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             // If it is not HEAD request send the message in the body.
             setExceptionCode(exception_code_);
 
-            LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "write error {}:<{}>", message.size(), message);
             auto & out = use_compression_buffer ? *compression_buffer : *this;
             writeString(message, out);
             if (!message.ends_with('\n'))
                 writeChar('\n', out);
-
-            LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "do finalize");
 
             if (use_compression_buffer)
                 compression_buffer->finalize();
@@ -301,8 +298,6 @@ void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
         }
         else
         {
-            LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "hard case");
-
             // We try to send the exception message even when the transmission has been started already
             // In case the chunk encoding: send new chunk which started with CHUNK_ENCODING_ERROR_HEADER and contains the error description
             // it is important to avoid sending the last empty chunk in order to break the http protocol here.

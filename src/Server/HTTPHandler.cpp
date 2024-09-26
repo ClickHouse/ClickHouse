@@ -594,10 +594,6 @@ void HTTPHandler::trySendExceptionToClient(
     int exception_code, const std::string & message, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    LOG_DEBUG(getLogger("trySendExceptionToClient"), "begin : if {}, else if {}",
-        bool(!used_output.out_holder && !used_output.exception_is_written),
-        bool(used_output.out_maybe_compressed));
-
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
         LOG_DEBUG(getLogger("trySendExceptionToClient"), "1");
@@ -611,11 +607,9 @@ try
 
     chassert(used_output.out_maybe_compressed);
 
-    LOG_DEBUG(getLogger("trySendExceptionToClient"), "out exists");
     /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
     if (used_output.hasDelayed())
     {
-        LOG_DEBUG(getLogger("trySendExceptionToClient"), "destroy cascade");
         /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
         /// exception is written into used_output.out_maybe_compressed later
         auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
@@ -630,7 +624,6 @@ try
 
     if (used_output.exception_is_written)
     {
-        LOG_DEBUG(getLogger("trySendExceptionToClient"), "exception_is_written");
         /// everything has been held by output format write
         used_output.cancel();
         return;
@@ -639,7 +632,6 @@ try
     /// We might have special formatter for exception message.
     if (used_output.exception_writer)
     {
-        LOG_DEBUG(getLogger("trySendExceptionToClient"), "exception_writer");
         used_output.exception_writer(*used_output.out_maybe_compressed, exception_code, message);
         used_output.cancel();
         return;
@@ -649,12 +641,10 @@ try
     /// There is no support from output_format.
     /// output_format either did not faced the exception or did not support the exception writing
 
-    LOG_DEBUG(getLogger("trySendExceptionToClient"), "hard case");
     /// Send the error message into already used (and possibly compressed) stream.
     /// Note that the error message will possibly be sent after some data.
     /// Also HTTP code 200 could have already been sent.
 
-    LOG_DEBUG(getLogger("trySendExceptionToClient"), "8");
     used_output.out_holder->cancelWithException(request, exception_code, message, used_output.out_maybe_compressed.get());
     used_output.cancel();
 }

@@ -120,7 +120,6 @@ Connection::Connection(const String & host_, UInt16 port_,
 
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
-    LOG_DEBUG(getLogger("Connection::connect"), "begin");
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
@@ -324,13 +323,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
-    LOG_DEBUG(getLogger("Connection::connect"), "end");
 }
 
 void Connection::cancel() noexcept
 {
-    LOG_DEBUG(getLogger("Connection::cancel"), "begin");
-
     if (maybe_compressed_out)
         maybe_compressed_out->cancel();
 
@@ -340,11 +336,7 @@ void Connection::cancel() noexcept
     if (socket)
         socket->close();
 
-    LOG_DEBUG(getLogger("Connection::cancel"), "mdl");
-
     reset();
-
-    LOG_DEBUG(getLogger("Connection::cancel"), "end");
 }
 
 void Connection::reset() noexcept
@@ -360,14 +352,11 @@ void Connection::reset() noexcept
 
 void Connection::disconnect()
 {
-    LOG_DEBUG(getLogger("Connection::disconnect"), "begin");
     in = nullptr;
     last_input_packet_type.reset();
 
     // no point to finalize tcp connections
     cancel();
-
-    LOG_DEBUG(getLogger("Connection::disconnect"), "end");
 }
 
 
