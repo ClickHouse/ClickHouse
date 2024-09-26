@@ -104,7 +104,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool query_plan_join_inner_table_selection;
+    extern const SettingsJoinInnerTableSelectionMode query_plan_join_inner_table_selection;
 }
 
 namespace ErrorCodes
@@ -1642,8 +1642,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             settings[Setting::max_block_size],
             settings[Setting::max_threads],
             false /*optimize_read_in_order*/);
-        if (settings[Setting::query_plan_join_inner_table_selection])
-            join_step->inner_table_selection_mode = JoinInnerTableSelectionMode::Auto;
+        join_step->inner_table_selection_mode = settings[Setting::query_plan_join_inner_table_selection];
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 
