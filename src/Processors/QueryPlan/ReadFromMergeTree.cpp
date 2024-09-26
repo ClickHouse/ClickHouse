@@ -701,7 +701,7 @@ Pipe ReadFromMergeTree::readInOrder(
             size_t mark_range_begin = part_with_ranges.ranges.front().begin;
 
             ColumnsWithTypeAndName pk_columns;
-            size_t num_columns = virtual_row_conversion->getSampleBlock().columns();
+            size_t num_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
             pk_columns.reserve(num_columns);
 
             for (size_t j = 0; j < num_columns; ++j)
