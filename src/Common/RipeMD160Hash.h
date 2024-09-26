@@ -34,7 +34,7 @@ private:
            13, 7,  8,  7,  7,  13, 15, 14, 11, 7,  7,  6,  8,  13, 14, 13, 12, 5,  5,  6,  9,  14, 11, 12, 14, 8,  6,
            5,  5,  15, 12, 15, 14, 9,  9,  8,  6,  15, 12, 13, 13, 9,  5,  8,  6,  14, 11, 12, 11, 8,  6,  5,  5};
 
-    static constexpr UInt32 left_round_constants[5] = {0x00000000UL, 0x5A827999UL, 0x6ED9EBA1UL, 0x8F1BBCDCUL, 0xA953FD4EUL};
+     static constexpr UInt32 left_round_constants[5] = {0x00000000UL, 0x5A827999UL, 0x6ED9EBA1UL, 0x8F1BBCDCUL, 0xA953FD4EUL};
 
     static constexpr UInt32 right_round_constants[5] = {0x50A28BE6UL, 0x5C4DD124UL, 0x6D703EF3UL, 0x7A6D76E9UL, 0x00000000UL};
 
