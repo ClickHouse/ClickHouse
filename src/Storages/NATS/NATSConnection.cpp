@@ -57,7 +57,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
 }
 NATSConnection::~NATSConnection()
 {
-    if(connection && !natsConnection_IsClosed(connection.get()))
+    if (connection && !natsConnection_IsClosed(connection.get()))
     {
         natsConnection_Close(connection.get());
     }
@@ -127,7 +127,7 @@ void NATSConnection::connectImpl()
 
 void NATSConnection::disconnectImpl()
 {
-    if(!isConnectedImpl())
+    if (!isConnectedImpl())
     {
         return;
     }

@@ -239,7 +239,7 @@ void StorageNATS::startReconnection(DB::NATSConnectionPtr connection_)
     event_handler.post(
         [&, connection = std::move(connection_)]()
         {
-            if(connection->isConnected())
+            if (connection->isConnected())
             {
                 return;
             }
@@ -590,7 +590,7 @@ void StorageNATS::streamingToViewsFunc()
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         bool nats_connected = consumers_connection->isConnected();
-        if(!nats_connected)
+        if (!nats_connected)
         {
             reconnection_task->activateAndSchedule();
         }
