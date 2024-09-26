@@ -14,7 +14,6 @@
 #include <xxhash.h>
 
 #include <Common/SipHash.h>
-#include <Common/RipeMD160Hash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -196,19 +195,6 @@ T combineHashesFunc(T t1, T t2)
     const T hashes[] {t1, t2};
     return HashFunction::apply(reinterpret_cast<const char *>(hashes), sizeof(hashes));
 }
-
-struct RipeMD160Impl
-{
-    static constexpr auto name = "ripeMD160";
-
-    using ReturnType = UInt256;
-
-    static UInt256 apply(const char * begin, size_t size) { return ripeMD160Hash(begin, size); }
-
-    static UInt256 combineHashes(UInt256 h1, UInt256 h2) { return combineHashesFunc<UInt256, RipeMD160Impl>(h1, h2); }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
 
 
 struct SipHash64Impl
@@ -1666,8 +1652,6 @@ using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
-
-using FunctionRipeMD160Hash = FunctionAnyHash<RipeMD160Impl>;
 }
 
 #pragma clang diagnostic pop
