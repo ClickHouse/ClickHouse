@@ -2127,7 +2127,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
-            checkPartChecksumsAndCommit(transaction, part);
+            checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
