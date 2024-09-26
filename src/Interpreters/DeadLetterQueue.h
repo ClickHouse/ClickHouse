@@ -1,4 +1,5 @@
 #pragma once
+#include <variant>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
@@ -54,24 +55,7 @@ struct DeadLetterQueueElement
         UInt64 delivery_tag;
         String channel_id;
     };
-    struct Details
-    {
-        Details(KafkaDetails kafka_)
-            :kafka(kafka_), kafka_skip_fields(0)
-        {
-        }
-        Details(RabbitMQDetails rabbit_mq_)
-            :rabbit_mq(rabbit_mq_), rabbit_mq_skip_fields(0)
-        {
-        }
-
-        KafkaDetails kafka;
-        size_t kafka_skip_fields = 3;
-
-        RabbitMQDetails rabbit_mq;
-        size_t rabbit_mq_skip_fields = 6;
-    };
-    Details details;
+    std::variant<KafkaDetails, RabbitMQDetails> details;
 
     static std::string name() { return "DeadLetterQueue"; }
 

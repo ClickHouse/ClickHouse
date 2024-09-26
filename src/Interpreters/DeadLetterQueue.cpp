@@ -31,14 +31,57 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
         {"database_name", low_cardinality_string, "ClickHouse database Kafka table belongs to."},
         {"table_name", low_cardinality_string, "ClickHouse table name."},
         {"error", std::make_shared<DataTypeString>(), "Error text."},
+
         {"topic_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Kafka topic name."},
         {"partition", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Kafka partition."},
         {"offset", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Kafka offset."},
 
+        {"exchange_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ exchange name."},
+        {"message_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ message id."},
+        {"message_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "RabbitMQ message timestamp."},
+        {"message_redelivered", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "RabbitMQ redelivered flag."},
+        {"message_delivery_tag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "RabbitMQ delivery tag."},
+        {"channel_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ channel id."},
 
         {"raw_message", std::make_shared<DataTypeString>(), "Message body."}
     };
 }
+
+namespace
+{
+struct DetailsVisitor
+{
+    MutableColumns & columns;
+    mutable size_t i;
+
+    DetailsVisitor(MutableColumns & columns_, size_t i_)
+        : columns(columns_), i(i_)
+    {
+    }
+
+    void operator()(const DeadLetterQueueElement::KafkaDetails & kafka) const
+    {
+        columns[i++]->insertData(kafka.topic_name.data(), kafka.topic_name.size());
+        columns[i++]->insert(kafka.partition);
+        columns[i++]->insert(kafka.offset);
+    }
+
+    void operator()(const DeadLetterQueueElement::RabbitMQDetails & rabbit_mq) const
+    {
+        i += 3;
+
+        columns[i++]->insertData(rabbit_mq.exchange_name.data(), rabbit_mq.exchange_name.size());
+        columns[i++]->insertData(rabbit_mq.message_id.data(), rabbit_mq.message_id.size());
+        columns[i++]->insert(rabbit_mq.timestamp);
+        columns[i++]->insert(rabbit_mq.redelivered);
+        columns[i++]->insert(rabbit_mq.delivery_tag);
+        columns[i++]->insertData(rabbit_mq.channel_id.data(), rabbit_mq.channel_id.size());
+    }
+
+};
+}
+
+
 
 void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
 {
@@ -53,28 +96,9 @@ void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(table_name.data(), table_name.size());
     columns[i++]->insertData(error.data(), error.size());
 
-    if (!details.kafka_skip_fields)
-    {
-        columns[i++]->insertData(details.kafka.topic_name.data(), details.kafka.topic_name.size());
-        columns[i++]->insert(details.kafka.partition);
-        columns[i++]->insert(details.kafka.offset);
-    }
-    else
-        i += details.kafka_skip_fields;
+    std::visit(DetailsVisitor{columns, i}, details);
 
-
-    if (!details.rabbit_mq_skip_fields)
-    {
-        columns[i++]->insertData(details.rabbit_mq.exchange_name.data(), details.rabbit_mq.exchange_name.size());
-        columns[i++]->insertData(details.rabbit_mq.message_id.data(), details.rabbit_mq.message_id.size());
-        columns[i++]->insert(details.rabbit_mq.timestamp);
-        columns[i++]->insert(details.rabbit_mq.redelivered);
-        columns[i++]->insert(details.rabbit_mq.delivery_tag);
-        columns[i++]->insertData(details.rabbit_mq.channel_id.data(), details.rabbit_mq.channel_id.size());
-    }
-    else
-        i += details.rabbit_mq_skip_fields;
-
+    i = 13;
 
     columns[i++]->insertData(raw_message.data(), raw_message.size());
 
