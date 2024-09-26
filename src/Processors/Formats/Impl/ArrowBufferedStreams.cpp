@@ -186,9 +186,10 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_)
+RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(io_pool_)
 {
-    async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ArrowFile");
+    if (io_pool)
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, "ArrowFile");
 }
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
@@ -225,7 +226,12 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessRe
 arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes)
 {
     auto future = arrow::Future<std::shared_ptr<arrow::Buffer>>::Make();
-    async_runner([this, weak_future = arrow::WeakFuture(future), position, nbytes]() mutable { asyncThreadFunction(weak_future, position, nbytes); }, {0});
+    if (io_pool)
+    {
+        async_runner([this, future, position, nbytes]() mutable { asyncThreadFunction(future, position, nbytes); }, {});
+        return future.Then([=]() {return future.result();});
+    }
+    asyncThreadFunction(future, position, nbytes);
     return future;
 }
 
@@ -237,10 +243,10 @@ arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
     return arrow::Status::OK();
 }
 void RandomAccessFileFromRandomAccessReadBuffer::asyncThreadFunction(
-    arrow::WeakFuture<std::shared_ptr<arrow::Buffer>> & future, int64_t position, int64_t nbytes)
+    arrow::Future<std::shared_ptr<arrow::Buffer>> future, int64_t position, int64_t nbytes)
 {
     auto buffer = ReadAt(position, nbytes);
-    future.get().MarkFinished(buffer);
+    future.MarkFinished(buffer);
 }
 
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Seek(int64_t) { return arrow::Status::NotImplemented(""); }
@@ -320,7 +326,8 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     std::atomic<int> & is_cancelled,
     const std::string & format_name,
     const std::string & magic_bytes,
-    bool avoid_buffering)
+    bool avoid_buffering,
+    std::shared_ptr<ThreadPool> io_pool)
 {
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
@@ -328,7 +335,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     if (has_file_size && seekable_in && settings.seekable_read)
     {
         if (avoid_buffering && seekable_in->supportsReadAt())
-            return std::make_shared<RandomAccessFileFromRandomAccessReadBuffer>(*seekable_in, getFileSizeFromReadBuffer(in));
+            return std::make_shared<RandomAccessFileFromRandomAccessReadBuffer>(*seekable_in, getFileSizeFromReadBuffer(in), io_pool);
 
         if (seekable_in->checkIfActuallySeekable())
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in, std::nullopt, avoid_buffering);

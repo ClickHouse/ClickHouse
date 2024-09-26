@@ -59,6 +59,7 @@ public:
         const Block & header,
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
+        size_t max_io_threads,
         size_t min_bytes_for_seek);
 
     ~ParquetBlockInputFormat() override;
@@ -293,6 +294,7 @@ private:
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
     size_t max_decoding_threads;
+    size_t max_io_threads;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
@@ -324,6 +326,7 @@ private:
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
     std::unique_ptr<ThreadPool> pool;
+    std::shared_ptr<ThreadPool> io_pool;
 
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
