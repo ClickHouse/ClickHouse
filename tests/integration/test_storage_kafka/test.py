@@ -1890,7 +1890,7 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         )
 
         # data was not flushed yet (it will be flushed 7.5 sec after creating MV)
-        assert int(instance.query("SELECT count() FROM test.view")) == 240
+        assert int(instance.query_with_retry("SELECT count() FROM test.view")) == 240
 
         instance.query(
             """
