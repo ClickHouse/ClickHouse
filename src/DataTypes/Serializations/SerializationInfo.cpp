@@ -10,7 +10,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
-#include "DataTypes/Serializations/ISerialization.h"
 
 
 namespace DB
@@ -48,6 +47,12 @@ void SerializationInfo::Data::add(const Data & other)
     num_defaults += other.num_defaults;
 }
 
+void SerializationInfo::Data::remove(const Data & other)
+{
+    num_rows -= other.num_rows;
+    num_defaults -= other.num_defaults;
+}
+
 void SerializationInfo::Data::addDefaults(size_t length)
 {
     num_rows += length;
@@ -80,6 +85,14 @@ void SerializationInfo::add(const SerializationInfo & other)
     if (settings.choose_kind)
         kind = chooseKind(data, settings);
 }
+
+void SerializationInfo::remove(const SerializationInfo & other)
+{
+    data.remove(other.data);
+    if (settings.choose_kind)
+        kind = chooseKind(data, settings);
+}
+
 
 void SerializationInfo::addDefaults(size_t length)
 {
@@ -210,6 +223,18 @@ void SerializationInfoByName::add(const String & name, const SerializationInfo &
 {
     if (auto it = find(name); it != end())
         it->second->add(info);
+}
+
+void SerializationInfoByName::remove(const SerializationInfoByName & other)
+{
+    for (const auto & [name, info] : other)
+        remove(name, *info);
+}
+
+void SerializationInfoByName::remove(const String & name, const SerializationInfo & info)
+{
+    if (auto it = find(name); it != end())
+        it->second->remove(info);
 }
 
 SerializationInfoPtr SerializationInfoByName::tryGet(const String & name) const

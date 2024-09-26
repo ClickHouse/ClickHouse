@@ -270,7 +270,7 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// TODO: comment
+    /// Returns true if storage can store columns in sparse serialization.
     virtual bool supportsSparseSerialization() const { return false; }
 
     /// Return true if the trivial count query could be optimized without reading the data at all
@@ -281,7 +281,7 @@ public:
         return false;
     }
 
-    /// TODO: comment.
+    /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
 private:

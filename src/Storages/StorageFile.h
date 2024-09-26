@@ -156,7 +156,6 @@ private:
         const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
     void setStorageMetadata(CommonArguments args);
-    void setSerializationHints(const ContextPtr & context);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
@@ -172,8 +171,6 @@ private:
     std::vector<std::string> paths;
 
     std::optional<ArchiveInfo> archive_info;
-
-    SerializationInfoByName serialization_hints;
 
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
@@ -299,6 +296,7 @@ private:
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
+    SerializationInfoByName serialization_hints;
 
     UInt64 max_block_size;
 

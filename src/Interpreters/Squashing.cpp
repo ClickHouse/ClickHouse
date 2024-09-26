@@ -1,6 +1,8 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Columns/ColumnSparse.h>
 #include <base/defines.h>
 

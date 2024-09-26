@@ -1243,7 +1243,9 @@ protected:
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
 
-    /// TODO: comment.
+    /// Serialization info accumulated among all active parts.
+    /// It changes only when set of parts is changed and is
+    /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints;
 
     MergeTreePartsMover parts_mover;
@@ -1535,7 +1537,10 @@ protected:
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
     void resetSerializationHints(const DataPartsLock & lock);
-    void updateSerializationHints(const DataPartPtr & part, const DataPartsLock & lock);
+
+    template <typename AddedParts, typename RemovedParts>
+    void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
+
     SerializationInfoByName getSerializationHints() const override;
 
     /** A structure that explicitly represents a "merge tree" of parts

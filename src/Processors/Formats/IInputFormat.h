@@ -58,7 +58,8 @@ public:
     /// parallel parsing before creating this parser.
     virtual void setRowsReadBefore(size_t /*rows*/) {}
 
-    /// TODO: comment.
+    /// Sets the serialization hints for the columns. It allows to create columns
+    /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }

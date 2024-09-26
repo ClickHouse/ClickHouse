@@ -39,6 +39,7 @@ public:
 
         void add(const IColumn & column);
         void add(const Data & other);
+        void remove(const Data & other);
         void addDefaults(size_t length);
     };
 
@@ -52,6 +53,7 @@ public:
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);
+    virtual void remove(const SerializationInfo & other);
     virtual void addDefaults(size_t length);
     virtual void replaceData(const SerializationInfo & other);
 
@@ -100,6 +102,9 @@ public:
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
     void add(const String & name, const SerializationInfo & info);
+
+    void remove(const SerializationInfoByName & other);
+    void remove(const String & name, const SerializationInfo & info);
 
     SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);

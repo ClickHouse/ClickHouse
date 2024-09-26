@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include "Columns/ColumnSparse.h"
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {

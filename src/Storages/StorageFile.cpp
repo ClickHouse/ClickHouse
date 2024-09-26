@@ -1135,31 +1135,6 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
     setInMemoryMetadata(storage_metadata);
-    setSerializationHints(args.getContext());
-}
-
-void StorageFile::setSerializationHints(const ContextPtr & context)
-{
-    if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])
-        return;
-
-    auto insertion_table = context->getInsertionTable();
-    if (!insertion_table)
-        return;
-
-    auto storage_ptr = DatabaseCatalog::instance().tryGetTable(insertion_table, context);
-    if (!storage_ptr)
-        return;
-
-    const auto & our_columns = getInMemoryMetadataPtr()->getColumns();
-    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
-    auto storage_hints = storage_ptr->getSerializationHints();
-
-    for (const auto & hint : storage_hints)
-    {
-        if (our_columns.tryGetPhysical(hint.first) == storage_columns.tryGetPhysical(hint.first))
-            serialization_hints.insert(hint);
-    }
 }
 
 static std::chrono::seconds getLockTimeout(const ContextPtr & context)
@@ -1234,6 +1209,7 @@ StorageFileSource::StorageFileSource(
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
+    , serialization_hints(info.serialization_hints)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
@@ -1464,7 +1440,7 @@ Chunk StorageFileSource::generate()
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
 
-            input_format->setSerializationHints(storage->serialization_hints);
+            input_format->setSerializationHints(serialization_hints);
 
             if (key_condition)
                 input_format->setKeyCondition(key_condition);
@@ -1657,7 +1633,7 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 

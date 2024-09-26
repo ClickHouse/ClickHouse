@@ -6910,8 +6910,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 }
             }
 
-            for (const auto & part : precommitted_parts)
-                data.updateSerializationHints(part, parts_lock);
+            data.updateSerializationHints(precommitted_parts, total_covered_parts, parts_lock);
 
             if (reduce_parts == 0)
             {
@@ -8576,6 +8575,29 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
 }
 
+template <typename DataPartPtr>
+static void updateSerializationHintsForPart(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, bool remove)
+{
+    const auto & part_columns = part->getColumnsDescription();
+    for (const auto & [name, info] : part->getSerializationInfos())
+    {
+        auto new_hint = hints.tryGet(name);
+        if (!new_hint)
+            continue;
+
+        /// Structure may change after alter. Do not add info for such items.
+        /// Instead it will be updated on commit of the result part of alter.
+        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
+            continue;
+
+        chassert(new_hint->structureEquals(*info));
+        if (remove)
+            new_hint->remove(*info);
+        else
+            new_hint->add(*info);
+    }
+}
+
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 {
     SerializationInfo::Settings settings =
@@ -8589,28 +8611,19 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     auto range = getDataPartsStateRange(DataPartState::Active);
 
     for (const auto & part : range)
-    {
-        const auto & part_columns = part->getColumnsDescription();
-        for (const auto & [name, info] : part->getSerializationInfos())
-        {
-            auto new_hint = serialization_hints.tryGet(name);
-            if (!new_hint)
-                continue;
-
-            /// Structure may change after alter. Do not add info for such items.
-            /// Instead it will be updated on commit of the result part of alter.
-            if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
-                continue;
-
-            chassert(new_hint->structureEquals(*info));
-            new_hint->add(*info);
-        }
-    }
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
 }
 
-void MergeTreeData::updateSerializationHints(const DataPartPtr & part, const DataPartsLock & /*lock*/)
+template <typename AddedParts, typename RemovedParts>
+void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & /*lock*/)
 {
-    serialization_hints.add(part->getSerializationInfos());
+    const auto & storage_columns = getInMemoryMetadataPtr()->getColumns();
+
+    for (const auto & part : added_parts)
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+
+    for (const auto & part : removed_parts)
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const
