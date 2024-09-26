@@ -4,7 +4,6 @@
 
 #if USE_AVRO
 
-#include <Formats/FormatFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>

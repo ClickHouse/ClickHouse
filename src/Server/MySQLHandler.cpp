@@ -39,6 +39,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
+}
 
 using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
@@ -206,8 +212,8 @@ void MySQLHandler::run()
     session->setClientConnectionId(connection_id);
 
     const Settings & settings = server.context()->getSettingsRef();
-    socket().setReceiveTimeout(settings.receive_timeout);
-    socket().setSendTimeout(settings.send_timeout);
+    socket().setReceiveTimeout(settings[Setting::receive_timeout]);
+    socket().setSendTimeout(settings[Setting::send_timeout]);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
     out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
@@ -376,11 +382,16 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
-        // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
-        if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::AuthenticationType::SHA256_PASSWORD)
+        const auto user_authentication_types = session->getAuthenticationTypesOrLogInFailure(user_name);
+
+        for (const auto user_authentication_type : user_authentication_types)
         {
-            authPluginSSL();
+            // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
+            // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
+            if (user_authentication_type == DB::AuthenticationType::SHA256_PASSWORD)
+            {
+                authPluginSSL();
+            }
         }
 
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
@@ -474,12 +485,12 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
         auto settings = query_context->getSettingsCopy();
-        settings.prefer_column_name_to_alias = true;
+        settings[Setting::prefer_column_name_to_alias] = true;
         query_context->setSettings(settings);
 
         /// Update timeouts
-        socket().setReceiveTimeout(settings.receive_timeout);
-        socket().setSendTimeout(settings.send_timeout);
+        socket().setReceiveTimeout(settings[Setting::receive_timeout]);
+        socket().setSendTimeout(settings[Setting::send_timeout]);
 
         CurrentThread::QueryScope query_scope{query_context};
 

@@ -3150,3 +3150,23 @@ Default value: "default"
 
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
+
+The maximum number of authentication methods a user can be created with or altered to.
+Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
+Non authentication create/alter queries will succeed.
+
+Type: UInt64
+
+Default value: 100
+
+Zero means unlimited
+
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.

@@ -835,7 +835,9 @@ class SettingsRandomizer:
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
-        "filesystem_cache_segments_batch_size": lambda: random.choice([0, 3, 10, 50]),
+        "filesystem_cache_segments_batch_size": lambda: random.choice(
+            [0, 1, 2, 3, 5, 10, 50, 100]
+        ),
         "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
             0, 1
         ),

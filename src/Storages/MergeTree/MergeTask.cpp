@@ -62,6 +62,14 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+}
 
 namespace ErrorCodes
 {
@@ -656,7 +664,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
         ctx->projection_squashes.emplace_back(projection->sample_block.cloneEmpty(),
-            settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+            settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
 }
 
 
@@ -837,8 +845,8 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     size_t max_delayed_streams = 0;
     if (global_ctx->new_data_part->getDataPartStorage().supportParallelWrite())
     {
-        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
-            max_delayed_streams = settings.max_insert_delayed_streams_for_parallel_write;
+        if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
+            max_delayed_streams = settings[Setting::max_insert_delayed_streams_for_parallel_write];
         else
             max_delayed_streams = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
     }
@@ -1635,8 +1643,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         Names sort_columns = global_ctx->metadata_snapshot->getSortingKeyColumns();
         SortDescription sort_description;
-        sort_description.compile_sort_description = global_ctx->data->getContext()->getSettingsRef().compile_sort_description;
-        sort_description.min_count_to_compile_sort_description = global_ctx->data->getContext()->getSettingsRef().min_count_to_compile_sort_description;
+        sort_description.compile_sort_description = global_ctx->data->getContext()->getSettingsRef()[Setting::compile_sort_description];
+        sort_description.min_count_to_compile_sort_description = global_ctx->data->getContext()->getSettingsRef()[Setting::min_count_to_compile_sort_description];
 
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
