@@ -121,17 +121,23 @@ SETTINGS input_format_with_names_use_header = 0"""
     )
     assert node1.query(f"SELECT id FROM {dbname}.merge_tree") == "100\n"
 
-    node1.query(f"CREATE DICTIONARY {dbname}.dict1 (id INT, data String) PRIMARY KEY id "
-                f"SOURCE(MYSQL(HOST 'mysql80' PORT 3306 USER 'root' PASSWORD 'clickhouse' DB 'clickhouse' TABLE 'inference_table'))"
-                f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)")
+    node1.query(
+        f"CREATE DICTIONARY {dbname}.dict1 (id INT, data String) PRIMARY KEY id "
+        f"SOURCE(MYSQL(HOST 'mysql80' PORT 3306 USER 'root' PASSWORD 'clickhouse' DB 'clickhouse' TABLE 'inference_table'))"
+        f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
+    )
 
-    node1.query(f"CREATE DICTIONARY {dbname}.dict2 (name String, value UInt32) PRIMARY KEY value "
-                f"SOURCE(CLICKHOUSE(HOST '127.0.0.2' PORT 9000 USER 'default' PASSWORD '' DB '{dbname}' TABLE 'example_s3_engine_table'))"
-                f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)")
+    node1.query(
+        f"CREATE DICTIONARY {dbname}.dict2 (name String, value UInt32) PRIMARY KEY value "
+        f"SOURCE(CLICKHOUSE(HOST '127.0.0.2' PORT 9000 USER 'default' PASSWORD '' DB '{dbname}' TABLE 'example_s3_engine_table'))"
+        f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
+    )
 
-    node1.query(f"CREATE DICTIONARY {dbname}.dict3 (name String, value UInt32) PRIMARY KEY value "
-                f"SOURCE(CLICKHOUSE(USER 'default' PASSWORD '' DB '{dbname}' TABLE 'example_s3_engine_table'))"
-                f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)")
+    node1.query(
+        f"CREATE DICTIONARY {dbname}.dict3 (name String, value UInt32) PRIMARY KEY value "
+        f"SOURCE(CLICKHOUSE(USER 'default' PASSWORD '' DB '{dbname}' TABLE 'example_s3_engine_table'))"
+        f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
+    )
 
 
 @pytest.fixture(scope="module")
