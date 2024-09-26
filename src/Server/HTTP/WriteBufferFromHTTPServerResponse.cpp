@@ -240,12 +240,15 @@ bool WriteBufferFromHTTPServerResponse::isFixedLength() const
 
 void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept
 {
-    bool use_compression_buffer = compression_buffer && !compression_buffer->isCanceled();
+    bool use_compression_buffer = compression_buffer && !compression_buffer->isCanceled() && !compression_buffer->isFinalized();
 
     try
     {
         if (isCanceled())
             throw Exception(ErrorCodes::ABORTED, "Write buffer has been canceled.");
+
+        if (isFinalized())
+            throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Write buffer has been finalized.");
 
         bool data_sent = false;
         size_t compression_discarded_data = 0;

@@ -98,6 +98,9 @@ public:
         if (finalized)
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
 
+        if (canceled)
+            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to canceled buffer"};
+
         size_t bytes_copied = 0;
 
         /// Produces endless loop
