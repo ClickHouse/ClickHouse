@@ -14,7 +14,7 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        /// If is enabled, execute distinct for separate streams. Otherwise, merge streams.
+        /// If is enabled, execute distinct for separate streams, otherwise for merged streams.
         bool pre_distinct_);
 
     String getName() const override { return "Distinct"; }

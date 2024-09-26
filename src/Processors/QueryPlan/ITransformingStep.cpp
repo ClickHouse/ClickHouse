@@ -13,6 +13,7 @@ ITransformingStep::ITransformingStep(DataStream input_stream, Block output_heade
     output_stream = createOutputStream(input_streams.front(), std::move(output_header), data_stream_traits);
 }
 
+/// TODO: cleanup in the following PR.
 DataStream ITransformingStep::createOutputStream(
     [[maybe_unused]] const DataStream & input_stream,
     Block output_header,

@@ -1639,10 +1639,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
+    SortDescription sort_description;
     /// Merge
     {
         Names sort_columns = global_ctx->metadata_snapshot->getSortingKeyColumns();
-        SortDescription sort_description;
         sort_description.compile_sort_description = global_ctx->data->getContext()->getSettingsRef()[Setting::compile_sort_description];
         sort_description.min_count_to_compile_sort_description = global_ctx->data->getContext()->getSettingsRef()[Setting::min_count_to_compile_sort_description];
 
@@ -1699,6 +1699,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->deduplicate_by_columns,
             false /*pre_distinct*/);
         deduplication_step->setStepDescription("Deduplication step");
+        deduplication_step->applyOrder(sort_description); // Distinct-in-order.
         merge_parts_query_plan.addStep(std::move(deduplication_step));
     }
 
