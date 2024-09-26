@@ -117,8 +117,7 @@ class GH:
         res = cls.get_workflow_results()
         if wf_job_name in res:
             return res[wf_job_name]["result"]  # type: ignore
-        else:
-            return None
+        return None
 
     @staticmethod
     def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
