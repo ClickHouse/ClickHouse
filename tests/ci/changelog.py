@@ -15,11 +15,11 @@ from github.NamedUser import NamedUser
 from thefuzz.fuzz import ratio  # type: ignore
 
 from cache_utils import GitHubCache
+from ci_utils import Shell
 from env_helper import TEMP_PATH
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from s3_helper import S3Helper
-from ci_utils import Shell
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
@@ -348,7 +348,7 @@ def write_changelog(
 
 
 def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool) -> None:
-    global FROM_REF, TO_REF
+    global FROM_REF, TO_REF  # pylint:disable=global-statement
     TO_REF = to_ref
 
     # Check TO_REF
@@ -386,7 +386,7 @@ def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool) ->
 
 
 def set_sha_in_changelog():
-    global SHA_IN_CHANGELOG
+    global SHA_IN_CHANGELOG  # pylint:disable=global-statement
     SHA_IN_CHANGELOG = runner.run(
         f"git log --format=format:%H {FROM_REF}..{TO_REF}"
     ).split("\n")
@@ -450,7 +450,7 @@ def main():
     )
 
     # Get all PRs for the given time frame
-    global gh
+    global gh  # pylint:disable=global-statement
     gh = GitHub(
         args.gh_user_or_token,
         args.gh_password,
