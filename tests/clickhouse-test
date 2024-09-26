@@ -788,6 +788,7 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
 def get_localzone():
     return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
+
 # Refer to `tests/integration/helpers/random_settings.py` for integration test random settings
 class SettingsRandomizer:
     settings = {
@@ -2154,9 +2155,9 @@ class TestSuite:
             )
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
-        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
-            all_tags_and_random_settings_limits[1]
-        )
+        self.all_random_settings_limits: Dict[
+            str, Dict[str, (int, int)]
+        ] = all_tags_and_random_settings_limits[1]
         self.sequential_tests = []
         self.parallel_tests = []
         for test_name in self.all_tests:
