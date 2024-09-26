@@ -15,7 +15,7 @@ expect rows_read = select count()
   "rows": 2,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
   }
 }
 bloom filter is on, some row groups should be skipped
@@ -34,7 +34,7 @@ expect rows_read much less than select count()
   "rows": 2,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 18944
+    "bytes_read": 21703
   }
 }
 bloom filter is on, but where predicate contains data from 2 row groups out of 3.
@@ -53,7 +53,7 @@ Rows read should be less than select count, but greater than previous selects
   "rows": 2,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 22549
+    "bytes_read": 25708
   }
 }
 bloom filter is on, but where predicate contains data from all row groups
@@ -65,38 +65,18 @@ expect rows_read = select count()
       "flba": "GKJC"
     },
     {
-      "string": "CPKP",
-      "flba": "BEAQ"
-    },
-    {
-      "string": "JQDK",
-      "flba": "DDEE"
-    },
-    {
-      "string": "LTSO",
-      "flba": "QWWO"
-    },
-    {
-      "string": "EIYH",
-      "flba": "BRCO"
-    },
-    {
-      "string": "ELRK",
-      "flba": "BVLD"
+      "string": "OKAI",
+      "flba": "UXGT"
     },
     {
       "string": "ZHZK",
       "flba": "HRWD"
-    },
-    {
-      "string": "AQRQ",
-      "flba": "OPXK"
     }
   ],
-  "rows": 8,
+  "rows": 3,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
   }
 }
 IN check
@@ -114,7 +94,7 @@ IN check
   "rows": 2,
   "statistics": {
     "rows_read": 536,
-    "bytes_read": 22549
+    "bytes_read": 25708
   }
 }
 tuple in case, bf is off.
@@ -128,7 +108,7 @@ tuple in case, bf is off.
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
   }
 }
 tuple in case, bf is on.
@@ -142,7 +122,7 @@ tuple in case, bf is on.
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 18944
+    "bytes_read": 21703
   }
 }
 complex tuple in case, bf is off
@@ -156,7 +136,7 @@ complex tuple in case, bf is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
   }
 }
 complex tuple in case, bf is on
@@ -170,7 +150,7 @@ complex tuple in case, bf is on
   "rows": 1,
   "statistics": {
     "rows_read": 464,
-    "bytes_read": 18944
+    "bytes_read": 21703
   }
 }
 complex tuple in case, bf is on. Non existent
@@ -192,7 +172,7 @@ Bloom filter for json column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
   }
 }
 Bloom filter for json column. BF is on
@@ -205,7 +185,7 @@ Bloom filter for json column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 3605
+    "bytes_read": 4005
   }
 }
 Bloom filter for ipv4 column. BF is off
@@ -218,7 +198,7 @@ Bloom filter for ipv4 column. BF is off
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
   }
 }
 Bloom filter for ipv4 column. BF is on
@@ -231,7 +211,7 @@ Bloom filter for ipv4 column. BF is on
   "rows": 1,
   "statistics": {
     "rows_read": 72,
-    "bytes_read": 3605
+    "bytes_read": 4005
   }
 }
 Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') is not supported. Should read everything
@@ -244,7 +224,7 @@ Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') i
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
   }
 }
 Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143')) is not supported. Should read everything
@@ -257,6 +237,32 @@ Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143
   "rows": 1,
   "statistics": {
     "rows_read": 1000,
-    "bytes_read": 41492
+    "bytes_read": 47419
+  }
+}
+BF off for parquet uint64 logical type. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":683, \"value\":\"YKCPD\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+BF on for parquet uint64 logical type. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":683, \"value\":\"YKCPD\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21711
   }
 }
