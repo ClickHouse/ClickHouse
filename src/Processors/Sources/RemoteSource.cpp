@@ -77,6 +77,19 @@ ISource::Status RemoteSource::prepare()
         return Status::Finished;
     }
 
+    if (async_query_sending && !was_query_sent && fd < 0)
+    {
+        LOG_DEBUG(
+            getLogger(__PRETTY_FUNCTION__),
+            "this={} startup_event_fd.fd={} fd={}",
+            startup_event_fd.fd,
+            fd,
+            reinterpret_cast<uint64_t>(this));
+
+        startup_event_fd.write();
+        return Status::Async;
+    }
+
     if (is_async_state)
         return Status::Async;
 
@@ -94,6 +107,18 @@ ISource::Status RemoteSource::prepare()
     }
 
     return status;
+}
+
+int RemoteSource::schedule()
+{
+    LOG_DEBUG(
+        getLogger(__PRETTY_FUNCTION__),
+        "this={} startup_event_fd.fd={} fd={}",
+        reinterpret_cast<uint64_t>(this),
+        startup_event_fd.fd,
+        fd);
+
+    return (fd < 0 ? startup_event_fd.fd : fd);
 }
 
 void RemoteSource::work()
@@ -119,6 +144,13 @@ void RemoteSource::work()
 
 void RemoteSource::onAsyncJobReady()
 {
+    LOG_DEBUG(
+        getLogger(__PRETTY_FUNCTION__),
+        "this={} startup_event_fd.fd={} fd={}",
+        reinterpret_cast<uint64_t>(this),
+        startup_event_fd.fd,
+        fd);
+
     chassert(async_read);
 
     if (!was_query_sent)
@@ -155,6 +187,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
             query_executor->sendQuery();
         }
 
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "this={} query_was_sent=true, fd={}", reinterpret_cast<uint64_t>(this), fd);
         was_query_sent = true;
     }
 
