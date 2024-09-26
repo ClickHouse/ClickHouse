@@ -15,7 +15,6 @@ public:
         Suggest & suggest,
         const String & history_file_path,
         bool multiline,
-        bool ignore_shell_suspend,
         Patterns extenders_,
         Patterns delimiters_,
         const char word_break_characters_[],

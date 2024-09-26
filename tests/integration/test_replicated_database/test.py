@@ -1549,19 +1549,3 @@ def test_all_groups_cluster(started_cluster):
     assert "bad_settings_node\ndummy_node\n" == bad_settings_node.query(
         "select host_name from system.clusters where name='all_groups.db_cluster' order by host_name"
     )
-
-
-def test_detach_attach_table(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS detach_attach_db SYNC")
-    main_node.query(
-        "CREATE DATABASE detach_attach_db ENGINE = Replicated('/clickhouse/databases/detach_attach_db');"
-    )
-    main_node.query(
-        "CREATE TABLE detach_attach_db.detach_attach_table (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k;"
-    )
-    main_node.query("INSERT INTO detach_attach_db.detach_attach_table VALUES (1);")
-    main_node.query("DETACH TABLE detach_attach_db.detach_attach_table PERMANENTLY;")
-    main_node.query("ATTACH TABLE detach_attach_db.detach_attach_table;")
-    assert (
-        main_node.query("SELECT * FROM detach_attach_db.detach_attach_table;") == "1\n"
-    )

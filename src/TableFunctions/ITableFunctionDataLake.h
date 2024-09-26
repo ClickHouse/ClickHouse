@@ -76,21 +76,6 @@ struct TableFunctionIcebergName
     static constexpr auto name = "iceberg";
 };
 
-struct TableFunctionIcebergS3Name
-{
-    static constexpr auto name = "icebergS3";
-};
-
-struct TableFunctionIcebergAzureName
-{
-    static constexpr auto name = "icebergAzure";
-};
-
-struct TableFunctionIcebergLocalName
-{
-    static constexpr auto name = "icebergLocal";
-};
-
 struct TableFunctionDeltaLakeName
 {
     static constexpr auto name = "deltaLake";
@@ -101,20 +86,14 @@ struct TableFunctionHudiName
     static constexpr auto name = "hudi";
 };
 
-#if USE_AVRO
-#    if USE_AWS_S3
-using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3>;
-using TableFunctionIcebergS3 = ITableFunctionDataLake<TableFunctionIcebergS3Name, StorageIceberg, TableFunctionS3>;
-#    endif
-#    if USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzure = ITableFunctionDataLake<TableFunctionIcebergAzureName, StorageIceberg, TableFunctionAzureBlob>;
-#    endif
-using TableFunctionIcebergLocal = ITableFunctionDataLake<TableFunctionIcebergLocalName, StorageIceberg, TableFunctionLocal>;
-#endif
 #if USE_AWS_S3
-#    if USE_PARQUET
+#if USE_AVRO
+using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3>;
+#endif
+#if USE_PARQUET
 using TableFunctionDeltaLake = ITableFunctionDataLake<TableFunctionDeltaLakeName, StorageDeltaLake, TableFunctionS3>;
 #endif
 using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudi, TableFunctionS3>;
 #endif
+
 }

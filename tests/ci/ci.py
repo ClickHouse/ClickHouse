@@ -16,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GH, Utils, Envs
+from ci_utils import GHActions, normalize_string, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -50,6 +50,7 @@ from github_helper import GitHub
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAILURE,
     PENDING,
     SUCCESS,
     BuildResult,
@@ -61,11 +62,11 @@ from report import (
     FAIL,
 )
 from s3_helper import S3Helper
+from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from ci_cache import CiCache
 from ci_settings import CiSettings
 from ci_buddy import CIBuddy
-from stopwatch import Stopwatch
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -93,12 +94,6 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--configure",
         action="store_true",
         help="Action that configures ci run. Calculates digests, checks job to be executed, generates json output",
-    )
-    parser.add_argument(
-        "--workflow",
-        default="",
-        type=str,
-        help="Workflow Name, to be provided with --configure for workflow-specific CI runs",
     )
     parser.add_argument(
         "--update-gh-statuses",
@@ -292,10 +287,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
     # for release/master branches reports must be from the same branch
     report_prefix = ""
     if pr_info.is_master or pr_info.is_release:
-        # do not set report prefix for scheduled or dispatched wf (in case it started from feature branch while
-        #   testing), otherwise reports won't be found
-        if not (pr_info.is_scheduled or pr_info.is_dispatched):
-            report_prefix = Utils.normalize_string(pr_info.head_ref)
+        report_prefix = normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -334,9 +326,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
         ):  # we might want to rerun build report job
             rerun_helper = RerunHelper(commit, _get_ext_check_name(job_name))
             if rerun_helper.is_already_finished_by_status():
-                print(
-                    f"WARNING: Rerunning job with GH status, rerun triggered by {Envs.GITHUB_ACTOR}"
-                )
+                print("WARNING: Rerunning job with GH status ")
                 status = rerun_helper.get_finished_status()
                 assert status
                 print("::group::Commit Status")
@@ -346,7 +336,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
                 skip_status = status.state
 
         # ci cache check
-        if not to_be_skipped and not no_cache and not Utils.is_job_triggered_manually():
+        if not to_be_skipped and not no_cache:
             ci_cache = CiCache(s3, indata["jobs_data"]["digests"]).update()
             job_config = CI.get_job_config(job_name)
             if ci_cache.is_successful(
@@ -369,10 +359,10 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
                 )
                 to_be_skipped = True
                 # skip_status = SUCCESS already there
-                GH.print_in_group("Commit Status Data", job_status)
+                GHActions.print_in_group("Commit Status Data", job_status)
 
-    # create dummy report
-    jr = JobReport.create_dummy(status=skip_status, job_skipped=to_be_skipped)
+    # create pre report
+    jr = JobReport.create_pre_report(status=skip_status, job_skipped=to_be_skipped)
     jr.dump()
 
     if not to_be_skipped:
@@ -530,7 +520,6 @@ def _configure_jobs(
     pr_info: PRInfo,
     ci_settings: CiSettings,
     skip_jobs: bool,
-    workflow_name: str = "",
     dry_run: bool = False,
 ) -> CiCache:
     """
@@ -548,27 +537,18 @@ def _configure_jobs(
             is_docs_only=pr_info.has_changes_in_documentation_only(),
             is_master=pr_info.is_master,
             is_pr=pr_info.is_pr,
-            workflow_name=workflow_name,
         )
     else:
         job_configs = {}
 
-    if not workflow_name:
-        # filter jobs in accordance with ci settings
-        job_configs = ci_settings.apply(
-            job_configs,
-            pr_info.is_release,
-            is_pr=pr_info.is_pr,
-            is_mq=pr_info.is_merge_queue,
-            labels=pr_info.labels,
-        )
-
-    # add all job batches to job's to_do batches
-    for _job, job_config in job_configs.items():
-        batches = []
-        for batch in range(job_config.num_batches):
-            batches.append(batch)
-        job_config.batches = batches
+    # filter jobs in accordance with ci settings
+    job_configs = ci_settings.apply(
+        job_configs,
+        pr_info.is_release,
+        is_pr=pr_info.is_pr,
+        is_mq=pr_info.is_merge_queue,
+        labels=pr_info.labels,
+    )
 
     # check jobs in ci cache
     ci_cache = CiCache.calc_digests_and_create(
@@ -719,7 +699,7 @@ def _upload_build_artifacts(
         (
             get_release_or_pr(pr_info, get_version_from_repo())[1],
             pr_info.sha,
-            Utils.normalize_string(build_name),
+            normalize_string(build_name),
             "performance.tar.zst",
         )
     )
@@ -986,26 +966,23 @@ def _run_test(job_name: str, run_command: str) -> int:
     else:
         print("Use run command from the workflow")
     env["CHECK_NAME"] = job_name
-    env["MAX_RUN_TIME"] = str(timeout or 0)
     print(f"Going to start run command [{run_command}]")
     stopwatch = Stopwatch()
     job_log = Path(TEMP_PATH) / "job_log.txt"
     with TeePopen(run_command, job_log, env, timeout) as process:
-        print(f"Job process started, pid [{process.process.pid}]")
         retcode = process.wait()
         if retcode != 0:
             print(f"Run action failed for: [{job_name}] with exit code [{retcode}]")
-        if process.timeout_exceeded:
-            print(f"Job timed out: [{job_name}] exit code [{retcode}]")
-            assert JobReport.exist(), "JobReport real or dummy must be present"
-            jr = JobReport.load()
-            if jr.dummy:
-                print(
-                    f"ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
-                )
-                jr.test_results = [TestResult.create_check_timeout_expired()]
-                jr.duration = stopwatch.duration_seconds
-                jr.additional_files += [job_log]
+            if timeout and process.timeout_exceeded:
+                print(f"Timeout {timeout} exceeded, dumping the job report")
+                JobReport(
+                    status=FAILURE,
+                    description=f"Timeout {timeout} exceeded",
+                    test_results=[TestResult.create_check_timeout_expired(timeout)],
+                    start_time=stopwatch.start_time_str,
+                    duration=stopwatch.duration_seconds,
+                    additional_files=[job_log],
+                ).dump()
 
     print(f"Run action done for: [{job_name}]")
     return retcode
@@ -1023,9 +1000,7 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_workflow(
-    s3: S3Helper, pr_number: int, cancel_sync: bool = False
-) -> None:
+def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
     wf_data = CiMetadata(s3, pr_number).fetch_meta()
     if not cancel_sync:
         if not wf_data.run_id:
@@ -1129,7 +1104,6 @@ def main() -> int:
             pr_info,
             ci_settings,
             args.skip_jobs,
-            args.workflow,
         )
 
         ci_cache.print_status()
@@ -1139,7 +1113,7 @@ def main() -> int:
 
         if IS_CI and not pr_info.is_merge_queue:
 
-            if pr_info.is_release and pr_info.is_push_event:
+            if pr_info.is_release:
                 print("Release/master: CI Cache add pending records for all todo jobs")
                 ci_cache.push_pending_all(pr_info.is_release)
 
@@ -1208,7 +1182,7 @@ def main() -> int:
             job_report
         ), "BUG. There must be job report either real report, or pre-report if job was killed"
         error_description = ""
-        if not job_report.dummy:
+        if not job_report.pre_report:
             # it's a real job report
             ch_helper = ClickHouseHelper()
             check_url = ""
@@ -1254,7 +1228,7 @@ def main() -> int:
                     (
                         get_release_or_pr(pr_info, get_version_from_repo())[0],
                         pr_info.sha,
-                        Utils.normalize_string(
+                        normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)
                         ),
                     )
@@ -1332,20 +1306,10 @@ def main() -> int:
             if CI.is_test_job(args.job_name):
                 gh = GitHub(get_best_robot_token(), per_page=100)
                 commit = get_commit(gh, pr_info.sha)
-                check_url = ""
-                if job_report.test_results or job_report.additional_files:
-                    check_url = upload_result_helper.upload_results(
-                        s3,
-                        pr_info.number,
-                        pr_info.sha,
-                        job_report.test_results,
-                        job_report.additional_files,
-                        job_report.check_name or _get_ext_check_name(args.job_name),
-                    )
                 post_commit_status(
                     commit,
                     ERROR,
-                    check_url,
+                    "",
                     "Error: " + error_description,
                     _get_ext_check_name(args.job_name),
                     pr_info,
@@ -1384,12 +1348,12 @@ def main() -> int:
         assert indata, "Run config must be provided via --infile"
         _update_gh_statuses_action(indata=indata, s3=s3)
 
-    ### CANCEL THE PREVIOUS WORKFLOW RUN
+    ### CANCEL PREVIOUS WORKFLOW RUN
     elif args.cancel_previous_run:
         if pr_info.is_merge_queue:
-            _cancel_pr_workflow(s3, pr_info.merged_pr)
+            _cancel_pr_wf(s3, pr_info.merged_pr)
         elif pr_info.is_pr:
-            _cancel_pr_workflow(s3, pr_info.number, cancel_sync=True)
+            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
         else:
             assert False, "BUG! Not supported scenario"
 

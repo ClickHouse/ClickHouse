@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed, no-fasttest
-# no-fasttest: Slow wait and retries
+# Tags: distributed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

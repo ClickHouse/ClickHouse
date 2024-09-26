@@ -63,7 +63,7 @@ public:
 
     off_t getPosition() override;
 
-    std::optional<size_t> tryGetFileSize() override;
+    size_t getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;

@@ -285,31 +285,6 @@ struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
     size_t bytesSize() const override { return RemoveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
-struct ZooKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, ZooKeeperRequest
-{
-    ZooKeeperRemoveRecursiveRequest() = default;
-    explicit ZooKeeperRemoveRecursiveRequest(const RemoveRecursiveRequest & base) : RemoveRecursiveRequest(base) {}
-
-    OpNum getOpNum() const override { return OpNum::RemoveRecursive; }
-    void writeImpl(WriteBuffer & out) const override;
-    void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl(bool short_format) const override;
-
-    ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return false; }
-
-    size_t bytesSize() const override { return RemoveRecursiveRequest::bytesSize() + sizeof(xid); }
-};
-
-struct ZooKeeperRemoveRecursiveResponse : RemoveRecursiveResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer &) override {}
-    void writeImpl(WriteBuffer &) const override {}
-    OpNum getOpNum() const override { return OpNum::RemoveRecursive; }
-
-    size_t bytesSize() const override { return RemoveRecursiveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-};
-
 struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
 {
     ZooKeeperExistsRequest() = default;
