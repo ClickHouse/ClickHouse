@@ -48,7 +48,8 @@
 * Replication of subset of columns is now available through MaterializedPostgreSQL. Closes [#33748](https://github.com/ClickHouse/ClickHouse/issues/33748). [#69092](https://github.com/ClickHouse/ClickHouse/pull/69092) ([Kruglov Kirill](https://github.com/1on)).
 
 #### Performance Improvement
-* Implemented reading of required files only for Hive partitioning. [#68963](https://github.com/ClickHouse/ClickHouse/pull/68963) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).* Improve the JOIN performance by rearranging the right table by keys while the table keys are dense in the LEFT or INNER hash joins. [#60341](https://github.com/ClickHouse/ClickHouse/pull/60341) ([kevinyhzou](https://github.com/KevinyhZou)).
+* Implemented reading of required files only for Hive partitioning. [#68963](https://github.com/ClickHouse/ClickHouse/pull/68963) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Improve the JOIN performance by rearranging the right table by keys while the table keys are dense in the LEFT or INNER hash joins. [#60341](https://github.com/ClickHouse/ClickHouse/pull/60341) ([kevinyhzou](https://github.com/KevinyhZou)).
 * Improve ALL JOIN performance by appending the list of rows lazily. [#63677](https://github.com/ClickHouse/ClickHouse/pull/63677) ([kevinyhzou](https://github.com/KevinyhZou)).
 * Load filesystem cache metadata asynchronously during the boot process, in order to make restarts faster (controlled by setting `load_metadata_asynchronously`). [#65736](https://github.com/ClickHouse/ClickHouse/pull/65736) ([Daniel Pozo Escalona](https://github.com/danipozo)).
 * Functions `array` and `map` were optimized to process certain common cases much faster. [#67707](https://github.com/ClickHouse/ClickHouse/pull/67707) ([李扬](https://github.com/taiyang-li)).
