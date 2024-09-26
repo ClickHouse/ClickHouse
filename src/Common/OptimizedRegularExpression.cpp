@@ -244,43 +244,33 @@ const char * analyzeImpl(
                 is_trivial = false;
                 if (!in_square_braces)
                 {
-                    /// it means flag negation
-                    /// there are various possible flags
-                    /// actually only imsU are supported by re2
-                    auto is_flag_char = [](char x)
-                    {
-                        return x == '-' || x == 'i' || x == 'm' || x == 's' || x == 'U' || x == 'u';
-                    };
                     /// Check for case-insensitive flag.
-                    if (pos + 2 < end && pos[1] == '?' && is_flag_char(pos[2]))
+                    if (pos + 1 < end && pos[1] == '?')
                     {
-                        size_t offset = 2;
-                        for (; pos + offset < end; ++offset)
+                        for (size_t offset = 2; pos + offset < end; ++offset)
                         {
-                            if (pos[offset] == 'i')
+                            if (pos[offset] == '-'  /// it means flag negation
+                                /// various possible flags, actually only imsU are supported by re2
+                                || (pos[offset] >= 'a' && pos[offset] <= 'z')
+                                || (pos[offset] >= 'A' && pos[offset] <= 'Z'))
                             {
-                                /// Actually it can be negated case-insensitive flag. But we don't care.
-                                has_case_insensitive_flag = true;
+                                if (pos[offset] == 'i')
+                                {
+                                    /// Actually it can be negated case-insensitive flag. But we don't care.
+                                    has_case_insensitive_flag = true;
+                                    break;
+                                }
                             }
-                            else if (!is_flag_char(pos[offset]))
+                            else
                                 break;
-                        }
-                        pos += offset;
-                        if (pos == end)
-                            return pos;
-                        /// if this group only contains flags, we have nothing to do.
-                        if (*pos == ')')
-                        {
-                            ++pos;
-                            break;
                         }
                     }
                     /// (?:regex) means non-capturing parentheses group
-                    else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
+                    if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
                         pos += 2;
                     }
-                    else if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
+                    if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
                     {
                         pos = skipNameCapturingGroup(pos, pos[2] == 'P' ? 3: 2, end);
                     }

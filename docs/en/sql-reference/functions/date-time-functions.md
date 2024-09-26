@@ -83,57 +83,7 @@ Result:
 ```
 ## makeDate32
 
-Creates a date of type [Date32](../../sql-reference/data-types/date32.md) from a year, month, day (or optionally a year and a day). 
-
-**Syntax**
-
-```sql
-makeDate32(year, [month,] day)
-```
-
-**Arguments**
-
-- `year` — Year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `month` — Month (optional). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `day` — Day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-
-:::note
-If `month` is omitted then `day` should take a value between `1` and `365`, otherwise it should take a value between `1` and `31`.
-:::
-
-**Returned values**
-
-- A date created from the arguments. [Date32](../../sql-reference/data-types/date32.md).
-
-**Examples**
-
-Create a date from a year, month, and day:
-
-Query:
-
-```sql
-SELECT makeDate32(2024, 1, 1);
-```
-
-Result:
-
-```response
-2024-01-01
-```
-
-Create a Date from a year and day of year:
-
-Query:
-
-``` sql
-SELECT makeDate32(2024, 100);
-```
-
-Result:
-
-```response
-2024-04-09
-```
+Like [makeDate](#makedate) but produces a [Date32](../data-types/date32.md).
 
 ## makeDateTime
 
@@ -175,38 +125,12 @@ Result:
 
 ## makeDateTime64
 
-Creates a [DateTime64](../../sql-reference/data-types/datetime64.md) data type value from its components: year, month, day, hour, minute, second. With optional sub-second precision.
+Like [makeDateTime](#makedatetime) but produces a [DateTime64](../data-types/datetime64.md).
 
 **Syntax**
 
-```sql
-makeDateTime64(year, month, day, hour, minute, second[, precision])
-```
-
-**Arguments**
-
-- `year` — Year (0-9999). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `month` — Month (1-12). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
-- `day` — Day (1-31). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `hour` — Hour (0-23). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-- `minute` — Minute (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
-- `second` — Second (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
-- `precision` — Optional precision of the sub-second component (0-9). [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).  
-
-**Example**
-
 ``` sql
-SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
-```
-
-```response
-┌─makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5)─┐
-│                       2023-05-15 10:30:45.00779 │
-└─────────────────────────────────────────────────┘
+makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
 ```
 
 ## timestamp
@@ -1617,348 +1541,45 @@ The calculation is performed relative to specific points in time:
 
 If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
-**Syntax**
-
-```sql
-toStartOfInterval(value, INTERVAL x unit[, time_zone])
-toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
-```
-
-The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function, e.g.
-
-``` SQL
-SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));
-```
 **See Also**
+
 - [date_trunc](#date_trunc)
 
 ## toTime
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
-**Syntax**
-
-```sql
-toTime(date[,timezone])
-```
-
-**Arguments**
-
-- `date` — Date to convert to a time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-- `timezone` (optional) — Timezone for the returned value. [String](../data-types/string.md).
-
-**Returned value**
-
-- DateTime with date equated to `1970-01-02` while preserving the time. [DateTime](../data-types/datetime.md).
-
-:::note
-If the `date` input argument contained sub-second components,
-they will be dropped in the returned `DateTime` value with second-accuracy.
-:::
-
-**Example**
-
-Query:
-
-```sql
-SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000',3)) AS result, toTypeName(result);
-```
-
-Result:
-
-```response
-┌──────────────result─┬─toTypeName(result)─┐
-│ 1970-01-02 01:20:30 │ DateTime           │
-└─────────────────────┴────────────────────┘
-```
-
 ## toRelativeYearNum
 
-Converts a date, or date with time, to the number of years elapsed since a certain fixed point in the past. 
-
-**Syntax**
-
-```sql
-toRelativeYearNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of years from a fixed reference point in the past. [UInt16](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    toRelativeYearNum(toDate('2002-12-08')) AS y1,
-    toRelativeYearNum(toDate('2010-10-26')) AS y2
-```
-
-Result:
-
-```response
-┌───y1─┬───y2─┐
-│ 2002 │ 2010 │
-└──────┴──────┘
-```
+Converts a date, or date with time, to the number of the year, starting from a certain fixed point in the past.
 
 ## toRelativeQuarterNum
 
-Converts a date, or date with time, to the number of quarters elapsed since a certain fixed point in the past.
-
-**Syntax**
-
-```sql
-toRelativeQuarterNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of quarters from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toRelativeQuarterNum(toDate('1993-11-25')) AS q1,
-  toRelativeQuarterNum(toDate('2005-01-05')) AS q2
-```
-
-Result:
-
-```response
-┌───q1─┬───q2─┐
-│ 7975 │ 8020 │
-└──────┴──────┘
-```
+Converts a date, or date with time, to the number of the quarter, starting from a certain fixed point in the past.
 
 ## toRelativeMonthNum
 
-Converts a date, or date with time, to the number of months elapsed since a certain fixed point in the past.
-
-**Syntax**
-
-```sql
-toRelativeMonthNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of months from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toRelativeMonthNum(toDate('2001-04-25')) AS m1,
-  toRelativeMonthNum(toDate('2009-07-08')) AS m2
-```
-
-Result:
-
-```response
-┌────m1─┬────m2─┐
-│ 24016 │ 24115 │
-└───────┴───────┘
-```
+Converts a date, or date with time, to the number of the month, starting from a certain fixed point in the past.
 
 ## toRelativeWeekNum
 
-Converts a date, or date with time, to the number of weeks elapsed since a certain fixed point in the past.
-
-**Syntax**
-
-```sql
-toRelativeWeekNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of weeks from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toRelativeWeekNum(toDate('2000-02-29')) AS w1,
-  toRelativeWeekNum(toDate('2001-01-12')) AS w2
-```
-
-Result:
-
-```response
-┌───w1─┬───w2─┐
-│ 1574 │ 1619 │
-└──────┴──────┘
-```
+Converts a date, or date with time, to the number of the week, starting from a certain fixed point in the past.
 
 ## toRelativeDayNum
 
-Converts a date, or date with time, to the number of days elapsed since a certain fixed point in the past.
-
-**Syntax**
-
-```sql
-toRelativeDayNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of days from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toRelativeDayNum(toDate('1993-10-05')) AS d1,
-  toRelativeDayNum(toDate('2000-09-20')) AS d2
-```
-
-Result:
-
-```response
-┌───d1─┬────d2─┐
-│ 8678 │ 11220 │
-└──────┴───────┘
-```
+Converts a date, or date with time, to the number of the day, starting from a certain fixed point in the past.
 
 ## toRelativeHourNum
 
-Converts a date, or date with time, to the number of hours elapsed since a certain fixed point in the past.
-
-**Syntax**
-
-```sql
-toRelativeHourNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of hours from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toRelativeHourNum(toDateTime('1993-10-05 05:20:36')) AS h1,
-  toRelativeHourNum(toDateTime('2000-09-20 14:11:29')) AS h2
-```
-
-Result:
-
-```response
-┌─────h1─┬─────h2─┐
-│ 208276 │ 269292 │
-└────────┴────────┘
-```
+Converts a date, or date with time, to the number of the hour, starting from a certain fixed point in the past.
 
 ## toRelativeMinuteNum
 
-Converts a date, or date with time, to the number of minutes elapsed since a certain fixed point in the past.
-
-**Syntax**
-
-```sql
-toRelativeMinuteNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of minutes from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toRelativeMinuteNum(toDateTime('1993-10-05 05:20:36')) AS m1,
-  toRelativeMinuteNum(toDateTime('2000-09-20 14:11:29')) AS m2
-```
-
-Result:
-
-```response
-┌───────m1─┬───────m2─┐
-│ 12496580 │ 16157531 │
-└──────────┴──────────┘
-```
+Converts a date, or date with time, to the number of the minute, starting from a certain fixed point in the past.
 
 ## toRelativeSecondNum
 
-Converts a date, or date with time, to the number of the seconds elapsed since a certain fixed point in the past.
-
-**Syntax**
-
-```sql
-toRelativeSecondNum(date)
-```
-
-**Arguments**
-
-- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- The number of seconds from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toRelativeSecondNum(toDateTime('1993-10-05 05:20:36')) AS s1,
-  toRelativeSecondNum(toDateTime('2000-09-20 14:11:29')) AS s2
-```
-
-Result:
-
-```response
-┌────────s1─┬────────s2─┐
-│ 749794836 │ 969451889 │
-└───────────┴───────────┘
-```
+Converts a date, or date with time, to the number of the second, starting from a certain fixed point in the past.
 
 ## toISOYear
 
@@ -2322,7 +1943,7 @@ Alias: `dateTrunc`.
 
     `unit` argument is case-insensitive.
 
-- `value` — Date and time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
+- `value` — Date and time. [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md).
 
 **Returned value**
@@ -3001,204 +2622,6 @@ Like function `YYYYMMDDhhmmssToDate()` but produces a [DateTime64](../data-types
 
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 
-## changeYear
-
-Changes the year component of a date or date time.
-
-**Syntax**
-``` sql
-
-changeYear(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the year. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-- The same type as `date_or_datetime`.
-
-**Example**
-
-``` sql
-SELECT changeYear(toDate('1999-01-01'), 2000), changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000);
-```
-
-Result:
-
-```
-┌─changeYear(toDate('1999-01-01'), 2000)─┬─changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)─┐
-│                             2000-01-01 │                                      2000-01-01 00:00:00.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-```
-
-## changeMonth
-
-Changes the month component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeMonth(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the month. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-- Returns a value of same type as `date_or_datetime`.
-
-**Example**
-
-``` sql
-SELECT changeMonth(toDate('1999-01-01'), 2), changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2);
-```
-
-Result:
-
-```
-┌─changeMonth(toDate('1999-01-01'), 2)─┬─changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2)─┐
-│                           1999-02-01 │                                    1999-02-01 00:00:00.000 │
-└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-## changeDay
-
-Changes the day component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeDay(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the day. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-- Returns a value of same type as `date_or_datetime`.
-
-**Example**
-
-``` sql
-SELECT changeDay(toDate('1999-01-01'), 5), changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5);
-```
-
-Result:
-
-```
-┌─changeDay(toDate('1999-01-01'), 5)─┬─changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5)─┐
-│                         1999-01-05 │                                  1999-01-05 00:00:00.000 │
-└────────────────────────────────────┴──────────────────────────────────────────────────────────┘
-```
-
-## changeHour
-
-Changes the hour component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeHour(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the hour. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-- Returns a value of same type as `date_or_datetime`. If the input is a [Date](../data-types/date.md), return [DateTime](../data-types/datetime.md). If the input is a [Date32](../data-types/date32.md), return [DateTime64](../data-types/datetime64.md).
-
-**Example**
-
-``` sql
-SELECT changeHour(toDate('1999-01-01'), 14), changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14);
-```
-
-Result:
-
-```
-┌─changeHour(toDate('1999-01-01'), 14)─┬─changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14)─┐
-│                  1999-01-01 14:00:00 │                                    1999-01-01 14:00:00.000 │
-└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-## changeMinute
-
-Changes the minute component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeMinute(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the minute. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-- Returns a value of same type as `date_or_datetime`. If the input is a [Date](../data-types/date.md), return [DateTime](../data-types/datetime.md). If the input is a [Date32](../data-types/date32.md), return [DateTime64](../data-types/datetime64.md).
-
-**Example**
-
-``` sql
-    SELECT changeMinute(toDate('1999-01-01'), 15), changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15);
-```
-
-Result:
-
-```
-┌─changeMinute(toDate('1999-01-01'), 15)─┬─changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
-│                    1999-01-01 00:15:00 │                                      1999-01-01 00:15:00.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-```
-
-## changeSecond
-
-Changes the second component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeSecond(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the second. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-- Returns a value of same type as `date_or_datetime`. If the input is a [Date](../data-types/date.md), return [DateTime](../data-types/datetime.md). If the input is a [Date32](../data-types/date32.md), return [DateTime64](../data-types/datetime64.md).
-
-**Example**
-
-``` sql
-SELECT changeSecond(toDate('1999-01-01'), 15), changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15);
-```
-
-Result:
-
-```
-┌─changeSecond(toDate('1999-01-01'), 15)─┬─changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
-│                    1999-01-01 00:00:15 │                                      1999-01-01 00:00:15.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-```
-
 ## addYears
 
 Adds a specified number of years to a date, a date with time or a string-encoded date / date with time.
@@ -3215,7 +2638,6 @@ addYears(date, num)
 - `num`: Number of years to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` plus `num` years. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3253,7 +2675,6 @@ addQuarters(date, num)
 - `num`: Number of quarters to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` plus `num` quarters. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3291,7 +2712,6 @@ addMonths(date, num)
 - `num`: Number of months to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` plus `num` months. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3329,7 +2749,6 @@ addWeeks(date, num)
 - `num`: Number of weeks to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` plus `num` weeks. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3367,7 +2786,6 @@ addDays(date, num)
 - `num`: Number of days to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` plus `num` days. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3405,7 +2823,6 @@ addHours(date, num)
 - `num`: Number of hours to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-o
 - Returns `date` plus `num` hours. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3443,7 +2860,6 @@ addMinutes(date, num)
 - `num`: Number of minutes to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` plus `num` minutes. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3481,7 +2897,6 @@ addSeconds(date, num)
 - `num`: Number of seconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` plus `num` seconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3519,7 +2934,6 @@ addMilliseconds(date_time, num)
 - `num`: Number of milliseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date_time` plus `num` milliseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3555,7 +2969,6 @@ addMicroseconds(date_time, num)
 - `num`: Number of microseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date_time` plus `num` microseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3591,7 +3004,6 @@ addNanoseconds(date_time, num)
 - `num`: Number of nanoseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date_time` plus `num` nanoseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3627,7 +3039,6 @@ addInterval(interval_1, interval_2)
 - `interval_2`: Second interval to be added. [interval](../data-types/special-data-types/interval.md).
 
 **Returned value**
-
 - Returns a tuple of intervals. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 
 :::note
@@ -3674,7 +3085,6 @@ addTupleOfIntervals(interval_1, interval_2)
 - `intervals`: Tuple of intervals to add to `date`. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 
 **Returned value**
-
 - Returns `date` with added `intervals`. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
 
 **Example**
@@ -3709,7 +3119,6 @@ subtractYears(date, num)
 - `num`: Number of years to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` years. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3747,7 +3156,6 @@ subtractQuarters(date, num)
 - `num`: Number of quarters to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` quarters. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3785,7 +3193,6 @@ subtractMonths(date, num)
 - `num`: Number of months to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` months. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3823,7 +3230,6 @@ subtractWeeks(date, num)
 - `num`: Number of weeks to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` weeks. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3861,7 +3267,6 @@ subtractDays(date, num)
 - `num`: Number of days to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` days. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3899,7 +3304,6 @@ subtractHours(date, num)
 - `num`: Number of hours to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` hours. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[Datetime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3937,7 +3341,6 @@ subtractMinutes(date, num)
 - `num`: Number of minutes to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` minutes. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3975,7 +3378,6 @@ subtractSeconds(date, num)
 - `num`: Number of seconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date` minus `num` seconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -4013,7 +3415,6 @@ subtractMilliseconds(date_time, num)
 - `num`: Number of milliseconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date_time` minus `num` milliseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -4049,7 +3450,6 @@ subtractMicroseconds(date_time, num)
 - `num`: Number of microseconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date_time` minus `num` microseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -4085,7 +3485,6 @@ subtractNanoseconds(date_time, num)
 - `num`: Number of nanoseconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-
 - Returns `date_time` minus `num` nanoseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -4121,7 +3520,6 @@ subtractInterval(interval_1, interval_2)
 - `interval_2`: Second interval to be negated. [interval](../data-types/special-data-types/interval.md).
 
 **Returned value**
-
 - Returns a tuple of intervals. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 
 :::note
@@ -4168,7 +3566,6 @@ subtractTupleOfIntervals(interval_1, interval_2)
 - `intervals`: Tuple of intervals to subtract from `date`. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 
 **Returned value**
-
 - Returns `date` with subtracted `intervals`. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -4187,29 +3584,19 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## timeSlots
+## timeSlots(StartTime, Duration,\[, Size\])
 
 For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
 This is necessary, for example, when searching for pageviews in the corresponding session.
 Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
 Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
 
-**Syntax**
-
-```sql
-timeSlots(StartTime, Duration,\[, Size\])
-```
-
-**Example**
-
+Example:
 ```sql
 SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
 SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
 SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
 ```
-
-Result:
-
 ``` text
 ┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
 │ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │

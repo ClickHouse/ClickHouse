@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFileCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>

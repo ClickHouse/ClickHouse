@@ -7,7 +7,7 @@ import pytest
 import sys
 import threading
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, run_and_check
 from helpers.test_tools import assert_logs_contain_with_retry
 from helpers.uclient import client, prompt
 
@@ -51,7 +51,7 @@ instance = cluster.add_instance(
 
 
 def get_query(name, id):
-    return f"SELECT '{name}', {id}, COUNT(*) from system.numbers"
+    return f"SElECT '{name}', {id}, number from system.numbers"
 
 
 def grpc_get_url():
@@ -90,7 +90,7 @@ def threaded_run_test(sessions):
     if len(sessions) > MAX_SESSIONS_FOR_USER:
         # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
         assert_logs_contain_with_retry(
-            instance, "overflown session count", retry_count=120
+            instance, "overflown session count", retry_count=60
         )
 
     instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")

@@ -22,8 +22,6 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
-#include <Core/Settings.h>
-
 namespace DB
 {
 
@@ -89,7 +87,7 @@ public:
             if (!pattern || !isString(pattern->getResultType()))
                 continue;
 
-            auto regexp = likePatternToRegexp(pattern->getValue().safeGet<String>());
+            auto regexp = likePatternToRegexp(pattern->getValue().get<String>());
             /// Case insensitive. Works with UTF-8 as well.
             if (is_ilike)
                 regexp = "(?i)" + regexp;

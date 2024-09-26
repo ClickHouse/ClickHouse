@@ -154,8 +154,7 @@ void writeColumnSingleGranule(
     const SerializationPtr & serialization,
     ISerialization::OutputStreamGetter stream_getter,
     size_t from_row,
-    size_t number_of_rows,
-    const MergeTreeWriterSettings & settings)
+    size_t number_of_rows)
 {
     ISerialization::SerializeBinaryBulkStatePtr state;
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
@@ -163,8 +162,7 @@ void writeColumnSingleGranule(
     serialize_settings.getter = stream_getter;
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
-    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
-    serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX;
+    serialize_settings.dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::DynamicStatisticsMode::PREFIX;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -261,7 +259,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), getSerialization(name_and_type->name),
-                stream_getter, granule.start_row, granule.rows_to_write, settings);
+                stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next();

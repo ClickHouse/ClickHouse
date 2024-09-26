@@ -962,7 +962,7 @@ def test_s3_engine_heavy_write_check_mem(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS "
         f" max_memory_usage={2*memory}"
-        ", max_threads=1, optimize_trivial_insert_select=1"  # ParallelFormattingOutputFormat consumption depends on it
+        f", max_threads=1"  # ParallelFormattingOutputFormat consumption depends on it
         f", s3_max_inflight_parts_for_one_file={in_flight}",
         query_id=query_id,
     )
@@ -1010,10 +1010,9 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS max_memory_usage={2*memory}"
-        ", max_insert_block_size=50000000"
-        ", min_insert_block_size_rows=50000000"
-        ", min_insert_block_size_bytes=1000000000000"
-        ", optimize_trivial_insert_select=1",
+        f", max_insert_block_size=50000000"
+        f", min_insert_block_size_rows=50000000"
+        f", min_insert_block_size_bytes=1000000000000",
         query_id=query_id,
     )
 

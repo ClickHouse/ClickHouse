@@ -173,16 +173,6 @@ IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGU
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
 
-IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", LightweightMutationProjectionMode::THROW},
-     {"drop", LightweightMutationProjectionMode::DROP},
-     {"rebuild", LightweightMutationProjectionMode::REBUILD}})
-
-IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", DeduplicateMergeProjectionMode::THROW},
-     {"drop", DeduplicateMergeProjectionMode::DROP},
-     {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
-
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
@@ -244,10 +234,4 @@ IMPLEMENT_SETTING_ENUM(
     GroupArrayActionWhenLimitReached,
     ErrorCodes::BAD_ARGUMENTS,
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
-
-IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", IdentifierQuotingStyle::None},
-     {"Backticks", IdentifierQuotingStyle::Backticks},
-     {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
-     {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
 }

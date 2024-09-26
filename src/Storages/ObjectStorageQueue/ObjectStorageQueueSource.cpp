@@ -505,6 +505,10 @@ Chunk ObjectStorageQueueSource::generateImpl()
                      path, processed_rows_from_file);
         }
 
+        auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
+        SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
+        /// FIXME:  if files are compressed, profile counters update does not work fully (object storage related counters are not saved). Why?
+
         try
         {
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
@@ -524,7 +528,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     {
                         .path = path,
                         .size = reader.getObjectInfo()->metadata->size_bytes
-                    }, getContext());
+                    });
 
                 return chunk;
             }
@@ -666,6 +670,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .file_name = filename,
             .rows_processed = processed_rows,
             .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
+            .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,
             .exception = file_status_.getException(),

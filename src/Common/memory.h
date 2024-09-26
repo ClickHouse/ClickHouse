@@ -37,7 +37,7 @@ requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
 #if USE_GWP_ASAN
-    if (unlikely(GWPAsan::shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
         if constexpr (sizeof...(TAlign) == 1)
         {
@@ -80,10 +80,10 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
     throw std::bad_alloc{};
 }
 
-inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
+inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
 #if USE_GWP_ASAN
-    if (unlikely(GWPAsan::shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(size))
         {
@@ -99,10 +99,10 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
     return malloc(size);
 }
 
-inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
+inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align) noexcept
 {
 #if USE_GWP_ASAN
-    if (unlikely(GWPAsan::shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignToSizeT(align)))
         {

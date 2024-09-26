@@ -3,7 +3,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>

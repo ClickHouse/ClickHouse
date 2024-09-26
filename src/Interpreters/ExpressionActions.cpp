@@ -49,17 +49,17 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
-    : actions_dag(std::move(actions_dag_))
-    , project_inputs(project_inputs_)
-    , settings(settings_)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
+    : settings(settings_)
 {
+    actions_dag = actions_dag_->clone();
+
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        actions_dag->compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
     linearizeActions(lazy_executed_nodes);
@@ -67,32 +67,12 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag.dumpNames(), settings.max_temporary_columns);
+                        actions_dag->dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
-
-    std::unordered_map<const Node *, Node *> copy_map;
-    copy->actions_dag = actions_dag.clone(copy_map);
-    copy->actions = actions;
-    for (auto & action : copy->actions)
-        action.node = copy_map[action.node];
-
-    for (const auto * input : copy->actions_dag.getInputs())
-        copy->input_positions.emplace(input->result_name, input_positions.at(input->result_name));
-
-    copy->num_columns = num_columns;
-
-    copy->required_columns = required_columns;
-    copy->result_positions = result_positions;
-    copy->sample_block = sample_block;
-
-    copy->project_inputs = project_inputs;
-    copy->settings = settings;
-
-    return copy;
+    return std::make_shared<ExpressionActions>(*this);
 }
 
 namespace
@@ -356,8 +336,8 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & outputs = actions_dag.getOutputs();
-    const auto & inputs = actions_dag.getInputs();
+    const auto & outputs = actions_dag->getOutputs();
+    const auto & inputs = actions_dag->getInputs();
 
     auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
@@ -777,7 +757,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
         }
     }
 
-    if (project_inputs)
+    if (actions_dag->isInputProjected())
     {
         block.clear();
     }
@@ -882,7 +862,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\noutput positions:";
+    ss << "\nproject input: " << actions_dag->isInputProjected() << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";
@@ -946,6 +926,7 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     map->add("Actions", std::move(actions_array));
     map->add("Outputs", std::move(outputs_array));
     map->add("Positions", std::move(positions_array));
+    map->add("Project Input", actions_dag->isInputProjected());
 
     return map;
 }
@@ -999,7 +980,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1148,14 +1129,14 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
+ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
 }
 
-const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
+const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
 }
 
 }

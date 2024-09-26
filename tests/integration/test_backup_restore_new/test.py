@@ -1,10 +1,10 @@
-import glob
-import os.path
 import pytest
-import random
+import asyncio
+import glob
 import re
+import random
+import os.path
 import sys
-import uuid
 from collections import namedtuple
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
@@ -343,13 +343,6 @@ def test_increment_backup_without_changes():
 
 
 def test_incremental_backup_overflow():
-    if (
-        instance.is_built_with_thread_sanitizer()
-        or instance.is_built_with_memory_sanitizer()
-        or instance.is_built_with_address_sanitizer()
-    ):
-        pytest.skip("The test is slow in builds with sanitizer")
-
     backup_name = new_backup_name()
     incremental_backup_name = new_backup_name()
 
@@ -546,8 +539,7 @@ def test_backup_not_found_or_already_exists():
 
 
 def test_file_engine():
-    id = uuid.uuid4()
-    backup_name = f"File('/backups/file/{id}/')"
+    backup_name = f"File('/backups/file/')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -558,7 +550,6 @@ def test_file_engine():
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query("DROP TABLE test.table")
 
 
 def test_database():
@@ -575,8 +566,7 @@ def test_database():
 
 
 def test_zip_archive():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_{id}.zip')"
+    backup_name = f"Disk('backups', 'archive.zip')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -589,12 +579,10 @@ def test_zip_archive():
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query("DROP TABLE test.table")
 
 
 def test_zip_archive_with_settings():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_with_settings_{id}.zip')"
+    backup_name = f"Disk('backups', 'archive_with_settings.zip')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -609,12 +597,10 @@ def test_zip_archive_with_settings():
         f"RESTORE TABLE test.table FROM {backup_name} SETTINGS password='qwerty'"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query("DROP TABLE test.table")
 
 
 def test_zip_archive_with_bad_compression_method():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_with_bad_compression_method_{id}.zip')"
+    backup_name = f"Disk('backups', 'archive_with_bad_compression_method.zip')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -632,8 +618,7 @@ def test_zip_archive_with_bad_compression_method():
 
 
 def test_tar_archive():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_{id}.tar')"
+    backup_name = f"Disk('backups', 'archive.tar')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -646,12 +631,10 @@ def test_tar_archive():
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query("DROP TABLE test.table")
 
 
 def test_tar_bz2_archive():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_{id}.tar.bz2')"
+    backup_name = f"Disk('backups', 'archive.tar.bz2')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -667,8 +650,7 @@ def test_tar_bz2_archive():
 
 
 def test_tar_gz_archive():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_{id}.tar.gz')"
+    backup_name = f"Disk('backups', 'archive.tar.gz')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -684,8 +666,7 @@ def test_tar_gz_archive():
 
 
 def test_tar_lzma_archive():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_{id}.tar.lzma')"
+    backup_name = f"Disk('backups', 'archive.tar.lzma')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -701,8 +682,7 @@ def test_tar_lzma_archive():
 
 
 def test_tar_zst_archive():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_{id}.tar.zst')"
+    backup_name = f"Disk('backups', 'archive.tar.zst')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -718,8 +698,7 @@ def test_tar_zst_archive():
 
 
 def test_tar_xz_archive():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_{id}.tar.xz')"
+    backup_name = f"Disk('backups', 'archive.tar.xz')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -735,8 +714,7 @@ def test_tar_xz_archive():
 
 
 def test_tar_archive_with_password():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_with_password_{id}.tar')"
+    backup_name = f"Disk('backups', 'archive_with_password.tar')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -754,8 +732,7 @@ def test_tar_archive_with_password():
 
 
 def test_tar_archive_with_bad_compression_method():
-    id = uuid.uuid4()
-    backup_name = f"Disk('backups', 'archive_with_bad_compression_method_{id}.tar')"
+    backup_name = f"Disk('backups', 'archive_with_bad_compression_method.tar')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -1244,10 +1221,6 @@ def test_system_users_required_privileges():
     assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
     assert instance.query("SHOW GRANTS FOR r1") == ""
 
-    instance.query("DROP USER u1")
-    instance.query("DROP ROLE r1")
-    instance.query("DROP USER u2")
-
 
 def test_system_users_async():
     instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
@@ -1440,8 +1413,6 @@ def test_system_functions():
     assert instance.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
         [[0, "even"], [1, "odd"], [2, "even"]]
     )
-    instance.query("DROP FUNCTION linear_equation")
-    instance.query("DROP FUNCTION parity_str")
 
 
 def test_backup_partition():
@@ -1515,7 +1486,6 @@ def test_backup_all(exclude_system_log_tables):
             "processors_profile_log",
             "asynchronous_insert_log",
             "backup_log",
-            "error_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 

@@ -16,13 +16,12 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
 
-#include <fmt/format.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -370,9 +369,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     LoggerPtr log_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_,
-    std::vector<ConnectionPoolPtr> pools_to_use_,
-    std::optional<size_t> exclude_pool_index_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -385,24 +382,16 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , external_tables{external_tables_}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
-    , pools_to_use(std::move(pools_to_use_))
-    , exclude_pool_index(exclude_pool_index_)
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> replicas;
-    replicas.reserve(pools_to_use.size());
+    std::vector<String> description;
+    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
 
-    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
-    {
-        if (exclude_pool_index.has_value() && i == exclude_pool_index)
-            continue;
+    for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
+        description.push_back(fmt::format("Replica: {}", pool->getHost()));
 
-        replicas.push_back(pools_to_use[i]->getAddress());
-    }
-
-    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
-    setStepDescription(std::move(description));
+    setStepDescription(boost::algorithm::join(description, ", "));
 }
 
 void ReadFromParallelRemoteReplicasStep::enforceSorting(SortDescription output_sort_description)
@@ -418,29 +407,46 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
+    const Settings & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-    std::vector<std::string_view> addresses;
-    addresses.reserve(pools_to_use.size());
-    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
+    const auto & shard = cluster->getShardsInfo().at(0);
+    size_t all_replicas_count = current_settings.max_parallel_replicas;
+    if (all_replicas_count > shard.getAllNodeCount())
     {
-        if (exclude_pool_index.has_value() && i == exclude_pool_index)
-            continue;
-
-        addresses.emplace_back(pools_to_use[i]->getAddress());
+        LOG_INFO(
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
+            "Will use the latter number to execute the query.",
+            current_settings.max_parallel_replicas,
+            shard.getAllNodeCount());
+        all_replicas_count = shard.getAllNodeCount();
     }
-    LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
-    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
+    std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
+    if (all_replicas_count < shard.getAllNodeCount())
     {
-        if (exclude_pool_index.has_value() && i == exclude_pool_index)
-            continue;
+        shuffled_pool = shard.pool->getShuffledPools(current_settings);
+        shuffled_pool.resize(all_replicas_count);
+    }
+    else
+    {
+        /// try to preserve replicas order if all replicas in cluster are used for query execution
+        /// it's important for data locality during query execution
+        auto priority_func = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
+        shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
+    }
 
-        IConnections::ReplicaInfo replica_info{
+    for (size_t i=0; i < all_replicas_count; ++i)
+    {
+        IConnections::ReplicaInfo replica_info
+        {
+            .all_replicas_count = all_replicas_count,
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, pools_to_use[i], replica_info);
+        addPipeForSingeReplica(pipes, shuffled_pool[i].pool, replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
