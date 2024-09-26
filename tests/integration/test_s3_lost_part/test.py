@@ -172,6 +172,12 @@ def test_no_metadata_file(start_cluster):
     data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert "1" == data
 
+    part_name = replica1.query(
+        f"SELECT name FROM system.parts WHERE table='{table_name}'"
+    ).strip()
+
+    assert "all_0_0_0" == part_name
+
     table_metadata_path = replica1.query(
         f"SELECT path FROM system.parts WHERE table='{table_name}'"
     ).strip()
@@ -202,6 +208,12 @@ def test_broken_metadata_file(start_cluster):
     replica1.query(f"INSERT INTO {table_name} VALUES (1)")
     data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert "1" == data
+
+    part_name = replica1.query(
+        f"SELECT name FROM system.parts WHERE table='{table_name}'"
+    ).strip()
+
+    assert "all_0_0_0" == part_name
 
     table_metadata_path = replica1.query(
         f"SELECT path FROM system.parts WHERE table='{table_name}'"
