@@ -2,13 +2,12 @@
 
 #include <optional>
 
+#include <boost/geometry.hpp>
+
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
-#include <Core/PlainRanges.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
-
-#include <Parsers/ASTExpressionList.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/ActionsDAG.h>
@@ -219,6 +218,10 @@ public:
             std::vector<String> key_columns;
         };
         std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
+
+        using Point = boost::geometry::model::d2::point_xy<Float64>;
+        using Polygon = boost::geometry::model::polygon<Point>;
+        Polygon polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
     };

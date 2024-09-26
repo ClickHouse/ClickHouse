@@ -1,10 +1,10 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
@@ -30,12 +30,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
 #include <algorithm>
 #include <cassert>
@@ -3171,9 +3169,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// Close ring
             boost::geometry::correct(polygon_by_minmax_index);
 
+            /// Because the polygon may have a hole so the "can_be_false" should be true.
             rpn_stack.emplace_back(
-                boost::geometry::intersects(polygon_by_minmax_index, element.polygon),
-                !boost::geometry::within(polygon_by_minmax_index, element.polygon));
+                boost::geometry::intersects(polygon_by_minmax_index, element.polygon), true);
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
