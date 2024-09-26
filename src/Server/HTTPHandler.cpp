@@ -590,7 +590,7 @@ void HTTPHandler::processQuery(
     used_output.finalize();
 }
 
-void HTTPHandler::trySendExceptionToClient(
+bool HTTPHandler::trySendExceptionToClient(
     int exception_code, const std::string & message, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
@@ -599,10 +599,7 @@ try
         LOG_DEBUG(getLogger("trySendExceptionToClient"), "1");
         /// If nothing was sent yet and we don't even know if we must compress the response.
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-        wb.cancelWithException(request, exception_code, message, nullptr);
-        // It is ok to cancel already finalized buffers
-        used_output.cancel();
-        return;
+        return wb.cancelWithException(request, exception_code, message, nullptr);
     }
 
     chassert(used_output.out_maybe_compressed);
@@ -625,16 +622,14 @@ try
     if (used_output.exception_is_written)
     {
         /// everything has been held by output format write
-        used_output.cancel();
-        return;
+        return true;
     }
 
     /// We might have special formatter for exception message.
     if (used_output.exception_writer)
     {
         used_output.exception_writer(*used_output.out_maybe_compressed, exception_code, message);
-        used_output.cancel();
-        return;
+        return true;
     }
 
     /// This is the worst case scenario
@@ -644,14 +639,15 @@ try
     /// Send the error message into already used (and possibly compressed) stream.
     /// Note that the error message will possibly be sent after some data.
     /// Also HTTP code 200 could have already been sent.
-
-    used_output.out_holder->cancelWithException(request, exception_code, message, used_output.out_maybe_compressed.get());
-    used_output.cancel();
+    return used_output.out_holder->cancelWithException(request, exception_code, message, used_output.out_maybe_compressed.get());
 }
 catch (...)
 {
+    /// The message could be not sent due to error on allocations
+    /// or due to exception in used_output.exception_writer
+    /// or because the socket is broken
     tryLogCurrentException(log, "Cannot send exception to client");
-    used_output.cancel();
+    return false;
 }
 
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
@@ -754,25 +750,18 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
         });
 
-        /// Check if exception was thrown in used_output.finalize().
-        /// In this case used_output can be in invalid state and we
-        /// cannot write in it anymore. So, just log this exception.
-        if (used_output.isFinalized() || used_output.isCanceled())
-        {
-            if (thread_trace_context)
-                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
-
-            tryLogCurrentException(log, "Cannot flush data to client");
-            return;
-        }
-
         tryLogCurrentException(log);
 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-        trySendExceptionToClient(status.code, status.message, request, response, used_output);
+        auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
+
+        used_output.cancel();
+
+        if (!error_sent && thread_trace_context)
+                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);

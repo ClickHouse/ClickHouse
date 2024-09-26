@@ -214,6 +214,8 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
 
 void ZstdDeflatingAppendableWriteBuffer::cancelImpl() noexcept
 {
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+
     out->cancel();
 
     /// To free cctx

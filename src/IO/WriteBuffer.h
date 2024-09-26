@@ -180,10 +180,7 @@ protected:
         next();
     }
 
-    virtual void cancelImpl() noexcept
-    {
-        /* no op */
-    }
+    virtual void cancelImpl() noexcept;
 
     bool finalized = false;
     bool canceled = false;

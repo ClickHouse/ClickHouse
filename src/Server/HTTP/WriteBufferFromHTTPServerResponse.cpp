@@ -238,7 +238,7 @@ bool WriteBufferFromHTTPServerResponse::isFixedLength() const
     return HTTPWriteBuffer::isFixedLength();
 }
 
-void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept
+bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept
 {
     bool use_compression_buffer = compression_buffer && !compression_buffer->isCanceled() && !compression_buffer->isFinalized();
 
@@ -287,7 +287,6 @@ void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             if (use_compression_buffer)
                 compression_buffer->finalize();
             finalize();
-
 
             LOG_DEBUG(
                 getLogger("WriteBufferFromHTTPServerResponse"),
@@ -360,7 +359,6 @@ void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 compression_buffer->next();
             next();
 
-
             LOG_DEBUG(
                 getLogger("WriteBufferFromHTTPServerResponse"),
                 "Write buffer has been canceled with an error."
@@ -377,6 +375,8 @@ void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 compression_buffer->cancel();
             cancel();
         }
+
+        return true;
     }
     catch (...)
     {
@@ -386,6 +386,8 @@ void WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             compression_buffer->cancel();
 
         cancel();
+
+        return false;
     }
 }
 

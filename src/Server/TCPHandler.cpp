@@ -2237,7 +2237,7 @@ void TCPHandler::initBlockOutput(const Block & block)
                     query_settings[Setting::allow_experimental_codecs],
                     query_settings[Setting::enable_zstd_qat_codec]);
 
-                state.maybe_compressed_out = std::make_shared<AutoCanceledWriteBuffer<CompressedWriteBuffer>>(
+                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
             }
             else
@@ -2392,6 +2392,8 @@ void TCPHandler::sendData(const Block & block)
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         /// In case of unsuccessful write, if the buffer with written data was not flushed,
         ///  we will rollback write to avoid breaking the protocol.
         /// (otherwise the client will not be able to receive exception after unfinished data

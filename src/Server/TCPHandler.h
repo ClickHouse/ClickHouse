@@ -123,6 +123,10 @@ struct QueryState
 
     void reset()
     {
+        /// we have to finalize only compression buffer and leave the tcp write buffer intact
+        if (maybe_compressed_out && !maybe_compressed_out->isCanceled() && maybe_compressed_out.unique())
+            maybe_compressed_out->finalize();
+
         *this = QueryState();
     }
 

@@ -177,7 +177,7 @@ private:
         std::optional<CurrentThread::QueryScope> & query_scope,
         const ProfileEvents::Event & write_event);
 
-    void trySendExceptionToClient(
+    bool trySendExceptionToClient(
         int exception_code,
         const std::string & message,
         HTTPServerRequest & request,

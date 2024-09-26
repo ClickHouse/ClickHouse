@@ -1,5 +1,6 @@
 #include "WriteBuffer.h"
 
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -34,6 +35,12 @@ void WriteBuffer::cancel() noexcept
     LockMemoryExceptionInThread lock(VariableContext::Global);
     cancelImpl();
     canceled = true;
+}
+
+void WriteBuffer::cancelImpl() noexcept
+{
+    LoggerPtr log = getLogger("WriteBuffer");
+    LOG_DEBUG(log, "cancelImpl at: {}", StackTrace().toString());
 }
 
 }
