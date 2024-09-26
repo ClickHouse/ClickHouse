@@ -101,7 +101,6 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
-arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -141,9 +140,9 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
-arrayZip
 asinh
 assumeNotNull
 atan
@@ -561,7 +560,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-printf
 proportionsZTest
 protocol
 queryID

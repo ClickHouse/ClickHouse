@@ -85,6 +85,8 @@ public:
     /// Introspection functions for 4lw commands
     virtual uint64_t getLastProcessedZxid() const = 0;
 
+    virtual const KeeperStorageBase::Stats & getStorageStats() const = 0;
+
     virtual uint64_t getNodesCount() const = 0;
     virtual uint64_t getTotalWatchesCount() const = 0;
     virtual uint64_t getWatchedPathsCount() const = 0;
@@ -124,12 +126,16 @@ protected:
     /// Mutex for snapshots
     mutable std::mutex snapshots_lock;
 
-    /// Lock for storage and responses_queue. It's important to process requests
+    /// Lock for the storage
+    /// Storage works in thread-safe way ONLY for preprocessing/processing
+    /// In any other case, unique storage lock needs to be taken
+    mutable SharedMutex storage_mutex;
+    /// Lock for processing and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
     /// for request.
-    mutable std::mutex storage_and_responses_lock;
+    mutable std::mutex process_and_responses_lock;
 
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperStorageBase::RequestForSession>>> parsed_request_cache;
     uint64_t min_request_size_to_cache{0};
@@ -146,6 +152,7 @@ protected:
     mutable std::mutex cluster_config_lock;
     ClusterConfigPtr cluster_config;
 
+    ThreadPool read_pool;
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
@@ -153,10 +160,8 @@ protected:
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
-    virtual KeeperStorageBase::ResponseForSession processReconfiguration(
-        const KeeperStorageBase::RequestForSession& request_for_session)
-        TSA_REQUIRES(storage_and_responses_lock) = 0;
-
+    virtual KeeperStorageBase::ResponseForSession processReconfiguration(const KeeperStorageBase::RequestForSession & request_for_session)
+        = 0;
 };
 
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.
@@ -189,10 +194,6 @@ public:
     // (can happen in case of exception during preprocessing)
     void rollbackRequest(const KeeperStorageBase::RequestForSession & request_for_session, bool allow_missing) override;
 
-    void rollbackRequestNoLock(
-        const KeeperStorageBase::RequestForSession & request_for_session,
-        bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
-
     /// Apply preliminarily saved (save_logical_snp_obj) snapshot to our state.
     bool apply_snapshot(nuraft::snapshot & s) override;
 
@@ -205,7 +206,7 @@ public:
     // This should be used only for tests or keeper-data-dumper because it violates
     // TSA -- we can't acquire the lock outside of this class or return a storage under lock
     // in a reasonable way.
-    Storage & getStorageUnsafe() TSA_NO_THREAD_SAFETY_ANALYSIS
+    Storage & getStorageUnsafe()
     {
         return *storage;
     }
@@ -223,6 +224,8 @@ public:
 
     /// Introspection functions for 4lw commands
     uint64_t getLastProcessedZxid() const override;
+
+    const KeeperStorageBase::Stats & getStorageStats() const override;
 
     uint64_t getNodesCount() const override;
     uint64_t getTotalWatchesCount() const override;
@@ -245,12 +248,12 @@ public:
 
 private:
     /// Main state machine logic
-    std::unique_ptr<Storage> storage; //TSA_PT_GUARDED_BY(storage_and_responses_lock);
+    std::unique_ptr<Storage> storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager<Storage> snapshot_manager;
 
-    KeeperStorageBase::ResponseForSession processReconfiguration(const KeeperStorageBase::RequestForSession & request_for_session)
-        TSA_REQUIRES(storage_and_responses_lock) override;
+    KeeperStorageBase::ResponseForSession processReconfiguration(const KeeperStorageBase::RequestForSession & request_for_session) override;
 };
+
 }
