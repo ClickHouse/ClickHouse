@@ -522,7 +522,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
-                        && lit_right->value.get<Int64>() >= 0)
+                        && lit_right->value.safeGet<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -722,7 +722,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
                         settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
                     }
-                    settings.ostr << "'[HIDDEN]'";
+                    if (!secret_arguments.replacement.empty())
+                    {
+                        settings.ostr << "'" << secret_arguments.replacement << "'";
+                    }
+                    else
+                    {
+                        settings.ostr << "'[HIDDEN]'";
+                    }
                     if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
                         break; /// All other arguments should also be hidden.
                     continue;

@@ -17,7 +17,7 @@ PRIMARY KEY id;
 INSERT INTO test_projection_deduplicate VALUES (1, 'one');
 INSERT INTO test_projection_deduplicate VALUES (1, 'one');
 
-OPTIMIZE TABLE test_projection_deduplicate DEDUPLICATE; -- { serverError NOT_IMPLEMENTED }
+OPTIMIZE TABLE test_projection_deduplicate DEDUPLICATE; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT * FROM test_projection_deduplicate;
 

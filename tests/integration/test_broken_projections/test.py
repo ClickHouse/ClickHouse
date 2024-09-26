@@ -4,6 +4,7 @@ import logging
 import string
 import random
 from helpers.cluster import ClickHouseCluster
+from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 
@@ -15,6 +16,12 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["config.d/backups.xml"],
+            stay_alive=True,
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
+            "node_restart",
+            main_configs=["config.d/dont_start_broken.xml"],
             stay_alive=True,
             with_zookeeper=True,
         )
@@ -398,7 +405,7 @@ def test_materialize_broken_projection(cluster):
     assert "NO_FILE_IN_DATA_PART" in get_broken_projections_info(
         node, table_name, part="all_1_1_0", projection="proj1"
     )
-    assert "Part all_1_1_0 has a broken projection proj1" in check_table_full(
+    assert "Part `all_1_1_0` has broken projection `proj1`" in check_table_full(
         node, table_name
     )
 
@@ -408,13 +415,13 @@ def test_materialize_broken_projection(cluster):
     assert "FILE_DOESNT_EXIST" in get_broken_projections_info(
         node, table_name, part="all_1_1_0", projection="proj2"
     )
-    assert "Part all_1_1_0 has a broken projection proj2" in check_table_full(
+    assert "Part `all_1_1_0` has broken projection `proj2`" in check_table_full(
         node, table_name
     )
 
     materialize_projection(node, table_name, "proj1")
 
-    assert "has a broken projection" not in check_table_full(node, table_name)
+    assert "has broken projection" not in check_table_full(node, table_name)
 
 
 def test_broken_ignored_replicated(cluster):
@@ -436,13 +443,13 @@ def test_broken_ignored_replicated(cluster):
     check(node, table_name2, 1)
 
     break_projection(node, table_name, "proj1", "all_0_0_0", "data")
-    assert "Part all_0_0_0 has a broken projection proj1" in check_table_full(
+    assert "Part `all_0_0_0` has broken projection `proj1`" in check_table_full(
         node, table_name
     )
 
     break_part(node, table_name, "all_0_0_0")
     node.query(f"SYSTEM SYNC REPLICA {table_name}")
-    assert "has a broken projection" not in check_table_full(node, table_name)
+    assert "has broken projection" not in check_table_full(node, table_name)
 
 
 def get_random_string(string_length=8):
@@ -521,7 +528,7 @@ def test_broken_projections_in_backups_3(cluster):
     check(node, table_name, 1)
 
     break_projection(node, table_name, "proj1", "all_1_1_0", "part")
-    assert "Part all_1_1_0 has a broken projection proj1" in check_table_full(
+    assert "Part `all_1_1_0` has broken projection `proj1`" in check_table_full(
         node, table_name
     )
     assert "FILE_DOESNT_EXIST" in get_broken_projections_info(
@@ -632,6 +639,49 @@ def test_broken_on_start(cluster):
     check(node, table_name, 0)
 
 
+def test_disappeared_projection_on_start(cluster):
+    node = cluster.instances["node_restart"]
+
+    table_name = "test_disapperead_projection"
+    create_table(node, table_name, 1)
+
+    node.query(f"SYSTEM STOP MERGES {table_name}")
+
+    insert(node, table_name, 0, 5)
+    insert(node, table_name, 5, 5)
+    insert(node, table_name, 10, 5)
+    insert(node, table_name, 15, 5)
+
+    assert ["all_0_0_0", "all_1_1_0", "all_2_2_0", "all_3_3_0"] == get_parts(
+        node, table_name
+    )
+
+    def drop_projection():
+        node.query(
+            f"ALTER TABLE {table_name} DROP PROJECTION proj2",
+            settings={"mutations_sync": "0"},
+        )
+
+    p = Pool(2)
+    p.apply_async(drop_projection)
+
+    for i in range(30):
+        create_query = node.query(f"SHOW CREATE TABLE {table_name}")
+        if "proj2" not in create_query:
+            break
+        time.sleep(0.5)
+
+    assert "proj2" not in create_query
+
+    # Remove 'proj2' for part all_2_2_0
+    break_projection(node, table_name, "proj2", "all_2_2_0", "part")
+
+    node.restart_clickhouse()
+
+    # proj2 is not broken, it doesn't exist, but ok
+    check(node, table_name, 0, expect_broken_part="proj2", do_check_command=0)
+
+
 def test_mutation_with_broken_projection(cluster):
     node = cluster.instances["node"]
 
@@ -685,11 +735,14 @@ def test_mutation_with_broken_projection(cluster):
         f"ALTER TABLE {table_name} DELETE WHERE _part == 'all_0_0_0_4' SETTINGS mutations_sync = 1"
     )
 
+    parts = get_parts(node, table_name)
     # All parts changes because this is how alter delete works,
     # but all parts apart from the first have only hardlinks to files in previous part.
-    assert ["all_0_0_0_5", "all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == get_parts(
-        node, table_name
-    ) or ["all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == get_parts(node, table_name)
+    assert ["all_0_0_0_5", "all_1_1_0_5", "all_2_2_0_5", "all_3_3_0_5"] == parts or [
+        "all_1_1_0_5",
+        "all_2_2_0_5",
+        "all_3_3_0_5",
+    ] == parts
 
     # Still broken because it was hardlinked.
     broken = get_broken_projections_info(node, table_name)
@@ -702,11 +755,13 @@ def test_mutation_with_broken_projection(cluster):
         f"ALTER TABLE {table_name} DELETE WHERE c == 13 SETTINGS mutations_sync = 1"
     )
 
-    assert ["all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == get_parts(
-        node, table_name
-    ) or ["all_0_0_0_6", "all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == get_parts(
-        node, table_name
-    )
+    parts = get_parts(node, table_name)
+    assert ["all_1_1_0_6", "all_2_2_0_6", "all_3_3_0_6"] == parts or [
+        "all_0_0_0_6",
+        "all_1_1_0_6",
+        "all_2_2_0_6",
+        "all_3_3_0_6",
+    ] == parts
 
     # Not broken anymore.
     assert not get_broken_projections_info(node, table_name)

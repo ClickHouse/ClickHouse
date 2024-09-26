@@ -46,11 +46,15 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric S3DiskNoKeyErrors;
+    extern const Metric DiskS3NoSuchKeyErrors;
 }
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool s3_use_adaptive_timeouts;
+}
 
 namespace ErrorCodes
 {
@@ -701,7 +705,7 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
         return std::forward<RequestResult>(outcome);
 
     if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
+        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",
@@ -982,10 +986,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,
@@ -995,7 +999,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
-        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
+        context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         get_request_throttler,
         put_request_throttler,
         error_report);

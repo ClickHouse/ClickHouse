@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <Core/Types.h>
+#include <DataTypes/DataTypeInterval.h>
 
 
 namespace DB
@@ -211,6 +212,8 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::UUID:           return f(TypePair<DataTypeUUID, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv4:           return f(TypePair<DataTypeIPv4, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv6:           return f(TypePair<DataTypeIPv6, T>(), std::forward<ExtraArgs>(args)...);
+
+        case TypeIndex::Interval:       return f(TypePair<DataTypeInterval, T>(), std::forward<ExtraArgs>(args)...);
 
         default:
             break;

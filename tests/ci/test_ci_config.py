@@ -35,10 +35,16 @@ class TestCIConfig(unittest.TestCase):
                     f"Job [{job}] must have style-checker(-aarch64) runner",
                 )
             elif "binary_" in job.lower() or "package_" in job.lower():
-                self.assertTrue(
-                    CI.JOB_CONFIGS[job].runner_type == CI.Runners.BUILDER,
-                    f"Job [{job}] must have [{CI.Runners.BUILDER}] runner",
-                )
+                if job.lower() == CI.BuildNames.PACKAGE_AARCH64:
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].runner_type in (CI.Runners.BUILDER_ARM,),
+                        f"Job [{job}] must have [{CI.Runners.BUILDER_ARM}] runner",
+                    )
+                else:
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].runner_type in (CI.Runners.BUILDER,),
+                        f"Job [{job}] must have [{CI.Runners.BUILDER}] runner",
+                    )
             elif "aarch64" in job.lower():
                 self.assertTrue(
                     "aarch" in CI.JOB_CONFIGS[job].runner_type,
@@ -642,7 +648,7 @@ class TestCIConfig(unittest.TestCase):
                     release_branch=True,
                 )
                 for record_t_, records_ in ci_cache.records.items():
-                    if record_t_.value == CiCache.RecordType.FAILED.value:
+                    if record_t_.value == record.record_type.value:
                         records_[record.to_str_key()] = record
 
         ci_cache.filter_out_not_affected_jobs()
@@ -716,7 +722,7 @@ class TestCIConfig(unittest.TestCase):
                     release_branch=True,
                 )
                 for record_t_, records_ in ci_cache.records.items():
-                    if record_t_.value == CiCache.RecordType.FAILED.value:
+                    if record_t_.value == record.record_type.value:
                         records_[record.to_str_key()] = record
 
         ci_cache.filter_out_not_affected_jobs()
@@ -726,3 +732,42 @@ class TestCIConfig(unittest.TestCase):
             MOCK_REQUIRED_BUILDS,
         )
         self.assertCountEqual(list(ci_cache.jobs_to_do), expected_to_do)
+
+    def test_ci_py_filters_not_affected_jobs_in_prs_docs_check(self):
+        """
+        checks ci.py filters not affected jobs in PRs,
+        Docs Check is special from ci_cache perspective -
+            check it ci pr pipline is filtered properly when only docs check is to be skipped
+        """
+        settings = CiSettings()
+        settings.no_ci_cache = True
+        pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
+        pr_info.event_type = EventType.PULL_REQUEST
+        pr_info.number = 123
+        assert pr_info.is_pr
+        ci_cache = CIPY._configure_jobs(
+            S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True
+        )
+        self.assertTrue(not ci_cache.jobs_to_skip, "Must be no jobs in skip list")
+        assert not ci_cache.jobs_to_wait
+        assert not ci_cache.jobs_to_skip
+
+        job_config = ci_cache.jobs_to_do[CI.JobNames.DOCS_CHECK]
+        for batch in range(job_config.num_batches):
+            # add any record into cache
+            record = CiCache.Record(
+                record_type=CiCache.RecordType.PENDING,
+                job_name=CI.JobNames.DOCS_CHECK,
+                job_digest=ci_cache.job_digests[CI.JobNames.DOCS_CHECK],
+                batch=batch,
+                num_batches=job_config.num_batches,
+                release_branch=True,
+            )
+            for record_t_, records_ in ci_cache.records.items():
+                if record_t_.value == record.record_type.value:
+                    records_[record.to_str_key()] = record
+
+        expected_jobs = list(ci_cache.jobs_to_do)
+        expected_jobs.remove(CI.JobNames.DOCS_CHECK)
+        ci_cache.filter_out_not_affected_jobs()
+        self.assertCountEqual(list(ci_cache.jobs_to_do), expected_jobs)

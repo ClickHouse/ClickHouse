@@ -156,7 +156,7 @@ public:
                 for (size_t j = 0; j < num_needles; ++j)
                 {
                     auto field = col_needle_const_array->getData()[j];
-                    cutURL(res_data, field.get<String>(), res_offset, cur_res_offset);
+                    cutURL(res_data, field.safeGet<String>(), res_offset, cur_res_offset);
                 }
             }
             else
