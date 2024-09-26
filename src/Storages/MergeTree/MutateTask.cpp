@@ -1389,6 +1389,14 @@ public:
         return false;
     }
 
+    void cancel() noexcept override
+    {
+        if (ctx->out)
+        {
+            ctx->out->cancel();
+        }
+    }
+
 private:
 
     void prepare()
@@ -1713,6 +1721,14 @@ public:
         return false;
     }
 
+    void cancel() noexcept override
+    {
+        if (ctx->out)
+        {
+            ctx->out->cancel();
+        }
+    }
+
 private:
 
     void prepare()
@@ -1885,6 +1901,8 @@ private:
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
+
+            ctx->out.reset();
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
@@ -1962,6 +1980,11 @@ public:
             }
         }
         return false;
+    }
+
+    void cancel() noexcept override
+    {
+        executable_task->cancel();
     }
 
 private:
@@ -2069,6 +2092,12 @@ bool MutateTask::execute()
         }
     }
     return false;
+}
+
+void MutateTask::cancel() noexcept
+{
+    if (task)
+        task->cancel();
 }
 
 void MutateTask::updateProfileEvents() const

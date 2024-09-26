@@ -32,19 +32,14 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::preFinalize()
     /// Before that all hashing and compression buffers have to be finalized
     /// Otherwise some data might stuck in the buffers above plain_file and marks_file
     /// Also the order is important
-
     compressed_hashing.finalize();
     compressor.finalize();
     plain_hashing.finalize();
 
     if constexpr (!only_plain_file)
     {
-        if (compress_marks)
-        {
-            marks_compressed_hashing.finalize();
-            marks_compressor.finalize();
-        }
-
+        marks_compressed_hashing.finalize();
+        marks_compressor.finalize();
         marks_hashing.finalize();
     }
 
@@ -62,8 +57,28 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::finalize()
         preFinalize();
 
     plain_file->finalize();
+
     if constexpr (!only_plain_file)
         marks_file->finalize();
+}
+
+template<bool only_plain_file>
+void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::cancel() noexcept
+{
+
+    compressed_hashing.cancel();
+    compressor.cancel();
+    plain_hashing.cancel();
+
+    if constexpr (!only_plain_file)
+    {
+        marks_compressed_hashing.cancel();
+        marks_compressor.cancel();
+        marks_hashing.cancel();
+    }
+
+    plain_file->cancel();
+    marks_file->cancel();
 }
 
 template<bool only_plain_file>
@@ -189,6 +204,27 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     initStatistics();
 }
 
+void MergeTreeDataPartWriterOnDisk::cancel() noexcept
+{
+    if (index_file_stream)
+        index_file_stream->cancel();
+    if (index_file_hashing_stream)
+        index_file_hashing_stream->cancel();
+    if (index_compressor_stream)
+        index_compressor_stream->cancel();
+    if (index_source_hashing_stream)
+        index_source_hashing_stream->cancel();
+
+    for (auto & stream : stats_streams)
+        stream->cancel();
+
+    for (auto & stream : skip_indices_streams)
+        stream->cancel();
+
+    for (auto & store: gin_index_stores)
+        store.second->cancel();
+}
+
 // Implementation is split into static functions for ability
 /// of making unit tests without creation instance of IMergeTreeDataPartWriter,
 /// which requires a lot of dependencies and access to filesystem.
@@ -297,6 +333,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     for (const auto & skip_index : skip_indices)
     {
         String stream_name = skip_index->getFileName();
+
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream<false>>(
                         stream_name,
@@ -460,8 +497,10 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
             checksums.files[index_name].uncompressed_size = index_source_hashing_stream->count();
             checksums.files[index_name].uncompressed_hash = index_source_hashing_stream->getHash();
         }
+
         checksums.files[index_name].file_size = index_file_hashing_stream->count();
         checksums.files[index_name].file_hash = index_file_hashing_stream->getHash();
+
         index_file_stream->preFinalize();
     }
 }
@@ -479,6 +518,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
             index_source_hashing_stream = nullptr;
             index_compressor_stream = nullptr;
         }
+
         index_file_hashing_stream = nullptr;
     }
 }
@@ -543,6 +583,12 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         if (sync)
             stream->sync();
     }
+
+    // std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
+    // std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
+    // std::unique_ptr<CompressedWriteBuffer> index_compressor_stream;
+    // std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
+
     for (auto & store: gin_index_stores)
         store.second->finalize();
 

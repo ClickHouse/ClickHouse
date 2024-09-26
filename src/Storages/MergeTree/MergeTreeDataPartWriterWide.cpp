@@ -712,6 +712,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
         stream.second->finalize();
         if (sync)
             stream.second->sync();
+        stream.second.reset();
     }
 
     column_streams.clear();
@@ -757,6 +758,17 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
 
     finishSkipIndicesSerialization(sync);
     finishStatisticsSerialization(sync);
+}
+
+void MergeTreeDataPartWriterWide::cancel() noexcept
+{
+     for (auto & stream : column_streams)
+        stream.second->cancel();
+
+    column_streams.clear();
+    serialization_states.clear();
+
+    Base::cancel();
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

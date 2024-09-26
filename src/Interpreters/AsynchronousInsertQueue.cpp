@@ -385,13 +385,13 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             /*throw_exception=*/false,
             /*exact_limit=*/{});
 
-        WriteBufferFromString write_buf(bytes);
-        copyData(limit_buf, write_buf);
+        {
+            WriteBufferFromString write_buf(bytes);
+            copyData(limit_buf, write_buf);
+        }
 
         if (!read_buf->eof())
         {
-            write_buf.finalize();
-
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             std::vector<std::unique_ptr<ReadBuffer>> buffers;

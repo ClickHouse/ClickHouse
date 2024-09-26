@@ -209,6 +209,8 @@ void WriteBufferFromS3::finalizeImpl()
 
     LOG_TRACE(limited_log, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
 
+    WriteBufferFromFileBase::finalizeImpl();
+
     if (!is_prefinalized)
         preFinalize();
 
@@ -240,6 +242,7 @@ void WriteBufferFromS3::finalizeImpl()
 
 void WriteBufferFromS3::cancelImpl() noexcept
 {
+    WriteBufferFromFileBase::cancelImpl();
     tryToAbortMultipartUpload();
 }
 
@@ -274,7 +277,7 @@ void WriteBufferFromS3::tryToAbortMultipartUpload() noexcept
     }
     catch (...)
     {
-        LOG_ERROR(log, "Multipart upload hasn't aborted. {}", getVerboseLogDetails());
+        LOG_ERROR(log, "Multipart upload hasn't been aborted. {}", getVerboseLogDetails());
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
@@ -454,11 +457,11 @@ void WriteBufferFromS3::abortMultipartUpload()
 {
     if (multipart_upload_id.empty())
     {
-        LOG_WARNING(log, "Nothing to abort. {}", getVerboseLogDetails());
+        LOG_INFO(log, "Nothing to abort. {}", getVerboseLogDetails());
         return;
     }
 
-    LOG_WARNING(log, "Abort multipart upload. {}", getVerboseLogDetails());
+    LOG_INFO(log, "Abort multipart upload. {}", getVerboseLogDetails());
 
     S3::AbortMultipartUploadRequest req;
     req.SetBucket(bucket);
@@ -485,7 +488,7 @@ void WriteBufferFromS3::abortMultipartUpload()
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
     }
 
-    LOG_WARNING(log, "Multipart upload has aborted successfully. {}", getVerboseLogDetails());
+    LOG_INFO(log, "Multipart upload has aborted successfully. {}", getVerboseLogDetails());
 }
 
 S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, PartData & data)

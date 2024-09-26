@@ -218,6 +218,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
                 to.finalize();
             }
         }
+
+        wb->finalize();
     }
     catch (...)
     {

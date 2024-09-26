@@ -193,7 +193,7 @@ void XMLRowOutputFormat::finalizeImpl()
     writeRowsBeforeLimitAtLeast();
     writeRowsBeforeAggregationAtLeast();
 
-    if (!exception_message.empty())
+    if (!exception_message_A.empty())
         writeException();
     else if (format_settings.write_statistics)
         writeStatistics();
@@ -248,7 +248,7 @@ void XMLRowOutputFormat::writeStatistics()
 void XMLRowOutputFormat::writeException()
 {
     writeCString("\t<exception>", *ostr);
-    writeXMLStringForTextElement(exception_message, *ostr);
+    writeXMLStringForTextElement(exception_message_A, *ostr);
     writeCString("</exception>\n", *ostr);
 }
 

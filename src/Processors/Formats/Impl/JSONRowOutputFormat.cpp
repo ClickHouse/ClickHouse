@@ -120,13 +120,13 @@ void JSONRowOutputFormat::finalizeImpl()
         statistics.applied_aggregation,
         statistics.watch,
         statistics.progress,
-        settings.write_statistics && exception_message.empty(),
+        settings.write_statistics && exception_message_A.empty(),
         *ostr);
 
-    if (!exception_message.empty())
+    if (!exception_message_A.empty())
     {
         writeCString(",\n\n", *ostr);
-        JSONUtils::writeException(exception_message, *ostr, settings, 1);
+        JSONUtils::writeException(exception_message_A, *ostr, settings, 1);
     }
 
     JSONUtils::writeObjectEnd(*ostr);

@@ -5,6 +5,7 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
@@ -175,6 +176,16 @@ public:
         finalized = true;
         final_size = write_buffer->count();
         return final_size;
+    }
+
+    void cancelWriting()
+    {
+        if (tmp_disk)
+            tmp_disk->cancel();
+        if (write_buffer)
+            write_buffer->cancel();
+        if (uncompressed_write_buffer)
+            uncompressed_write_buffer->cancel();
     }
 
 private:
@@ -653,6 +664,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
     return subtasks_iterator != subtasks.end();
+}
+
+void MergeTask::ExecuteAndFinalizeHorizontalPart::cancel() noexcept
+{
+    if (ctx->rows_sources_temporary_file)
+        ctx->rows_sources_temporary_file->cancelWriting();
+
+    if (ctx->merge_projection_parts_task_ptr)
+        ctx->merge_projection_parts_task_ptr->cancel();
 }
 
 
@@ -1323,7 +1343,27 @@ bool MergeTask::VerticalMergeStage::execute()
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
+
     return subtasks_iterator != subtasks.end();
+}
+
+void MergeTask::VerticalMergeStage::cancel() noexcept
+{
+    if (ctx->rows_sources_temporary_file)
+        ctx->rows_sources_temporary_file->cancelWriting();
+
+    if (ctx->column_to)
+        ctx->column_to->cancel();
+
+    if (ctx->prepared_pipeline.has_value())
+        ctx->prepared_pipeline->pipeline.cancel();
+
+    for (auto & stream : ctx->delayed_streams)
+        stream->cancel();
+
+    if (ctx->executor)
+        ctx->executor->cancel();
+
 }
 
 bool MergeTask::MergeProjectionsStage::execute()
@@ -1340,6 +1380,12 @@ bool MergeTask::MergeProjectionsStage::execute()
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
     return subtasks_iterator != subtasks.end();
+}
+
+void MergeTask::MergeProjectionsStage::cancel() noexcept
+{
+    for (auto & prj_task: ctx->tasks_for_projections)
+        prj_task->cancel();
 }
 
 
@@ -1410,6 +1456,20 @@ bool MergeTask::execute()
 
     (*stages_iterator)->setRuntimeContext(std::move(next_stage_context), global_ctx);
     return true;
+}
+
+void MergeTask::cancel() noexcept
+{
+    if (stages_iterator != stages.end())
+        (*stages_iterator)->cancel();
+
+    if (global_ctx->merging_executor)
+        global_ctx->merging_executor->cancel();
+
+    global_ctx->merged_pipeline.cancel();
+
+    if (global_ctx->to)
+        global_ctx->to->cancel();
 }
 
 

@@ -11,22 +11,18 @@ namespace DB
 WriteBuffer::~WriteBuffer()
 {
     // That destructor could be call with finalized=false in case of exceptions
-    if (count() > 0 && !finalized && !canceled)
+    if (!finalized && !canceled  && !isStackUnwinding())
     {
-        /// It is totally OK to destroy instance without finalization when an exception occurs
-        /// However it is suspicious to destroy instance without finalization at the green path
-        if (!std::uncaught_exceptions() && std::current_exception() == nullptr)
-        {
-            LoggerPtr log = getLogger("WriteBuffer");
-            LOG_ERROR(
-                log,
-                "WriteBuffer is neither finalized nor canceled when destructor is called. "
-                "No exceptions in flight are detected. "
-                "The file might not be written at all or might be truncated. "
-                "Stack trace: {}",
-                StackTrace().toString());
-            chassert(false && "WriteBuffer is not finalized in destructor.");
-        }
+        LoggerPtr log = getLogger("WriteBuffer");
+        LOG_ERROR(
+            log,
+            "WriteBuffer is neither finalized nor canceled when destructor is called. "
+            "No exceptions in flight are detected. "
+            "The file might not be written at all or might be truncated. exception_level at c-tor {} ar d-tor {}."
+            "Stack trace: {}",
+            exception_level, std::uncaught_exceptions(),
+            StackTrace().toString());
+        chassert(false && "WriteBuffer is not finalized in destructor.");
     }
 }
 
@@ -39,4 +35,5 @@ void WriteBuffer::cancel() noexcept
     cancelImpl();
     canceled = true;
 }
+
 }

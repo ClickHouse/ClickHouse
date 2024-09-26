@@ -26,7 +26,8 @@ WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked(Poco::Net::So
         socket_, write_event_,
         std::clamp(buf_size, sizeof(*chunk_size_ptr) + 1, static_cast<size_t>(std::numeric_limits<std::remove_reference_t<decltype(*chunk_size_ptr)>>::max()))),
         log(getLogger("Protocol"))
-{}
+{
+}
 
 void WriteBufferFromPocoSocketChunked::enableChunked()
 {
@@ -106,18 +107,6 @@ void WriteBufferFromPocoSocketChunked::finishChunk()
     pos += std::min(available(), sizeof(*chunk_size_ptr));
 
     last_finish_chunk = chunk_size_ptr;
-}
-
-WriteBufferFromPocoSocketChunked::~WriteBufferFromPocoSocketChunked()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 void WriteBufferFromPocoSocketChunked::nextImpl()

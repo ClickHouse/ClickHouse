@@ -954,10 +954,10 @@ def test_s3_engine_heavy_write_check_mem(
     )
 
     broken_s3.setup_fake_multpartuploads()
-    slow_responces = 10
+    slow_responses = 10
     slow_timeout = 15
     broken_s3.setup_slow_answers(
-        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responces
+        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responses
     )
 
     query_id = f"INSERT_INTO_S3_ENGINE_QUERY_ID_{in_flight}"
@@ -983,7 +983,7 @@ def test_s3_engine_heavy_write_check_mem(
     assert int(memory_usage) > 0.8 * memory
 
     # The more in_flight value is the less time CH waits.
-    assert int(wait_inflight) / 1000 / 1000 > slow_responces * slow_timeout / in_flight
+    assert int(wait_inflight) / 1000 / 1000 > slow_responses * slow_timeout / in_flight
 
     check_no_objects_after_drop(cluster, node_name=node_name)
 

@@ -52,6 +52,7 @@ void writeSignalIDtoSignalPipe(int sig)
     WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     writeBinary(sig, out);
     out.next();
+    out.finalize();
 
     errno = saved_errno;
 }
@@ -98,7 +99,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
-    out.next();
+    out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
@@ -153,6 +154,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writeBinary(log_message, out);
     out.next();
+    out.finalize();
 
     abort();
 }
@@ -195,6 +197,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     writePODBinary(current_thread, out);
 
     out.next();
+    out.finalize();
 
     /// The time that is usually enough for separate thread to print info into log.
     sleepForSeconds(20);

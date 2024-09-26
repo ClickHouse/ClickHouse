@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
@@ -34,6 +35,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/NetException.h>
@@ -259,19 +261,7 @@ TCPHandler::TCPHandler(
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
 }
 
-TCPHandler::~TCPHandler()
-{
-    try
-    {
-        state.reset();
-        if (out)
-            out->next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
+TCPHandler::~TCPHandler() = default;
 
 void TCPHandler::runImpl()
 {
@@ -284,7 +274,7 @@ void TCPHandler::runImpl()
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocketChunked>(socket(), write_event);
+    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -384,7 +374,10 @@ void TCPHandler::runImpl()
             /// We try to send error information to the client.
             sendException(e, send_exception_with_stack_trace);
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
 
         throw;
     }
@@ -1550,6 +1543,7 @@ void TCPHandler::receiveHello()
         if (packet_type == 'G' || packet_type == 'P')
         {
             writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
+            out->next();
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         throw NetException(
@@ -2243,7 +2237,7 @@ void TCPHandler::initBlockOutput(const Block & block)
                     query_settings[Setting::allow_experimental_codecs],
                     query_settings[Setting::enable_zstd_qat_codec]);
 
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+                state.maybe_compressed_out = std::make_shared<AutoCanceledWriteBuffer<CompressedWriteBuffer>>(
                     *out, CompressionCodecFactory::instance().get(method, level));
             }
             else

@@ -17,6 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/Operators.h>
+#include <IO/WriteBuffer.h>
 
 #include <random>
 
@@ -252,7 +253,7 @@ void BinlogFromSocket::connect(const String & host, UInt16 port, const String & 
     connected = true;
 
     in = std::make_unique<ReadBufferFromPocoSocket>(*socket);
-    out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
+    out = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*socket);
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     handshake(user, password);
@@ -294,7 +295,7 @@ void BinlogFromSocket::handshake(const String & user, const String & password)
     const UInt8 charset_utf8 = 33;
     HandshakeResponse handshake_response(
         client_capabilities, MAX_PACKET_LENGTH, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
-    packet_endpoint->sendPacket<HandshakeResponse>(handshake_response, true);
+    packet_endpoint->sendPacket<HandshakeResponse>(handshake_response);
 
     ResponsePacket packet_response(client_capabilities, true);
     packet_endpoint->receivePacket(packet_response);
@@ -309,7 +310,7 @@ void BinlogFromSocket::handshake(const String & user, const String & password)
 void BinlogFromSocket::writeCommand(char command, const String & query)
 {
     WriteCommand write_command(command, query);
-    packet_endpoint->sendPacket<WriteCommand>(write_command, true);
+    packet_endpoint->sendPacket<WriteCommand>(write_command);
 
     ResponsePacket packet_response(client_capabilities);
     packet_endpoint->receivePacket(packet_response);
@@ -328,7 +329,7 @@ void BinlogFromSocket::writeCommand(char command, const String & query)
 void BinlogFromSocket::registerSlaveOnMaster(UInt32 slave_id)
 {
     RegisterSlave register_slave(slave_id);
-    packet_endpoint->sendPacket<RegisterSlave>(register_slave, true);
+    packet_endpoint->sendPacket<RegisterSlave>(register_slave);
 
     ResponsePacket packet_response(client_capabilities);
     packet_endpoint->receivePacket(packet_response);
@@ -358,7 +359,7 @@ void BinlogFromSocket::start(UInt32 slave_id, const String & executed_gtid_set)
     position.gtid_sets.parse(executed_gtid_set);
 
     BinlogDumpGTID binlog_dump(slave_id, position.gtid_sets.toPayload());
-    packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump, true);
+    packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump);
 }
 
 class ReadPacketFromSocket : public IMySQLReadPacket

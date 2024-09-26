@@ -105,13 +105,13 @@ void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
 void JSONCompactEachRowRowOutputFormat::writeSuffix()
 {
-    if (!exception_message.empty())
+    if (!exception_message_A.empty())
     {
         if (haveWrittenData())
             writeRowBetweenDelimiter();
 
         writeRowStartDelimiter();
-        writeJSONString(exception_message, *ostr, settings);
+        writeJSONString(exception_message_A, *ostr, settings);
         writeRowEndDelimiter();
     }
 }

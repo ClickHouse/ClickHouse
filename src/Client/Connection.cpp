@@ -78,14 +78,8 @@ namespace ErrorCodes
 
 Connection::~Connection()
 {
-    try{
-        if (connected)
-            Connection::disconnect();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (connected)
+        Connection::cancel();
 }
 
 Connection::Connection(const String & host_, UInt16 port_,
@@ -126,6 +120,7 @@ Connection::Connection(const String & host_, UInt16 port_,
 
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
+    LOG_DEBUG(getLogger("Connection::connect"), "begin");
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
@@ -142,7 +137,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
             if (connected)
-                disconnect();
+                cancel();
 
             if (static_cast<bool>(secure))
             {
@@ -293,7 +288,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (DB::NetException & e)
     {
-        disconnect();
+        cancel();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -304,7 +299,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::Net::NetException & e)
     {
-        disconnect();
+        cancel();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -314,7 +309,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        disconnect();
+        cancel();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -329,55 +324,50 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
+    LOG_DEBUG(getLogger("Connection::connect"), "end");
+}
+
+void Connection::cancel() noexcept
+{
+    LOG_DEBUG(getLogger("Connection::cancel"), "begin");
+
+    if (maybe_compressed_out)
+        maybe_compressed_out->cancel();
+
+    if (out)
+        out->cancel();
+
+    if (socket)
+        socket->close();
+
+    LOG_DEBUG(getLogger("Connection::cancel"), "mdl");
+
+    reset();
+
+    LOG_DEBUG(getLogger("Connection::cancel"), "end");
+}
+
+void Connection::reset() noexcept
+{
+    maybe_compressed_out.reset();
+    out.reset();
+    socket.reset();
+    nonce.reset();
+
+    connected = false;
 }
 
 
 void Connection::disconnect()
 {
+    LOG_DEBUG(getLogger("Connection::disconnect"), "begin");
     in = nullptr;
     last_input_packet_type.reset();
-    std::exception_ptr finalize_exception;
 
-    try
-    {
-        // finalize() can write and throw an exception.
-        if (maybe_compressed_out)
-            maybe_compressed_out->finalize();
-    }
-    catch (...)
-    {
-        /// Don't throw an exception here, it will leave Connection in invalid state.
-        finalize_exception = std::current_exception();
+    // no point to finalize tcp connections
+    cancel();
 
-        if (out)
-        {
-            out->cancel();
-            out = nullptr;
-        }
-    }
-    maybe_compressed_out = nullptr;
-
-    try
-    {
-        if (out)
-            out->finalize();
-    }
-    catch (...)
-    {
-        /// Don't throw an exception here, it will leave Connection in invalid state.
-        finalize_exception = std::current_exception();
-    }
-    out = nullptr;
-
-    if (socket)
-        socket->close();
-
-    socket = nullptr;
-    connected = false;
-    nonce.reset();
-
-    if (finalize_exception)
-        std::rethrow_exception(finalize_exception);
+    LOG_DEBUG(getLogger("Connection::disconnect"), "end");
 }
 
 
@@ -888,7 +878,7 @@ void Connection::sendQuery(
 
     maybe_compressed_in.reset();
     if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->cancel();
+        maybe_compressed_out->finalize();
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();

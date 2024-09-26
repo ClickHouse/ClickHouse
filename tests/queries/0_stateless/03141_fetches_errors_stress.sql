@@ -15,6 +15,12 @@ SET max_rows_to_read = 0; -- system.text_log can be really big
 select event_time_microseconds, logger_name, message from system.text_log where level = 'Error' and message like '%Malformed chunked encoding%' order by 1 format LineAsString;
 
 -- { echoOn }
-select table, errorCodeToName(error), count() from system.part_log where database = currentDatabase() and error > 0 and errorCodeToName(error) not in ('FAULT_INJECTED', 'NO_REPLICA_HAS_PART', 'ATTEMPT_TO_READ_AFTER_EOF') group by 1, 2 order by 1, 2;
+select table, errorCodeToName(error), * from system.part_log where
+    database = currentDatabase()
+    and error > 0
+    and errorCodeToName(error) not in ('FAULT_INJECTED', 'NO_REPLICA_HAS_PART', 'ATTEMPT_TO_READ_AFTER_EOF')
+    and (errorCodeToName(error) != 'POCO_EXCEPTION' or exception not like '%Malformed message: Unexpected EOF%')
+    order by 1, 2;
+
 select count() from data_r1;
 select count() from data_r2;

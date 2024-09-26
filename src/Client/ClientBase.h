@@ -3,6 +3,13 @@
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/DNSResolver.h>
+#include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
+#include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
+#include <IO/WriteBuffer.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -310,7 +317,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    WriteBufferFromFileDescriptor std_out;
+    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.

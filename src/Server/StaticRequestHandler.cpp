@@ -1,8 +1,9 @@
-#include "StaticRequestHandler.h"
-#include "IServer.h"
+#include <Server/StaticRequestHandler.h>
+#include <Server/IServer.h>
 
-#include "HTTPHandlerFactory.h"
-#include "HTTPResponseHeaderWriter.h"
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPResponseHeaderWriter.h>
+#include <Server/HTTP/sendExceptionToHTTPClient.h>
 
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
@@ -16,6 +17,7 @@
 
 #include <Common/Exception.h>
 
+#include <memory>
 #include <unordered_map>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -36,9 +38,34 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-static inline std::unique_ptr<WriteBuffer> responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response)
+struct ResponseOutput
 {
-    auto buf = std::unique_ptr<WriteBuffer>(new WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD));
+    std::unique_ptr<WriteBufferFromHTTPServerResponse> response_holder;
+    std::unique_ptr<WriteBuffer> compression_holder;
+
+    explicit ResponseOutput(std::unique_ptr<WriteBufferFromHTTPServerResponse> && buf)
+        : response_holder(std::move(buf))
+    {
+    }
+
+    void setCompressedOut(std::unique_ptr<WriteBuffer> && buf)
+    {
+        chassert(response_holder);
+        chassert(!compression_holder);
+        compression_holder = std::move(buf);
+    }
+
+    WriteBuffer * get()
+    {
+        if (compression_holder)
+            return compression_holder.get();
+        return response_holder.get();
+    }
+};
+
+static inline ResponseOutput responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response)
+{
+    auto result = ResponseOutput(std::make_unique<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -48,45 +75,12 @@ static inline std::unique_ptr<WriteBuffer> responseWriteBuffer(HTTPServerRequest
         http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
 
     if (http_response_compression_method == CompressionMethod::None)
-        return buf;
+        return result;
 
     response.set("Content-Encoding", toContentEncodingName(http_response_compression_method));
-    return wrapWriteBufferWithCompressionMethod(std::move(buf), http_response_compression_method, 1);
-}
+    result.setCompressedOut(wrapWriteBufferWithCompressionMethod(result.get(), http_response_compression_method, 1, 0));
 
-static inline void trySendExceptionToClient(
-    const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, WriteBuffer & out)
-{
-    try
-    {
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-
-        /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
-        /// to avoid reading part of the current request body in the next request.
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-            && response.getKeepAlive() && !request.getStream().eof() && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
-            request.getStream().ignore(std::numeric_limits<std::streamsize>::max());
-
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-
-        if (!response.sent())
-            *response.send() << s << '\n';
-        else
-        {
-            if (out.count() != out.offset())
-                out.position() = out.buffer().begin();
-
-            writeString(s, out);
-            writeChar('\n', out);
-
-            out.next();
-            out.finalize();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException("StaticRequestHandler", "Cannot send exception to client");
-    }
+    return result;
 }
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
@@ -96,7 +90,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    auto out = responseWriteBuffer(request, response);
+    auto responseOutput = responseWriteBuffer(request, response);
 
     try
     {
@@ -108,18 +102,15 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         setResponseDefaultHeaders(response);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
-        writeResponse(*out);
+        writeResponse(*responseOutput.get());
+        responseOutput.get()->finalize();
     }
     catch (...)
     {
         tryLogCurrentException("StaticRequestHandler");
-
-        int exception_code = getCurrentExceptionCode();
-        std::string exception_message = getCurrentExceptionMessage(false, true);
-        trySendExceptionToClient(exception_message, exception_code, request, response, *out);
+        responseOutput.response_holder->cancelWithException(
+            request, getCurrentExceptionCode(), getCurrentExceptionMessage(false, true), responseOutput.compression_holder.get());
     }
-
-    out->finalize();
 }
 
 void StaticRequestHandler::writeResponse(WriteBuffer & out)

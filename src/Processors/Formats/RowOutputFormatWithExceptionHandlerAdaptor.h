@@ -18,7 +18,9 @@ public:
         : Base(header, out_, std::forward<Args>(args)...)
     {
         if (handle_exceptions)
-            peekable_out = std::make_unique<PeekableWriteBuffer>(*Base::getWriteBufferPtr());
+        {
+            peekable_out = std::make_unique<AutoCanceledWriteBuffer<PeekableWriteBuffer>>(*Base::getWriteBufferPtr());
+        }
     }
 
     void consume(DB::Chunk chunk) override
@@ -82,7 +84,7 @@ public:
 
     bool supportsWritingException() const override { return true; }
 
-    void setException(const String & exception_message_) override { exception_message = exception_message_; }
+    void setException(const String & exception_message_) override { exception_message_A = exception_message_; }
 
 protected:
     /// Returns buffer that should be used in derived classes instead of out.
@@ -93,7 +95,7 @@ protected:
         return Base::getWriteBufferPtr();
     }
 
-    String exception_message;
+    String exception_message_A;
 
 private:
 

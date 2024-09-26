@@ -64,11 +64,11 @@ void JSONObjectEachRowRowOutputFormat::writeRowBetweenDelimiter()
 
 void JSONObjectEachRowRowOutputFormat::writeSuffix()
 {
-    if (!exception_message.empty())
+    if (!exception_message_A.empty())
     {
         if (haveWrittenData())
             writeRowBetweenDelimiter();
-        JSONUtils::writeException(exception_message, *ostr, settings, 1);
+        JSONUtils::writeException(exception_message_A, *ostr, settings, 1);
     }
 
     JSONUtils::writeObjectEnd(*ostr);

@@ -78,12 +78,12 @@ void JSONEachRowRowOutputFormat::writePrefix()
 
 void JSONEachRowRowOutputFormat::writeSuffix()
 {
-    if (!exception_message.empty())
+    if (!exception_message_A.empty())
     {
         if (haveWrittenData())
             writeRowBetweenDelimiter();
         writeRowStartDelimiter();
-        JSONUtils::writeException(exception_message, *ostr, settings, pretty_json ? 1 : 0);
+        JSONUtils::writeException(exception_message_A, *ostr, settings, pretty_json ? 1 : 0);
         writeRowEndDelimiter();
     }
 
