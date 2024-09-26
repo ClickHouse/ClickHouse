@@ -73,6 +73,8 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
@@ -134,6 +136,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
+    extern const SettingsBool restore_replace_external_dictionary_source_to_null;
 }
 
 namespace ErrorCodes
@@ -1115,6 +1118,22 @@ namespace
         storage.set(storage.engine, engine_ast);
     }
 
+    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
+    {
+        ASTDictionary & dict = *create_query.dictionary;
+        if (Poco::toLower(dict.source->name) == "clickhouse")
+        {
+            auto config = getDictionaryConfigurationFromAST(create_query, Context::getGlobalContextInstance());
+            auto info = getInfoIfClickHouseDictionarySource(config, Context::getGlobalContextInstance());
+            if (info && info->is_local)
+                return;
+        }
+        auto source_ast = std::make_shared<ASTFunctionWithKeyValueArguments>();
+        source_ast->name = "null";
+        source_ast->elements = std::make_shared<ASTExpressionList>();
+        source_ast->children.push_back(source_ast->elements);
+        dict.set(dict.source, source_ast);
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -1140,6 +1159,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         return;
     }
+
+    if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
+        setNullDictionarySourceIfExternal(create);
 
     if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
         return;
