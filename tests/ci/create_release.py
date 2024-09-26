@@ -1,3 +1,108 @@
+#!/usr/bin/env python
+
+"""
+Prepare release machine:
+
+### INSTALL PACKAGES
+sudo apt update
+sudo apt install --yes --no-install-recommends python3-dev python3-pip gh unzip
+sudo apt install --yes python3-boto3
+sudo apt install --yes python3-github
+sudo apt install --yes python3-unidiff
+sudo apt install --yes python3-tqdm # cloud changelog
+sudo apt install --yes python3-thefuzz # cloud changelog
+sudo apt install --yes s3fs
+
+### INSTALL AWS CLI
+cd /tmp
+curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+rm -rf aws*
+cd -
+
+### INSTALL GH ACTIONS RUNNER:
+# Create a folder
+RUNNER_VERSION=2.317.0
+cd ~
+mkdir actions-runner && cd actions-runner
+# Download the latest runner package
+runner_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo x64;;
+    aarch64 )
+      echo arm64;;
+  esac
+}
+curl -O -L https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
+# Extract the installer
+tar xzf ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
+rm ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
+
+### Install reprepro:
+cd ~
+sudo apt install dpkg-dev libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper
+git clone https://salsa.debian.org/debian/reprepro.git
+cd reprepro
+dpkg-buildpackage -b --no-sign && sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb
+
+### Install createrepo-c:
+sudo apt install createrepo-c
+createrepo_c --version
+#Version: 0.17.3 (Features: DeltaRPM LegacyWeakdeps )
+
+### Import gpg sign key
+gpg --import key.pgp
+gpg --list-secret-keys
+
+### Install docker
+sudo su; cd ~
+
+deb_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo amd64;;
+    aarch64 )
+      echo arm64;;
+  esac
+}
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get update
+sudo apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
+
+sudo usermod -aG docker ubuntu
+
+# enable ipv6 in containers (fixed-cidr-v6 is some random network mask)
+cat <<EOT > /etc/docker/daemon.json
+{
+  "ipv6": true,
+  "fixed-cidr-v6": "2001:db8:1::/64",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-file": "5",
+    "max-size": "1000m"
+  },
+  "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
+  "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+}
+EOT
+
+# if docker build does not work:
+    sudo systemctl restart docker
+    docker buildx rm mybuilder
+    docker buildx create --name mybuilder --driver docker-container --use
+    docker buildx inspect mybuilder --bootstrap
+
+### Install tailscale
+
+### Configure GH runner
+"""
+
 import argparse
 import dataclasses
 import json
@@ -467,7 +572,7 @@ class ReleaseInfo:
             if dry_run:
                 changelog_pr_num = 23456
             else:
-                changelog_pr_num = int(self.changelog_pr.split("/")[-1])
+                changelog_pr_num = int(self.changelog_pr.rsplit("/", 1)[-1])
             res = Shell.check(
                 f"gh pr merge {changelog_pr_num} --repo {repo} --merge --auto",
                 verbose=True,
@@ -484,7 +589,7 @@ class ReleaseInfo:
             if dry_run:
                 version_bump_pr = 23456
             else:
-                version_bump_pr = int(self.version_bump_pr.split("/")[-1])
+                version_bump_pr = int(self.version_bump_pr.rsplit("/", 1)[-1])
             res = res and Shell.check(
                 f"gh pr merge {version_bump_pr} --repo {repo} --merge --auto",
                 verbose=True,
@@ -906,106 +1011,3 @@ if __name__ == "__main__":
     # tear down ssh
     if _ssh_agent and _key_pub:
         _ssh_agent.remove(_key_pub)
-
-
-"""
-Prepare release machine:
-
-### INSTALL PACKAGES
-sudo apt update
-sudo apt install --yes --no-install-recommends python3-dev python3-pip gh unzip
-sudo apt install --yes python3-boto3
-sudo apt install --yes python3-github
-sudo apt install --yes python3-unidiff
-sudo apt install --yes python3-tqdm # cloud changelog
-sudo apt install --yes python3-thefuzz # cloud changelog
-sudo apt install --yes s3fs
-
-### INSTALL AWS CLI
-cd /tmp
-curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-rm -rf aws*
-cd -
-
-### INSTALL GH ACTIONS RUNNER:
-# Create a folder
-RUNNER_VERSION=2.317.0
-cd ~
-mkdir actions-runner && cd actions-runner
-# Download the latest runner package
-runner_arch() {
-  case $(uname -m) in
-    x86_64 )
-      echo x64;;
-    aarch64 )
-      echo arm64;;
-  esac
-}
-curl -O -L https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
-# Extract the installer
-tar xzf ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
-rm ./actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz
-
-### Install reprepro:
-cd ~
-sudo apt install dpkg-dev libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper
-git clone https://salsa.debian.org/debian/reprepro.git
-cd reprepro
-dpkg-buildpackage -b --no-sign && sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb
-
-### Install createrepo-c:
-sudo apt install createrepo-c
-createrepo_c --version
-#Version: 0.17.3 (Features: DeltaRPM LegacyWeakdeps )
-
-### Import gpg sign key
-gpg --import key.pgp
-gpg --list-secret-keys
-
-### Install docker
-sudo su; cd ~
-
-deb_arch() {
-  case $(uname -m) in
-    x86_64 )
-      echo amd64;;
-    aarch64 )
-      echo arm64;;
-  esac
-}
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-
-echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt-get update
-sudo apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
-
-sudo usermod -aG docker ubuntu
-
-# enable ipv6 in containers (fixed-cidr-v6 is some random network mask)
-cat <<EOT > /etc/docker/daemon.json
-{
-  "ipv6": true,
-  "fixed-cidr-v6": "2001:db8:1::/64",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-file": "5",
-    "max-size": "1000m"
-  },
-  "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
-  "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-}
-EOT
-
-# if docker build does not work:
-    sudo systemctl restart docker
-    docker buildx rm mybuilder
-    docker buildx create --name mybuilder --driver docker-container --use
-    docker buildx inspect mybuilder --bootstrap
-
-### Install tailscale
-
-### Configure GH runner
-"""
