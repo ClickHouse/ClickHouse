@@ -24,6 +24,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool enable_deflate_qpl_codec;
+}
 
 namespace ErrorCodes
 {
@@ -248,7 +256,9 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
                 result.where_expression_ast = where_expr_ast->clone();
-                where_expression = buildExpressionAndSets(where_expr_ast, columns.getAllPhysical(), context).expression;
+
+                ASTPtr ast = where_expr_ast->clone();
+                where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -339,11 +349,11 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
         }
     }
 
-    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef().allow_suspicious_ttl_expressions);
+    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
     return result;
 }
 
@@ -435,7 +445,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 }
 
 }

@@ -124,14 +124,14 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 └──────────────────────────────────┘
 ```
 
-## ripeMD160
+## RIPEMD160
 
 Генерирует [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) хеш строки.
 
 **Синтаксис**
 
 ```sql
-ripeMD160(input)
+RIPEMD160(input)
 ```
 
 **Аргументы**
@@ -149,11 +149,11 @@ ripeMD160(input)
 Запрос:
 
 ```sql
-SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'));
+SELECT hex(RIPEMD160('The quick brown fox jumps over the lazy dog'));
 ```
 Результат:
 ```response
-┌─hex(ripeMD160('The quick brown fox jumps over the lazy dog'))─┐
+┌─hex(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
 │ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
 └───────────────────────────────────────────────────────────────┘
 ```
