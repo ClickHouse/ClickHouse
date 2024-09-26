@@ -467,17 +467,19 @@ def main():
     if branch and patch and Shell.check(f"git show-ref --quiet {branch}"):
         if patch > 1:
             query += f" base:{branch}"
-            print(
-                f"NOTE: It's a patch [{patch}]. will use base branch to filter PRs [{branch}]"
+            logging.info(
+                "NOTE: It's a patch [%s]. will use base branch to filter PRs [%s]",
+                patch,
+                branch,
             )
         else:
-            print(
-                f"NOTE: It's a first patch version. should count PRs merged on master - won't filter PRs by branch"
+            logging.info(
+                "NOTE: It's a first patch version. should count PRs merged on master - won't filter PRs by branch"
             )
     else:
-        print(f"ERROR: invalid branch {branch} - pass")
+        logging.error("ERROR: invalid branch %s - pass", branch)
 
-    print(f"Fetch PRs with query {query}")
+    logging.info("Fetch PRs with query %s", query)
     prs = gh.get_pulls_from_search(
         query=query, merged=merged, sort="created", progress_func=tqdm.tqdm
     )

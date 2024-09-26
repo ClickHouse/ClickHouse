@@ -247,7 +247,7 @@ def handle_sigterm(signum, _frame):
     print(f"WARNING: Received signal {signum}")
     global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
-    Shell.check(f"docker exec func-tester pkill -f clickhouse-test", verbose=True)
+    Shell.check("docker exec func-tester pkill -f clickhouse-test", verbose=True)
 
 
 def main():
@@ -401,7 +401,7 @@ def main():
             failed_cnt
             and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
         ):
-            print(f"Won't block the CI workflow")
+            print("Won't block the CI workflow")
             should_block_ci = False
 
     if should_block_ci:
