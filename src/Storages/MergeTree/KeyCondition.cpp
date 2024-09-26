@@ -3144,7 +3144,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
               * Algorithm:
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
-            bool has_intersection = false;
             const auto & key_column_positions = element.point_in_polygon_column_description->key_column_positions;
 
             Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[0]].left);
@@ -3169,7 +3168,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// Close ring
             boost::geometry::correct(polygon_by_minmax_index);
 
-            /// Because the polygon may have a hole so the "can_be_false" should be true.
+            /// Because the polygon may have a hole so the "can_be_false" should always be true.
             rpn_stack.emplace_back(
                 boost::geometry::intersects(polygon_by_minmax_index, element.polygon), true);
         }
