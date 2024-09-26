@@ -549,8 +549,7 @@ Pipe ReadFromMergeTree::readInOrder(
     Names required_columns,
     PoolSettings pool_settings,
     ReadType read_type,
-    UInt64 read_limit,
-    bool enable_current_virtual_row)
+    UInt64 read_limit)
 {
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
@@ -661,7 +660,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         Pipe pipe(source);
 
-        if (enable_current_virtual_row && (read_type == ReadType::InOrder))
+        if (virtual_row_conversion && (read_type == ReadType::InOrder))
         {
             const auto & index = part_with_ranges.data_part->getIndex();
             const auto & primary_key = storage_snapshot->metadata->primary_key;
@@ -681,7 +680,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
             pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<VirtualRowTransform>(header, pk_block);
+                return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
             });
         }
 
@@ -729,7 +728,7 @@ Pipe ReadFromMergeTree::read(
     if (read_type == ReadType::Default && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
         return readFromPool(std::move(parts_with_range), std::move(required_columns), std::move(pool_settings));
 
-    auto pipe = readInOrder(parts_with_range, required_columns, pool_settings, read_type, /*limit=*/ 0, false);
+    auto pipe = readInOrder(parts_with_range, required_columns, pool_settings, read_type, /*limit=*/ 0);
 
     /// Use ConcatProcessor to concat sources together.
     /// It is needed to read in parts order (and so in PK order) if single thread is used.
@@ -1038,7 +1037,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// For parallel replicas the split will be performed on the initiator side.
     if (is_parallel_reading_from_replicas)
     {
-        pipes.emplace_back(readInOrder(std::move(parts_with_ranges), column_names, pool_settings, read_type, input_order_info->limit, false));
+        pipes.emplace_back(readInOrder(std::move(parts_with_ranges), column_names, pool_settings, read_type, input_order_info->limit));
     }
     else
     {
@@ -1111,33 +1110,32 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             splitted_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
-        bool primary_key_type_supports_virtual_row = true;
-        const auto & actions = storage_snapshot->metadata->getPrimaryKey().expression->getActions();
-        for (const auto & action : actions)
-        {
-            if (action.node->type != ActionsDAG::ActionType::INPUT)
-            {
-                primary_key_type_supports_virtual_row = false;
-                break;
-            }
-        }
+        // bool primary_key_type_supports_virtual_row = true;
+        // const auto & actions = storage_snapshot->metadata->getPrimaryKey().expression->getActions();
+        // for (const auto & action : actions)
+        // {
+        //     if (action.node->type != ActionsDAG::ActionType::INPUT)
+        //     {
+        //         primary_key_type_supports_virtual_row = false;
+        //         break;
+        //     }
+        // }
 
-        /// If possible in the optimization stage, check whether there are more than one branch.
-        if (virtual_row_status == VirtualRowStatus::Possible)
-            virtual_row_status = splitted_parts_and_ranges.size() > 1
-                || (splitted_parts_and_ranges.size() == 1 && splitted_parts_and_ranges[0].size() > 1)
-                    ? VirtualRowStatus::Yes : VirtualRowStatus::NoConsiderInLogicalPlan;
+        // /// If possible in the optimization stage, check whether there are more than one branch.
+        // if (virtual_row_status == VirtualRowStatus::Possible)
+        //     virtual_row_status = splitted_parts_and_ranges.size() > 1
+        //         || (splitted_parts_and_ranges.size() == 1 && splitted_parts_and_ranges[0].size() > 1)
+        //             ? VirtualRowStatus::Yes : VirtualRowStatus::NoConsiderInLogicalPlan;
 
         for (auto && item : splitted_parts_and_ranges)
         {
-            bool enable_current_virtual_row = false;
-            if (virtual_row_status == VirtualRowStatus::Yes)
-                enable_current_virtual_row = true;
-            else if (virtual_row_status == VirtualRowStatus::NoConsiderInLogicalPlan)
-                enable_current_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
+        //     bool enable_current_virtual_row = false;
+        //     if (virtual_row_status == VirtualRowStatus::Yes)
+        //         enable_current_virtual_row = true;
+        //     else if (virtual_row_status == VirtualRowStatus::NoConsiderInLogicalPlan)
+        //         enable_current_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
 
-            pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit,
-                enable_current_virtual_row && primary_key_type_supports_virtual_row));
+            pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit));
         }
     }
 
@@ -1172,7 +1170,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             if (pipe.numOutputPorts() > 1)
             {
                 auto transform = std::make_shared<MergingSortedTransform>(
-                    pipe.getHeader(), pipe.numOutputPorts(), sort_description, block_size.max_block_size_rows, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch);
+                    pipe.getHeader(), pipe.numOutputPorts(), sort_description, block_size.max_block_size_rows, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch,
+                    0, false, nullptr, false, /*apply_virtual_row_conversions*/ false);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -1811,7 +1810,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<AnalysisResult>(std::move(result));
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, std::optional<ActionsDAG> virtual_row_conversion_)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -1822,7 +1821,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal())
         return false;
 
-    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit, false);
+    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     reader_settings.read_in_order = true;
 
     /// In case or read-in-order, don't create too many reading streams.
@@ -1854,6 +1853,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
+
+    if (virtual_row_conversion_)
+        virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(*virtual_row_conversion_));
 
     return true;
 }
@@ -2305,6 +2307,12 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
             expression->describeActions(format_settings.out, prefix);
         }
     }
+
+    if (virtual_row_conversion)
+    {
+        format_settings.out << prefix << "Virtual row conversions" << '\n';
+        virtual_row_conversion->describeActions(format_settings.out, prefix);
+    }
 }
 
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
@@ -2344,6 +2352,9 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
         map.add("Prewhere info", std::move(prewhere_info_map));
     }
+
+    if (virtual_row_conversion)
+        map.add("Virtual row conversions", virtual_row_conversion->toTree());
 }
 
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const

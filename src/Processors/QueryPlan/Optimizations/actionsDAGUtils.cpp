@@ -210,6 +210,8 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                 MatchedTrees::Monotonicity monotonicity;
                                 monotonicity.direction *= info.is_positive ? 1 : -1;
                                 monotonicity.strict = info.is_strict;
+                                monotonicity.child_match = &child_match;
+                                monotonicity.child_node = monotonic_child;
 
                                 if (child_match.monotonicity)
                                 {

@@ -119,22 +119,13 @@ struct InputOrderInfo
     const int direction;
     const UInt64 limit;
 
-    /** For virtual row optimization only
-     * for example, when pk is (a,b), a = 1, order by b, virtual row should be
-     * disabled in the following case:
-     * 1st part (0, 100), (1, 2), (1, 3), (1, 4)
-     * 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-     */
-    bool first_prefix_fixed;
-
     InputOrderInfo(
         const SortDescription & sort_description_for_merging_,
         size_t used_prefix_of_sorting_key_size_,
-        int direction_, UInt64 limit_, bool first_prefix_fixed_)
+        int direction_, UInt64 limit_)
         : sort_description_for_merging(sort_description_for_merging_)
         , used_prefix_of_sorting_key_size(used_prefix_of_sorting_key_size_)
         , direction(direction_), limit(limit_)
-        , first_prefix_fixed(first_prefix_fixed_)
     {
     }
 

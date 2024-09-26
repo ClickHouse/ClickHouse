@@ -9,10 +9,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-VirtualRowTransform::VirtualRowTransform(const Block & header_, const Block & pk_block_)
+VirtualRowTransform::VirtualRowTransform(const Block & header_, const Block & pk_block_, ExpressionActionsPtr virtual_row_conversions_)
     : IProcessor({header_}, {header_})
     , input(inputs.front()), output(outputs.front())
-    , header(header_), pk_block(pk_block_)
+    , pk_block(pk_block_)
+    , virtual_row_conversions(std::move(virtual_row_conversions_))
 {
 }
 
@@ -86,6 +87,7 @@ void VirtualRowTransform::work()
         is_first = false;
 
         Columns empty_columns;
+        const auto & header = getOutputs().front().getHeader();
         empty_columns.reserve(header.columns());
         for (size_t i = 0; i < header.columns(); ++i)
         {
@@ -94,7 +96,7 @@ void VirtualRowTransform::work()
         }
 
         current_chunk.setColumns(empty_columns, 0);
-        current_chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(0, pk_block));
+        current_chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(0, pk_block, virtual_row_conversions));
     }
     else
     {

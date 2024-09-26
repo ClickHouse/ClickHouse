@@ -11,7 +11,7 @@ namespace DB
 class VirtualRowTransform : public IProcessor
 {
 public:
-    explicit VirtualRowTransform(const Block & header_, const Block & pk_block_);
+    explicit VirtualRowTransform(const Block & header_, const Block & pk_block_, ExpressionActionsPtr virtual_row_conversions_);
 
     String getName() const override { return "VirtualRowTransform"; }
 
@@ -28,8 +28,8 @@ private:
     bool can_generate = true;
     bool is_first = true;
 
-    Block header;
     Block pk_block;
+    ExpressionActionsPtr virtual_row_conversions;
 };
 
 }

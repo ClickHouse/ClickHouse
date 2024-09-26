@@ -108,14 +108,6 @@ public:
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
 
-    enum class VirtualRowStatus
-    {
-        NoConsiderInLogicalPlan,
-        Possible,
-        No,
-        Yes,
-    };
-
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
@@ -195,7 +187,7 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
     bool readsInOrder() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
@@ -217,8 +209,6 @@ public:
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-    void setVirtualRowStatus(VirtualRowStatus virtual_row_status_) { virtual_row_status = virtual_row_status_; }
 
 private:
     int getSortDirection() const
@@ -262,7 +252,7 @@ private:
     Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
     Pipe readFromPool(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings);
     Pipe readFromPoolParallelReplicas(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings);
-    Pipe readInOrder(RangesInDataParts parts_with_ranges, Names required_columns, PoolSettings pool_settings, ReadType read_type, UInt64 limit, bool enable_current_virtual_row);
+    Pipe readInOrder(RangesInDataParts parts_with_ranges, Names required_columns, PoolSettings pool_settings, ReadType read_type, UInt64 limit);
 
     Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
@@ -293,7 +283,7 @@ private:
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
 
-    VirtualRowStatus virtual_row_status = VirtualRowStatus::NoConsiderInLogicalPlan;
+    ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
 };
