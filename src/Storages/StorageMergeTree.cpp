@@ -2174,8 +2174,21 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
-    auto merges_blocker = stopMergesAndWaitForPartition(partition_id);
+    bool is_all = partition->as<ASTPartition>()->all;
+
+    String partition_id;
+
+    if (is_all)
+    {
+        if (replace)
+            throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
+        auto merges_blocker = stopMergesAndWait();
+    }
+    else
+    {
+        partition_id = getPartitionIDFromQuery(partition, local_context);
+        auto merges_blocker = stopMergesAndWaitForPartition(partition_id);
+    }
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
@@ -2186,18 +2199,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     DataPartsVector src_parts;
 
-    bool is_all = partition->as<ASTPartition>()->all;
     if (is_all)
-    {
-        if (replace)
-            throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
-
         src_parts = src_data.getVisibleDataPartsVector(local_context);
-    }
     else
-    {
         src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
-    }
 
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
