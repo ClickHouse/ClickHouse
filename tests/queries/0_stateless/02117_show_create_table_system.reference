@@ -861,6 +861,7 @@ CREATE TABLE system.replicas
     `is_leader` UInt8,
     `can_become_leader` UInt8,
     `is_readonly` UInt8,
+    `readonly_start_time` Nullable(DateTime),
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,
@@ -889,7 +890,8 @@ CREATE TABLE system.replicas
     `lost_part_count` UInt64,
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
-    `replica_is_active` Map(String, UInt8)
+    `replica_is_active` Map(String, UInt8),
+    `readonly_duration` Nullable(DateTime) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
 )
 ENGINE = SystemReplicas
 COMMENT 'Contains information and status of all table replicas on current server. Each replica is represented by a single row.'
