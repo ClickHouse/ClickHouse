@@ -5,6 +5,8 @@
     <profiles>
         <!-- Default settings. -->
         <default>
+            <allow_introspection_functions>1</allow_introspection_functions>
+            <opentelemetry_start_trace_probability>1</opentelemetry_start_trace_probability>
         </default>
 
         <!-- Profile that allows only read queries. -->

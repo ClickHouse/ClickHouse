@@ -44,6 +44,19 @@ ${CLICKHOUSE_CLIENT} -q "
     ;"
 }
 
+function check_query_settings()
+{
+    ${CLICKHOUSE_CLIENT} -q "
+        SYSTEM FLUSH LOGS;
+        SELECT attribute
+        FROM system.opentelemetry_span_log
+        WHERE finish_date >= yesterday()
+        AND operation_name = 'query'
+        AND attribute['clickhouse.query_id'] = '${1}'
+        FORMAT JSONEachRow;
+    "
+}
+
 #
 # Set up
 #
@@ -72,6 +85,7 @@ check_query_span "$query_id"
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
 execute_query $query_id 'select * from opentelemetry_test format Null'
 check_query_span $query_id
+check_query_settings
 
 
 #

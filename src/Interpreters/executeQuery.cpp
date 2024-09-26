@@ -563,6 +563,46 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
         query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+
+        if (context)
+        {
+            std::string user_name = context->getUserName();
+            query_span->addAttribute("clickhouse.user", user_name);
+        }
+
+        if (settings.log_query_settings)
+        {
+            for (const auto & setting : settings.allChanged())
+            {
+                auto name = setting.getName();
+                Field value = settings.get(name);
+                String value_str;
+
+                switch (value.getType())
+                {
+                    case Field::Types::Which::String:
+                        value_str = value.safeGet<String>();
+                        break;
+                    case Field::Types::Which::Int64:
+                        value_str = std::to_string(value.safeGet<Int64>());
+                        break;
+                    case Field::Types::Which::Float64:
+                        value_str = std::to_string(value.safeGet<Float64>());
+                        break;
+                    case Field::Types::Which::Bool:
+                        value_str = value.safeGet<bool>() ? "true" : "false";
+                        break;
+                    case Field::Types::Which::UInt64:
+                        value_str = std::to_string(value.safeGet<UInt64>());
+                        break;
+                    default:
+                        value_str = "Unsupported type: " + std::to_string(static_cast<int>(value.getType()));
+                        break;
+                }
+
+                query_span->addAttribute(name, value_str);
+            }
+        }
         query_span->finish();
     }
 }
