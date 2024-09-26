@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -31,6 +32,13 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString s3queue_default_zookeeper_path;
+    extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
+    extern const SettingsBool stream_like_engine_allow_direct_select;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -44,7 +52,7 @@ namespace
 {
     std::string chooseZooKeeperPath(const StorageID & table_id, const Settings & settings, const ObjectStorageQueueSettings & queue_settings)
     {
-        std::string zk_path_prefix = settings.s3queue_default_zookeeper_path.value;
+        std::string zk_path_prefix = settings[Setting::s3queue_default_zookeeper_path].value;
         if (zk_path_prefix.empty())
             zk_path_prefix = "/";
 
@@ -62,7 +70,7 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(
+    void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
     {
@@ -95,7 +103,7 @@ namespace
         {
             case DB::ObjectStorageType::S3:
             {
-                if (table_settings.enable_logging_to_queue_log || settings.s3queue_enable_logging_to_s3queue_log)
+                if (table_settings.enable_logging_to_queue_log || settings[Setting::s3queue_enable_logging_to_s3queue_log])
                     return context->getS3QueueLog();
                 return nullptr;
             }
@@ -144,7 +152,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
+    validateSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -164,10 +172,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
-    ObjectStorageQueueTableMetadata table_metadata(*queue_settings, storage_metadata.getColumns(), configuration_->format);
-    ObjectStorageQueueMetadata::syncWithKeeper(zk_path, table_metadata, *queue_settings, log);
+    auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
+        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, log);
 
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(zk_path, std::move(table_metadata), *queue_settings);
+    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
+        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
+
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
@@ -276,7 +286,7 @@ void StorageObjectStorageQueue::read(
     size_t max_block_size,
     size_t)
 {
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+    if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`");
@@ -475,7 +485,7 @@ bool StorageObjectStorageQueue::streamToViews()
 
         block_io.pipeline.complete(std::move(pipe));
         block_io.pipeline.setNumThreads(queue_settings->processing_threads_num);
-        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef().use_concurrency_control);
+        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         std::atomic_size_t rows = 0;
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });

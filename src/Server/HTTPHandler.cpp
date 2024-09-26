@@ -54,6 +54,22 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool add_http_cors_header;
+    extern const SettingsBool cancel_http_readonly_queries_on_client_close;
+    extern const SettingsBool enable_http_compression;
+    extern const SettingsUInt64 http_headers_progress_interval_ms;
+    extern const SettingsUInt64 http_max_request_param_data_size;
+    extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
+    extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsBool http_wait_end_of_query;
+    extern const SettingsBool http_write_exception_in_output_format;
+    extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsBool send_progress_in_http_headers;
+    extern const SettingsInt64 zstd_window_log_max;
+}
 
 namespace ErrorCodes
 {
@@ -249,18 +265,19 @@ void HTTPHandler::processQuery(
 
     /// At least, we should postpone sending of first buffer_size result bytes
     size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", context->getSettingsRef().http_response_buffer_size),
+        params.getParsed<size_t>("buffer_size", context->getSettingsRef()[Setting::http_response_buffer_size]),
         static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef().http_wait_end_of_query);
+    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef()[Setting::http_wait_end_of_query]);
 
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef().enable_http_compression);
-    Int64 http_zlib_compression_level = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef().http_zlib_compression_level);
+    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef()[Setting::enable_http_compression]);
+    Int64 http_zlib_compression_level
+        = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef()[Setting::http_zlib_compression_level]);
 
     used_output.out_holder =
         std::make_shared<WriteBufferFromHTTPServerResponse>(
@@ -273,12 +290,15 @@ void HTTPHandler::processQuery(
     if (client_supports_http_compression && enable_http_compression)
     {
         used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);
-        used_output.wrap_compressed_holder =
-            wrapWriteBufferWithCompressionMethod(
-                used_output.out_holder.get(),
-                http_response_compression_method,
-                static_cast<int>(http_zlib_compression_level),
-                0, DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
+        used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
+            used_output.out_holder.get(),
+            http_response_compression_method,
+            static_cast<int>(http_zlib_compression_level),
+            0,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            nullptr,
+            0,
+            false);
         used_output.out = used_output.wrap_compressed_holder;
     }
 
@@ -335,10 +355,11 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
     auto in_post = wrapReadBufferWithCompressionMethod(
         wrapReadBufferReference(request.getStream()),
-        chooseCompressionMethod({}, http_request_compression_method_str), zstd_window_log_max);
+        chooseCompressionMethod({}, http_request_compression_method_str),
+        zstd_window_log_max);
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -431,18 +452,18 @@ void HTTPHandler::processQuery(
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
-    used_output.out_holder->setSendProgress(settings.send_progress_in_http_headers);
-    used_output.out_holder->setSendProgressInterval(settings.http_headers_progress_interval_ms);
+    used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
+    used_output.out_holder->setSendProgressInterval(settings[Setting::http_headers_progress_interval_ms]);
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
     /// checksums of client data compressed with internal algorithm are not checked.
-    if (is_in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
+    if (is_in_post_compressed && settings[Setting::http_native_compression_disable_checksumming_on_decompress])
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
     /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
     /// Once the authentication fails, the header can't be added.
-    if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
+    if (settings[Setting::add_http_cors_header] && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out_holder->addHeaderCORS(true);
 
     auto append_callback = [my_context = context] (ProgressCallback callback)
@@ -465,7 +486,7 @@ void HTTPHandler::processQuery(
         used_output.out_holder->onProgress(progress);
     });
 
-    if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
+    if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
         append_callback([&context, &request](const Progress &)
         {
@@ -496,9 +517,12 @@ void HTTPHandler::processQuery(
             response.add("X-ClickHouse-Timezone", *details.timezone);
     };
 
-    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format, const String & format_name, const ContextPtr & context_, const std::optional<FormatSettings> & format_settings)
+    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format,
+                                                 const String & format_name,
+                                                 const ContextPtr & context_,
+                                                 const std::optional<FormatSettings> & format_settings)
     {
-        if (settings.http_write_exception_in_output_format && current_output_format.supportsWritingException())
+        if (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException())
         {
             /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
             /// ignored, so we cannot write exception message in current output format as it will be also ignored.
@@ -876,7 +900,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         WriteBufferFromOwnString value;
         const auto & settings = context->getSettingsRef();
 
-        copyDataMaxBytes(body, value, settings.http_max_request_param_data_size);
+        copyDataMaxBytes(body, value, settings[Setting::http_max_request_param_data_size]);
         context->setQueryParameter("_request_body", value.str());
     }
 }
