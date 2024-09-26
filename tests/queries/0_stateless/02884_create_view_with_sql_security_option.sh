@@ -201,6 +201,14 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
 
 (( $(${CLICKHOUSE_CLIENT} --query "ALTER TABLE test_table MODIFY SQL SECURITY INVOKER" 2>&1 | grep -c "is not supported") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "
+  CREATE VIEW $db.test_view_broken
+  SQL SECURITY DEFINER
+  DEFINER CURRENT_USER
+  DEFINER $user2
+  AS SELECT * FROM $db.test_table;
+" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_table TO $user1, $user2"
