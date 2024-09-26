@@ -23,10 +23,11 @@ def legacy(request):
 
 
 @pytest.fixture(scope="module")
-def cluster(legacy):
-    name = __file__.removeprefix("test_").removesuffix(".py")
-    suffix = "legacy" if legacy else "new"
-    return ClickHouseCluster(f"{name}_{suffix}")
+def cluster(secure_connection, legacy):
+    cluster_name = __file__.removeprefix("test_").removesuffix(".py")
+    cluster_name += "_legacy" if legacy else "_new"
+    cluster_name += "_secure" if secure_connection else "_insecure"
+    return ClickHouseCluster(cluster_name)
 
 
 @pytest.fixture(scope="module")
