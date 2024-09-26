@@ -257,7 +257,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
     storage.createNewZooKeeperNodes();
-    storage.syncPinnedPartUUIDs();
+    storage.syncPinnedPartUUIDs(true);
 
     std::lock_guard lock(storage.table_shared_id_mutex);
     storage.createTableSharedID();

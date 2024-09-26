@@ -172,6 +172,10 @@ struct ReplicatedMergeTreeLogEntryData
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
 
+    /// For MOVE_PART operation, task that initiated this action
+    String task_name;
+    String task_entry_zk_path;
+
     /// Used only in tests for permanent fault injection for particular queue entry.
     CopyableAtomic<bool> fault_injected{false};
 

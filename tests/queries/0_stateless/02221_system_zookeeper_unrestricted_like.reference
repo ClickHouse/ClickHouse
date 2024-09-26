@@ -37,6 +37,8 @@ replicas
 shared
 shared
 table_shared_id
+task_queue
+tasks
 temp
 zero_copy_hdfs
 zero_copy_s3
@@ -80,6 +82,8 @@ replicas
 shared
 shared
 table_shared_id
+task_queue
+tasks
 temp
 zero_copy_hdfs
 zero_copy_s3
