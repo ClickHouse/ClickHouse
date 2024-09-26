@@ -2,27 +2,26 @@ import argparse
 import dataclasses
 import json
 import os
-
 from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
 from typing import Iterator, List
 
-from git_helper import Git, GIT_PREFIX
-from ssh import SSHAgent
-from s3_helper import S3Helper
-from ci_utils import Shell, GH
 from ci_buddy import CIBuddy
+from ci_config import CI
+from ci_utils import GH, Shell
+from git_helper import GIT_PREFIX, Git
+from s3_helper import S3Helper
+from ssh import SSHAgent
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
+    VersionType,
     get_abs_path,
     get_version_from_repo,
     update_cmake_version,
     update_contributors,
-    VersionType,
 )
-from ci_config import CI
 
 CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
 CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
@@ -522,12 +521,11 @@ class PackageDownloader:
             return (
                 "amd64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "x86_64"
             )
-        elif package_arch == CI.BuildNames.PACKAGE_AARCH64:
+        if package_arch == CI.BuildNames.PACKAGE_AARCH64:
             return (
                 "arm64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "aarch64"
             )
-        else:
-            assert False, "BUG"
+        assert False, "BUG"
 
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
