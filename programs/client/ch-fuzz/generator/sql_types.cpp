@@ -72,9 +72,9 @@ RandomDateType(RandomGenerator &rg, const bool low_card) {
 	}
 }
 
-SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allowed_types, sql_query_grammar::BottomTypeName *tp) {
+SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName *tp) {
 	SQLType* res = nullptr;
-	const uint32_t top_limit = 9 + ((allowed_types & allow_json) ? 2 : 0) + ((allowed_types & allow_dynamic) ? 1 : 0);
+	const uint32_t top_limit = low_card ? 4 : (8 + ((allowed_types & allow_json) ? 2 : 0) + ((allowed_types & allow_dynamic) ? 1 : 0));
 	std::uniform_int_distribution<uint32_t> next_dist(1, top_limit);
 	const uint32_t nopt = next_dist(rg.gen);
 
@@ -82,6 +82,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 		case 1: {
 			//int
 			sql_query_grammar::Integers nint;
+
 			std::tie(res, nint) = RandomIntType(rg);
 			if (tp) {
 				tp->set_integers(nint);
@@ -90,12 +91,38 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 		case 2: {
 			//float
 			sql_query_grammar::FloatingPoints nflo;
+
 			std::tie(res, nflo) = RandomFloatType(rg);
 			if (tp) {
 				tp->set_floats(nflo);
 			}
 		} break;
 		case 3: {
+			//dates
+			sql_query_grammar::Dates dd;
+
+			std::tie(res, dd) = RandomDateType(rg, low_card);
+			if (tp) {
+				tp->set_dates(dd);
+			}
+		} break;
+		case 4: {
+			//string
+			std::optional<uint32_t> swidth = std::nullopt;
+
+			if (rg.NextBool()) {
+				if (tp) {
+					tp->set_sql_string(true);
+				}
+			} else {
+				swidth = std::optional<uint32_t>(rg.NextBool() ? rg.NextSmallNumber() : (rg.NextRandomUInt32() % 100));
+				if (tp) {
+					tp->set_fixed_string(swidth.value());
+				}
+			}
+			res = new StringType(swidth);
+		} break;
+		case 5: {
 			//decimal
 			sql_query_grammar::Decimal *dec = tp ? tp->mutable_decimal() : nullptr;
 			std::optional<uint32_t> precision = std::nullopt, scale = std::nullopt;
@@ -112,88 +139,14 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 			}
 			res = new DecimalType(precision, scale);
 		} break;
-		case 4:
+		case 6:
 			//boolean
 			if (tp) {
 				tp->set_boolean(true);
 			}
 			res = new BoolType();
 			break;
-		case 5: {
-			//string
-			std::optional<uint32_t> swidth = std::nullopt;
-
-			if (rg.NextBool()) {
-				if (tp) {
-					tp->set_sql_string(true);
-				}
-			} else {
-				swidth = std::optional<uint32_t>(rg.NextBool() ? rg.NextSmallNumber() : (rg.NextRandomUInt32() % 100));
-				if (tp) {
-					tp->set_fixed_string(swidth.value());
-				}
-			}
-			res = new StringType(swidth);
-		} break;
-		case 6: {
-			//dates
-			sql_query_grammar::Dates dd;
-			std::tie(res, dd) = RandomDateType(rg, false);
-			if (tp) {
-				tp->set_dates(dd);
-			}
-		} break;
-		case 7: {
-			//LowCardinality
-			sql_query_grammar::LowCardinality *lcard = tp ? tp->mutable_lcard() : nullptr;
-			std::uniform_int_distribution<uint32_t> next_dist2(1, 4);
-			SQLType* sub = nullptr;
-
-			switch (next_dist2(rg.gen)) {
-				case 1: {
-					//int
-					sql_query_grammar::Integers nint;
-					std::tie(sub, nint) = RandomIntType(rg);
-					if (lcard) {
-						lcard->set_integers(nint);
-					}
-				} break;
-				case 2: {
-					//float
-					sql_query_grammar::FloatingPoints nflo;
-					std::tie(sub, nflo) = RandomFloatType(rg);
-					if (lcard) {
-						lcard->set_floats(nflo);
-					}
-				} break;
-				case 3: {
-					//dates
-					sql_query_grammar::Dates dd;
-					std::tie(sub, dd) = RandomDateType(rg, true);
-					if (lcard) {
-						lcard->set_dates(dd);
-					}
-				} break;
-				default: {
-					//string
-					std::optional<uint32_t> swidth = std::nullopt;
-
-					if (rg.NextBool()) {
-						if (lcard) {
-							lcard->set_sql_string(true);
-						}
-					} else {
-						swidth = std::optional<uint32_t>(rg.NextRandomUInt32() % 100);
-						if (lcard) {
-							lcard->set_fixed_string(swidth.value());
-						}
-					}
-					sub = new StringType(swidth);
-				} break;
-			}
-			res = new LowCardinality(sub);
-		} break;
-		case 8:
+		case 7:
 			if (allowed_types & allow_enum) {
 				//Enum
 				const bool bits = rg.NextBool();
@@ -218,22 +171,23 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 			} else {
 				//int
 				sql_query_grammar::Integers nint;
+
 				std::tie(res, nint) = RandomIntType(rg);
 				if (tp) {
 					tp->set_integers(nint);
 				}
 			}
 			break;
-		case 9:
+		case 8:
 			//uuid
 			if (tp) {
 				tp->set_uuid(true);
 			}
 			res = new UUIDType();
 			break;
+		case 9:
 		case 10:
-		case 11:
-		case 12: {
+		case 11: {
 			if ((allowed_types & allow_json) && (!(allowed_types & allow_dynamic) || nopt < 11)) {
 				//json
 				std::string desc = "";
@@ -359,10 +313,14 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 
 	if ((allowed_types & allow_nullable) && noption < 21) {
 		//nullable
-		return new Nullable(BottomType(rg, allowed_types & ~(allow_dynamic|allow_json), tp ? tp->mutable_nullable() : nullptr));
+		const bool lcard = rg.NextMediumNumber() < 18;
+		SQLType* res = new Nullable(BottomType(rg, allowed_types & ~(allow_dynamic|allow_json), lcard, tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
+		return lcard ? new LowCardinality(res) : res;
 	} else if (noption < 71 || this->depth == this->max_depth) {
 		//non nullable
-		return BottomType(rg, allowed_types, tp ? tp->mutable_non_nullable() : nullptr);
+		const bool lcard = rg.NextMediumNumber() < 18;
+		SQLType* res = BottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
+		return lcard ? new LowCardinality(res) : res;
 	} else if (noption < 77 || this->max_width <= this->width + 1) {
 		//array
 		return GenerateArraytype(rg, allowed_types & ~(allow_nested), col_counter, tp ? tp->mutable_array() : nullptr);

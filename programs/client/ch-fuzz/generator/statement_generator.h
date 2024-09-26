@@ -153,7 +153,7 @@ private:
 	int GenerateNextExplain(RandomGenerator &rg, sql_query_grammar::ExplainQuery *sq);
 	int GenerateNextQuery(RandomGenerator &rg, sql_query_grammar::SQLQueryInner *sq);
 
-	SQLType* BottomType(RandomGenerator &rg, const uint32_t allowed_types, sql_query_grammar::BottomTypeName *tp);
+	SQLType* BottomType(RandomGenerator &rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName *tp);
 	SQLType* GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types);
 	SQLType* GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
 

@@ -646,32 +646,7 @@ CONV_FN_QUOTE(ColumnPath, ic) {
   }
 }
 
-CONV_FN(LowCardinality, lc) {
-  using LcardTypeNameType = LowCardinality::LcardOneOfCase;
-  switch (lc.lcard_one_of_case()) {
-    case LcardTypeNameType::kIntegers:
-      ret += Integers_Name(lc.integers());
-      break;
-    case LcardTypeNameType::kFloats:
-      ret += FloatingPoints_Name(lc.floats());
-      break;
-    case LcardTypeNameType::kSqlString:
-      ret += "String";
-      break;
-    case LcardTypeNameType::kFixedString:
-      ret += "FixedString(";
-      ret += std::to_string(std::max<uint32_t>(1, lc.fixed_string()));
-      ret += ")";
-      break;
-    case LcardTypeNameType::kDates:
-      ret += Dates_Name(lc.dates());
-      break;
-    default:
-      ret += "Int";
-  }
-}
-
-CONV_FN_QUOTE(BottomTypeName, btn) {
+void BottomTypeNameToString(std::string &ret, const bool quote, const bool lcard, const BottomTypeName& btn) {
   using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
   switch (btn.bottom_one_of_case()) {
     case BottomTypeNameType::kIntegers:
@@ -680,21 +655,6 @@ CONV_FN_QUOTE(BottomTypeName, btn) {
     case BottomTypeNameType::kFloats:
       ret += FloatingPoints_Name(btn.floats());
       break;
-    case BottomTypeNameType::kDecimal: {
-      const sql_query_grammar::Decimal &dec = btn.decimal();
-      ret += "Decimal";
-      if (dec.has_precision()) {
-        const uint32_t precision = (dec.precision() % 76) + 1;
-
-        ret += "(";
-        ret += std::to_string(precision);
-        if (dec.has_scale()) {
-          ret += ",";
-          ret += std::to_string(dec.scale() % precision);
-        }
-        ret += ")";
-      }
-    } break;
     case BottomTypeNameType::kSqlString:
       ret += "String";
       break;
@@ -703,83 +663,106 @@ CONV_FN_QUOTE(BottomTypeName, btn) {
       ret += std::to_string(std::max<uint32_t>(1, btn.fixed_string()));
       ret += ")";
       break;
-    case BottomTypeNameType::kUuid:
-      ret += "UUID";
-      break;
     case BottomTypeNameType::kDates:
       ret += Dates_Name(btn.dates());
       break;
-    case BottomTypeNameType::kJson: {
-      const sql_query_grammar::JsonDef &jdef = btn.json();
+    default: {
+      if (lcard) {
+        ret += "Int";
+      } else {
+        switch (btn.bottom_one_of_case()) {
+          case BottomTypeNameType::kDecimal: {
+            const sql_query_grammar::Decimal &dec = btn.decimal();
+            ret += "Decimal";
+            if (dec.has_precision()) {
+              const uint32_t precision = (dec.precision() % 76) + 1;
 
-      ret += "JSON";
-      if (jdef.spec_size() > 0) {
-        ret += "(";
-        for (int i = 0 ; i < jdef.spec_size(); i++) {
-          const sql_query_grammar::JsonDefItem &jspec = jdef.spec(i);
+              ret += "(";
+              ret += std::to_string(precision);
+              if (dec.has_scale()) {
+                ret += ",";
+                ret += std::to_string(dec.scale() % precision);
+              }
+              ret += ")";
+            }
+          } break;
+          case BottomTypeNameType::kBoolean:
+            ret += "Bool";
+            break;
+          case BottomTypeNameType::kUuid:
+            ret += "UUID";
+            break;
+          case BottomTypeNameType::kJson: {
+            const sql_query_grammar::JsonDef &jdef = btn.json();
 
-          if (i != 0) {
-            ret += ", ";
-          }
-          if (jspec.has_max_dynamic_types()) {
-            ret += "max_dynamic_types=";
-            ret += std::to_string(jspec.max_dynamic_types() % 33);
-          } else if (jspec.has_max_dynamic_paths()) {
-            ret += "max_dynamic_paths=";
-            ret += std::to_string(jspec.max_dynamic_paths() % 1025);
-          } else if (jspec.has_skip_path()) {
-            ret += "SKIP ";
-            ColumnPathToString(ret, !quote, jspec.skip_path());
-          } else if (jspec.has_path_type()) {
-            const sql_query_grammar::JsonPathType &jpt = jspec.path_type();
+            ret += "JSON";
+            if (jdef.spec_size() > 0) {
+              ret += "(";
+              for (int i = 0 ; i < jdef.spec_size(); i++) {
+                const sql_query_grammar::JsonDefItem &jspec = jdef.spec(i);
 
-            ColumnPathToString(ret, !quote, jpt.col());
-            ret += " ";
-            TopTypeNameToString(ret, quote, jpt.type());
-          } else {
-            ret += "max_dynamic_types=8";
-          }
+                if (i != 0) {
+                  ret += ", ";
+                }
+                if (jspec.has_max_dynamic_types()) {
+                  ret += "max_dynamic_types=";
+                  ret += std::to_string(jspec.max_dynamic_types() % 33);
+                } else if (jspec.has_max_dynamic_paths()) {
+                  ret += "max_dynamic_paths=";
+                  ret += std::to_string(jspec.max_dynamic_paths() % 1025);
+                } else if (jspec.has_skip_path()) {
+                  ret += "SKIP ";
+                  ColumnPathToString(ret, !quote, jspec.skip_path());
+                } else if (jspec.has_path_type()) {
+                  const sql_query_grammar::JsonPathType &jpt = jspec.path_type();
+
+                  ColumnPathToString(ret, !quote, jpt.col());
+                  ret += " ";
+                  TopTypeNameToString(ret, quote, jpt.type());
+                } else {
+                  ret += "max_dynamic_types=8";
+                }
+              }
+              ret += ")";
+            }
+          } break;
+          case BottomTypeNameType::kDynamic:
+            ret += "Dynamic";
+            if (btn.dynamic().has_ntypes()) {
+              ret += "(max_types=";
+              ret += std::to_string((btn.dynamic().ntypes() % 255) + 1);
+              ret += ")";
+            }
+            break;
+          case BottomTypeNameType::kEnumDef: {
+            const sql_query_grammar::EnumDef &edef = btn.enum_def();
+            const std::string first_val = std::to_string(edef.first_value());
+
+            ret += "Enum";
+            if (edef.has_bits()) {
+              ret += edef.bits() ? "16" : "8";
+            }
+            ret += "('";
+            ret += first_val;
+            ret += "'";
+            ret += " = ";
+            ret += first_val;
+            for (int i = 0 ; i < edef.other_values_size(); i++) {
+              const std::string next_val = std::to_string(edef.other_values(i));
+
+              ret += ", '";
+              ret += next_val;
+              ret += "'";
+              ret += " = ";
+              ret += next_val;
+            }
+            ret += ")";
+          } break;
+          default:
+            ret += "Int";
         }
-        ret += ")";
       }
-    } break;
-    case BottomTypeNameType::kDynamic:
-      ret += "Dynamic";
-      if (btn.dynamic().has_ntypes()) {
-        ret += "(max_types=";
-        ret += std::to_string((btn.dynamic().ntypes() % 255) + 1);
-        ret += ")";
-      }
-      break;
-    case BottomTypeNameType::kEnumDef: {
-      const sql_query_grammar::EnumDef &edef = btn.enum_def();
-      const std::string first_val = std::to_string(edef.first_value());
-
-      ret += "Enum";
-      if (edef.has_bits()) {
-        ret += edef.bits() ? "16" : "8";
-      }
-      ret += "('";
-      ret += first_val;
-      ret += "'";
-      ret += " = ";
-      ret += first_val;
-      for (int i = 0 ; i < edef.other_values_size(); i++) {
-        const std::string next_val = std::to_string(edef.other_values(i));
-
-        ret += ", '";
-        ret += next_val;
-        ret += "'";
-        ret += " = ";
-        ret += next_val;
-      }
-      ret += ")";
-    } break;
-    case BottomTypeNameType::kLcard:
-      LowCardinalityToString(ret, btn.lcard());
-      break;
-    default:
-      ret += "Int";
+    }
   }
 }
 
@@ -793,12 +776,22 @@ CONV_FN_QUOTE(TopTypeName, ttn) {
   using TopTypeNameType = TopTypeName::TypeOneofCase;
   switch (ttn.type_oneof_case()) {
     case TopTypeNameType::kNonNullable:
-      BottomTypeNameToString(ret, quote, ttn.non_nullable());
+      BottomTypeNameToString(ret, quote, false, ttn.non_nullable());
       break;
     case TopTypeNameType::kNullable:
       ret += "Nullable(";
-      BottomTypeNameToString(ret, quote, ttn.nullable());
+      BottomTypeNameToString(ret, quote, false, ttn.nullable());
       ret += ")";
+      break;
+    case TopTypeNameType::kNonNullableLcard:
+      ret += "LowCardinality(";
+      BottomTypeNameToString(ret, quote, true, ttn.non_nullable_lcard());
+      ret += ")";
+      break;
+    case TopTypeNameType::kNullableLcard:
+      ret += "LowCardinality(Nullable(";
+      BottomTypeNameToString(ret, quote, true, ttn.nullable_lcard());
+      ret += "))";
       break;
     case TopTypeNameType::kArray:
       ret += "Array(";

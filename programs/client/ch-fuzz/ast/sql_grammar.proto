@@ -2383,30 +2383,19 @@ message Dynamic {
   optional uint32 ntypes = 1;
 }
 
-message LowCardinality {
-  oneof lcard_one_of {
+message BottomTypeName {
+  oneof bottom_one_of {
     Integers integers = 1;
     FloatingPoints floats = 2;
     bool sql_string = 3;
     uint32 fixed_string = 4;
     Dates dates = 5;
-  }
-}
-
-message BottomTypeName {
-  oneof bottom_one_of {
-    Integers integers = 1;
-    FloatingPoints floats = 2;
-    Decimal decimal = 3;
-    bool boolean = 4;
-    bool sql_string = 5;
-    uint32 fixed_string = 6;
-    bool uuid = 7;
-    Dates dates = 8;
+    Decimal decimal = 6;
+    bool boolean = 7;
+    bool uuid = 8;
     JsonDef json = 9;
     Dynamic dynamic = 10;
     EnumDef enum_def = 11;
-    LowCardinality lcard = 12;
   }
 }
 
@@ -2441,11 +2430,13 @@ message TopTypeName {
   oneof type_oneof {
     BottomTypeName non_nullable = 1;
     BottomTypeName nullable = 2;
-    TopTypeName array = 3;
-    MapType map = 4;
-    TupleType tuple = 5;
-    NestedType nested = 6;
-    VariantType variant = 7;
+    BottomTypeName non_nullable_lcard = 3;
+    BottomTypeName nullable_lcard = 4;
+    TopTypeName array = 5;
+    MapType map = 6;
+    TupleType tuple = 7;
+    NestedType nested = 8;
+    VariantType variant = 9;
   }
 }
 
