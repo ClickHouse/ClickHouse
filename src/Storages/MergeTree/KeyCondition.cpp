@@ -3171,15 +3171,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// Close ring
             boost::geometry::correct(polygon_by_minmax_index);
 
-            using MultiPolygon = boost::geometry::model::multi_polygon<RPNElement::Polygon>;
-            MultiPolygon intersection{};
-            boost::geometry::intersection(polygon_by_minmax_index, element.polygon, intersection);
-            has_intersection = !intersection.empty();
-
-            if (has_intersection)
-                rpn_stack.emplace_back(true, true);
-            else
-                rpn_stack.emplace_back(false, true);
+            rpn_stack.emplace_back(
+                boost::geometry::intersects(polygon_by_minmax_index, element.polygon),
+                !boost::geometry::within(polygon_by_minmax_index, element.polygon));
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
