@@ -1584,7 +1584,8 @@ class TestCase:
                 print("Cannot insert coverage data: ", str(e))
 
             # Check for dumped coverage files
-            file_pattern = "coverage.*"
+            coverage_prefix = os.getenv("CLICKHOUSE_WRITE_COVERAGE", "coverage")
+            file_pattern = coverage_prefix + ".*"
             matching_files = glob.glob(file_pattern)
             for file_path in matching_files:
                 try:
@@ -1742,8 +1743,24 @@ class TestCase:
             )
             replace_in_file(
                 self.stdout_file,
+                f"port {os.environ['CLICKHOUSE_PORT_TCP']}",
+                "port 9000",
+            )
+            replace_in_file(
+                self.stdout_file,
                 f"localhost	{os.environ['CLICKHOUSE_PORT_TCP']}",
                 "localhost	9000",
+            )
+            replace_in_file(
+                self.stdout_file,
+                f"127.0.0.1:{os.environ['CLICKHOUSE_PORT_TCP']}",
+                "127.0.0.1:9000",
+            )
+        if os.environ.get("CLICKHOUSE_PORT_MYSQL"):
+            replace_in_file(
+                self.stdout_file,
+                f"127.0.0.1:{os.environ['CLICKHOUSE_PORT_MYSQL']}",
+                "127.0.0.1:9004",
             )
 
         if os.environ.get("CLICKHOUSE_PORT_TCP_SECURE"):
@@ -2161,6 +2178,11 @@ class TestSuite:
             else:
                 self.parallel_tests.append(test_name)
 
+        if args.run_parallel_only:
+            self.sequential_tests = []
+        if args.run_no_parallel_only:
+            self.parallel_tests = []
+
     def is_sequential_test(self, test_name):
         if args.sequential:
             if any(s in test_name for s in args.sequential):
@@ -2269,13 +2291,9 @@ class GlobalTimeout(Exception):
     pass
 
 
-def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool]):
-    (
-        all_tests,
-        num_tests,
-        test_suite,
-        is_concurrent,
-    ) = all_tests_with_params
+def run_tests_array(
+    all_tests: List[str], num_tests: int, test_suite: TestSuite, is_concurrent: bool
+):
     global stop_time
     global exit_code
     global server_died
@@ -2621,94 +2639,81 @@ def run_tests_process(*args, **kwargs):
 
 
 def do_run_tests(jobs, test_suite: TestSuite):
-    if jobs > 1 and len(test_suite.parallel_tests) > 0:
-        print(
-            "Found",
-            len(test_suite.parallel_tests),
-            "parallel tests and",
-            len(test_suite.sequential_tests),
-            "sequential tests",
+    print(
+        "Found",
+        len(test_suite.parallel_tests),
+        "parallel tests and",
+        len(test_suite.sequential_tests),
+        "sequential tests",
+    )
+    tests_n = max(len(test_suite.parallel_tests), 1)
+    jobs = min(jobs, tests_n)
+
+    # If we don't do random shuffling then there will be always
+    # nearly the same groups of test suites running concurrently.
+    # Thus, if there is a test within group which appears to be broken
+    # then it will affect all other tests in a non-random form.
+    # So each time a bad test fails - other tests from the group will also fail
+    # and this process will be more or less stable.
+    # It makes it more difficult to detect real flaky tests,
+    # because the distribution and the amount
+    # of failures will be nearly the same for all tests from the group.
+    random.shuffle(test_suite.parallel_tests)
+
+    batch_size = len(test_suite.parallel_tests) // jobs
+    manager = multiprocessing.Manager()
+    parallel_tests = manager.list()
+    parallel_tests.extend(test_suite.parallel_tests)
+    is_concurrent = (jobs > 1) or (args.run_parallel_only or args.run_no_parallel_only)
+
+    processes = []
+    for _ in range(jobs):
+        process = multiprocessing.Process(
+            target=run_tests_process,
+            args=(parallel_tests, batch_size, test_suite, is_concurrent),
         )
-        tests_n = len(test_suite.parallel_tests)
-        jobs = min(jobs, tests_n)
+        processes.append(process)
+        process.start()
 
-        # If we don't do random shuffling then there will be always
-        # nearly the same groups of test suites running concurrently.
-        # Thus, if there is a test within group which appears to be broken
-        # then it will affect all other tests in a non-random form.
-        # So each time a bad test fails - other tests from the group will also fail
-        # and this process will be more or less stable.
-        # It makes it more difficult to detect real flaky tests,
-        # because the distribution and the amount
-        # of failures will be nearly the same for all tests from the group.
-        random.shuffle(test_suite.parallel_tests)
-
-        batch_size = len(test_suite.parallel_tests) // jobs
-        manager = multiprocessing.Manager()
-        parallel_tests = manager.list()
-        parallel_tests.extend(test_suite.parallel_tests)
-
-        processes = []
-        for _ in range(jobs):
-            process = multiprocessing.Process(
-                target=run_tests_process,
-                args=((parallel_tests, batch_size, test_suite, True),),
+    while processes:
+        sys.stdout.flush()
+        # Periodically check the server for hangs
+        # and stop all processes in this case
+        try:
+            clickhouse_execute(
+                args,
+                query="SELECT 1 /*hung check*/",
+                max_http_retries=20,
+                timeout=10,
             )
-            processes.append(process)
-            process.start()
-
-        while processes:
-            sys.stdout.flush()
-            # Periodically check the server for hangs
-            # and stop all processes in this case
-            try:
-                clickhouse_execute(
-                    args,
-                    query="SELECT 1 /*hung check*/",
-                    max_http_retries=20,
-                    timeout=10,
-                )
-            except Exception:
-                print("Hung check failed")
-                server_died.set()
-
-            if server_died.is_set():
-                print("Server died, terminating all processes...")
-                kill_gdb_if_any()
-                # Wait for test results
-                sleep(args.timeout)
-                for p in processes:
-                    if p.is_alive():
-                        p.terminate()
-                break
-
-            for p in processes[:]:
-                if not p.is_alive():
-                    processes.remove(p)
-
             sleep(5)
 
-        run_tests_array(
-            (
-                test_suite.sequential_tests,
-                len(test_suite.sequential_tests),
-                test_suite,
-                False,
-            )
-        )
+        except Exception:
+            print("Hung check failed")
+            server_died.set()
 
-        return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
-    else:
-        num_tests = len(test_suite.all_tests)
-        run_tests_array(
-            (
-                test_suite.all_tests,
-                num_tests,
-                test_suite,
-                False,
-            )
-        )
-        return num_tests
+        if server_died.is_set():
+            print("Server died, terminating all processes...")
+            kill_gdb_if_any()
+            # Wait for test results
+            sleep(args.timeout)
+            for p in processes:
+                if p.is_alive():
+                    p.terminate()
+            break
+
+        for p in processes[:]:
+            if not p.is_alive():
+                processes.remove(p)
+
+    run_tests_array(
+        test_suite.sequential_tests,
+        len(test_suite.sequential_tests),
+        test_suite,
+        is_concurrent,
+    )
+
+    return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
 
 def is_test_from_dir(suite_dir, case):
@@ -3550,6 +3555,19 @@ def parse_args():
         "--capture-client-stacktrace",
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
+    )
+
+    parser.add_argument(
+        "--run-parallel-only",
+        action="store_true",
+        default=False,
+        help="",
+    )
+    parser.add_argument(
+        "--run-no-parallel-only",
+        action="store_true",
+        default=False,
+        help="",
     )
 
     return parser.parse_args()
