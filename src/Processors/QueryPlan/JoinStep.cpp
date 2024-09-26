@@ -111,7 +111,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
         auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
+            std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
         joined_pipeline->resize(max_streams);
         return joined_pipeline;
     }
@@ -120,7 +120,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::move(pipelines[0]),
         std::move(pipelines[1]),
         join,
-        output_stream->header,
+        join_algorithm_header,
         max_block_size,
         max_streams,
         keep_left_read_in_order,
@@ -170,6 +170,7 @@ void JoinStep::updateOutputStream()
 
     Block result_header = JoiningTransform::transformHeader(header, join);
 
+    join_algorithm_header = result_header;
     if (swap_streams)
         result_header = rotateBlock(result_header, input_streams[1].header);
 
