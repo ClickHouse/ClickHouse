@@ -248,7 +248,7 @@ class Shell:
             return True
         if verbose:
             print(f"Run command [{command}]")
-        proc = subprocess.Popen(
+        with subprocess.Popen(
             command,
             shell=True,
             stderr=subprocess.STDOUT,
@@ -259,16 +259,17 @@ class Shell:
             bufsize=1,
             errors="backslashreplace",
             **kwargs,
-        )
-        if stdin_str:
-            proc.communicate(input=stdin_str)
-        elif proc.stdout:
-            for line in proc.stdout:
-                sys.stdout.write(line)
-        proc.wait()
-        if strict:
-            assert proc.returncode == 0
-        return proc.returncode == 0
+        ) as proc:
+            if stdin_str:
+                proc.communicate(input=stdin_str)
+            elif proc.stdout:
+                for line in proc.stdout:
+                    sys.stdout.write(line)
+            proc.wait()
+            retcode = proc.returncode
+            if strict:
+                assert retcode == 0
+        return retcode == 0
 
 
 class Utils:
