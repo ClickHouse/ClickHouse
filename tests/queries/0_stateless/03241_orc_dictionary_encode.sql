@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 insert into function file(03241_data_without_dict.orc) 
 select toLowCardinality(cast(if (number % 10 = 0, null, number % 10) as Nullable(String))) as c from numbers(100000)
