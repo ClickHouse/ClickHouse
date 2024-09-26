@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -3495,13 +3496,21 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             {
                 auto function = FunctionFactory::instance().get(function_name, context);
 
+                const auto * tuple_type = typeid_cast<const DataTypeTuple *>(node.result_type.get());
+                bool ingore_check_for_tuple =
+                    tuple_type && tuple_type->haveExplicitNames();
+
                 node.function_base = function->build(arguments);
                 node.function = node.function_base->prepare(arguments);
                 node.is_function_compiled = false;
 
-                if (!node.function_base->getResultType()->equals(*node.result_type))
+                auto type_to_check = node.result_type;
+                if (ingore_check_for_tuple)
+                    type_to_check = std::make_shared<DataTypeTuple>(tuple_type->getElements());
+
+                if (!node.function_base->getResultType()->equals(*type_to_check))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Deserialized function {} has type. Expected {}, deserialized {}.",
+                        "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
                         function_name,
                         node.function_base->getResultType()->getName(),
                         node.result_type->getName());
