@@ -63,6 +63,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         setVirtualRow(input.chunk, header, apply_virtual_row_conversions);
+        input.skip_last_row = true;
     }
 
     removeConstAndSparse(inputs);
@@ -149,8 +150,8 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         auto current = queue.current();
 
-        if (isVirtualRow(current_inputs[current.impl->order].chunk))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual row is not implemented for Non-batch mode.");
+        // if (isVirtualRow(current_inputs[current.impl->order].chunk))
+        //     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual row is not implemented for Non-batch mode.");
 
         if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
         {
@@ -248,14 +249,14 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         auto [current_ptr, initial_batch_size] = queue.current();
         auto current = *current_ptr;
 
-        if (isVirtualRow(current_inputs[current.impl->order].chunk))
-        {
-            /// If virtual row is detected, there should be only one row as a single chunk,
-            /// and always skip this chunk to pull the next one.
-            chassert(initial_batch_size == 1);
-            queue.removeTop();
-            return Status(current.impl->order);
-        }
+        // if (isVirtualRow(current_inputs[current.impl->order].chunk))
+        // {
+        //     /// If virtual row is detected, there should be only one row as a single chunk,
+        //     /// and always skip this chunk to pull the next one.
+        //     chassert(initial_batch_size == 1);
+        //     queue.removeTop();
+        //     return Status(current.impl->order);
+        // }
 
         bool batch_skip_last_row = false;
         if (current.impl->isLast(initial_batch_size) && current_inputs[current.impl->order].skip_last_row)
