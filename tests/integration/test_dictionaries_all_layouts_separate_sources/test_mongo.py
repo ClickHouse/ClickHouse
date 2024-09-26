@@ -1,16 +1,11 @@
 import os
-import math
 import pytest
 
 from .common import *
 
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMongo
 
-SOURCE = None
-cluster = None
-node = None
 simple_tester = None
 complex_tester = None
 ranged_tester = None
@@ -28,8 +23,10 @@ def legacy(request):
 
 
 @pytest.fixture(scope="module")
-def cluster(secure_connection):
-    return ClickHouseCluster(__file__)
+def cluster(legacy):
+    name = __file__.removeprefix("test_").removesuffix(".py")
+    suffix = "legacy" if legacy else "new"
+    return ClickHouseCluster(f"{name}_{suffix}")
 
 
 @pytest.fixture(scope="module")
@@ -84,37 +81,17 @@ def main_config(secure_connection, legacy):
     return main_config
 
 
-def get_node_name(secure_connection, legacy):
-    secure_connection_suffix = "_secure" if secure_connection else "non_secure"
-    legacy_suffix = "_legacy" if legacy else "_new"
-    return f"node_mongo_{secure_connection_suffix}_{legacy_suffix}"
-
-
 @pytest.fixture(scope="module")
 def started_cluster(
-    secure_connection,
-    legacy,
     cluster,
     main_config,
     simple_tester,
     ranged_tester,
     complex_tester,
 ):
-    SOURCE = SourceMongo(
-        "MongoDB",
-        "localhost",
-        27017,
-        "mongo_secure" if secure_connection else "mongo1",
-        27017,
-        "root",
-        "clickhouse",
-        secure=secure_connection,
-        legacy=legacy,
-    )
     dictionaries = simple_tester.list_dictionaries()
-
-    node = cluster.add_instance(
-        get_node_name(secure_connection, legacy),
+    cluster.add_instance(
+        "node1",
         main_configs=main_config,
         dictionaries=dictionaries,
         with_mongo=True,
@@ -137,9 +114,7 @@ def started_cluster(
 @pytest.mark.parametrize("legacy", [False, True], indirect=["legacy"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple(secure_connection, legacy, started_cluster, layout_name, simple_tester):
-    simple_tester.execute(
-        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
-    )
+    simple_tester.execute(layout_name, started_cluster.instances["node1"])
 
 
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
@@ -148,18 +123,14 @@ def test_simple(secure_connection, legacy, started_cluster, layout_name, simple_
 def test_complex(
     secure_connection, legacy, started_cluster, layout_name, complex_tester
 ):
-    complex_tester.execute(
-        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
-    )
+    complex_tester.execute(layout_name, started_cluster.instances["node1"])
 
 
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("legacy", [False, True], indirect=["legacy"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(secure_connection, legacy, started_cluster, layout_name, ranged_tester):
-    ranged_tester.execute(
-        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
-    )
+    ranged_tester.execute(layout_name, started_cluster.instances["node1"])
 
 
 @pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
@@ -168,6 +139,4 @@ def test_ranged(secure_connection, legacy, started_cluster, layout_name, ranged_
 def test_simple_ssl(
     secure_connection, legacy, started_cluster, layout_name, simple_tester
 ):
-    simple_tester.execute(
-        layout_name, started_cluster.instances[get_node_name(secure_connection, legacy)]
-    )
+    simple_tester.execute(layout_name, started_cluster.instances["node1"])
