@@ -3160,7 +3160,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 continue;
             }
 
-            polygon_by_minmax_index.outer().clear();
+            using Point = boost::geometry::model::d2::point_xy<Float64>;
+            using Polygon = boost::geometry::model::polygon<Point>;
+            Polygon  polygon_by_minmax_index;
             polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
             polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
             polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
