@@ -68,6 +68,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.10",
         {
             {"enable_optimize_query_tree_logical_expression", true, true, "New setting."},
+            {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
+            {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
+            {"parallel_replicas_mode", "read_tasks", "read_tasks", "This setting was introduced as a part of making parallel replicas feature Beta"},
         }
     },
     {"24.9",
