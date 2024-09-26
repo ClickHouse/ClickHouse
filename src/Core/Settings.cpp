@@ -1247,12 +1247,15 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
+            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
+            auto final_name = SettingsTraits::resolveName(change.name);
+
             /// If this setting was changed manually, we don't change it
-            if (isChanged(change.name) && !settings_changed_by_compatibility_setting.contains(change.name))
+            if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
                 continue;
 
-            BaseSettings::set(change.name, change.previous_value);
-            settings_changed_by_compatibility_setting.insert(change.name);
+            BaseSettings::set(final_name, change.previous_value);
+            settings_changed_by_compatibility_setting.insert(final_name);
         }
     }
 }
