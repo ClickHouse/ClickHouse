@@ -226,7 +226,7 @@ public:
             origin_column = arguments[2];
 
         const DateLUTImpl * time_zone_tmp;
-        
+
         if (isDateTimeOrDateTime64(result_type))
         {
             const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
