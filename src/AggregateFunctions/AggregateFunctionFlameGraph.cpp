@@ -17,6 +17,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_introspection_functions;
+}
+
+
 namespace ErrorCodes
 {
     extern const int FUNCTION_NOT_ALLOWED;
@@ -628,7 +634,7 @@ static void check(const std::string & name, const DataTypes & argument_types, co
 
 AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
-    if (!settings->allow_introspection_functions)
+    if (!(*settings)[Setting::allow_introspection_functions])
         throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
         "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper
+# Tags: long, zookeeper, no-parallel
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
@@ -18,7 +18,7 @@ done
 wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ttl_table$i(
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE ttl_table$i(
         key DateTime
     )
     ENGINE ReplicatedMergeTree('/test/01921_concurrent_ttl_and_normal_merges/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ttl_table', '$i')

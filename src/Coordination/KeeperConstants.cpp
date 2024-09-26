@@ -183,8 +183,6 @@
     M(ReadBufferFromS3InitMicroseconds) \
     M(ReadBufferFromS3Bytes) \
     M(ReadBufferFromS3RequestsErrors) \
-    M(ReadBufferFromS3ResetSessions) \
-    M(ReadBufferFromS3PreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \

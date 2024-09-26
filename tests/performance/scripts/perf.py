@@ -345,6 +345,16 @@ for query_index in queries_to_run:
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
 
+    for conn_index, c in enumerate(all_connections):
+        try:
+            c.execute("SYSTEM JEMALLOC PURGE")
+
+            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}")
+        except KeyboardInterrupt:
+            raise
+        except:
+            continue
+
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
     # A query might not run on the old server if it uses a function added in the

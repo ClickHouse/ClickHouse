@@ -75,9 +75,9 @@
     M(GlobalThread, "Number of threads in global thread pool.") \
     M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
     M(GlobalThreadScheduled, "Number of queued or active jobs in global thread pool.") \
-    M(LocalThread, "Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
-    M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
-    M(LocalThreadScheduled, "Number of queued or active jobs in local thread pools.") \
+    M(LocalThread, "Obsolete. Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
+    M(LocalThreadActive, "Obsolete. Number of threads in local thread pools running a task.") \
+    M(LocalThreadScheduled, "Obsolete. Number of queued or active jobs in local thread pools.") \
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
@@ -178,6 +178,9 @@
     M(ObjectStorageAzureThreads, "Number of threads in the AzureObjectStorage thread pool.") \
     M(ObjectStorageAzureThreadsActive, "Number of threads in the AzureObjectStorage thread pool running a task.") \
     M(ObjectStorageAzureThreadsScheduled, "Number of queued or active jobs in the AzureObjectStorage thread pool.") \
+    M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
+    M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
+    M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableLocalDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
@@ -234,10 +237,10 @@
     M(PartsCommitted, "Deprecated. See PartsActive.") \
     M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
-    M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
-    M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
-    M(AttachedView, "Active view, used by current and upcoming SELECTs.") \
-    M(AttachedDictionary, "Active dictionary, used by current and upcoming SELECTs.") \
+    M(AttachedDatabase, "Active databases.") \
+    M(AttachedTable, "Active tables.") \
+    M(AttachedView, "Active views.") \
+    M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -292,6 +295,9 @@
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
     \
+    M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
+    M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
+    \
     M(StorageConnectionsStored, "Total count of sessions stored in the session pool for storages") \
     M(StorageConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for storages") \
     \
@@ -306,6 +312,8 @@
     \
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
+    \
+    M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

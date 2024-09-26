@@ -60,7 +60,7 @@ public:
     void registerFunction(
         const String & name,
         Value creator,
-        CaseSensitiveness case_sensitiveness = CaseSensitive);
+        Case case_sensitiveness = Case::Sensitive);
 
     /// Register how to transform from one aggregate function to other based on NullsAction
     /// Registers them both ways:

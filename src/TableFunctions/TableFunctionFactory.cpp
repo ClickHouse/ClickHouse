@@ -11,6 +11,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -19,17 +23,17 @@ namespace ErrorCodes
 }
 
 void TableFunctionFactory::registerFunction(
-    const std::string & name, Value value, CaseSensitiveness case_sensitiveness)
+    const std::string & name, Value value, Case case_sensitiveness)
 {
     if (!table_functions.emplace(name, value).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
 
-    if (case_sensitiveness == CaseInsensitive
+    if (case_sensitiveness == Case::Insensitive
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), value).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: "
                         "the case insensitive table function name '{}' is not unique", name);
 
-    KnownTableFunctionNames::instance().add(name, (case_sensitiveness == CaseInsensitive));
+    KnownTableFunctionNames::instance().add(name, (case_sensitiveness == Case::Insensitive));
 }
 
 TableFunctionPtr TableFunctionFactory::get(
@@ -76,7 +80,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
     }
 

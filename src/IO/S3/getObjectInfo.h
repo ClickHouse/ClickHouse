@@ -15,6 +15,7 @@ struct ObjectInfo
 {
     size_t size = 0;
     time_t last_modification_time = 0;
+    String etag;
 
     std::map<String, String> metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
 };

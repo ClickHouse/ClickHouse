@@ -118,11 +118,11 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
         occupied >= data_settings->max_number_of_mutations_for_replica)
         return 0;
 
-    /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
+    /// A DataPart can be stored only at a single disk. Get the maximum reservable free space at all disks.
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
 
-    /// Allow mutations only if there are enough threads, leave free threads for merges else
+    /// Allow mutations only if there are enough threads, otherwise, leave free threads for merges.
     if (occupied <= 1
         || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
@@ -671,7 +671,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry * merge_entry,
     std::unique_ptr<MergeListElement> projection_merge_list_element,
-    TableLockHolder,
+    TableLockHolder & holder,
     time_t time_of_merge,
     ContextPtr context,
     ReservationSharedPtr space_reservation,
@@ -691,6 +691,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         std::move(projection_merge_list_element),
         time_of_merge,
         context,
+        holder,
         space_reservation,
         deduplicate,
         deduplicate_by_columns,
@@ -749,7 +750,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                                              "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, /*rename_in_transaction=*/ true);
+
+    /// Explicitly rename part while still holding the lock for tmp folder to avoid cleanup
+    out_transaction.renameParts();
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())
@@ -779,7 +783,14 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}", new_data_part->name, replaced_parts.size(), parts.size());
+        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}\n"
+            "Replaced parts:\n{}\n"
+            "Parts:\n{}\n",
+            new_data_part->name,
+            replaced_parts.size(),
+            parts.size(),
+            fmt::join(getPartsNames(replaced_parts), "\n"),
+            fmt::join(getPartsNames(parts), "\n"));
     }
     else
     {

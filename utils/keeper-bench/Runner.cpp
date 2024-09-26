@@ -10,6 +10,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Disks/DiskLocal.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadBuffer.h>
@@ -34,6 +35,11 @@ namespace CurrentMetrics
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
     extern const Metric LocalThreadScheduled;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes
@@ -563,7 +569,7 @@ struct ZooKeeperRequestFromLogReader
             *file_read_buf,
             header_block,
             context,
-            context->getSettingsRef().max_block_size,
+            context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
             1,
             std::nullopt,
@@ -786,7 +792,7 @@ struct SetupNodeCollector
         if (snapshot_result.storage == nullptr)
         {
             std::cerr << "No initial snapshot found" << std::endl;
-            initial_storage = std::make_unique<Coordination::KeeperStorage>(
+            initial_storage = std::make_unique<Coordination::KeeperMemoryStorage>(
                 /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
             initial_storage->initializeSystemNodes();
         }
@@ -932,7 +938,7 @@ struct SetupNodeCollector
 
         std::cerr << "Generating snapshot with starting data" << std::endl;
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(initial_storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot snapshot(initial_storage.get(), snapshot_meta);
+        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta);
         snapshot_manager->serializeSnapshotToDisk(snapshot);
 
         new_nodes = false;
@@ -940,9 +946,9 @@ struct SetupNodeCollector
 
     std::mutex nodes_mutex;
     DB::KeeperContextPtr keeper_context;
-    Coordination::KeeperStoragePtr initial_storage;
+    std::shared_ptr<Coordination::KeeperMemoryStorage> initial_storage;
     std::unordered_set<std::string> nodes_created_during_replay;
-    std::optional<Coordination::KeeperSnapshotManager> snapshot_manager;
+    std::optional<Coordination::KeeperSnapshotManager<Coordination::KeeperMemoryStorage>> snapshot_manager;
     bool new_nodes = false;
 };
 
@@ -1114,6 +1120,7 @@ void Runner::runBenchmarkFromLog()
         else
         {
             request_from_log->connection = get_zookeeper_connection(request_from_log->session_id);
+            request_from_log->executor_id %= concurrency;
             push_request(std::move(*request_from_log));
         }
 

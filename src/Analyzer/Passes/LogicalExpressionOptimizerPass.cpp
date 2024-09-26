@@ -12,9 +12,15 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
+    extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
+}
 
 namespace ErrorCodes
 {
@@ -65,6 +71,48 @@ QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
         }
     }
     return nullptr;
+}
+
+/// Checks if the node is combination of isNull and notEquals functions of two the same arguments:
+/// [ (a <> b AND) ] (a IS NULL) AND (b IS NULL)
+bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
+{
+    QueryTreeNodePtrWithHashSet all_arguments;
+    QueryTreeNodePtrWithHashSet is_null_arguments;
+
+    for (const auto & node : nodes)
+    {
+        const auto * func_node = node->as<FunctionNode>();
+        if (!func_node)
+            return false;
+
+        const auto & arguments = func_node->getArguments().getNodes();
+        if (func_node->getFunctionName() == "isNull" && arguments.size() == 1)
+        {
+            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+            is_null_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+        }
+
+        else if (func_node->getFunctionName() == "notEquals" && arguments.size() == 2)
+        {
+            if (arguments[0]->isEqual(*arguments[1]))
+                return false;
+            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[1]));
+        }
+        else
+            return false;
+
+        if (all_arguments.size() > 2)
+            return false;
+    }
+
+    if (all_arguments.size() != 2 || is_null_arguments.size() != 2)
+        return false;
+
+    lhs = all_arguments.begin()->node;
+    rhs = std::next(all_arguments.begin())->node;
+    return true;
 }
 
 bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
@@ -212,11 +260,14 @@ private:
             else if (func_name == "and")
             {
                 const auto & and_arguments = argument_function->getArguments().getNodes();
-                bool all_are_is_null = and_arguments.size() == 2 && isNodeFunction(and_arguments[0], "isNull") && isNodeFunction(and_arguments[1], "isNull");
-                if (all_are_is_null)
+
+                QueryTreeNodePtr is_null_lhs_arg;
+                QueryTreeNodePtr is_null_rhs_arg;
+                if (matchIsNullOfTwoArgs(and_arguments, is_null_lhs_arg, is_null_rhs_arg))
                 {
-                    is_null_argument_to_indices[getFunctionArgument(and_arguments.front(), 0)].push_back(or_operands.size() - 1);
-                    is_null_argument_to_indices[getFunctionArgument(and_arguments.back(), 0)].push_back(or_operands.size() - 1);
+                    is_null_argument_to_indices[is_null_lhs_arg].push_back(or_operands.size() - 1);
+                    is_null_argument_to_indices[is_null_rhs_arg].push_back(or_operands.size() - 1);
+                    continue;
                 }
 
                 /// Expression `a = b AND (a IS NOT NULL) AND true AND (b IS NOT NULL)` we can be replaced with `a = b`
@@ -485,7 +536,8 @@ private:
         for (auto & [expression, not_equals_functions] : node_to_not_equals_functions)
         {
             const auto & settings = getSettings();
-            if (not_equals_functions.size() < settings.optimize_min_inequality_conjunction_chain_length && !expression.node->getResultType()->lowCardinality())
+            if (not_equals_functions.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
+                && !expression.node->getResultType()->lowCardinality())
             {
                 std::move(not_equals_functions.begin(), not_equals_functions.end(), std::back_inserter(and_operands));
                 continue;
@@ -607,7 +659,8 @@ private:
         for (auto & [expression, equals_functions] : node_to_equals_functions)
         {
             const auto & settings = getSettings();
-            if (equals_functions.size() < settings.optimize_min_equality_disjunction_chain_length && !expression.node->getResultType()->lowCardinality())
+            if (equals_functions.size() < settings[Setting::optimize_min_equality_disjunction_chain_length]
+                && !expression.node->getResultType()->lowCardinality())
             {
                 std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
                 continue;
@@ -616,6 +669,7 @@ private:
             bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
+            DataTypes tuple_element_types;
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
@@ -628,16 +682,18 @@ private:
                 if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
                 {
                     args.push_back(rhs_literal->getValue());
+                    tuple_element_types.push_back(rhs_literal->getResultType());
                 }
                 else
                 {
                     const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
                     assert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
+                    tuple_element_types.push_back(lhs_literal->getResultType());
                 }
             }
 
-            auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
+            auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
             auto in_function = std::make_shared<FunctionNode>("in");
 
