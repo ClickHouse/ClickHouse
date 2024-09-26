@@ -2789,33 +2789,38 @@ Result:
 
 - [Custom Settings](../../operations/settings/index.md#custom_settings)
 
-## getSettingOrNull
+## getSettingOrDefault
 
-Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns NULL if setting is undefined.
+Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
 ```sql
-getSettingOrNull('custom_setting');
+getSettingOrDefault('custom_setting', default_value);
 ```
 
 **Parameter**
 
 - `custom_setting` — The setting name. [String](../data-types/string.md).
+- `default_value` — Value to return if custom_setting is not set. Value may be of any data type or Null.
 
 **Returned value**
 
-- The setting's current value or NULL if setting is undefined.
+- The setting's current value or default_value if setting is not set.
 
 **Example**
 
 ```sql
-SELECT getSetting('custom_xyz');
+SELECT getSettingOrDefault('custom_undef1', 'my_value');
+SELECT getSettingOrDefault('custom_undef2', 100);
+SELECT getSettingOrDefault('custom_undef3', NULL);
 ```
 
 Result:
 
 ```
+my_value
+100
 NULL
 ```
 

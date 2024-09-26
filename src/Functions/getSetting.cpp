@@ -19,22 +19,30 @@ namespace ErrorCodes
 namespace
 {
 
-enum class ErrorHandling : uint8_t
+enum class ErrorHandlingMode : uint8_t
 {
-    Exception,
-    Default,
+    Exception,  /// Raise exception if setting not found (getSetting())
+    Default,  /// Return default value if setting not found (getSettingOrDefault())
 };
 
+struct NameGetSetting{ static constexpr auto name = "getSetting"; };
+
+struct NameGetSettingOrDefault{ static constexpr auto name = "getSettingOrDefault"; };
+
 /// Get the value of a setting.
+template <typename Name, ErrorHandlingMode mode>
 class FunctionGetSetting : public IFunction, WithContext
 {
 public:
-    explicit FunctionGetSetting(ContextPtr context_, String name_, ErrorHandling error_handling_) : WithContext(context_), name(name_), error_handling(error_handling_) {}
+    static constexpr auto name = Name::name;
+
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
+    explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return ( name == "getSettingOrDefault" ? 2 : 1 ); }
+    size_t getNumberOfArguments() const override { return ( mode == ErrorHandlingMode::Default ? 2 : 1 ); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0,1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -61,7 +69,7 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
-        if (arguments.size() == 2)
+        if (mode == ErrorHandlingMode::Default)
         {
             const auto * default_value_column = arguments[1].column.get();
             if (!default_value_column || default_value_column->size() != 1)
@@ -79,9 +87,9 @@ private:
         }
         catch(...)
         {
-            if (error_handling == ErrorHandling::Exception)
+            if (mode == ErrorHandlingMode::Exception)
                 throw;
-            else if (error_handling == ErrorHandling::Default)
+            else if (mode == ErrorHandlingMode::Default)
             {
                 auto default_value_column = arguments[1].column;
 
@@ -90,22 +98,21 @@ private:
         }
         return setting_value;
     }
-    String name;
-    ErrorHandling error_handling;
 };
 
 }
 
+using FunctionGetSettingWithException = FunctionGetSetting<NameGetSetting, ErrorHandlingMode::Exception>;
+using FunctionGetSettingWithDefault = FunctionGetSetting<NameGetSettingOrDefault, ErrorHandlingMode::Default>;
+
 REGISTER_FUNCTION(GetSetting)
 {
-    factory.registerFunction("getSetting",
-        [](ContextPtr context){ return std::make_shared<FunctionGetSetting>(context, "getSetting", ErrorHandling::Exception); });
+    factory.registerFunction<FunctionGetSettingWithException>();
 }
+
 
 REGISTER_FUNCTION(GetSettingOrDefault)
 {
-    factory.registerFunction("getSettingOrDefault",
-        [](ContextPtr context){ return std::make_shared<FunctionGetSetting>(context, "getSettingOrDefault", ErrorHandling::Default); });
+    factory.registerFunction<FunctionGetSettingWithDefault>();
 }
-
 }

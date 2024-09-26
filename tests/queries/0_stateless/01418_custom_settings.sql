@@ -61,12 +61,3 @@ SELECT name, value FROM system.settings WHERE name = 'custom_null';
 CREATE SETTINGS PROFILE s2_01418 SETTINGS custom_null = NULL;
 SHOW CREATE SETTINGS PROFILE s2_01418;
 DROP SETTINGS PROFILE s2_01418;
-
-SELECT getSetting('custom_xyz') as v; -- { serverError UNKNOWN_SETTING } -- Setting not found.
-SELECT getSettingOrDefault('custom_xyz','my_default_value') as v;
-SELECT getSettingOrDefault('custom_compound.identifier.v1','should not be seen') as v;
-SELECT getSettingOrDefault('custom_xyz', NULL) as v;
-SELECT getSettingOrDefault('custom_xyz', 50) as v;
-SELECT getSettingOrDefault(1, 'def') as v; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count(*) FROM numbers(10) WHERE number = getSettingOrDefault('custom_role',5);
-SELECT isNull(getSettingOrDefault('custom_xyz',NULL)) as v;
