@@ -67,6 +67,7 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
+
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
@@ -128,6 +129,8 @@ protected:
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     virtual void setupSignalHandler() = 0;
 
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
@@ -158,13 +161,6 @@ protected:
 
     /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
-
-    virtual void readArguments(
-        int argc,
-        char ** argv,
-        Arguments & common_arguments,
-        std::vector<Arguments> & external_tables_arguments,
-        std::vector<Arguments> & hosts_and_ports_arguments) = 0;
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
@@ -216,6 +212,7 @@ protected:
         void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
 
         /// Set value not greater then 0 to mark the query as stopped.
+
         void stop() { exit_after_signals.store(0); }
 
         /// Return true if the query was stopped.
@@ -249,11 +246,18 @@ protected:
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
-    SharedContextHolder shared_context;
+    SharedContextHolder shared_context; // maybe not initialized
     ContextMutablePtr global_context;
 
     /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
+
+    String default_database;
+    String query_id;
+    Int32 suggestion_limit;
+    bool enable_highlight = true;
+    bool multiline = false;
+    String static_query;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
@@ -297,7 +301,7 @@ protected:
     MergeTreeSettings cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
-    std::optional<ThreadStatus> thread_status;
+    std::optional<ThreadStatus> thread_status; // may be not initialized in embedded client
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
@@ -318,6 +322,7 @@ protected:
     std::unique_ptr<InternalTextLogs> logs_out_stream;
 
     /// /dev/tty if accessible or std::cerr - for progress bar.
+    /// But running embedded into server, we write the progress to given tty file dexcriptor.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
 
