@@ -4313,9 +4313,9 @@ auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & par
     {
         part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, copy_instead_of_hardlink);
     }
+#if USE_AWS_S3
     catch (const S3Exception & ex)
     {
-#if USE_AWS_S3
         // We have to check code NO_SUCH_KEY and RESOURCE_NOT_FOUND as well.
         if (S3::isNotFoundError(ex.getS3ErrorCode()) && copy_instead_of_hardlink)
         {
@@ -4325,8 +4325,11 @@ auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & par
             LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
             return MakeClonePartInDetachedResult::NoFetchPart;
         }
+        throw;
+    }
 #endif
-
+    catch (...)
+    {
         throw;
     }
     return result;
