@@ -52,6 +52,7 @@ _GITHUB_JOB_API_URL = ""
 
 
 def GITHUB_JOB_ID(safe: bool = True) -> str:
+    # pylint:disable=global-statement
     global _GITHUB_JOB_ID
     global _GITHUB_JOB_URL
     global _GITHUB_JOB_API_URL
