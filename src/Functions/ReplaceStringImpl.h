@@ -303,7 +303,7 @@ struct ReplaceStringImpl
             const auto * start_pos = cur_haystack_data;
             const auto * const cur_haystack_end = cur_haystack_data + cur_haystack_length;
 
-            if (cur_needle_length != 0)
+            if (cur_needle_length)
             {
                 /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
                 StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
@@ -356,7 +356,7 @@ struct ReplaceStringImpl
         {
             assert(input_rows_count == haystack_data.size() / n);
             /// Since ColumnFixedString does not have a zero byte at the end, while ColumnString does,
-            /// So we need to split haystack_data into strings of length n, add 1 zero byte to the end of each string
+            /// we need to split haystack_data into strings of length n, add 1 zero byte to the end of each string
             /// and then copy to res_data, ref: ColumnString.h and ColumnFixedString.h
             res_data.reserve(haystack_data.size() + input_rows_count);
             res_offsets.resize(input_rows_count);
