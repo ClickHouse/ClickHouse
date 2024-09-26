@@ -238,10 +238,15 @@ private:
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.
     PathToColumnMap typed_paths;
+    /// Sorted list of typed paths. Used to avoid sorting paths every time in some methods.
+    std::vector<std::string_view> sorted_typed_paths;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
     /// during inerts into the column.
     PathToColumnMap dynamic_paths;
+    /// Sorted list of dynamic paths. Used to avoid sorting paths every time in some methods.
+    std::set<std::string_view> sorted_dynamic_paths;
+
     /// Store and use pointers to ColumnDynamic to avoid virtual calls.
     /// With hundreds of dynamic paths these virtual calls are noticeable.
     PathToDynamicColumnPtrMap dynamic_paths_ptrs;

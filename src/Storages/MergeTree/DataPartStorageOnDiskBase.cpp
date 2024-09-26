@@ -59,6 +59,16 @@ std::string DataPartStorageOnDiskBase::getRelativePath() const
     return fs::path(root_path) / part_dir / "";
 }
 
+std::string DataPartStorageOnDiskBase::getParentDirectory() const
+{
+    /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
+    fs::path part_dir_without_slash = part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir;
+
+    if (part_dir_without_slash.has_parent_path())
+        return part_dir_without_slash.parent_path();
+    return "";
+}
+
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
@@ -699,9 +709,9 @@ void DataPartStorageOnDiskBase::remove(
 
     if (!has_delete_prefix)
     {
-        if (part_dir_without_slash.has_parent_path())
+        auto parent_path = getParentDirectory();
+        if (!parent_path.empty())
         {
-            auto parent_path = part_dir_without_slash.parent_path();
             if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -709,7 +719,7 @@ void DataPartStorageOnDiskBase::remove(
                     part_dir,
                     root_path);
 
-            part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+            part_dir_without_slash = fs::path(parent_path) / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
         }
         else
         {
