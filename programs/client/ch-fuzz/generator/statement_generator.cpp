@@ -144,10 +144,11 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator &rg, sql_query_gra
 	return 0;
 }
 
-int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const uint32_t cname,
-									   const bool staged, const ColumnSpecial special, sql_query_grammar::ColumnDef *cd) {
+int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const uint32_t cname, const bool staged,
+									   const bool modify, const ColumnSpecial special, sql_query_grammar::ColumnDef *cd) {
 	SQLColumn col;
 	SQLType *tp = nullptr;
+	LowCardinality *lc = nullptr;
 	auto &to_add = staged ? t.staged_cols : t.cols;
 
 	col.cname = cname;
@@ -165,9 +166,10 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 	}
 	col.tp = tp;
 	col.special = special;
-	if (col.special == ColumnSpecial::NONE &&
+	if (!modify && col.special == ColumnSpecial::NONE &&
 		(dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) || dynamic_cast<DecimalType*>(tp) ||
-		 dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) || dynamic_cast<UUIDType*>(tp)) && rg.NextSmallNumber() < 4) {
+		 dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) || dynamic_cast<UUIDType*>(tp) ||
+		 ((lc = dynamic_cast<LowCardinality*>(tp)) && !dynamic_cast<Nullable*>(lc->subtype))) && rg.NextSmallNumber() < 4) {
 		cd->set_nullable(rg.NextBool());
 	}
 	col.nullable = cd->nullable();
@@ -421,14 +423,14 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			} else if (add_col && nopt < (add_idx + add_proj + add_const + add_col + 1)) {
 				sql_query_grammar::ColumnDef *cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
-				AddTableColumn(rg, next, next.col_counter++, false, ColumnSpecial::NONE, cd);
+				AddTableColumn(rg, next, next.col_counter++, false, false, ColumnSpecial::NONE, cd);
 				added_cols++;
 			} else {
 				const uint32_t cname = next.col_counter++;
 				const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
 				sql_query_grammar::ColumnDef *cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
-				AddTableColumn(rg, next, cname, false, add_version_col ? ColumnSpecial::VERSION : ColumnSpecial::SIGN, cd);
+				AddTableColumn(rg, next, cname, false, false, add_version_col ? ColumnSpecial::VERSION : ColumnSpecial::SIGN, cd);
 				te->add_cols()->set_column("c" + std::to_string(cname));
 				if (add_version_col) {
 					added_version++;
@@ -814,7 +816,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				const uint32_t next_option = rg.NextSmallNumber();
 				sql_query_grammar::AddColumn *add_col = ati->mutable_add_column();
 
-				AddTableColumn(rg, t, t.col_counter++, true, ColumnSpecial::NONE, add_col->mutable_new_col());
+				AddTableColumn(rg, t, t.col_counter++, true, false, ColumnSpecial::NONE, add_col->mutable_new_col());
 				if (next_option < 4) {
 					const SQLColumn &ocol = rg.PickValueRandomlyFromMap(t.cols);
 					add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(ocol.cname));
@@ -843,7 +845,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				const uint32_t next_option = rg.NextSmallNumber();
 				sql_query_grammar::AddColumn *add_col = ati->mutable_modify_column();
 
-				AddTableColumn(rg, t, ocol.cname, true, ColumnSpecial::NONE, add_col->mutable_new_col());
+				AddTableColumn(rg, t, ocol.cname, true, true, ColumnSpecial::NONE, add_col->mutable_new_col());
 				if (next_option < 4) {
 					const SQLColumn &col = rg.PickValueRandomlyFromMap(t.cols);
 					add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(col.cname));

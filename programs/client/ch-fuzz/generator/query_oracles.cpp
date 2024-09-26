@@ -35,28 +35,32 @@ int StatementGenerator::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, s
 }
 
 /*
-SELECT SUM(PRED) FROM <FROM_CLAUSE>;
+SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
 or
-SELECT SUM(PRED2) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
+SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 */
 int StatementGenerator::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
 	sql_query_grammar::SelectStatementCore &ssc1 =
 		const_cast<sql_query_grammar::SelectStatementCore &>(sq1.inner_query().select().sel().select_core());
 	sql_query_grammar::SelectStatementCore *ssc2 = sq2.mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
-	sql_query_grammar::SQLFuncCall *sfc = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+	sql_query_grammar::SQLFuncCall *sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+	sql_query_grammar::SQLFuncCall *sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
-	sfc->set_func(sql_query_grammar::FUNCsum);
+	sfc1->set_func(sql_query_grammar::FUNCifNull);
+	sfc1->add_args()->mutable_expr()->mutable_lit_val()->set_special_val(sql_query_grammar::SpecialVal::VAL_ZERO);
+	sfc2->set_func(sql_query_grammar::FUNCsum);
+
 	ssc2->set_allocated_from(ssc1.release_from());
 	if (ssc1.has_groupby()) {
 		sql_query_grammar::GroupByStatement &gbs = const_cast<sql_query_grammar::GroupByStatement &>(ssc1.groupby());
 
-		sfc->add_args()->set_allocated_expr(gbs.release_having_expr());
+		sfc2->add_args()->set_allocated_expr(gbs.release_having_expr());
 		ssc2->set_allocated_groupby(ssc1.release_groupby());
 		ssc2->set_allocated_where(ssc1.release_where());
 	} else {
 		sql_query_grammar::ExprComparisonHighProbability &expr = const_cast<sql_query_grammar::ExprComparisonHighProbability &>(ssc1.where().expr());
 
-		sfc->add_args()->set_allocated_expr(expr.release_expr());
+		sfc2->add_args()->set_allocated_expr(expr.release_expr());
 	}
 	return 0;
 }

@@ -429,10 +429,8 @@ void StatementGenerator::AppendDecimal(RandomGenerator &rg, std::string &ret, co
 }
 
 void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &ret, SQLType* tp) {
-	BoolType *btp;
 	IntType *itp;
 	DateType *dtp;
-	FloatType *ftp;
 	DecimalType *detp;
 	StringType *stp;
 	EnumType *etp;
@@ -469,11 +467,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 					break;
 			}
 		}
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::";
-			ret += itp->TypeName(false);
-		}
-	} else if ((ftp = dynamic_cast<FloatType*>(tp))) {
+	} else if (dynamic_cast<FloatType*>(tp)) {
 		const uint32_t next_option = rg.NextLargeNumber();
 
 		if (next_option < 25) {
@@ -488,10 +482,6 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 			ret += "inf";
 		} else {
 			ret += std::to_string(rg.NextRandomDouble());
-		}
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::";
-			ret += ftp->TypeName(false);
 		}
 	} else if ((dtp = dynamic_cast<DateType*>(tp))) {
 		ret += "'";
@@ -509,44 +499,24 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 			}
 		}
 		ret += "'";
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::";
-			ret += dtp->TypeName(false);
-		}
 	} else if ((detp = dynamic_cast<DecimalType*>(tp))) {
 		const uint32_t right = detp->scale.value_or(0), left = detp->precision.value_or(10) - right;
 
 		AppendDecimal(rg, ret, left, right);
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::";
-			ret += detp->TypeName(false);
-		}
 	} else if ((stp = dynamic_cast<StringType*>(tp))) {
 		const uint32_t limit = stp->precision.value_or(100000);
 
 		ret += "'";
 		rg.NextString(ret, limit);
 		ret += "'";
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::";
-			ret += stp->TypeName(false);
-		}
-	} else if ((btp = dynamic_cast<BoolType*>(tp))) {
+	} else if (dynamic_cast<BoolType*>(tp)) {
 		ret += rg.NextBool() ? "TRUE" : "FALSE";
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::";
-			ret += btp->TypeName(false);
-		}
 	} else if ((etp = dynamic_cast<EnumType*>(tp))) {
 		const int32_t nvalue = rg.PickRandomlyFromVector(etp->values);
 
 		ret += "'";
 		ret += std::to_string(nvalue);
 		ret += "'";
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::";
-			ret += etp->TypeName(false);
-		}
 	} else if (dynamic_cast<UUIDType*>(tp)) {
 		ret += "'";
 		rg.NextUUID(ret);
@@ -684,7 +654,7 @@ void StatementGenerator::StrBuildJSONElement(RandomGenerator &rg, std::string &r
 		case 10:
 		case 11:
 		case 12: { //string
-			std::uniform_int_distribution<int> slen(0, 10);
+			std::uniform_int_distribution<int> slen(0, 200);
 			std::uniform_int_distribution<uint8_t> chars(32, 127);
 			const int nlen = slen(rg.gen);
 
@@ -765,18 +735,15 @@ void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret
 			   dynamic_cast<EnumType*>(tp) || dynamic_cast<UUIDType*>(tp)) {
 		StrAppendBottomValue(rg, ret, tp);
 	} else if ((lc = dynamic_cast<LowCardinality*>(tp))) {
-		StrAppendBottomValue(rg, ret, lc->subtype);
+		StrAppendAnyValue(rg, ret, lc->subtype);
 	} else if ((nl = dynamic_cast<Nullable*>(tp))) {
 		StrAppendAnyValue(rg, ret, nl->subtype);
 	} else if (dynamic_cast<JSONType*>(tp)) {
-		std::uniform_int_distribution<int> dopt(1, 3), wopt(1, 3);
+		std::uniform_int_distribution<int> dopt(1, this->max_depth), wopt(1, this->max_width);
 
 		ret += "'";
 		StrBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), ret);
 		ret += "'";
-		if (rg.NextSmallNumber() < 8) {
-			ret += "::JSON";
-		}
 	} else if (dynamic_cast<DynamicType*>(tp)) {
 		uint32_t col_counter = 0;
 		SQLType *next = RandomNextType(rg, allow_nullable|allow_json, col_counter, nullptr);
@@ -804,6 +771,10 @@ void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret
 	} else {
 		//no nested types here
 		assert(0);
+	}
+	if (rg.NextSmallNumber() < 7) {
+		ret += "::";
+		ret += tp->TypeName(false);
 	}
 }
 
