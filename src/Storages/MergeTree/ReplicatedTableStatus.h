@@ -27,6 +27,7 @@ struct ReplicatedTableStatus
     UInt32 total_replicas;
     UInt32 active_replicas;
     UInt64 lost_part_count;
+    UInt32 readonly_start_time;
     String last_queue_update_exception;
     /// If the error has happened fetching the info from ZooKeeper, this field will be set.
     String zookeeper_exception;
