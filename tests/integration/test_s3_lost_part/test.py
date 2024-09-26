@@ -1,6 +1,7 @@
 # Tag no-fasttest: requires S3
 
 import logging
+import os
 import pytest
 import time
 from helpers.cluster import ClickHouseCluster
@@ -71,9 +72,7 @@ def check_replica_before_broke(node, table_name):
 
 
 def check_replica_after_broke_s3(node, table_name):
-    CANCEL_FETCH_MSG_LOG = (
-        "Cancel fetch for broken part"
-    )
+    CANCEL_FETCH_MSG_LOG = "Cancel fetch for broken part"
 
     error = node.query_and_get_error(f"SELECT * FROM {table_name}").strip()
     assert (
@@ -162,3 +161,68 @@ def test_s3_lost_part(start_cluster):
 
     check_replica_after_insert(replica1, table_name)
     check_replica_after_insert(replica2, table_name)
+
+
+def test_no_metadata_file(start_cluster):
+    table_name = "no_metadata_file"
+    create_replicated_table(replica1, table_name)
+    create_replicated_table(replica2, table_name)
+
+    replica1.query(f"INSERT INTO {table_name} VALUES (1)")
+    data = replica1.query(f"SELECT * FROM {table_name}").strip()
+    assert "1" == data
+
+    table_metadata_path = replica1.query(
+        f"SELECT path FROM system.parts WHERE table='{table_name}'"
+    ).strip()
+
+    original_path = table_metadata_path + "data.bin"
+    new_path = table_metadata_path + "old_data.bin"
+
+    replica1.exec_in_container(["bash", "-c", f"mv {original_path} {new_path}"])
+
+    error = replica1.query_and_get_error(f"SELECT * FROM {table_name}").strip()
+    assert "DB::Exception: Cannot open file" in error
+
+    FETCHED_PART_MSG = "Fetched part all_0_0_0 from"
+
+    assert replica1.wait_for_log_line(
+        regexp=FETCHED_PART_MSG, timeout=60, look_behind_lines=2000
+    )
+
+    data = replica1.query(f"SELECT * FROM {table_name}").strip()
+    assert "1" == data
+
+
+def test_broken_metadata_file(start_cluster):
+    table_name = "broken_metadata_file"
+    create_replicated_table(replica1, table_name)
+    create_replicated_table(replica2, table_name)
+
+    replica1.query(f"INSERT INTO {table_name} VALUES (1)")
+    data = replica1.query(f"SELECT * FROM {table_name}").strip()
+    assert "1" == data
+
+    table_metadata_path = replica1.query(
+        f"SELECT path FROM system.parts WHERE table='{table_name}'"
+    ).strip()
+
+    original_path = table_metadata_path + "data.bin"
+    new_path = table_metadata_path + "old_data.bin"
+
+    replica1.exec_in_container(["bash", "-c", f"echo 3 > {original_path}"])
+
+    error = replica1.query_and_get_error(f"SELECT * FROM {table_name}").strip()
+    assert "DB::Exception: Attempt to read after eof" in error
+
+    replica1.query(f"DETACH TABLE {table_name} SYNC")
+    replica1.query(f"ATTACH TABLE {table_name}")
+
+    FETCHED_PART_MSG = "Fetched part all_0_0_0 from"
+
+    assert replica1.wait_for_log_line(
+        regexp=FETCHED_PART_MSG, timeout=60, look_behind_lines=2000
+    )
+
+    data = replica1.query(f"SELECT * FROM {table_name}").strip()
+    assert "1" == data
