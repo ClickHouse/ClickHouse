@@ -32,6 +32,10 @@ namespace CurrentMetrics
     extern const Metric ParquetDecoderThreads;
     extern const Metric ParquetDecoderThreadsActive;
     extern const Metric ParquetDecoderThreadsScheduled;
+
+    extern const Metric ParquetDecoderIOThreads;
+    extern const Metric ParquetDecoderIOThreadsActive;
+    extern const Metric ParquetDecoderIOThreadsScheduled;
 }
 
 namespace DB
@@ -434,16 +438,20 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     const Block & header_,
     const FormatSettings & format_settings_,
     size_t max_decoding_threads_,
+    size_t max_io_threads_,
     size_t min_bytes_for_seek_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , max_decoding_threads(max_decoding_threads_)
+    , max_io_threads(max_io_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
 {
     if (max_decoding_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
+    if (supportPrefetch())
+        io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, max_io_threads);
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
@@ -451,6 +459,8 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
     is_stopped = true;
     if (pool)
         pool->wait();
+    if (io_pool)
+        io_pool->wait();
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()
@@ -461,7 +471,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     // Create arrow file adapter.
     // TODO: Make the adapter do prefetching on IO threads, based on the full set of ranges that
     //       we'll need to read (which we know in advance). Use max_download_threads for that.
-    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
 
     if (is_stopped)
         return;
@@ -680,7 +690,7 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
 }
 bool ParquetBlockInputFormat::supportPrefetch() const
 {
-    return max_decoding_threads == 1 && format_settings.parquet.enable_row_group_prefetch && !format_settings.parquet.use_native_reader;
+    return max_decoding_threads == 1 && max_io_threads > 0 && format_settings.parquet.enable_row_group_prefetch && !format_settings.parquet.use_native_reader;
 }
 
 std::shared_ptr<arrow::RecordBatchReader> ParquetBlockInputFormat::RowGroupPrefetchIterator::nextRowGroupReader()
@@ -953,7 +963,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                const FormatSettings & settings,
                const ReadSettings & read_settings,
                bool is_remote_fs,
-               size_t /* max_download_threads */,
+               size_t max_download_threads,
                size_t max_parsing_threads)
             {
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
@@ -962,6 +972,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                     sample,
                     settings,
                     max_parsing_threads,
+                    max_download_threads,
                     min_bytes_for_seek);
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
