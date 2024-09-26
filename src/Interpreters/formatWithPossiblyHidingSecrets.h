@@ -17,4 +17,5 @@ struct SecretHidingFormatSettings
 };
 
 String format(const SecretHidingFormatSettings & settings);
+
 }

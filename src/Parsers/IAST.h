@@ -238,9 +238,6 @@ public:
         }
 
         void writeIdentifier(const String & name) const;
-        // Quote identifier `name` even when `always_quote_identifiers` is false.
-        // If `identifier_quoting_style` is `IdentifierQuotingStyle::None`, quote it with `IdentifierQuotingStyle::Backticks`
-        void quoteIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -281,13 +278,7 @@ public:
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
     /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
-    String formatWithPossiblyHidingSensitiveData(
-        size_t max_length,
-        bool one_line,
-        bool show_secrets,
-        bool print_pretty_type_names,
-        bool always_quote_identifiers,
-        IdentifierQuotingStyle identifier_quoting_style) const;
+    String formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets, bool print_pretty_type_names) const;
 
     /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
       * behaviour is due to the fact such functions are called from Client which knows nothing about
@@ -296,12 +287,12 @@ public:
       */
     String formatForLogging(size_t max_length = 0) const
     {
-        return formatWithPossiblyHidingSensitiveData(max_length, true, false, false, false, IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(max_length, true, false, false);
     }
 
     String formatForErrorMessage() const
     {
-        return formatWithPossiblyHidingSensitiveData(0, true, false, false, false, IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(0, true, false, false);
     }
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
