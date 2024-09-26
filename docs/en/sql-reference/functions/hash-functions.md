@@ -704,7 +704,7 @@ ripeMD160('input')
 
 **Returned value**
 
-- A [UInt256](../data-types/int-uint.md) hash value where the 160-bit RIPEMD-160 hash is stored in the first 20 bytes. The remaining 12 bytes are zero-padded.
+- A [UInt256]((../data-types/int-uint.md)) hash value where the 160-bit RIPEMD-160 hash is stored in the first 20 bytes. The remaining 12 bytes are zero-padded.
 
 **Example**
 Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
