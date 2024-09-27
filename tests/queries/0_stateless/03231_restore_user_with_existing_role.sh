@@ -27,7 +27,7 @@ do_check()
     local replacements
     replacements="s/${user_a}/user_a/g; s/${role_b}/role_b/g"
     local check_info
-    check_info=$(${CLICKHOUSE_CLIENT} -mq "
+    check_info=$(${CLICKHOUSE_CLIENT} -nmq "
         SHOW CREATE USER ${user_a};
         SHOW GRANTS FOR ${user_a};
         SHOW CREATE ROLE ${role_b};
