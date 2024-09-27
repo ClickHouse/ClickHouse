@@ -2042,8 +2042,6 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::op
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "START {}", StackTrace().toString());
-
     auto result = getAnalysisResult();
 
     if (enable_remove_parts_from_snapshot_optimization)
@@ -2187,8 +2185,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     // Attach QueryIdHolder if needed
     if (query_id_holder)
         pipeline.setQueryIdHolder(std::move(query_id_holder));
-
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "END {}", StackTrace().toString());
 }
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type)

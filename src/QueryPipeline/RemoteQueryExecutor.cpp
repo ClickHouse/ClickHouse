@@ -365,8 +365,6 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
 
 void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
-
     if (sent_query || was_cancelled)
         return;
 
@@ -412,8 +410,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "");
-
 #if defined(OS_LINUX)
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)
@@ -483,8 +479,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "");
-
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
     {
