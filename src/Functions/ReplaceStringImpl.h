@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ARGUMENT_OUT_OF_BOUND;
-}
-
 struct ReplaceStringTraits
 {
     enum class Replace : uint8_t
