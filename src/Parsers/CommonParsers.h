@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <string_view>
+#include <unordered_set>
 
 namespace DB
 {
@@ -588,6 +589,8 @@ enum class Keyword : size_t
 std::string_view toStringView(Keyword type);
 
 const std::vector<String> & getAllKeyWords();
+
+const std::unordered_set<std::string> & getKeyWordSet();
 
 
 /** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
