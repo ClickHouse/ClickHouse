@@ -170,7 +170,7 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_
     }
 }
 
-void ExecutorTasks::fill(Queue & queue, Queue & async_queue)
+void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 {
     std::lock_guard lock(mutex);
 
