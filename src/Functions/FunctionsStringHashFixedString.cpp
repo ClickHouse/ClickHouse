@@ -327,7 +327,7 @@ REGISTER_FUNCTION(HashFixedStrings)
             "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
             R"(
 ┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │ 
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
 └───────────────────────────────────────────────────────────────┘
          )"}}});
     factory.registerFunction<FunctionMD4>(FunctionDocumentation{
