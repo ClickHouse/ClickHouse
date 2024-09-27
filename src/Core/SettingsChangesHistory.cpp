@@ -70,6 +70,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
             {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
             {"parallel_replicas_mode", "read_tasks", "read_tasks", "This setting was introduced as a part of making parallel replicas feature Beta"},
+            {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
         }
     },
     {"24.9",
@@ -90,7 +91,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"join_to_sort_maximum_table_rows", 0, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join"},
             {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
-            {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
         }
     },
     {"24.8",
