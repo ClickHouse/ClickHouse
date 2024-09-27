@@ -35,6 +35,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -261,7 +267,7 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
@@ -1232,6 +1238,12 @@ public:
         if (!cond_col)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
+
+        /// If result is Variant, always use generic implementation.
+        /// Using typed implementations may lead to incorrect result column type when
+        /// resulting Variant is created by use_variant_when_no_common_type.
+        if (isVariant(result_type))
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
 
         auto call = [&](const auto & types) -> bool
         {

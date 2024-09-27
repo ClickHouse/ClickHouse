@@ -1,7 +1,8 @@
 import os
 import io
-import sys
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 import time
 import pandas as pd
 
@@ -18,9 +19,14 @@ class ClickHouseClient:
         self.host = host
 
     def query(
-        self, query, connection_timeout=1500, settings=dict(), binary_result=False
+        self,
+        query,
+        connection_timeout=500,
+        settings=dict(),
+        binary_result=False,
+        with_retries=True,
     ):
-        NUMBER_OF_TRIES = 30
+        NUMBER_OF_TRIES = 30 if with_retries else 1
         DELAY = 10
 
         params = {
@@ -39,7 +45,8 @@ class ClickHouseClient:
             if r.status_code == 200:
                 return r.content if binary_result else r.text
             else:
-                print("ATTENTION: try #%d failed" % i)
+                if with_retries:
+                    print("ATTENTION: try #%d failed" % i)
                 if i != (NUMBER_OF_TRIES - 1):
                     print(query)
                     print(r.text)
@@ -47,12 +54,12 @@ class ClickHouseClient:
                 else:
                     raise ValueError(r.text)
 
-    def query_return_df(self, query, connection_timeout=1500):
+    def query_return_df(self, query, connection_timeout=500):
         data = self.query(query, connection_timeout)
         df = pd.read_csv(io.StringIO(data), sep="\t")
         return df
 
-    def query_with_data(self, query, data, connection_timeout=1500, settings=dict()):
+    def query_with_data(self, query, data, connection_timeout=500, settings=dict()):
         params = {
             "query": query,
             "timeout_before_checking_execution_speed": 120,
@@ -77,3 +84,17 @@ class ClickHouseClient:
             return result
         else:
             raise ValueError(r.text)
+
+
+def requests_session_with_retries(retries=3, timeout=180):
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    session.timeout = timeout
+    return session

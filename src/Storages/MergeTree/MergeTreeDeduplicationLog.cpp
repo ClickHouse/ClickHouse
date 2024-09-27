@@ -140,7 +140,7 @@ void MergeTreeDeduplicationLog::load()
 
 size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
 {
-    auto read_buf = disk->readFile(path);
+    auto read_buf = disk->readFile(path, getReadSettings());
 
     size_t total_entries = 0;
     while (!read_buf->eof())
@@ -341,15 +341,19 @@ void MergeTreeDeduplicationLog::shutdown()
     stopped = true;
     if (current_writer)
     {
+        /// If an error has occurred during finalize, we'd like to have the exception set for reset.
+        /// Otherwise, we'll be in a situation when a finalization didn't happen, and we didn't get
+        /// any error, causing logical error (see ~MemoryBuffer()).
         try
         {
             current_writer->finalize();
+            current_writer.reset();
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            current_writer.reset();
         }
-        current_writer.reset();
     }
 }
 

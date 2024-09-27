@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import re
 import sys
 from typing import Tuple
 
@@ -16,7 +17,6 @@ from commit_status_helper import (
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from ci_config import CI
-from ci_utils import Utils
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS, StatusType
 
@@ -25,12 +25,144 @@ TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
 }
 
+TRUSTED_CONTRIBUTORS = {
+    e.lower()
+    for e in [
+        "amosbird",
+        "azat",  # SEMRush
+        "bharatnc",  # Many contributions.
+        "cwurm",  # ClickHouse, Inc
+        "den-crane",  # Documentation contributor
+        "ildus",  # adjust, ex-pgpro
+        "nvartolomei",  # Seasoned contributor, CloudFlare
+        "taiyang-li",
+        "ucasFL",  # Amos Bird's friend
+        "thomoco",  # ClickHouse, Inc
+        "tonickkozlov",  # Cloudflare
+        "tylerhannan",  # ClickHouse, Inc
+        "tsolodov",  # ClickHouse, Inc
+        "justindeguzman",  # ClickHouse, Inc
+        "XuJia0210",  # ClickHouse, Inc
+    ]
+}
+
 OK_SKIP_LABELS = {CI.Labels.RELEASE, CI.Labels.PR_BACKPORT, CI.Labels.PR_CHERRYPICK}
 PR_CHECK = "PR Check"
 
 
+LABEL_CATEGORIES = {
+    "pr-backward-incompatible": ["Backward Incompatible Change"],
+    "pr-bugfix": [
+        "Bug Fix",
+        "Bug Fix (user-visible misbehavior in an official stable release)",
+        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
+    ],
+    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
+    "pr-build": [
+        "Build/Testing/Packaging Improvement",
+        "Build Improvement",
+        "Build/Testing Improvement",
+        "Build",
+        "Packaging Improvement",
+    ],
+    "pr-documentation": [
+        "Documentation (changelog entry is not required)",
+        "Documentation",
+    ],
+    "pr-feature": ["New Feature"],
+    "pr-improvement": ["Improvement"],
+    "pr-not-for-changelog": [
+        "Not for changelog (changelog entry is not required)",
+        "Not for changelog",
+    ],
+    "pr-performance": ["Performance Improvement"],
+    "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
+}
+
+CATEGORY_TO_LABEL = {
+    c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
+}
+
+
+def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
+    """The function checks the body to being properly formatted according to
+    .github/PULL_REQUEST_TEMPLATE.md, if the first returned string is not empty,
+    then there is an error."""
+    lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
+    lines = [re.sub(r"\s+", " ", line) for line in lines]
+
+    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
+    if [True for line in lines if re.match(rf"\AReverts {repo_name}#[\d]+\Z", line)]:
+        return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
+
+    category = ""
+    entry = ""
+    description_error = ""
+
+    i = 0
+    while i < len(lines):
+        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
+            i += 1
+            if i >= len(lines):
+                break
+            # Can have one empty line between header and the category
+            # itself. Filter it out.
+            if not lines[i]:
+                i += 1
+                if i >= len(lines):
+                    break
+            category = re.sub(r"^[-*\s]*", "", lines[i])
+            i += 1
+
+            # Should not have more than one category. Require empty line
+            # after the first found category.
+            if i >= len(lines):
+                break
+            if lines[i]:
+                second_category = re.sub(r"^[-*\s]*", "", lines[i])
+                description_error = (
+                    "More than one changelog category specified: "
+                    f"'{category}', '{second_category}'"
+                )
+                return description_error, category
+
+        elif re.match(
+            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+        ):
+            i += 1
+            # Can have one empty line between header and the entry itself.
+            # Filter it out.
+            if i < len(lines) and not lines[i]:
+                i += 1
+            # All following lines until empty one are the changelog entry.
+            entry_lines = []
+            while i < len(lines) and lines[i]:
+                entry_lines.append(lines[i])
+                i += 1
+            entry = " ".join(entry_lines)
+            # Don't accept changelog entries like '...'.
+            entry = re.sub(r"[#>*_.\- ]", "", entry)
+            # Don't accept changelog entries like 'Close #12345'.
+            entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
+        else:
+            i += 1
+
+    if not category:
+        description_error = "Changelog category is empty"
+    # Filter out the PR categories that are not for changelog.
+    elif "(changelog entry is not required)" in category:
+        pass  # to not check the rest of the conditions
+    elif category not in CATEGORY_TO_LABEL:
+        description_error, category = f"Category '{category}' is not valid", ""
+    elif not entry:
+        description_error = f"Changelog entry required for category '{category}'"
+
+    return description_error, category
+
+
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
-    if pr_user_login.lower() in CI.TRUSTED_CONTRIBUTORS:
+    if pr_user_login.lower() in TRUSTED_CONTRIBUTORS:
         logging.info("User '%s' is trusted", pr_user_login)
         return True
 
@@ -92,22 +224,20 @@ def main():
     commit = get_commit(gh, pr_info.sha)
     status = SUCCESS  # type: StatusType
 
-    description_error, category = Utils.check_pr_description(
-        pr_info.body, GITHUB_REPOSITORY
-    )
+    description_error, category = check_pr_description(pr_info.body, GITHUB_REPOSITORY)
     pr_labels_to_add = []
     pr_labels_to_remove = []
     if (
-        category in CI.CATEGORY_TO_LABEL
-        and CI.CATEGORY_TO_LABEL[category] not in pr_info.labels
+        category in CATEGORY_TO_LABEL
+        and CATEGORY_TO_LABEL[category] not in pr_info.labels
     ):
-        pr_labels_to_add.append(CI.CATEGORY_TO_LABEL[category])
+        pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
 
     for label in pr_info.labels:
         if (
-            label in CI.CATEGORY_TO_LABEL.values()
-            and category in CI.CATEGORY_TO_LABEL
-            and label != CI.CATEGORY_TO_LABEL[category]
+            label in CATEGORY_TO_LABEL.values()
+            and category in CATEGORY_TO_LABEL
+            and label != CATEGORY_TO_LABEL[category]
         ):
             pr_labels_to_remove.append(label)
 

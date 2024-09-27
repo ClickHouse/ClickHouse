@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 set -eo pipefail
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS view1;
 DROP TABLE IF EXISTS table1;
 CREATE TABLE table1 (number UInt64) ENGINE=MergeTree ORDER BY number SETTINGS index_granularity=1;

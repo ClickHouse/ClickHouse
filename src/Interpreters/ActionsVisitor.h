@@ -18,12 +18,6 @@ namespace DB
 class ASTExpressionList;
 class ASTFunction;
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
@@ -32,7 +26,7 @@ FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets);
 
 /** For ActionsVisitor
-  * A stack of ExpressionActions corresponding to nested lambda expressions.
+  * A stack of ActionsDAG corresponding to nested lambda expressions.
   * The new action should be added to the highest possible level.
   * For example, in the expression "select arrayMap(x -> x + column1 * column2, array1)"
   *  calculation of the product must be done outside the lambda expression (it does not depend on x),
