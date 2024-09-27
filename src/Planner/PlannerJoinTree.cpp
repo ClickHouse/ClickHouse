@@ -1574,8 +1574,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 plan.getCurrentDataStream(),
                 std::move(sort_description),
                 0 /*limit*/,
-                sort_settings,
-                settings[Setting::optimize_sorting_by_input_stream_properties]);
+                sort_settings);
             sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
             plan.addStep(std::move(sorting_step));
         };

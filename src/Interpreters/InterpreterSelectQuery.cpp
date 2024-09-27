@@ -1801,7 +1801,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                    auto add_sorting = [this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         SortDescription order_descr;
                         order_descr.reserve(key_names.size());
@@ -1813,9 +1813,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentDataStream(),
                             std::move(order_descr),
-                            0 /* LIMIT */,
-                            sort_settings,
-                            settings[Setting::optimize_sorting_by_input_stream_properties]);
+                            0 /* LIMIT */, sort_settings);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
                     };
@@ -2128,8 +2126,7 @@ static void executeMergeAggregatedImpl(
     const NamesAndTypesList & aggregation_keys,
     const NamesAndTypesLists & aggregation_keys_list,
     const AggregateDescriptions & aggregates,
-    bool should_produce_results_in_order_of_bucket_number,
-    SortDescription group_by_sort_description)
+    bool should_produce_results_in_order_of_bucket_number)
 {
     auto keys = aggregation_keys.getNames();
 
@@ -2169,7 +2166,6 @@ static void executeMergeAggregatedImpl(
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
         settings[Setting::aggregation_in_order_max_block_bytes],
-        std::move(group_by_sort_description),
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
 
     query_plan.addStep(std::move(merging_aggregated));
@@ -2857,10 +2853,6 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 {
     const Settings & settings = context->getSettingsRef();
 
-    /// Used to determine if we should use memory bound merging strategy.
-    auto group_by_sort_description
-        = !query_analyzer->useGroupingSetKey() ? getSortDescriptionFromGroupBy(getSelectQuery()) : SortDescription{};
-
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
         && (settings[Setting::distributed_aggregation_memory_efficient] || settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
     const bool parallel_replicas_from_merge_tree = storage->isMergeTree() && context->canUseParallelReplicasOnInitiator();
@@ -2875,8 +2867,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregationKeysList(),
         query_analyzer->aggregates(),
-        should_produce_results_in_order_of_bucket_number,
-        std::move(group_by_sort_description));
+        should_produce_results_in_order_of_bucket_number);
 }
 
 
@@ -3046,8 +3037,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 window.full_sort_description,
                 window.partition_by,
                 0 /* LIMIT */,
-                sort_settings,
-                settings[Setting::optimize_sorting_by_input_stream_properties]);
+                sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
@@ -3097,8 +3087,6 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
-    const Settings & settings = context->getSettingsRef();
-
     SortingStep::Settings sort_settings(*context);
 
     /// Merge the sorted blocks.
@@ -3106,8 +3094,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         query_plan.getCurrentDataStream(),
         output_order_descr,
         limit,
-        sort_settings,
-        settings[Setting::optimize_sorting_by_input_stream_properties]);
+        sort_settings);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
@@ -3162,8 +3149,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
             limits,
             limit_for_distinct,
             columns,
-            pre_distinct,
-            settings[Setting::optimize_distinct_in_order]);
+            pre_distinct);
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
