@@ -3496,24 +3496,24 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             {
                 auto function = FunctionFactory::instance().get(function_name, context);
 
-                const auto * tuple_type = typeid_cast<const DataTypeTuple *>(node.result_type.get());
-                bool ingore_check_for_tuple =
-                    tuple_type && tuple_type->haveExplicitNames();
-
                 node.function_base = function->build(arguments);
                 node.function = node.function_base->prepare(arguments);
                 node.is_function_compiled = false;
 
-                auto type_to_check = node.result_type;
-                if (ingore_check_for_tuple)
-                    type_to_check = std::make_shared<DataTypeTuple>(tuple_type->getElements());
+                auto lhs_type = node.result_type;
+                if (const auto * lhs_tuple = typeid_cast<const DataTypeTuple *>(lhs_type.get()))
+                    lhs_type = std::make_shared<DataTypeTuple>(lhs_tuple->getElements());
 
-                if (!node.function_base->getResultType()->equals(*type_to_check))
+                auto rhs_type = node.function_base->getResultType();
+                if (const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(rhs_type.get()))
+                    rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
+
+                if (!lhs_type->equals(*lhs_type))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
                         function_name,
-                        node.function_base->getResultType()->getName(),
-                        node.result_type->getName());
+                        rhs_type->getName(),
+                        lhs_type->getName());
             }
         }
         else if (node.type == ActionType::ARRAY_JOIN)
