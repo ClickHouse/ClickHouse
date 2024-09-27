@@ -1890,7 +1890,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
 
-    if (virtual_row_conversion_)
+    /// Disable virtual row for FINAL.
+    if (virtual_row_conversion_ && !isQueryWithFinal())
         virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(*virtual_row_conversion_));
 
     return true;
