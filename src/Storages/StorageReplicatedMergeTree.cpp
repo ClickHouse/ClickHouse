@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include <atomic>
 #include <ranges>
 #include <chrono>
 
@@ -561,6 +562,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         if (!is_first_replica)
             createReplica(metadata_snapshot);
+
+        createNewZooKeeperNodes();
+        syncPinnedPartUUIDs();
+
+        if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
+            createTableSharedID();
+
+
     }
     catch (...)
     {
@@ -568,12 +577,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         dropIfEmpty();
         throw;
     }
-
-    createNewZooKeeperNodes();
-    syncPinnedPartUUIDs();
-
-    if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
-        createTableSharedID();
 
     initialization_done = true;
 }
@@ -2127,7 +2130,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
-            checkPartChecksumsAndCommit(transaction, part);
+            checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
@@ -7095,6 +7098,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
     res.active_replicas = 0;
     res.lost_part_count = 0;
     res.last_queue_update_exception = getLastQueueUpdateException();
+    res.readonly_start_time = readonly_start_time.load(std::memory_order_relaxed);
 
     if (with_zk_fields && !res.is_session_expired)
     {

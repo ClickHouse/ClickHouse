@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsWriteFormat.h>
+#include <Core/ParallelReplicasMode.h>
 #include <base/types.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
@@ -64,6 +65,7 @@ class WriteBuffer;
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
     M(CLASS_NAME, LogQueriesType) \
@@ -77,6 +79,7 @@ class WriteBuffer;
     M(CLASS_NAME, ORCCompression) \
     M(CLASS_NAME, OverflowMode) \
     M(CLASS_NAME, OverflowModeGroupBy) \
+    M(CLASS_NAME, ParallelReplicasMode) \
     M(CLASS_NAME, ParallelReplicasCustomKeyFilterType) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
