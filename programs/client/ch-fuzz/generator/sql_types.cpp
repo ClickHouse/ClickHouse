@@ -534,9 +534,9 @@ void StatementGenerator::StrAppendMap(RandomGenerator &rg, std::string &ret, Map
 		if (i != 0) {
 			ret += ", ";
 		}
-		StrAppendAnyValue(rg, ret, mt->key);
+		StrAppendAnyValueInternal(rg, ret, mt->key);
 		ret += ",";
-		StrAppendAnyValue(rg, ret, mt->value);
+		StrAppendAnyValueInternal(rg, ret, mt->value);
 	}
 	ret += ")";
 }
@@ -549,7 +549,7 @@ void StatementGenerator::StrAppendArray(RandomGenerator &rg, std::string &ret, A
 		if (i != 0) {
 			ret += ", ";
 		}
-		StrAppendAnyValue(rg, ret, at->subtype);
+		StrAppendAnyValueInternal(rg, ret, at->subtype);
 	}
 	ret += "]";
 }
@@ -560,13 +560,13 @@ void StatementGenerator::StrAppendTuple(RandomGenerator &rg, std::string &ret, T
 		if (i != 0) {
 			ret += ", ";
 		}
-		StrAppendAnyValue(rg, ret, at->subtypes[i].subtype);
+		StrAppendAnyValueInternal(rg, ret, at->subtypes[i].subtype);
 	}
 	ret += ")";
 }
 
 void StatementGenerator::StrAppendVariant(RandomGenerator &rg, std::string &ret, VariantType *vtp) {
-	StrAppendAnyValue(rg, ret, rg.PickRandomlyFromVector(vtp->subtypes));
+	StrAppendAnyValueInternal(rg, ret, rg.PickRandomlyFromVector(vtp->subtypes));
 }
 
 void StatementGenerator::StrBuildJSONArray(RandomGenerator &rg, const int jdepth, const int jwidth, std::string &ret) {
@@ -720,7 +720,7 @@ void StatementGenerator::StrBuildJSON(RandomGenerator &rg, const int jdepth, con
 	ret += "}";
 }
 
-void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret, SQLType *tp) {
+void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator &rg, std::string &ret, SQLType *tp) {
 	MapType *mt;
 	Nullable *nl;
 	ArrayType *at;
@@ -735,9 +735,9 @@ void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret
 			   dynamic_cast<EnumType*>(tp) || dynamic_cast<UUIDType*>(tp)) {
 		StrAppendBottomValue(rg, ret, tp);
 	} else if ((lc = dynamic_cast<LowCardinality*>(tp))) {
-		StrAppendAnyValue(rg, ret, lc->subtype);
+		StrAppendAnyValueInternal(rg, ret, lc->subtype);
 	} else if ((nl = dynamic_cast<Nullable*>(tp))) {
-		StrAppendAnyValue(rg, ret, nl->subtype);
+		StrAppendAnyValueInternal(rg, ret, nl->subtype);
 	} else if (dynamic_cast<JSONType*>(tp)) {
 		std::uniform_int_distribution<int> dopt(1, this->max_depth), wopt(1, this->max_width);
 
@@ -748,7 +748,7 @@ void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret
 		uint32_t col_counter = 0;
 		SQLType *next = RandomNextType(rg, allow_nullable|allow_json, col_counter, nullptr);
 
-		StrAppendAnyValue(rg, ret, next);
+		StrAppendAnyValueInternal(rg, ret, next);
 		delete next;
 	} else if (this->depth == this->max_depth) {
 		ret += "1";
@@ -772,6 +772,10 @@ void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret
 		//no nested types here
 		assert(0);
 	}
+}
+
+void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret, SQLType *tp) {
+	StrAppendAnyValueInternal(rg, ret, tp);
 	if (rg.NextSmallNumber() < 7) {
 		ret += "::";
 		ret += tp->TypeName(false);

@@ -3,6 +3,7 @@
 #include "random_generator.h"
 #include "sql_grammar.pb.h"
 
+#include <cstdint>
 #include <functional>
 #include <thread>
 
@@ -287,6 +288,9 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}},
 	{"detach_not_byte_identical_parts", TrueOrFalse},
 	{"exclude_deleted_rows_for_part_size_in_merge", TrueOrFalse},
+	{"index_granularity", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+	}},
 	{"index_granularity_bytes", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1024, 30 * 1024 * 1024));
 	}},

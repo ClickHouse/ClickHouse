@@ -486,7 +486,7 @@ const std::vector<CHFunction> CHFuncs = {
 	CHFunction(sql_query_grammar::SQLFunc::FUNCjavaHashUTF16LE, 0, 0, 1, 1),
 	CHFunction(sql_query_grammar::SQLFunc::FUNChiveHash, 0, 0, 1, 1),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCmetroHash64, 0, 0, 1, ulimited_params),
-	CHFunction(sql_query_grammar::SQLFunc::FUNCjumpConsistentHash, 0, 0, 1, 1),
+	CHFunction(sql_query_grammar::SQLFunc::FUNCjumpConsistentHash, 0, 0, 2, 2),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCkostikConsistentHash, 0, 0, 2, 2),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCripeMD160, 0, 0, 1, 1),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCmurmurHash2_32, 0, 0, 1, ulimited_params),

@@ -459,9 +459,11 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			next.idxs[idx.first] = idx.second;
 		}
 		next.projs.insert(t.projs.begin(), t.projs.end());
+		next.constrs.insert(t.constrs.begin(), t.constrs.end());
 		next.col_counter = t.col_counter;
 		next.idx_counter = t.idx_counter;
 		next.proj_counter = t.proj_counter;
+		next.constr_counter = t.constr_counter;
 		next.is_temp = t.is_temp;
 	}
 	if (next.IsMergeTreeFamily()) {

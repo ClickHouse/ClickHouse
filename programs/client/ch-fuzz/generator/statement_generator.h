@@ -94,6 +94,7 @@ private:
 	void StrAppendArray(RandomGenerator &rg, std::string &ret, ArrayType *at);
 	void StrAppendTuple(RandomGenerator &rg, std::string &ret, TupleType *at);
 	void StrAppendVariant(RandomGenerator &rg, std::string &ret, VariantType *vtp);
+	void StrAppendAnyValueInternal(RandomGenerator &rg, std::string &ret, SQLType *tp);
 	void StrAppendAnyValue(RandomGenerator &rg, std::string &ret, SQLType *tp);
 
 	void StrBuildJSONArray(RandomGenerator &rg, const int jdepth, const int jwidth, std::string &ret);
