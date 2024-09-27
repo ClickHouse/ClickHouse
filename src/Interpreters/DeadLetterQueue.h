@@ -8,20 +8,8 @@
 
 /// should be called ...Log for uniformity
 
-// event_time,
-// database,
-// table,
-// topic,
-// partition,
-// offset,
-// raw_message,
-// error
-
 namespace DB
 {
-
-
-
 
 struct DeadLetterQueueElement
 {

@@ -168,7 +168,7 @@ Chunk RabbitMQSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
-        switch(handle_error_mode)
+        switch (handle_error_mode)
         {
         case ExtStreamingHandleErrorMode::STREAM:
         case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
