@@ -56,9 +56,14 @@ def test_ddl_worker_replicas(started_cluster):
         assert len(parts[2]) != 0
 
     node4.stop()
-    time.sleep(1)
 
-    result = node1.query(
+    # wait for node4 active path is removed
+    node1.query_with_retry(
+        sql = f"SELECT count() FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/node4:9000'", 
+        check_callback= lambda result: result == 0,
+    )
+    
+    result = node1.query_with_retry(
         f"SELECT name, value, ephemeralOwner FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/node4:9000'"
     ).strip()
 
