@@ -100,7 +100,6 @@ public:
     void getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const;
 
     Names getNames() const;
-    NameSet getNameSet() const;
     DataTypes getTypes() const;
 
     /// Remove columns which names are not in the `names`.

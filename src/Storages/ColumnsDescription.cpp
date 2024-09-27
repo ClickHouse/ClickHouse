@@ -206,7 +206,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             }
 
             if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
+                comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
                 codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
@@ -218,7 +218,11 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
 
             if (col_ast->statistics_desc)
+            {
                 statistics = ColumnStatisticsDescription::fromColumnDeclaration(*col_ast, type);
+                /// every column has name `x` here, so we have to set the name manually.
+                statistics.column_name = name;
+            }
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");

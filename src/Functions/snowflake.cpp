@@ -19,11 +19,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_deprecated_snowflake_conversion_functions;
-    extern const SettingsBool allow_nonconst_timezone_arguments;
-}
 
 namespace ErrorCodes
 {
@@ -57,7 +52,7 @@ public:
     }
 
     explicit FunctionDateTimeToSnowflake(ContextPtr context)
-        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
+        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }
@@ -109,8 +104,8 @@ public:
     }
 
     explicit FunctionSnowflakeToDateTime(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
-        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
+        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
+        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }
@@ -183,7 +178,7 @@ public:
     }
 
     explicit FunctionDateTime64ToSnowflake(ContextPtr context)
-        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
+        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }
@@ -243,8 +238,8 @@ public:
     }
 
     explicit FunctionSnowflakeToDateTime64(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
-        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef()[Setting::allow_deprecated_snowflake_conversion_functions])
+        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
+        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }

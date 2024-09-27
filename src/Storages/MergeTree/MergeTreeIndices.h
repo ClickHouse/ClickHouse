@@ -10,18 +10,16 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
-
-struct MergeTreeWriterSettings;
 
 namespace ErrorCodes
 {
@@ -94,13 +92,6 @@ public:
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
-
-    /// Special stuff for vector similarity indexes
-    /// - Returns vector of indexes of ranges in granule which are useful for query.
-    virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for non-vector-similarity indexes.");
-    }
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
@@ -176,9 +167,9 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
 
-    virtual bool isVectorSimilarityIndex() const { return false; }
+    virtual bool isVectorSearch() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
@@ -239,15 +230,17 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
-#if USE_USEARCH
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
+#ifdef ENABLE_ANNOY
+MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
+void annoyIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-MergeTreeIndexPtr legacyVectorSimilarityIndexCreator(const IndexDescription & index);
-void legacyVectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
+#ifdef ENABLE_USEARCH
+MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
+void usearchIndexValidator(const IndexDescription& index, bool attach);
+#endif
 
-MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription & index);
-void fullTextIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription& index);
+void fullTextIndexValidator(const IndexDescription& index, bool attach);
 
 }

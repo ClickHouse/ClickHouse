@@ -1,5 +1,5 @@
-#include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
+#include <Storages/StorageFactory.h>
 
 #include "config.h"
 
@@ -26,9 +26,6 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
-void registerStorageFuzzQuery(StorageFactory & factory);
-void registerStorageTimeSeries(StorageFactory & factory);
-
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -64,11 +61,7 @@ void registerStorageJDBC(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory);
 #endif
 
-#if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
-void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
-#endif
-
 void registerStorageRedis(StorageFactory & factory);
 
 
@@ -109,7 +102,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
+void registerStorages()
 {
     auto & factory = StorageFactory::instance();
 
@@ -133,9 +126,6 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLoop(factory);
-    registerStorageFuzzQuery(factory);
-    registerStorageTimeSeries(factory);
-
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif
@@ -171,13 +161,7 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageMySQL(factory);
     #endif
 
-    #if USE_MONGODB
-    if (use_legacy_mongodb_integration)
-        registerStorageMongoDBPocoLegacy(factory);
-    else
-        registerStorageMongoDB(factory);
-    #endif
-
+    registerStorageMongoDB(factory);
     registerStorageRedis(factory);
 
     #if USE_RDKAFKA

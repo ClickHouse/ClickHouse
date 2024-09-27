@@ -17,7 +17,9 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     {
         headers_started_sending = true;
 
-        if (!response.getChunkedTransferEncoding() && response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
+        if (response.getChunkedTransferEncoding())
+            setChunked();
+        else if (response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
         {
             /// In case there is no Content-Length we cannot use keep-alive,
             /// since there is no way to know when the server send all the
@@ -28,7 +30,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
         if (add_cors_header)
             response.set("Access-Control-Allow-Origin", "*");
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
 
         std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
         response.beginWrite(header);
@@ -81,11 +83,7 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
         return;
 
     if (!headers_started_sending)
-    {
-        if (compression_method != CompressionMethod::None)
-            response.set("Content-Encoding", toContentEncodingName(compression_method));
         startSendHeaders();
-    }
 
     writeHeaderSummary();
     writeExceptionCode();
@@ -107,13 +105,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         initialized = true;
 
         if (compression_method != CompressionMethod::None)
-        {
-            /// If we've already sent headers, just send the `Content-Encoding` down the socket directly
-            if (headers_started_sending)
-                socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-            else
-                response.set("Content-Encoding", toContentEncodingName(compression_method));
-        }
+            response.set("Content-Encoding", toContentEncodingName(compression_method));
 
         startSendHeaders();
         finishSendHeaders();
@@ -127,13 +119,13 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
+    UInt64 keep_alive_timeout_,
     const ProfileEvents::Event & write_event_)
     : HTTPWriteBuffer(response_.getSocket(), write_event_)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
+    , keep_alive_timeout(keep_alive_timeout_)
 {
-    if (response.getChunkedTransferEncoding())
-        setChunked();
 }
 
 
@@ -187,12 +179,8 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
         /// If no body data just send header
         startSendHeaders();
 
-        /// `finalizeImpl` must be idempotent, so set `initialized` here to not send stuff twice
         if (!initialized && offset() && compression_method != CompressionMethod::None)
-        {
-            initialized = true;
             socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-        }
 
         finishSendHeaders();
     }

@@ -2,10 +2,9 @@
 
 #if USE_MYSQL
 
-#    include <Core/Settings.h>
-#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
+#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Databases/DatabaseFactory.h>
@@ -26,10 +25,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 glob_expansion_max_elements;
-}
 
 namespace ErrorCodes
 {
@@ -243,7 +238,7 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
 
             if (engine_name == "MySQL")
             {
-                size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
+                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
                 configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
             }
             else
@@ -295,14 +290,8 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
             binlog_client,
             std::move(materialize_mode_settings));
     };
-
-    DatabaseFactory::EngineFeatures features{
-        .supports_arguments = true,
-        .supports_settings = true,
-        .supports_table_overrides = true,
-    };
-    factory.registerDatabase("MaterializeMySQL", create_fn, features);
-    factory.registerDatabase("MaterializedMySQL", create_fn, features);
+    factory.registerDatabase("MaterializeMySQL", create_fn);
+    factory.registerDatabase("MaterializedMySQL", create_fn);
 }
 
 }

@@ -128,15 +128,16 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
         ShuffleHosts shuffled_hosts = shuffleHosts();
 
         impl = std::make_unique<Coordination::ZooKeeper>(shuffled_hosts, args, zk_log);
-        auto node_idx = impl->getConnectedNodeIdx();
+        Int8 node_idx = impl->getConnectedNodeIdx();
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
 
+
         /// If the balancing strategy has an optimal node then it will be the first in the list
-        bool connected_to_suboptimal_node = node_idx && static_cast<UInt8>(*node_idx) != shuffled_hosts[0].original_index;
+        bool connected_to_suboptimal_node = node_idx != shuffled_hosts[0].original_index;
         bool respect_az = args.prefer_local_availability_zone && !args.client_availability_zone.empty();
         bool may_benefit_from_reconnecting = respect_az || args.get_priority_load_balancing.hasOptimalNode();
         if (connected_to_suboptimal_node && may_benefit_from_reconnecting)
@@ -144,7 +145,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             auto reconnect_timeout_sec = getSecondsUntilReconnect(args);
             LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
                            " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
-                      impl->getConnectedHostPort(), *node_idx, reconnect_timeout_sec);
+                      impl->getConnectedHostPort(), node_idx, reconnect_timeout_sec);
 
             auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool().createTask("ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
             {
@@ -153,15 +154,13 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                     LOG_DEBUG(log, "Trying to connect to a more optimal node {}", optimal_host.host);
                     ShuffleHosts node{optimal_host};
                     std::unique_ptr<Coordination::IKeeper> new_impl = std::make_unique<Coordination::ZooKeeper>(node, args, zk_log);
-
-                    auto new_node_idx = new_impl->getConnectedNodeIdx();
-                    chassert(new_node_idx.has_value());
+                    Int8 new_node_idx = new_impl->getConnectedNodeIdx();
 
                     /// Maybe the node was unavailable when getting AZs first time, update just in case
-                    if (args.availability_zone_autodetect && availability_zones[*new_node_idx].empty())
+                    if (args.availability_zone_autodetect && availability_zones[new_node_idx].empty())
                     {
-                        availability_zones[*new_node_idx] = new_impl->tryGetAvailabilityZone();
-                        LOG_DEBUG(log, "Got availability zone for {}: {}", optimal_host.host, availability_zones[*new_node_idx]);
+                        availability_zones[new_node_idx] = new_impl->tryGetAvailabilityZone();
+                        LOG_DEBUG(log, "Got availability zone for {}: {}", optimal_host.host, availability_zones[new_node_idx]);
                     }
 
                     optimal_impl = std::move(new_impl);
@@ -979,47 +978,18 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
     return removed_as_expected;
 }
 
-void ZooKeeper::removeRecursive(const std::string & path, uint32_t remove_nodes_limit)
+void ZooKeeper::removeRecursive(const std::string & path)
 {
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-    {
-        removeChildrenRecursive(path);
-        remove(path);
-        return;
-    }
-
-    check(tryRemoveRecursive(path, remove_nodes_limit), path);
+    removeChildrenRecursive(path);
+    remove(path);
 }
 
-Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit)
+void ZooKeeper::tryRemoveRecursive(const std::string & path)
 {
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-    {
-        tryRemoveChildrenRecursive(path);
-        return tryRemove(path);
-    }
-
-    auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::RemoveRecursiveResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->removeRecursive(path, remove_nodes_limit, std::move(callback));
-
-    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-    {
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::RemoveRecursive, path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future.get();
-        return response.error;
-    }
+    tryRemoveChildrenRecursive(path);
+    tryRemove(path);
 }
+
 
 namespace
 {
@@ -1555,7 +1525,7 @@ void ZooKeeper::setServerCompletelyStarted()
         zk->setServerCompletelyStarted();
 }
 
-std::optional<int8_t> ZooKeeper::getConnectedHostIdx() const
+Int8 ZooKeeper::getConnectedHostIdx() const
 {
     return impl->getConnectedNodeIdx();
 }
@@ -1574,10 +1544,10 @@ String ZooKeeper::getConnectedHostAvailabilityZone() const
 {
     if (args.implementation != "zookeeper" || !impl)
         return "";
-    std::optional<int8_t> idx = impl->getConnectedNodeIdx();
-    if (!idx)
+    Int8 idx = impl->getConnectedNodeIdx();
+    if (idx < 0)
         return "";     /// session expired
-    return availability_zones.at(*idx);
+    return availability_zones.at(idx);
 }
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
@@ -1648,14 +1618,6 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
     return request;
 }
 
-Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit)
-{
-    auto request = std::make_shared<Coordination::RemoveRecursiveRequest>();
-    request->path = path;
-    request->remove_nodes_limit = remove_nodes_limit;
-    return request;
-}
-
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {
     auto request = std::make_shared<Coordination::SetRequest>();
@@ -1723,10 +1685,11 @@ std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts
 
 String extractZooKeeperName(const String & path)
 {
+    static constexpr auto default_zookeeper_name = "default";
     if (path.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
     if (path[0] == '/')
-        return String(DEFAULT_ZOOKEEPER_NAME);
+        return default_zookeeper_name;
     auto pos = path.find(":/");
     if (pos != String::npos && pos < path.find('/'))
     {
@@ -1735,7 +1698,7 @@ String extractZooKeeperName(const String & path)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
         return zookeeper_name;
     }
-    return String(DEFAULT_ZOOKEEPER_NAME);
+    return default_zookeeper_name;
 }
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)

@@ -16,29 +16,39 @@
 #include <sys/resource.h>
 
 #if defined(OS_LINUX)
-#include <sys/prctl.h>
+    #include <sys/prctl.h>
 #endif
-#include <algorithm>
 #include <cerrno>
 #include <cstring>
-#include <iostream>
-#include <memory>
-#include <sstream>
 #include <unistd.h>
+
+#include <algorithm>
+#include <typeinfo>
+#include <iostream>
+#include <fstream>
+#include <memory>
+#include <base/scope_guard.h>
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
 #include <Poco/Pipe.h>
+
 #include <Common/ErrorHandlers.h>
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
+#include <base/getThreadId.h>
 #include <base/coverage.h>
+#include <base/sleep.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/PipeFDs.h>
+#include <Common/StackTrace.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -136,19 +146,10 @@ BaseDaemon::BaseDaemon() = default;
 
 BaseDaemon::~BaseDaemon()
 {
-    try
-    {
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-        signal_listener_thread.join();
-        HandledSignals::instance().reset();
-        SentryWriter::resetInstance();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(&logger());
-    }
-
-    disableLogging();
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    HandledSignals::instance().reset();
+    SentryWriter::resetInstance();
 }
 
 
@@ -449,8 +450,16 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    build_id = SymbolIndex::instance().getBuildIDHex();
+    String build_id_hex = SymbolIndex::instance().getBuildIDHex();
+    if (build_id_hex.empty())
+        build_id = "";
+    else
+        build_id = build_id_hex;
+#else
+    build_id = "";
 #endif
+
+    git_hash = GIT_HASH;
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -464,7 +473,7 @@ void BaseDaemon::logRevision() const
 {
     logger().information("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + std::string(GIT_HASH)
+        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
         + ", PID " + std::to_string(getpid()));
 }

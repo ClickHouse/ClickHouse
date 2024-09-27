@@ -1,29 +1,27 @@
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_STATISTICS;
+    extern const int ILLEGAL_STATISTICS;
 }
 
-StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
-    : IStatistics(description)
-    , data_type(removeNullable(data_type_))
+StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & stat_)
+    : IStatistics(stat_)
 {
 }
 
-void StatisticsTDigest::build(const ColumnPtr & column)
+void StatisticsTDigest::update(const ColumnPtr & column)
 {
-    for (size_t row = 0; row < column->size(); ++row)
+    size_t rows = column->size();
+
+    for (size_t row = 0; row < rows; ++row)
     {
-        if (column->isNullAt(row))
-            continue;
-
-        auto data = column->getFloat64(row);
-        t_digest.add(data, 1);
+        /// TODO: support more types.
+        Float64 value = column->getFloat64(row);
+        t_digest.add(value, 1);
     }
 }
 
@@ -37,33 +35,26 @@ void StatisticsTDigest::deserialize(ReadBuffer & buf)
     t_digest.deserialize(buf);
 }
 
-Float64 StatisticsTDigest::estimateLess(const Field & val) const
+Float64 StatisticsTDigest::estimateLess(Float64 val) const
 {
-    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    if (!val_as_float.has_value())
-        return 0;
-    return t_digest.getCountLessThan(*val_as_float);
+    return t_digest.getCountLessThan(val);
 }
 
-Float64 StatisticsTDigest::estimateEqual(const Field & val) const
+Float64 StatisticsTDigest::estimateEqual(Float64 val) const
 {
-    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    if (!val_as_float.has_value())
-        return 0;
-    return t_digest.getCountEqual(*val_as_float);
+    return t_digest.getCountEqual(val);
 }
 
-void tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
-    DataTypePtr inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber())
+    data_type = removeNullable(data_type);
+    if (!data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr)
 {
-    return std::make_shared<StatisticsTDigest>(description, data_type);
+    return std::make_shared<StatisticsTDigest>(stat);
 }
 
 }

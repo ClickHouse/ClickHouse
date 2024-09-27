@@ -14,17 +14,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
-#include <queue>
+#include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool external_table_strict_query;
-}
 
 namespace ErrorCodes
 {
@@ -297,7 +292,7 @@ String transformQueryForExternalDatabaseImpl(
     ContextPtr context,
     std::optional<size_t> limit)
 {
-    bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
+    bool strict = context->getSettingsRef().external_table_strict_query;
 
     auto select = std::make_shared<ASTSelectQuery>();
 

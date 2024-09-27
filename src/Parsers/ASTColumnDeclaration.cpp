@@ -1,6 +1,8 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTLiteral.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -13,6 +15,8 @@ ASTPtr ASTColumnDeclaration::clone() const
 
     if (type)
     {
+        // Type may be an ASTFunction (e.g. `create table t (a Decimal(9,0))`),
+        // so we have to clone it properly as well.
         res->type = type->clone();
         res->children.push_back(res->type);
     }
@@ -66,13 +70,17 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
 {
     frame.need_parens = false;
 
-    /// We have to always quote column names to avoid ambiguity with INDEX and other declarations in CREATE query.
-    format_settings.quoteIdentifier(name);
+    /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
+    format_settings.ostr << backQuote(name);
 
     if (type)
     {
         format_settings.ostr << ' ';
-        type->formatImpl(format_settings, state, frame);
+
+        FormatStateStacked type_frame = frame;
+        type_frame.indent = 0;
+
+        type->formatImpl(format_settings, state, type_frame);
     }
 
     if (null_modifier)

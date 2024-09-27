@@ -9,7 +9,7 @@ from env_helper import (
     S3_BUILDS_BUCKET_PUBLIC,
 )
 from s3_helper import S3Helper
-from ci_utils import GH
+from ci_utils import GHActions
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 
 
@@ -111,7 +111,7 @@ class CiMetadata:
         else:
             log_title = f"Storing workflow metadata: PR [{self.pr_number}], upstream PR [{self.upstream_pr_number}]"
 
-        GH.print_in_group(
+        GHActions.print_in_group(
             log_title,
             [f"run_id: {self.run_id}"],
         )

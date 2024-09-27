@@ -347,7 +347,7 @@ Result:
 ## intHash64
 
 Calculates a 64-bit hash code from any type of integer.
-This is a relatively fast non-cryptographic hash function of average quality for numbers.
+This is a relatively fast non-cryptographic hash function of average quality for numbers. 
 It works faster than [intHash32](#inthash32).
 
 **Syntax**
@@ -651,7 +651,7 @@ For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1
 
 ## kostikConsistentHash
 
-An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`.
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
 
 **Syntax**
 
@@ -672,7 +672,7 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Implementation details**
 
-It is efficient only if n <= 32768.
+It is efficient only if n <= 32768. 
 
 **Example**
 
@@ -903,7 +903,7 @@ SELECT xxHash64('')
 
 **Returned value**
 
-- Hash value. [UInt32/64](../data-types/int-uint.md).
+- Hash value. [UInt32/64](../data-types/int-uint.md).  
 
 :::note
 The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.

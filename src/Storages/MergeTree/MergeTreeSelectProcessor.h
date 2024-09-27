@@ -1,12 +1,9 @@
 #pragma once
-
-#include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeReadTask.h>
-#include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/IMergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <boost/core/noncopyable.hpp>
 
 
@@ -25,27 +22,11 @@ struct ChunkAndProgress
     bool is_finished = false;
 };
 
-class ParallelReadingExtension
+struct ParallelReadingExtension
 {
-public:
-    ParallelReadingExtension(
-        MergeTreeAllRangesCallback all_callback_,
-        MergeTreeReadTaskCallback callback_,
-        size_t number_of_current_replica_,
-        size_t total_nodes_count_);
-
-    void sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const;
-
-    std::optional<ParallelReadResponse>
-    sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
-
-    size_t getTotalNodesCount() const { return total_nodes_count; }
-
-private:
     MergeTreeAllRangesCallback all_callback;
     MergeTreeReadTaskCallback callback;
-    const size_t number_of_current_replica;
-    const size_t total_nodes_count;
+    size_t number_of_current_replica{0};
 };
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
@@ -67,7 +48,7 @@ public:
 
     ChunkAndProgress read();
 
-    void cancel() noexcept { is_cancelled = true; }
+    void cancel() { is_cancelled = true; }
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 

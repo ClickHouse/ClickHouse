@@ -1,8 +1,9 @@
+#include "hilbertEncode2DLUT.h"
+#include <Common/BitHelpers.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <limits>
 #include <optional>
 #include <Functions/FunctionFactory.h>
-#include <Common/BitHelpers.h>
-#include "hilbertEncode2DLUT.h"
 
 
 namespace DB
@@ -10,8 +11,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 
@@ -86,7 +87,7 @@ public:
             return col_res;
         }
 
-        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal number of UInt arguments of function {}: should be not more than 2 dimensions",
                         getName());
     }

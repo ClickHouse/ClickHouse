@@ -20,11 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool parallelize_output_from_storages;
-}
-
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
@@ -162,7 +157,7 @@ void IStorage::read(
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
+    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
     if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
@@ -242,7 +237,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
+ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const
 {
     return {};
 }
@@ -330,8 +325,9 @@ std::string PrewhereInfo::dump() const
         ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
     }
 
+    if (prewhere_actions)
     {
-        ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
+        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column
@@ -345,8 +341,10 @@ std::string FilterDAGInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-
-    ss << "actions " << actions.dumpDAG() << "\n";
+    if (actions)
+    {
+        ss << "actions " << actions->dumpDAG() << "\n";
+    }
 
     return ss.str();
 }
