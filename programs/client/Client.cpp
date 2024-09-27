@@ -1070,7 +1070,6 @@ bool Client::chFuzz()
             }
         }
     }
-    gen.FinishGenerator();
     return false;
 }
 

@@ -1216,18 +1216,23 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		const bool isview = at.est().table_name().table()[0] == 'v';
 		const uint32_t tname = static_cast<uint32_t>(std::stoul(at.est().table_name().table().substr(1)));
 
-		if (isview && success) {
+		if (isview) {
 			SQLView &v = this->views[tname];
 
-			assert(at.other_alters_size() == 0 && at.alter().has_modify_query());
-			v.ncols = v.staged_ncols;
-		} else if (!isview) {
+			for (int i = 0 ; i < at.other_alters_size() + 1; i++) {
+				const sql_query_grammar::AlterTableItem &ati = i == 0 ? at.alter() : at.other_alters(i - 1);
+
+				if (success && ati.has_add_column()) {
+					v.ncols = v.staged_ncols;
+				}
+			}
+		} else {
 			SQLTable &t = this->tables[tname];
 
 			for (int i = 0 ; i < at.other_alters_size() + 1; i++) {
 				const sql_query_grammar::AlterTableItem &ati = i == 0 ? at.alter() : at.other_alters(i - 1);
 
-				assert(!ati.has_modify_query());
+				assert(!ati.has_modify_query() && !ati.has_refresh());
 				if (ati.has_add_column()) {
 					const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.add_column().new_col().col().column().substr(1)));
 
@@ -1241,7 +1246,7 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 					t.cols.erase(cname);
 				} else if (ati.has_rename_column() && success) {
 					const uint32_t old_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().old_name().column().substr(1))),
-								new_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().column().substr(1)));
+								   new_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().column().substr(1)));
 
 					t.cols[new_cname] = std::move(t.cols[old_cname]);
 					t.cols[new_cname].cname = new_cname;
@@ -1289,14 +1294,6 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 					t.constrs.erase(pname);
 				}
 			}
-		}
-	}
-}
-
-void StatementGenerator::FinishGenerator() {
-	for (auto &entry : tables) {
-		for(auto &col : entry.second.cols) {
-			delete col.second.tp;
 		}
 	}
 }

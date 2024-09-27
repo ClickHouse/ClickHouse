@@ -13,14 +13,24 @@ using ColumnSpecial = enum ColumnSpecial {
 struct SQLColumn {
 public:
 	bool nullable = true;
-	ColumnSpecial special;
-	uint32_t cname;
-	SQLType *tp;
+	uint32_t cname = 0;
+	SQLType *tp = nullptr;
+	ColumnSpecial special = ColumnSpecial::NONE;
+
+	SQLColumn() = default;
+	SQLColumn(const SQLColumn&) = default;
+	SQLColumn(SQLColumn&&) = default;
+	SQLColumn& operator=(const SQLColumn&) = default;
+	SQLColumn& operator=(SQLColumn&&) = default;
+
+	~SQLColumn() {
+		delete tp;
+	}
 };
 
 struct SQLIndex {
 public:
-	uint32_t iname;
+	uint32_t iname = 0;
 };
 
 struct SQLBase {
@@ -36,7 +46,7 @@ public:
 struct SQLTable : SQLBase {
 public:
 	bool is_temp = false;
-	uint32_t tname, col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0;
+	uint32_t tname = 0, col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0;
 	std::map<uint32_t, SQLColumn> cols, staged_cols;
 	std::map<uint32_t, SQLIndex> idxs, staged_idxs;
 	std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
@@ -73,7 +83,7 @@ public:
 struct SQLView : SQLBase {
 public:
 	bool is_materialized = false, is_refreshable = false;
-	uint32_t vname, ncols = 1, staged_ncols;
+	uint32_t vname = 0, ncols = 1, staged_ncols = 1;
 };
 
 }

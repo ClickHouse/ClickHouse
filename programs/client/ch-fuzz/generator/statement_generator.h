@@ -63,9 +63,9 @@ const constexpr uint32_t allow_set = (1 << 0),
 
 typedef struct InsertEntry {
 	bool is_sign = false;
-	uint32_t cname1;
+	uint32_t cname1 = 0;
 	std::optional<uint32_t> cname2;
-	SQLType *tp;
+	SQLType *tp = nullptr;
 
 	InsertEntry(const bool isgn, const uint32_t c1, std::optional<uint32_t> c2, SQLType *t) :
 		is_sign(isgn), cname1(c1), cname2(c2), tp(t) {}
@@ -173,7 +173,6 @@ public:
 	int GenerateImportQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq3);
 
 	void UpdateGenerator(const sql_query_grammar::SQLQuery &sq, const bool success);
-	void FinishGenerator();
 };
 
 }
