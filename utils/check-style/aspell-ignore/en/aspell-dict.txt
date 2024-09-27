@@ -784,6 +784,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
+RIPEMD
 QATlib
 QEMU
 QTCreator
