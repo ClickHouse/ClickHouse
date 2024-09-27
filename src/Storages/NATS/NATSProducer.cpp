@@ -77,8 +77,6 @@ void NATSProducer::publish()
             break;
         }
     }
-
-    nats_ReleaseThreadMemory();
 }
 
 void NATSProducer::stopProducingTask()

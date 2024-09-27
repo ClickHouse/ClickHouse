@@ -61,6 +61,7 @@ void NATSHandler::runLoop()
     loop_state.store(Loop::CLOSED);
 
     LOG_DEBUG(log, "Background loop ended");
+    nats_ReleaseThreadMemory();
 }
 
 void NATSHandler::stopLoop()
