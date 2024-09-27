@@ -688,40 +688,6 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 └───────────────────────────────────────────────┘
 ```
 
-## RIPEMD160
-
-Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
-
-**Syntax**
-
-```sql
-RIPEMD160(input)
-```
-
-**Parameters**
-
-- `input`: Input string. [String](../data-types/string.md)
-
-**Returned value**
-
-- A [UInt256](../data-types/int-uint.md) hash value where the 160-bit RIPEMD-160 hash is stored in the first 20 bytes. The remaining 12 bytes are zero-padded.
-
-**Example**
-
-Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
-
-Query:
-
-```sql
-SELECT hex(RIPEMD160('The quick brown fox jumps over the lazy dog'));
-```
-
-```response
-┌─hex(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
-└───────────────────────────────────────────────────────────────┘
-```
-
 ## murmurHash2_32, murmurHash2_64
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.

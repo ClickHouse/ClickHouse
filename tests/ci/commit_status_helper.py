@@ -398,7 +398,7 @@ def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
 
 
 def get_repo(gh: Github) -> Repository:
-    global GH_REPO
+    global GH_REPO  # pylint:disable=global-statement
     if GH_REPO is not None:
         return GH_REPO
     GH_REPO = gh.get_repo(GITHUB_REPOSITORY)
