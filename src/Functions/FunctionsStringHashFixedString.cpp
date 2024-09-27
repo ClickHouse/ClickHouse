@@ -289,8 +289,7 @@ public:
             chars_to.resize(input_rows_count * Impl::length);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Impl::apply(
-                    reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+                Impl::apply(reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }
@@ -327,8 +326,8 @@ REGISTER_FUNCTION(HashFixedStrings)
         = {{"",
             "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
             R"(
-┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐               
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │          
+┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │ 
 └───────────────────────────────────────────────────────────────┘
          )"}}});
     factory.registerFunction<FunctionMD4>(FunctionDocumentation{
@@ -449,16 +448,15 @@ REGISTER_FUNCTION(HashFixedStrings)
 
 #    if USE_BLAKE3
     using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
-    factory.registerFunction<FunctionBLAKE3>(
-        FunctionDocumentation{
-            .description = R"(
+    factory.registerFunction<FunctionBLAKE3>(FunctionDocumentation{
+        .description = R"(
     Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
     This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
     The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
-            .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-            .categories{"Hash"}});
+        .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
+        .categories{"Hash"}});
 #    endif
 }
 #endif
