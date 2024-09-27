@@ -18,11 +18,34 @@ public:
 	ColumnSpecial special = ColumnSpecial::NONE;
 
 	SQLColumn() = default;
-	SQLColumn(const SQLColumn&) = default;
-	SQLColumn(SQLColumn&&) = default;
-	SQLColumn& operator=(const SQLColumn&) = default;
-	SQLColumn& operator=(SQLColumn&&) = default;
-
+	SQLColumn(const SQLColumn& c) {
+		this->nullable = c.nullable;
+		this->cname = c.cname;
+		this->special = c.special;
+		this->tp = TypeDeepCopy(c.tp);
+	}
+	SQLColumn(SQLColumn&& c) {
+		this->nullable = c.nullable;
+		this->cname = c.cname;
+		this->special = c.special;
+		this->tp = c.tp;
+		c.tp = nullptr;
+	}
+	SQLColumn& operator=(const SQLColumn& c) {
+		this->nullable = c.nullable;
+		this->cname = c.cname;
+		this->special = c.special;
+		this->tp = TypeDeepCopy(c.tp);
+		return *this;
+	}
+	SQLColumn& operator=(SQLColumn&& c) {
+		this->nullable = c.nullable;
+		this->cname = c.cname;
+		this->special = c.special;
+		this->tp = c.tp;
+		c.tp = nullptr;
+		return *this;
+	}
 	~SQLColumn() {
 		delete tp;
 	}

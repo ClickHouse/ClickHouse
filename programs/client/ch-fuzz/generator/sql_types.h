@@ -193,6 +193,42 @@ public:
 	~DynamicType() override = default;
 };
 
+class JSONType : public SQLType {
+public:
+	const std::string desc;
+	JSONType(const std::string &s) : desc(s) {}
+
+	const std::string TypeName(const bool escape) override {
+		std::string ret;
+
+		ret += "JSON";
+		for (const auto &c : desc) {
+			if (escape && c == '\'') {
+				ret += '\\';
+			}
+			ret += c;
+		}
+		return ret;
+	}
+	~JSONType() override = default;
+};
+
+class Nullable : public SQLType {
+public:
+	SQLType* subtype;
+	Nullable(SQLType* s) : subtype(s) {}
+
+	const std::string TypeName(const bool escape) override {
+		std::string ret;
+
+		ret += "Nullable(";
+		ret += subtype->TypeName(escape);
+		ret += ")";
+		return ret;
+	}
+	~Nullable() override { delete subtype; }
+};
+
 class LowCardinality : public SQLType {
 public:
 	SQLType* subtype;
@@ -209,6 +245,21 @@ public:
 	~LowCardinality() override { delete subtype; }
 };
 
+class ArrayType : public SQLType {
+public:
+	SQLType* subtype;
+	ArrayType(SQLType* s) : subtype(s) {}
+
+	const std::string TypeName(const bool escape) override {
+		std::string ret;
+
+		ret += "Array(";
+		ret += subtype->TypeName(escape);
+		ret += ")";
+		return ret;
+	}
+	~ArrayType() override { delete subtype; }
+};
 
 class MapType : public SQLType {
 public:
@@ -226,22 +277,6 @@ public:
 		return ret;
 	}
 	~MapType() override { delete key; delete value; }
-};
-
-class ArrayType : public SQLType {
-public:
-	SQLType* subtype;
-	ArrayType(SQLType* s) : subtype(s) {}
-
-	const std::string TypeName(const bool escape) override {
-		std::string ret;
-
-		ret += "Array(";
-		ret += subtype->TypeName(escape);
-		ret += ")";
-		return ret;
-	}
-	~ArrayType() override { delete subtype; }
 };
 
 class SubType {
@@ -346,42 +381,7 @@ public:
 	}
 };
 
-class JSONType : public SQLType {
-public:
-	const std::string desc;
-	JSONType(const std::string &s) : desc(s) {}
-
-	const std::string TypeName(const bool escape) override {
-		std::string ret;
-
-		ret += "JSON";
-		for (const auto &c : desc) {
-			if (escape && c == '\'') {
-				ret += '\\';
-			}
-			ret += c;
-		}
-		return ret;
-	}
-	~JSONType() override = default;
-};
-
-class Nullable : public SQLType {
-public:
-	SQLType* subtype;
-	Nullable(SQLType* s) : subtype(s) {}
-
-	const std::string TypeName(const bool escape) override {
-		std::string ret;
-
-		ret += "Nullable(";
-		ret += subtype->TypeName(escape);
-		ret += ")";
-		return ret;
-	}
-	~Nullable() override { delete subtype; }
-};
-
+SQLType* TypeDeepCopy(const SQLType *tp);
 std::tuple<SQLType*, sql_query_grammar::Integers> RandomIntType(RandomGenerator &rg);
 std::tuple<SQLType*, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator &rg);
 std::tuple<SQLType*, sql_query_grammar::Dates> RandomDateType(RandomGenerator &rg, const bool low_card);

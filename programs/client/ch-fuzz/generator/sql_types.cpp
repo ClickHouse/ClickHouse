@@ -3,6 +3,79 @@
 
 namespace chfuzz {
 
+SQLType*
+TypeDeepCopy(const SQLType *tp) {
+	const IntType *it;
+	const FloatType *ft;
+	const DateType *dt;
+	const DecimalType *decp;
+	const StringType *st;
+	const EnumType *et;
+	const DynamicType *ddt;
+	const JSONType *jt;
+	const Nullable *nl;
+	const LowCardinality *lc;
+	const ArrayType *at;
+	const MapType *mt;
+	const TupleType *ttp;
+	const VariantType *vtp;
+	const NestedType *ntp;
+
+	if (dynamic_cast<const BoolType*>(tp)) {
+		return new BoolType();
+	} else if ((it = dynamic_cast<const IntType*>(tp))) {
+		return new IntType(it->size, it->is_unsigned);
+	} else if ((ft = dynamic_cast<const FloatType*>(tp))) {
+		return new FloatType(ft->size);
+	} else if ((dt = dynamic_cast<const DateType*>(tp))) {
+		return new DateType(dt->has_time, dt->extended);
+	} else if ((decp = dynamic_cast<const DecimalType*>(tp))) {
+		return new DecimalType(decp->precision, decp->scale);
+	} else if ((st = dynamic_cast<const StringType*>(tp))) {
+		return new StringType(st->precision);
+	} else if (dynamic_cast<const UUIDType*>(tp)) {
+		return new UUIDType();
+	} else if ((et = dynamic_cast<const EnumType*>(tp))) {
+		return new EnumType(et->size, et->values);
+	} else if ((ddt = dynamic_cast<const DynamicType*>(tp))) {
+		return new DynamicType(ddt->ntypes);
+	} else if ((jt = dynamic_cast<const JSONType*>(tp))) {
+		return new JSONType(jt->desc);
+	} else if ((nl = dynamic_cast<const Nullable*>(tp))) {
+		return new Nullable(TypeDeepCopy(nl->subtype));
+ 	} else if ((lc = dynamic_cast<const LowCardinality*>(tp))) {
+		return new LowCardinality(TypeDeepCopy(lc->subtype));
+	} else if ((at = dynamic_cast<const ArrayType*>(tp))) {
+		return new ArrayType(TypeDeepCopy(at->subtype));
+	} else if ((mt = dynamic_cast<const MapType*>(tp))) {
+		return new MapType(TypeDeepCopy(mt->key), TypeDeepCopy(mt->value));
+	} else if ((ttp = dynamic_cast<const TupleType*>(tp))) {
+		std::vector<SubType> subtypes;
+
+		for (const auto &entry : ttp->subtypes) {
+			subtypes.push_back(SubType(entry.cname, TypeDeepCopy(entry.subtype)));
+		}
+		return new TupleType(std::move(subtypes));
+	} else if ((vtp = dynamic_cast<const VariantType*>(tp))) {
+		std::vector<SQLType*> subtypes;
+
+		for (const auto &entry : vtp->subtypes) {
+			subtypes.push_back(TypeDeepCopy(entry));
+		}
+		return new VariantType(std::move(subtypes));
+	} else if ((ntp = dynamic_cast<const NestedType*>(tp))) {
+		std::vector<NestedSubType> subtypes;
+
+		for (const auto &entry : ntp->subtypes) {
+			subtypes.push_back(NestedSubType(entry.cname, TypeDeepCopy(entry.subtype)));
+		}
+		return new NestedType(std::move(subtypes));
+	} else {
+		assert(0);
+	}
+	return nullptr;
+}
+
 std::tuple<SQLType*, sql_query_grammar::Integers>
 RandomIntType(RandomGenerator &rg) {
 	std::uniform_int_distribution<uint32_t> next_dist(1, 12);
@@ -262,11 +335,11 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 							}
 						}
 						this->depth++;
-						SQLType *jtp = RandomNextType(rg, ~(allow_nested|allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
 						desc += " ";
+						SQLType *jtp = RandomNextType(rg, ~(allow_nested|allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
 						desc += jtp->TypeName(false);
-						this->depth--;
 						delete jtp;
+						this->depth--;
 					}
 				}
 				if (nclauses) {

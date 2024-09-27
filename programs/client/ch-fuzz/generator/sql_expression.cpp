@@ -550,9 +550,9 @@ int StatementGenerator::GenerateExpression(RandomGenerator &rg, sql_query_gramma
 
 		this->depth++;
 		SQLType* tp = RandomNextType(rg, ~(allow_nested), col_counter, casexpr->mutable_type_name()->mutable_type());
+		delete tp;
 		this->GenerateExpression(rg, casexpr->mutable_expr());
 		this->depth--;
-		delete tp;
 	} else if (noption < 526) {
 		sql_query_grammar::UnaryExpr *uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
 
