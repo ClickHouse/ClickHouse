@@ -211,7 +211,7 @@ std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx,
     size_limits.overflow_mode = ctx.settings.distinct_overflow_mode;
 
     return std::make_unique<DistinctStep>(
-        ctx.input_streams.front(), size_limits, 0, column_names, pre_distinct_, false);
+        ctx.input_streams.front(), size_limits, 0, column_names, pre_distinct_);
 }
 
 std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(Deserialization & ctx)
