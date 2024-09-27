@@ -14,10 +14,11 @@
 #endif
 
 #if USE_SSL
+#    include <openssl/evp.h>
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
+#    include <openssl/ripemd.h>
 #    include <openssl/sha.h>
-#    include <openssl/evp.h>
 #endif
 
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
@@ -175,6 +176,23 @@ struct SHA512Impl256
         EVP_MD_CTX_destroy(md_ctx);
     }
 };
+
+struct RIPEMD160Impl
+{
+    static constexpr auto name = "RIPEMD160";
+    enum
+    {
+        length = RIPEMD160_DIGEST_LENGTH
+    };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        RIPEMD160_CTX ctx;
+        RIPEMD160_Init(&ctx);
+        RIPEMD160_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        RIPEMD160_Final(out_char_data, &ctx);
+    }
+};
 #endif
 
 #if USE_BLAKE3
@@ -297,7 +315,22 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
     using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
     using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
+    using FunctionRIPEMD160 = FunctionStringHashFixedString<RIPEMD160Impl>;
 
+    factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
+        .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
+        .syntax = "SELECT RIPEMD160(s);",
+        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
+        .returned_value
+        = "The RIPEMD160 hash of the given input string returned as a [FixedString(20)](../../sql-reference/data-types/fixedstring.md).",
+        .examples
+        = {{"",
+            "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
+            R"(
+┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐               
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │          
+└───────────────────────────────────────────────────────────────┘
+         )"}}});
     factory.registerFunction<FunctionMD4>(FunctionDocumentation{
         .description = R"(Calculates the MD4 hash of the given string.)",
         .syntax = "SELECT MD4(s);",
