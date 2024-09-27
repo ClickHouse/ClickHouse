@@ -349,7 +349,7 @@ struct ReplaceStringImpl
     {
         if (needle.empty())
         {
-            assert(input_rows_count == haystack_data.size() / n);
+            chassert(input_rows_count == haystack_data.size() / n);
             /// Since ColumnFixedString does not have a zero byte at the end, while ColumnString does,
             /// we need to split haystack_data into strings of length n, add 1 zero byte to the end of each string
             /// and then copy to res_data, ref: ColumnString.h and ColumnFixedString.h
