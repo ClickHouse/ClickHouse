@@ -113,7 +113,18 @@ def check_replica_after_insert(node, table_name):
     assert active_parts_name_after_drop == "all_1_1_0"
 
 
-def test_s3_lost_part(start_cluster):
+def assert_part_exists(node, table_name, expected_part):
+    def check_callback(actual_part):
+        return actual_part.strip() == expected_part
+
+    part_name = node.query_with_retry(
+        f"SELECT name FROM system.parts WHERE table='{table_name}'",
+        check_callback=check_callback,
+    )
+    assert part_name.strip() == expected_part
+
+
+def test_corrupted_blob(start_cluster):
     table_name = "no_key_found_disk_repl"
     create_replicated_table(replica1, table_name)
     create_replicated_table(replica2, table_name)
@@ -190,11 +201,13 @@ def test_no_metadata_file(start_cluster):
     error = replica1.query_and_get_error(f"SELECT * FROM {table_name}").strip()
     assert "DB::Exception: Cannot open file" in error
 
-    FETCHED_PART_MSG = "Fetched part all_0_0_0 from"
+    FETCHED_PART_MSG = f"Fetched part {part_name} from"
 
     assert replica1.wait_for_log_line(
         regexp=FETCHED_PART_MSG, timeout=60, look_behind_lines=2000
     )
+
+    assert_part_exists(replica1, table_name, part_name)
 
     data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert "1" == data
@@ -230,11 +243,13 @@ def test_broken_metadata_file(start_cluster):
     replica1.query(f"DETACH TABLE {table_name} SYNC")
     replica1.query(f"ATTACH TABLE {table_name}")
 
-    FETCHED_PART_MSG = "Fetched part all_0_0_0 from"
+    FETCHED_PART_MSG = f"Fetched part {part_name} from"
 
     assert replica1.wait_for_log_line(
         regexp=FETCHED_PART_MSG, timeout=60, look_behind_lines=2000
     )
+
+    assert_part_exists(replica1, table_name, part_name)
 
     data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert "1" == data
