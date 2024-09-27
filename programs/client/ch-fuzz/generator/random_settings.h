@@ -53,6 +53,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"distributed_group_by_no_merge", ZeroOneTwo},
 	{"enable_memory_bound_merging_of_aggregation_results", TrueOrFalse},
 	{"enable_multiple_prewhere_read_steps", TrueOrFalse},
+	{"exact_rows_before_limit", TrueOrFalse},
 	{"input_format_import_nested_json", TrueOrFalse},
 	{"filesystem_cache_segments_batch_size", [](RandomGenerator &rg, std::string &ret) {
 		std::vector<uint32_t> choices{0, 3, 10, 50};
@@ -217,6 +218,9 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"optimize_syntax_fuse_functions", TrueOrFalse},
 	{"optimize_trivial_approximate_count_query", TrueOrFalse},
 	{"output_format_parallel_formatting", TrueOrFalse},
+	{"output_format_pretty_highlight_digit_groups", TrueOrFalse},
+	{"output_format_pretty_row_numbers", TrueOrFalse},
+	{"output_format_write_statistics", TrueOrFalse},
 	{"page_cache_inject_eviction", TrueOrFalse},
 	{"parallel_distributed_insert_select", ZeroOneTwo},
 	{"partial_merge_join_optimizations", TrueOrFalse},
@@ -237,6 +241,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += "'";
 	}},
 	{"remote_filesystem_read_prefetch", TrueOrFalse},
+	{"rows_before_aggregation", TrueOrFalse},
 	{"session_timezone", [](RandomGenerator &rg, std::string &ret) {
 		const std::vector<std::string> &choices = {"America/Mazatlan", "America/Hermosillo", "Mexico/BajaSur", "Africa/Khartoum", "Africa/Juba"};
 		ret += "'";

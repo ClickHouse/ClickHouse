@@ -1976,6 +1976,60 @@ CONV_FN(Update, upt) {
   WhereStatementToString(ret, upt.where());
 }
 
+CONV_FN(RefreshInterval, ri) {
+  ret += std::to_string(ri.interval());
+  ret += " ";
+  ret += RefreshInterval_RefreshUnit_Name(ri.unit());
+}
+
+CONV_FN(RefreshableView, rv) {
+  ret += "REFRESH ";
+  ret += RefreshableView_RefreshPolicy_Name(rv.policy());
+  ret += " ";
+  RefreshIntervalToString(ret, rv.interval());
+  if (rv.policy() == RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY && rv.has_offset()) {
+    ret += " OFFSET ";
+    RefreshIntervalToString(ret, rv.offset());
+  }
+  ret += " RANDOMIZE FOR ";
+  RefreshIntervalToString(ret, rv.randomize());
+  if (rv.append()) {
+    ret += " APPEND";
+  }
+}
+
+CONV_FN(CreateView, create_view) {
+  const bool materialized = create_view.materialized();
+
+  ret += "CREATE ";
+  if (materialized) {
+    ret += "MATERIALIZED ";
+  }
+  ret += "VIEW ";
+  ExprSchemaTableToString(ret, create_view.est());
+  if (materialized) {
+    if (create_view.has_refresh()) {
+      ret += " ";
+      RefreshableViewToString(ret, create_view.refresh());
+    }
+    if (create_view.has_to_est()) {
+      ret += " TO ";
+      ExprSchemaTableToString(ret, create_view.to_est());
+    }
+    if (create_view.has_engine()) {
+      TableEngineToString(ret, create_view.engine());
+    }
+    if (create_view.has_refresh() && create_view.empty()) {
+      ret += " EMPTY";
+    }
+    if (create_view.populate()) {
+      ret += " POPULATE";
+    }
+  }
+  ret += " AS ";
+  SelectToString(ret, create_view.select());
+}
+
 CONV_FN(AddWhere, add) {
   if (add.has_col()) {
     ret += " AFTER ";
@@ -2155,6 +2209,10 @@ CONV_FN(AlterTableItem, alter) {
       ret += "MODIFY QUERY ";
       SelectToString(ret, alter.modify_query());
       break;
+    case AlterType::kRefresh:
+      ret += "MODIFY ";
+      RefreshableViewToString(ret, alter.refresh());
+      break;
     default:
       ret += "DELETE WHERE TRUE";
   }
@@ -2178,31 +2236,6 @@ CONV_FN(TopSelect, top) {
     ret += " FORMAT ";
     ret += OutFormat_Name(top.format()).substr(4);
   }
-}
-
-CONV_FN(CreateView, create_view) {
-  const bool materialized = create_view.materialized();
-
-  ret += "CREATE ";
-  if (materialized) {
-    ret += "MATERIALIZED ";
-  }
-  ret += "VIEW ";
-  ExprSchemaTableToString(ret, create_view.est());
-  if (materialized) {
-    if (create_view.has_to_est()) {
-      ret += " TO ";
-      ExprSchemaTableToString(ret, create_view.to_est());
-    }
-    if (create_view.has_engine()) {
-      TableEngineToString(ret, create_view.engine());
-    }
-    if (create_view.populate()) {
-      ret += " POPULATE";
-    }
-  }
-  ret += " AS ";
-  SelectToString(ret, create_view.select());
 }
 
 CONV_FN(SQLQueryInner, query) {

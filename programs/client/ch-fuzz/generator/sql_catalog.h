@@ -72,7 +72,7 @@ public:
 
 struct SQLView : SQLBase {
 public:
-	bool is_materialized = false;
+	bool is_materialized = false, is_refreshable = false;
 	uint32_t vname, ncols = 1, staged_ncols;
 };
 

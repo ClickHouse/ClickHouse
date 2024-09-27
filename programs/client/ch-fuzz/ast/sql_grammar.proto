@@ -2773,6 +2773,43 @@ message RemoveColumnSetting {
   required SettingList settings = 2;
 }
 
+message RefreshInterval {
+  enum RefreshUnit {
+    SECOND = 1;
+    MINUTE = 2;
+    HOUR = 3;
+    DAY = 4;
+    WEEK = 5;
+    MONTH = 6;
+    YEAR = 7;
+  }
+  required uint32 interval = 1;
+  required RefreshUnit unit = 2;
+}
+
+message RefreshableView {
+  enum RefreshPolicy {
+    EVERY = 1;
+    AFTER = 2;
+  }
+  required RefreshPolicy policy = 1;
+  required RefreshInterval interval = 2;
+  optional RefreshInterval offset = 3;
+  required RefreshInterval randomize = 4;
+  optional bool append = 5;
+}
+
+message CreateView {
+  optional bool materialized = 1;
+  required ExprSchemaTable est = 2;
+  optional RefreshableView refresh = 3;
+  optional ExprSchemaTable to_est = 4;
+  optional TableEngine engine = 5;
+  optional bool empty = 6;
+  optional bool populate = 7;
+  required Select select = 8;
+}
+
 message AlterTableItem {
   oneof alter_oneof {
     WhereStatement del = 1;
@@ -2805,6 +2842,7 @@ message AlterTableItem {
     ConstraintDef add_constraint = 28;
     Constraint remove_constraint = 29;
     Select modify_query = 30;
+    RefreshableView refresh = 31;
   }
 }
 
@@ -2812,15 +2850,6 @@ message AlterTable {
   required ExprSchemaTable est = 1;
   required AlterTableItem alter = 2;
   repeated AlterTableItem other_alters = 3;
-}
-
-message CreateView {
-  optional bool materialized = 1;
-  required ExprSchemaTable est = 2;
-  optional ExprSchemaTable to_est = 3;
-  optional TableEngine engine = 4;
-  optional bool populate = 5;
-  required Select select = 6;
 }
 
 message SQLQueryInner {

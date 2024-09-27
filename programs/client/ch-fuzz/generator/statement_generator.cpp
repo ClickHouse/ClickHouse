@@ -494,6 +494,27 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	return 0;
 }
 
+static void
+SetViewInterval(RandomGenerator &rg, sql_query_grammar::RefreshInterval *ri) {
+	ri->set_interval(rg.NextSmallNumber() - 1);
+	ri->set_unit(sql_query_grammar::RefreshInterval_RefreshUnit::RefreshInterval_RefreshUnit_SECOND);
+}
+
+int StatementGenerator::GenerateNextRefreshableView(RandomGenerator &rg, sql_query_grammar::RefreshableView *cv) {
+	const sql_query_grammar::RefreshableView_RefreshPolicy pol = rg.NextBool() ?
+		sql_query_grammar::RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY :
+		sql_query_grammar::RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_AFTER;
+
+	cv->set_policy(pol);
+	SetViewInterval(rg, cv->mutable_interval());
+	if (pol == sql_query_grammar::RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY && rg.NextBool()) {
+		SetViewInterval(rg, cv->mutable_offset());
+	}
+	SetViewInterval(rg, cv->mutable_randomize());
+	cv->set_append(rg.NextBool());
+	return 0;
+}
+
 int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_grammar::CreateView *cv) {
 	SQLView next;
 	const uint32_t vname = this->table_counter++;
@@ -524,6 +545,10 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 			cv->mutable_to_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 		}
 		cv->set_populate(rg.NextSmallNumber() < 4);
+		if ((next.is_refreshable = rg.NextBool())) {
+			GenerateNextRefreshableView(rg, cv->mutable_refresh());
+			cv->set_empty(rg.NextBool());
+		}
 	}
 	this->levels[this->current_level] = QueryLevel(this->current_level);
 	GenerateSelect(rg, false, next.ncols, next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
@@ -739,18 +764,31 @@ int StatementGenerator::GenerateNextExchangeTables(RandomGenerator &rg, sql_quer
 
 int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_grammar::AlterTable *at) {
 	sql_query_grammar::Table *tab = at->mutable_est()->mutable_table_name();
+	const uint32_t nalters = rg.NextBool() ? 1 : ((rg.NextMediumNumber() % 4) + 1);
 
 	if (!views.empty() && (tables.empty() || rg.NextBool())) {
 		SQLView &v = const_cast<SQLView &>(rg.PickValueRandomlyFromMap(this->views));
 
 		tab->set_table("v" + std::to_string(v.vname));
-		v.staged_ncols = (rg.NextMediumNumber() % 5) + 1;
-		this->levels[this->current_level] = QueryLevel(this->current_level);
-		GenerateSelect(rg, false, v.staged_ncols, v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
-					   at->mutable_alter()->mutable_modify_query());
+		for (uint32_t i = 0; i < nalters; i++) {
+			const uint32_t alter_refresh = 1 * static_cast<uint32_t>(v.is_refreshable),
+						   alter_query = 3,
+						   prob_space = alter_refresh + alter_query;
+			sql_query_grammar::AlterTableItem *ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
+			std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+			const uint32_t nopt = next_dist(rg.gen);
+
+			if (alter_refresh && nopt < (alter_refresh + 1)) {
+				GenerateNextRefreshableView(rg, ati->mutable_refresh());
+			} else {
+				v.staged_ncols = (rg.NextMediumNumber() % 5) + 1;
+				this->levels[this->current_level] = QueryLevel(this->current_level);
+				GenerateSelect(rg, false, v.staged_ncols, v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+							   ati->mutable_modify_query());
+			}
+		}
 	} else if (!tables.empty()) {
 		SQLTable &t = const_cast<SQLTable &>(rg.PickValueRandomlyFromMap(this->tables));
-		const uint32_t nalters = rg.NextBool() ? 1 : ((rg.NextMediumNumber() % 4) + 1);
 
 		tab->set_table("t" + std::to_string(t.tname));
 		for (uint32_t i = 0; i < nalters; i++) {
