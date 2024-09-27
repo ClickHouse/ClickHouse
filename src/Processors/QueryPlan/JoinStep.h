@@ -20,6 +20,7 @@ public:
         JoinPtr join_,
         size_t max_block_size_,
         size_t max_streams_,
+        NameSet required_output_,
         bool keep_left_read_in_order_);
 
     String getName() const override { return "Join"; }
@@ -48,6 +49,9 @@ private:
     JoinPtr join;
     size_t max_block_size;
     size_t max_streams;
+
+    NameSet required_output;
+    std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
 };
 

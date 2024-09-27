@@ -1641,6 +1641,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             std::move(join_algorithm),
             settings[Setting::max_block_size],
             settings[Setting::max_threads],
+            outer_scope_columns,
             false /*optimize_read_in_order*/);
         join_step->inner_table_selection_mode = settings[Setting::query_plan_join_inner_table_selection];
 

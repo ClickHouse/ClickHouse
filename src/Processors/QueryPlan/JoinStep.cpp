@@ -45,14 +45,13 @@ size_t getPrefixLength(const NameSet & prefix, const Names & names)
         if (!prefix.contains(names[i]))
             break;
     }
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: [{}] [{}] -> {}", __FILE__, __LINE__, fmt::join(names, ", "), fmt::join(prefix, ", "), i);
     return i;
 }
 
 std::vector<size_t> getPermutationToRotate(size_t prefix_size, size_t total_size)
 {
     std::vector<size_t> permutation(total_size);
-    size_t i = prefix_size;
+    size_t i = prefix_size % total_size;
     for (auto & elem : permutation)
     {
         elem = i;
@@ -92,8 +91,13 @@ JoinStep::JoinStep(
     JoinPtr join_,
     size_t max_block_size_,
     size_t max_streams_,
+    NameSet required_output_,
     bool keep_left_read_in_order_)
-    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
+    : join(std::move(join_))
+    , max_block_size(max_block_size_)
+    , max_streams(max_streams_)
+    , required_output(std::move(required_output_))
+    , keep_left_read_in_order(keep_left_read_in_order_)
 {
     updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
@@ -128,9 +132,20 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     const auto & result_names = pipeline->getHeader().getNames();
     size_t prefix_size = getPrefixLength(rhs_names, result_names);
-    if (0 < prefix_size && prefix_size < result_names.size())
+    if (!columns_to_remove.empty() || (0 < prefix_size && prefix_size < result_names.size()))
     {
         auto column_permutation = getPermutationToRotate(prefix_size, result_names.size());
+        size_t n = 0;
+        auto it = columns_to_remove.begin();
+        for (size_t i = 0; i < column_permutation.size(); ++i)
+        {
+            if (it != columns_to_remove.end() && *it == i)
+                ++it;
+            else
+                column_permutation[n++] = column_permutation[i];
+        }
+        column_permutation.resize(n);
+
         pipeline->addSimpleTransform([column_perm = std::move(column_permutation)](const Block & header)
         {
             return std::make_shared<ColumnPermuteTransform>(header, std::move(column_perm));
@@ -174,6 +189,15 @@ void JoinStep::updateOutputStream()
     if (swap_streams)
         result_header = rotateBlock(result_header, input_streams[1].header);
 
+    columns_to_remove.clear();
+    for (size_t i = 0; i < result_header.columns(); ++i)
+    {
+        if (required_output.empty())
+            break;
+        if (!required_output.contains(result_header.getByPosition(i).name))
+            columns_to_remove.insert(i);
+    }
+    result_header.erase(columns_to_remove);
     output_stream = DataStream { .header = result_header };
 }
 
