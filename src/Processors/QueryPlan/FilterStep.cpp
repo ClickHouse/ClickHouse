@@ -51,6 +51,10 @@ FilterStep::FilterStep(
     , remove_filter_column(remove_filter_column_)
 {
     actions_dag.removeAliasesForFilter(filter_column_name);
+    /// Removing aliases may result in unneeded ALIAS node in DAG.
+    /// This should not be an issue by itself,
+    /// but it might trigger an issue with duplicated names in Block after plan optimizations.
+    actions_dag.removeUnusedActions(false, false);
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
