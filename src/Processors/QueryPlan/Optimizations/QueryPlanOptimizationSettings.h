@@ -61,6 +61,9 @@ struct QueryPlanOptimizationSettings
     /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
     bool remove_redundant_sorting = true;
 
+    /// Convert Sorting to FinishSorting based on plan's sorting properties.
+    bool optimize_sorting_by_input_stream_properties = true;
+
     /// If aggregate-partitions-independently optimization is enabled.
     bool aggregate_partitions_independently = false;
 
