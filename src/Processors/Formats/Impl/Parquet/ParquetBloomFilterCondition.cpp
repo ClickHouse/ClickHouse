@@ -33,8 +33,7 @@ namespace
     uint64_t hashString(Field & field)
     {
         parquet::XxHasher hasher;
-        auto & string = field.safeGet<std::string>();
-        parquet::ByteArray ba { string };
+        parquet::ByteArray ba { field.safeGet<std::string>() };
         return hasher.Hash(&ba);
     }
 
