@@ -661,7 +661,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
-    pipeline.setConcurrencyControl(getContext()->getSettingsRef().use_concurrency_control);
+    pipeline.setConcurrencyControl(getContext()->getSettingsRef()[Setting::use_concurrency_control]);
     Block block;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
 

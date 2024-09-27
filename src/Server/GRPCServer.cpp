@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -1246,7 +1247,7 @@ namespace
         if (io.pipeline.pulling())
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
-            io.pipeline.setConcurrencyControl(query_context->getSettingsRef().use_concurrency_control);
+            io.pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
             auto check_for_cancel = [&]
             {
                 if (isQueryCancelled())

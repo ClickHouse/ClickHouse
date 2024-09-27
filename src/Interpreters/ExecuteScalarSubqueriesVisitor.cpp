@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -199,7 +200,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
-            io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef().use_concurrency_control);
+            io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
             while (block.rows() == 0 && executor.pull(block))
             {
             }

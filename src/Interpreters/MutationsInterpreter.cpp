@@ -52,6 +52,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsUInt64 max_block_size;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -214,7 +215,7 @@ bool isStorageTouchedByMutations(
     }
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
-    io.pipeline.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
+    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
