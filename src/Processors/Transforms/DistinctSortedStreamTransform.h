@@ -25,18 +25,17 @@ namespace DB
 /// For this, we don't clear sorting prefix value and hash table after a range is processed,
 /// only right before a new range processing
 ///
-class DistinctSortedChunkTransform : public ISimpleTransform
+class DistinctSortedStreamTransform : public ISimpleTransform
 {
 public:
-    DistinctSortedChunkTransform(
+    DistinctSortedStreamTransform(
         const Block & header_,
         const SizeLimits & output_size_limits_,
         UInt64 limit_hint_,
         const SortDescription & sorted_columns_descr_,
-        const Names & source_columns_,
-        bool sorted_stream_);
+        const Names & source_columns_);
 
-    String getName() const override { return (!sorted_stream ? "DistinctSortedChunkTransform" : "DistinctSortedStreamTransform"); }
+    String getName() const override { return "DistinctSortedStreamTransform"; }
 
 protected:
     void transform(Chunk & chunk) override;
@@ -72,7 +71,6 @@ private:
     ColumnRawPtrs other_columns; // used during processing
 
     MutableColumns prev_chunk_latest_key;
-    const bool sorted_stream = false;
 };
 
 }
