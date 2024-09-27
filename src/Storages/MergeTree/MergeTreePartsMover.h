@@ -6,7 +6,6 @@
 #include <base/scope_guard.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Disks/StoragePolicy.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MovesList.h>
 #include <Common/ActionBlocker.h>
 

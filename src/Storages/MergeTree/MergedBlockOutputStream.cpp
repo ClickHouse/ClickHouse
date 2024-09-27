@@ -394,9 +394,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     {
         auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, write_settings);
-        DB::writeIntText(*new_part->min_time_of_data_insert, *out);
+        DB::writeIntText(new_part->getMinTimeOfDataInsertion(), *out);
         DB::writeText(" ", *out);
-        DB::writeIntText(*new_part->max_time_of_data_insert, *out);
+        DB::writeIntText(new_part->getMaxTimeOfDataInsertion(), *out);
 
         out->preFinalize();
         written_files.emplace_back(std::move(out));

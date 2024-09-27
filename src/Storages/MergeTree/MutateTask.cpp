@@ -952,6 +952,15 @@ void finalizeMutatedPart(
     }
 
     {
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, context->getWriteSettings());
+        DB::writeIntText(new_data_part->getMinTimeOfDataInsertion(), *out);
+        DB::writeText(" ", *out);
+        DB::writeIntText(new_data_part->getMaxTimeOfDataInsertion(), *out);
+
+        written_files.emplace_back(std::move(out));
+    }
+
+    {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
         written_files.push_back(std::move(out_metadata));
