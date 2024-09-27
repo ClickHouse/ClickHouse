@@ -2294,7 +2294,7 @@ void TCPHandler::decreaseCancellationStatus(const std::string & log_message)
         state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
     }
 
-    if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
+    if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED && state.io.process_list_entry)
         CancellationChecker::getInstance().addToCancelledTasks(state.io.process_list_entry->getQueryStatus());
 
     auto current_status = magic_enum::enum_name(state.cancellation_status);
