@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 set input_format_orc_use_fast_decoder = 1;
 
