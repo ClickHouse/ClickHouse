@@ -99,7 +99,7 @@ Returns the current value of a custom setting.
         },
         .returned_value = "The setting's current value.",
         .examples = {
-            {"getSetting", "SET custom_a = 123; SELECT getSetting('custom_a');", "custom_a"},
+            {"getSetting", "SET custom_a = 123; SELECT getSetting('custom_a');", "123"},
         },
         .categories{"Other"}}, FunctionFactory::Case::Sensitive);
     factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Default>>(FunctionDocumentation{
