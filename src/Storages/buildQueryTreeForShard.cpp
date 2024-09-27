@@ -26,6 +26,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsUInt64 min_external_table_block_size_rows;
+    extern const SettingsUInt64 min_external_table_block_size_bytes;
+    extern const SettingsBool parallel_replicas_prefer_local_join;
+    extern const SettingsBool prefer_global_in_and_join;
+}
 
 namespace ErrorCodes
 {
@@ -182,7 +190,7 @@ private:
         if (!distributed_valid_for_rewrite)
             return;
 
-        auto distributed_product_mode = getSettings().distributed_product_mode;
+        auto distributed_product_mode = getSettings()[Setting::distributed_product_mode];
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
@@ -194,7 +202,7 @@ private:
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
-        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings().prefer_global_in_and_join) &&
+        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
             !in_function_or_join_stack.empty())
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
@@ -289,8 +297,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
-    size_t min_block_size_rows = mutable_context->getSettingsRef().min_external_table_block_size_rows;
-    size_t min_block_size_bytes = mutable_context->getSettingsRef().min_external_table_block_size_bytes;
+    size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
+    size_t min_block_size_bytes = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_bytes];
     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);
@@ -441,7 +449,7 @@ public:
     {
         if (auto * join_node = node->as<JoinNode>())
         {
-            bool prefer_local_join = getContext()->getSettingsRef().parallel_replicas_prefer_local_join;
+            bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
             bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
