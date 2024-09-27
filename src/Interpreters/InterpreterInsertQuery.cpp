@@ -71,7 +71,6 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
-    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
