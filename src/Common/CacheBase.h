@@ -5,6 +5,7 @@
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
 #include <Common/SIEVECachePolicy.h>
+#include <Common/logger_useful.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -43,10 +44,11 @@ public:
 
     static constexpr auto NO_MAX_COUNT = 0uz;
     static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
+    static constexpr auto DEFAULT_CACHE_POLICY = "SLRU";
 
     /// Use this ctor if you only care about the cache size but not internals like the cache policy.
     explicit CacheBase(size_t max_size_in_bytes, size_t max_count = NO_MAX_COUNT, double size_ratio = DEFAULT_SIZE_RATIO)
-        : CacheBase("SIEVE", max_size_in_bytes, max_count, size_ratio)
+        : CacheBase(DEFAULT_CACHE_POLICY, max_size_in_bytes, max_count, size_ratio)
     {
     }
 
@@ -57,9 +59,10 @@ public:
 
         if (cache_policy_name.empty())
         {
-            static constexpr auto default_cache_policy = "SIEVE";
-            cache_policy_name = default_cache_policy;
+            cache_policy_name = DEFAULT_CACHE_POLICY;
         }
+
+        LOG_TRACE(getLogger("CacheBase"), "Using cache policy: {}", cache_policy_name);
 
         if (cache_policy_name == "LRU")
         {

@@ -7,13 +7,15 @@
 
 namespace DB
 {
-/// Cache policy SIEVE evicts entries which are not used for a long time. Also see cache policy SLRU for reference.
-/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size) of that value.
-/// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
-/// Value weight should not change after insertion.
-/// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "SIEVE"
-/// and next parameters in the same order as in the constructor of the current class.
-/// For more details, see https://junchengyang.com/publication/nsdi24-SIEVE.pdf
+
+/* Cache policy SIEVE evicts entries which are not used for a long time.
+ * WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size) of that value.
+ * Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
+ * Value weight should not change after insertion.
+ * To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "SIEVE"
+ * and next parameters in the same order as in the constructor of the current class.
+ * For more details, see https://junchengyang.com/publication/nsdi24-SIEVE.pdf
+ */
 template <typename Key, typename Mapped, typename HashFunction = std::hash<Key>, typename WeightFunction = EqualWeightFunction<Mapped>>
 class SIEVECachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunction>
 {
@@ -23,11 +25,10 @@ public:
     using typename Base::KeyMapped;
     using typename Base::OnWeightLossFunction;
 
-    /** Initialize SIEVECachePolicy with max_size_in_bytes and max_count.
-     *  max_size_in_bytes == 0 means the cache accepts no entries.
-      * max_count == 0 means no elements size restrictions.
-      */
-    SIEVECachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
+    SIEVECachePolicy(
+        size_t max_size_in_bytes_,
+        size_t max_count_,
+        OnWeightLossFunction on_weight_loss_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
@@ -36,20 +37,11 @@ public:
         hand = queue.begin();
     }
 
-    size_t sizeInBytes() const override
-    {
-        return current_size_in_bytes;
-    }
+    size_t sizeInBytes() const override { return current_size_in_bytes; }
 
-    size_t count() const override
-    {
-        return cells.size();
-    }
+    size_t count() const override { return cells.size(); }
 
-    size_t maxSizeInBytes() const override
-    {
-        return max_size_in_bytes;
-    }
+    size_t maxSizeInBytes() const override { return max_size_in_bytes; }
 
     void setMaxCount(size_t max_count_) override
     {
@@ -76,12 +68,35 @@ public:
         auto it = cells.find(key);
         if (it == cells.end())
             return;
+
         auto & cell = it->second;
         current_size_in_bytes -= cell.size;
+
         if (hand == cell.queue_iterator)
             hand = std::next(cell.queue_iterator) == queue.end() ? queue.begin() : ++cell.queue_iterator;
+
         queue.erase(cell.queue_iterator);
         cells.erase(it);
+    }
+
+    void remove(std::function<bool(const Key & key, const MappedPtr & mapped)> predicate) override
+    {
+        for (auto it = cells.begin(); it != cells.end();)
+        {
+            if (predicate(it->first, it->second.value))
+            {
+                auto & cell = it->second;
+                current_size_in_bytes -= cell.size;
+
+                if (hand == cell.queue_iterator)
+                    hand = std::next(cell.queue_iterator) == queue.end() ? queue.begin() : ++cell.queue_iterator;
+
+                queue.erase(cell.queue_iterator);
+                it = cells.erase(it);
+            }
+            else
+                ++it;
+        }
     }
 
     MappedPtr get(const Key & key) override
@@ -94,16 +109,6 @@ public:
         cell.visited = true;
 
         return cell.value;
-    }
-
-    Cell getCell(const Key & key) override
-    {
-        auto it = cells.find(key);
-        if (it == cells.end())
-            return {};
-
-        Cell & cell = it->second;
-        return cell;
     }
 
     std::optional<KeyMapped> getWithKey(const Key & key) override
@@ -131,7 +136,6 @@ public:
             try
             {
                 cell.queue_iterator = queue.insert(queue.end(), key);
-                cell.visited = 0;
             }
             catch (...)
             {
@@ -164,39 +168,43 @@ private:
     using SIEVEQueue = std::list<Key>;
     using SIEVEQueueIterator = typename SIEVEQueue::iterator;
 
-    SIEVEQueue queue;
-    typename SIEVEQueue::iterator hand;
-    const size_t up = 1;
     struct Cell
     {
         MappedPtr value;
         size_t size;
-        bool visited;
+        bool visited = false;
         SIEVEQueueIterator queue_iterator;
     };
-
     using Cells = std::unordered_map<Key, Cell, HashFunction>;
 
+    SIEVEQueue queue;
+    typename SIEVEQueue::iterator hand;
     Cells cells;
 
     /// Total weight of values.
     size_t current_size_in_bytes = 0;
-    size_t max_size_in_bytes;
-    size_t max_count;
+    size_t max_size_in_bytes = 0;
+    size_t max_count = 0;
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
 
     void removeOverflow()
     {
+        /// SIEVE algorithm:
+        /// `hand` goes through the queue.
+        /// If it sees a cell with visited = true, it sets visited = false for it and continues.
+        /// If it sees a cell with visited = false, it evicts this cell.
+
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
 
-        while ((current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue_size > max_count)) && (queue_size > 0))
+        while (queue_size > 0
+               && (current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue_size > max_count)))
         {
             if (hand == queue.end())
             {
-                // Reset hand to the start if we reach the end
+                /// Reset hand to the start if we reach the end.
                 hand = queue.begin();
             }
 
@@ -212,7 +220,6 @@ private:
 
             if (cell.visited == false)
             {
-                // Evict the current item
                 current_size_in_bytes -= cell.size;
                 current_weight_lost += cell.size;
 
@@ -222,7 +229,6 @@ private:
             }
             else
             {
-                // Mark the current hand as visited
                 cell.visited = false;
                 ++hand;
             }
