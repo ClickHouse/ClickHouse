@@ -21,16 +21,20 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Planner/Utils.h>
-#include <Storages/StorageSet.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+
+#include <Planner/Utils.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageSet.h>
 
 #include <stack>
 
@@ -45,6 +49,9 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsSetOperationMode union_default_mode;
 }
 
 namespace ErrorCodes
@@ -513,6 +520,17 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             settings[Setting::max_query_size],
             settings[Setting::max_parser_depth],
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        {
+            SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+            SelectIntersectExceptQueryVisitor{data}.visit(table_function_ast);
+        }
+
+        {
+            /// Normalize SelectWithUnionQuery
+            NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(table_function_ast);
+        }
 
         auto query_tree_node = resolveTableFunction(table_function_ast, context);
         if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
