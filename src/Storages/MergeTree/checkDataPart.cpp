@@ -176,7 +176,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             /// Don't report part as corrupted in case of error like:
             /// DB::Exception: Failed to load serialization.json, with error Allocator: Cannot malloc 1.00 MiB.: , errno: 12, strerror: Cannot allocate memory.
-            if (auto * ee = dynamic_cast<const ErrnoException *>(&ex);
+            if (const auto * ee = dynamic_cast<const ErrnoException *>(&ex);
                 (ee && ee->getErrno() == ENOMEM) || ex.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
                 throw;
 
