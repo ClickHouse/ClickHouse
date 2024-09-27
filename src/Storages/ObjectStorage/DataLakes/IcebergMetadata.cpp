@@ -50,7 +50,7 @@ extern const int UNSUPPORTED_METHOD;
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    ConfigurationObservePtr configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -381,12 +381,12 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 
 }
 
-DataLakeMetadataPtr IcebergMetadata::create(
-    ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
-    ContextPtr local_context)
+DataLakeMetadataPtr
+IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObservePtr configuration, ContextPtr local_context)
 {
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
     LOG_DEBUG(getLogger("IcebergMetadata"), "Parse metadata {}", metadata_file_path);
     auto read_settings = local_context->getReadSettings();
     auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
@@ -411,12 +411,13 @@ DataLakeMetadataPtr IcebergMetadata::create(
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            manifest_list_file = std::filesystem::path(configuration->getPath()) / "metadata" / std::filesystem::path(path).filename();
+            manifest_list_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
             break;
         }
     }
 
-    return std::make_unique<IcebergMetadata>(object_storage, configuration, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema);
+    return std::make_unique<IcebergMetadata>(
+        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema);
 }
 
 /**
@@ -446,6 +447,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
  */
 Strings IcebergMetadata::getDataFiles() const
 {
+    auto configuration_ptr = configuration.lock();
     if (!data_files.empty())
         return data_files;
 
@@ -478,7 +480,7 @@ Strings IcebergMetadata::getDataFiles() const
     {
         const auto file_path = col_str->getDataAt(i).toView();
         const auto filename = std::filesystem::path(file_path).filename();
-        manifest_files.emplace_back(std::filesystem::path(configuration->getPath()) / "metadata" / filename);
+        manifest_files.emplace_back(std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename);
     }
 
     NameSet files;
@@ -612,9 +614,9 @@ Strings IcebergMetadata::getDataFiles() const
 
             const auto status = status_int_column->getInt(i);
             const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-            const auto pos = data_path.find(configuration->getPath());
+            const auto pos = data_path.find(configuration_ptr->getPath());
             if (pos == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration->getPath(), data_path);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration_ptr->getPath(), data_path);
 
             const auto file_path = data_path.substr(pos);
 

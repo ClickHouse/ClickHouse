@@ -124,12 +124,11 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::updateConfiguration(ContextPtr context)
+void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
 {
-    IObjectStorage::ApplyNewSettingsOptions options{ .allow_client_change = !configuration->isStaticConfiguration() };
-    object_storage->applyNewSettings(context->getConfigRef(), configuration->getTypeName() + ".", context, options);
+    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+    object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
-
 namespace
 {
 class ReadFromObjectStorageStep : public SourceStepWithFilter
@@ -243,7 +242,8 @@ private:
 };
 }
 
-ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
+ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(
+    ObjectStoragePtr,
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
@@ -262,7 +262,7 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    updateConfiguration(local_context);
+    configuration->update(object_storage, local_context);
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -270,8 +270,8 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    const auto read_from_format_info = prepareReadingFromFormat(
-        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+    const auto read_from_format_info = configuration->prepareReadingFromFormat(
+        object_storage, column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
@@ -300,7 +300,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    updateConfiguration(local_context);
+    configuration->update(object_storage, local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 

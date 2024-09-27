@@ -13,13 +13,13 @@ namespace DB
 class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationObservePtr = StorageObjectStorage::ConfigurationObservePtr;
 
     static constexpr auto name = "Hudi";
 
     HudiMetadata(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        ConfigurationObservePtr configuration_,
         ContextPtr context_);
 
     Strings getDataFiles() const override;
@@ -40,7 +40,7 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationPtr configuration,
+        ConfigurationObservePtr configuration,
         ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
@@ -48,7 +48,7 @@ public:
 
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const ConfigurationObservePtr configuration;
     mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;

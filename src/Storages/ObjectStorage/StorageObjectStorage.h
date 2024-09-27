@@ -25,6 +25,7 @@ class StorageObjectStorage : public IStorage
 public:
     class Configuration;
     using ConfigurationPtr = std::shared_ptr<Configuration>;
+    using ConfigurationObservePtr = std::weak_ptr<Configuration>;
     using ObjectInfo = RelativePathWithMetadata;
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
@@ -120,15 +121,7 @@ public:
         const ContextPtr & context);
 
 protected:
-    virtual void updateConfiguration(ContextPtr local_context);
-
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
-
-    virtual ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        bool supports_subset_of_columns,
-        ContextPtr local_context);
 
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -206,13 +199,25 @@ public:
     void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
     const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
 
+    virtual bool isDataLakeConfiguration() const { return false; }
+
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
+        ObjectStoragePtr object_storage,
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        ContextPtr local_context);
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+
 
     void assertInitialized() const;
 
