@@ -3,21 +3,22 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Poco/Net/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <IO/AzureBlobStorage/isRetryableAzureException.h>
-#include <Poco/Net/NetException.h>
 
 
 namespace CurrentMetrics
@@ -173,6 +174,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (const Poco::Exception & ex)
         {
+            /// Don't report part as corrupted in case of error like:
+            /// DB::Exception: Failed to load serialization.json, with error Allocator: Cannot malloc 1.00 MiB.: , errno: 12, strerror: Cannot allocate memory.
+            if (auto * ee = dynamic_cast<const ErrnoException *>(&ex);
+                (ee && ee->getErrno() == ENOMEM) || ex.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+                throw;
+
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, ex.message());
         }
         catch (...)
