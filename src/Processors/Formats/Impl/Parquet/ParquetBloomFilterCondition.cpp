@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/ParquetBloomFilterCondition.h>
+#include <iostream>
 
 #if USE_PARQUET
 
@@ -32,7 +33,8 @@ namespace
     uint64_t hashString(Field & field)
     {
         parquet::XxHasher hasher;
-        parquet::ByteArray ba { field.safeGet<std::string>() };
+        auto & string = field.safeGet<std::string>();
+        parquet::ByteArray ba { string };
         return hasher.Hash(&ba);
     }
 
@@ -64,12 +66,9 @@ namespace
         }
     }
 
-    ColumnPtr hash(const IColumn * data_column, const DataTypePtr & clickhouse_type)
+    std::vector<uint64_t> hash(const IColumn * data_column, const DataTypePtr & clickhouse_type)
     {
-        auto column_size = data_column->size();
-
-        auto hashes_column = ColumnUInt64::create(column_size);
-        ColumnUInt64::Container & hashes_internal_data = hashes_column->getData();
+        std::vector<uint64_t> hashes;
 
         for (size_t i = 0u; i < data_column->size(); i++)
         {
@@ -80,27 +79,20 @@ namespace
 
             if (converted_field.isNull())
             {
-                return nullptr;
+                return {};
             }
 
             if (auto hashed_value = hash(converted_field, clickhouse_type))
             {
-                hashes_internal_data.push_back(*hashed_value);
+                hashes.emplace_back(*hashed_value);
             }
         }
 
-        return hashes_column;
+        return hashes;
     }
 
-    bool maybeTrueOnBloomFilter(ColumnPtr hash_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
+    bool maybeTrueOnBloomFilter(const std::vector<uint64_t> & hashes, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
     {
-        const auto * uint64_column = typeid_cast<const ColumnUInt64 *>(hash_column.get());
-
-        if (!uint64_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash column must be UInt64.");
-
-        const ColumnUInt64::Container & hashes = uint64_column->getData();
-
         for (const auto hash : hashes)
         {
             bool found = bloom_filter->FindHash(hash);
@@ -219,7 +211,9 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
                 continue;
             }
 
-            bool maybe_true = maybeTrueOnBloomFilter(element.columns[0], column_index_to_column_bf.at(element.key_columns[0]), false);
+            const auto & bloom_filter = column_index_to_column_bf.at(element.key_columns[0]);
+
+            bool maybe_true = maybeTrueOnBloomFilter(element.hashes_per_column[0], bloom_filter, false);
 
             rpn_stack.emplace_back(maybe_true, true);
 
@@ -230,7 +224,7 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
                  || element.function == Function::FUNCTION_NOT_IN)
         {
             bool maybe_true = true;
-            for (auto column_index = 0u; column_index < element.columns.size(); column_index++)
+            for (auto column_index = 0u; column_index < element.hashes_per_column.size(); column_index++)
             {
                 // in case bloom filter is not present for this row group
                 // https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237
@@ -241,7 +235,7 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
                 }
 
                 bool column_maybe_contains = maybeTrueOnBloomFilter(
-                    element.columns[column_index],
+                    element.hashes_per_column[column_index],
                     column_index_to_column_bf.at(element.key_columns[column_index]),
                     false);
 
@@ -319,7 +313,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
     for (const auto & rpn_element : rpn)
     {
-        Columns columns;
+        ParquetBloomFilterCondition::ConditionElement::HashesForColumns hashes;
 
         if (rpn_element.function == RPNElement::FUNCTION_IN_RANGE
             || rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
@@ -384,11 +378,10 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            auto hashes_column = ColumnUInt64::create(1);
-            ColumnUInt64::Container & hashes_internal_data = hashes_column->getData();
-            hashes_internal_data.push_back(*hashed_value);
+            std::vector<uint64_t> hashes_for_column;
+            hashes_for_column.emplace_back(*hashed_value);
 
-            columns.emplace_back(std::move(hashes_column));
+            hashes.emplace_back(std::move(hashes_for_column));
 
             auto function = rpn_element.function == RPNElement::FUNCTION_IN_RANGE
                 ? ParquetBloomFilterCondition::ConditionElement::Function::FUNCTION_EQUALS
@@ -397,7 +390,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             std::vector<std::size_t> key_columns;
             key_columns.emplace_back(rpn_element.key_column);
 
-            condition_elements.emplace_back(function, std::move(columns), key_columns);
+            condition_elements.emplace_back(function, std::move(hashes), std::move(key_columns));
         }
         else if (rpn_element.function == RPNElement::FUNCTION_IN_SET
                  || rpn_element.function == RPNElement::FUNCTION_NOT_IN_SET)
@@ -448,43 +441,44 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                     column = nullable_column->getNestedColumnPtr();
                 }
 
-                auto hashes_column = hash(column.get(), actual_type);
+                auto hashes_for_column = hash(column.get(), actual_type);
 
-                if (!hashes_column)
+                if (hashes_for_column.empty())
                 {
                     continue;
                 }
 
-                columns.emplace_back(hashes_column);
+                hashes.emplace_back(hashes_for_column);
 
                 key_columns.push_back(indexes_mapping[i].key_index);
             }
 
-            if (columns.empty())
+            if (hashes.empty())
             {
-                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN, columns);
+                // todo maybe it is not necessary to copy push the hashes
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN, hashes);
                 continue;
             }
 
             auto function = RPNElement::FUNCTION_IN_SET == rpn_element.function ? Function::FUNCTION_IN : Function::FUNCTION_NOT_IN;
 
-            condition_elements.emplace_back(function, columns, key_columns);
+            condition_elements.emplace_back(function, hashes, key_columns);
         }
         else if (rpn_element.function == RPNElement::FUNCTION_NOT)
         {
-            condition_elements.emplace_back(Function::FUNCTION_NOT, columns);
+            condition_elements.emplace_back(Function::FUNCTION_NOT, hashes);
         }
         else if (rpn_element.function == RPNElement::FUNCTION_OR)
         {
-            condition_elements.emplace_back(Function::FUNCTION_OR, columns);
+            condition_elements.emplace_back(Function::FUNCTION_OR, hashes);
         }
         else if (rpn_element.function == RPNElement::FUNCTION_AND)
         {
-            condition_elements.emplace_back(Function::FUNCTION_AND, columns);
+            condition_elements.emplace_back(Function::FUNCTION_AND, hashes);
         }
         else
         {
-            condition_elements.emplace_back(Function::ALWAYS_TRUE, columns);
+            condition_elements.emplace_back(Function::ALWAYS_TRUE, hashes);
         }
     }
 

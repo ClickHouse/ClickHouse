@@ -41,11 +41,14 @@ public:
         };
 
         using ColumnPtr = IColumn::Ptr;
-        using Columns = std::vector<ColumnPtr>;
+        using HashesForColumns = std::vector<std::vector<uint64_t>>;
         using KeyColumns = std::vector<std::size_t>;
 
         Function function;
-        Columns columns;
+        // each entry represents a list of hashes per column
+        // suppose there are three columns with 2 rows each
+        // hashes_per_column.size() == 3 and hashes_per_column[0].size() == 2
+        HashesForColumns hashes_per_column;
         KeyColumns key_columns;
     };
 
