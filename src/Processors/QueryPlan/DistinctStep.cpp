@@ -2,7 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
-#include <Processors/Transforms/DistinctSortedChunkTransform.h>
+#include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -35,25 +35,12 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
     };
 }
 
-static SortDescription getSortDescription(const SortDescription & input_sort_desc, const Names& columns)
-{
-    SortDescription distinct_sort_desc;
-    for (const auto & sort_column_desc : input_sort_desc)
-    {
-        if (std::find(begin(columns), end(columns), sort_column_desc.column_name) == columns.end())
-            break;
-        distinct_sort_desc.emplace_back(sort_column_desc);
-    }
-    return distinct_sort_desc;
-}
-
 DistinctStep::DistinctStep(
     const DataStream & input_stream_,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_,
-    bool optimize_distinct_in_order_)
+    bool pre_distinct_)
     : ITransformingStep(
             input_stream_,
             input_stream_.header,
@@ -62,7 +49,6 @@ DistinctStep::DistinctStep(
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
-    , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
 }
 
@@ -81,10 +67,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (!pre_distinct)
         pipeline.resize(1);
 
-    if (optimize_distinct_in_order)
     {
-        const auto & input_stream = input_streams.back();
-        const SortDescription distinct_sort_desc = getSortDescription(input_stream.sort_description, columns);
         if (!distinct_sort_desc.empty())
         {
             /// pre-distinct for sorted chunks
@@ -96,18 +79,17 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                         if (stream_type != QueryPipelineBuilder::StreamType::Main)
                             return nullptr;
 
-                        return std::make_shared<DistinctSortedChunkTransform>(
+                        return std::make_shared<DistinctSortedStreamTransform>(
                             header,
                             set_size_limits,
                             limit_hint,
                             distinct_sort_desc,
-                            columns,
-                            input_stream.sort_scope == DataStream::SortScope::Stream);
+                            columns);
                     });
                 return;
             }
             /// final distinct for sorted stream (sorting inside and among chunks)
-            if (input_stream.sort_scope == DataStream::SortScope::Global)
+            else
             {
                 if (pipeline.getNumStreams() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
@@ -136,8 +118,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                                 return nullptr;
 
-                            return std::make_shared<DistinctSortedChunkTransform>(
-                                header, set_size_limits, limit_hint, distinct_sort_desc, columns, true);
+                            return std::make_shared<DistinctSortedStreamTransform>(
+                                header, set_size_limits, limit_hint, distinct_sort_desc, columns);
                         });
                     return;
                 }

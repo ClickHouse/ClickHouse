@@ -23,30 +23,6 @@ class DataStream
 public:
     Block header;
 
-    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
-    enum class SortScope : uint8_t
-    {
-        None   = 0,
-        Chunk  = 1, /// Separate chunks are sorted
-        Stream = 2, /// Each data steam is sorted
-        Global = 3, /// Data is globally sorted
-    };
-
-    /// It is not guaranteed that header has columns from sort_description.
-    SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::None;
-
-    /// Things which may be added:
-    /// * limit
-    /// * estimated rows number
-    /// * memory allocation context
-
-    bool hasEqualPropertiesWith(const DataStream & other) const
-    {
-        return sort_description == other.sort_description
-            && (sort_description.empty() || sort_scope == other.sort_scope);
-    }
-
     bool hasEqualHeaderWith(const DataStream & other) const
     {
         return blocksHaveEqualStructure(header, other.header);
@@ -91,6 +67,7 @@ public:
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
+    virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
     {

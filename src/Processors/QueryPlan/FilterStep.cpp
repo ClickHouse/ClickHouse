@@ -17,23 +17,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-static ITransformingStep::Traits getTraits(const ActionsDAG & expression, const Block & header, const SortDescription & sort_description, bool remove_filter_column, const String & filter_column_name)
+static ITransformingStep::Traits getTraits()
 {
-    bool preserves_sorting = expression.isSortingPreserved(header, sort_description, remove_filter_column ? filter_column_name : "");
-    if (remove_filter_column)
-    {
-        preserves_sorting &= std::find_if(
-                                 begin(sort_description),
-                                 end(sort_description),
-                                 [&](const auto & column_desc) { return column_desc.column_name == filter_column_name; })
-            == sort_description.end();
-    }
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = preserves_sorting,
+            .preserves_sorting = false,
         },
         {
             .preserves_number_of_rows = false,
@@ -53,7 +44,7 @@ FilterStep::FilterStep(
             &actions_dag_,
             filter_column_name_,
             remove_filter_column_),
-        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description, remove_filter_column_, filter_column_name_))
+        getTraits())
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
@@ -117,16 +108,6 @@ void FilterStep::updateOutputStream()
 
     if (!getDataStreamTraits().preserves_sorting)
         return;
-
-    FindAliasForInputName alias_finder(actions_dag);
-    const auto & input_sort_description = getInputStreams().front().sort_description;
-    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
-    {
-        const auto & original_column = input_sort_description[i].column_name;
-        const auto * alias_node = alias_finder.find(original_column);
-        if (alias_node)
-            output_stream->sort_description[i].column_name = alias_node->result_name;
-    }
 }
 
 void FilterStep::serialize(Serialization & ctx) const

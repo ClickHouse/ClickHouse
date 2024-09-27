@@ -17,14 +17,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-static ITransformingStep::Traits getTraits(const ActionsDAG & actions, const Block & header, const SortDescription & sort_description)
+static ITransformingStep::Traits getTraits(const ActionsDAG & actions)
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = actions.isSortingPreserved(header, sort_description),
+            .preserves_sorting = false,
         },
         {
             .preserves_number_of_rows = !actions.hasArrayJoin(),
@@ -36,7 +36,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAG acti
     : ITransformingStep(
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, actions_dag_),
-        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
+        getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
 }
@@ -85,16 +85,6 @@ void ExpressionStep::updateOutputStream()
 
     if (!getDataStreamTraits().preserves_sorting)
         return;
-
-    FindAliasForInputName alias_finder(actions_dag);
-    const auto & input_sort_description = getInputStreams().front().sort_description;
-    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
-    {
-        const auto & original_column = input_sort_description[i].column_name;
-        const auto * alias_node = alias_finder.find(original_column);
-        if (alias_node)
-            output_stream->sort_description[i].column_name = alias_node->result_name;
-    }
 }
 
 void ExpressionStep::serialize(Serialization & ctx) const
