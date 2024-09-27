@@ -28,6 +28,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_block_size;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -116,7 +117,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
         });
     }
 
-    builder.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
+    builder.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 

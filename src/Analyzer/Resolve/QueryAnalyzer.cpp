@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+    extern const SettingsBool use_concurrency_control;
 }
 
 
@@ -588,7 +589,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(context->getProgressCallback());
             io.pipeline.setProcessListElement(context->getProcessListElement());
-            io.pipeline.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
+            io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
             Block block;
 

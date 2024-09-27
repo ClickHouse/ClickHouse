@@ -100,6 +100,7 @@ namespace Setting
     extern const SettingsUInt64 unknown_packet_in_send_data;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool use_concurrency_control;
 }
 }
 
@@ -1110,7 +1111,7 @@ void TCPHandler::processOrdinaryQuery()
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
-        pipeline.setConcurrencyControl(query_context->getSettingsRef().use_concurrency_control);
+        pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         /// The following may happen:

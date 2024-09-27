@@ -452,7 +452,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingAsyncPipelineExecutor executor(pipeline);
-        pipeline.setConcurrencyControl(local_context->getSettingsRef().use_concurrency_control);
+        pipeline.setConcurrencyControl(local_context->getSettingsRef()[Setting::use_concurrency_control]);
         Block this_block;
 
         while (executor.pull(this_block))
@@ -589,7 +589,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingAsyncPipelineExecutor executor(pipeline);
-    pipeline.setConcurrencyControl(local_context->getSettingsRef().use_concurrency_control);
+    pipeline.setConcurrencyControl(local_context->getSettingsRef()[Setting::use_concurrency_control]);
     Block this_block;
 
     while (executor.pull(this_block))
