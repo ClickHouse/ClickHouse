@@ -268,9 +268,6 @@ Chunk RabbitMQSource::generateImpl()
                                 .event_time_microseconds = timeInMicroseconds(time_now),
                                 .database_name = storage_id.database_name,
                                 .table_name = storage_id.table_name,
-                                // .topic_name = "",  //
-                                // .partition = 0, // message.channel_id,
-                                // .offset = 0, // message.message_id,
                                 .raw_message = message.message,
                                 .error = exception_message.value(),
                                 .details = DeadLetterQueueElement::RabbitMQDetails{
