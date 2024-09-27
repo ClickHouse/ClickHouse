@@ -3197,34 +3197,6 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
     return it->second;
 }
 
-FindAliasForInputName::FindAliasForInputName(const ActionsDAG & actions_)
-{
-    const auto & actions_outputs = actions_.getOutputs();
-    for (const auto * output_node : actions_outputs)
-    {
-        /// find input node which corresponds to alias
-        const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
-        }
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
-            /// node can have several aliases but we consider only the first one
-            index.emplace(node->result_name, output_node);
-    }
-}
-
-const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
-{
-    const auto it = index.find(name);
-    if (it == index.end())
-        return nullptr;
-
-    return it->second;
-}
-
 static const ColumnSet * tryGetColumnSet(const ColumnPtr & colunm)
 {
     const IColumn * maybe_set = colunm.get();
