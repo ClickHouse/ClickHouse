@@ -43,6 +43,14 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool force_remove_data_recursively_on_drop;
+    extern const SettingsBool fsync_metadata;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
@@ -251,7 +259,7 @@ void DatabaseOnDisk::createTable(
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
         out.next();
-        if (settings.fsync_metadata)
+        if (settings[Setting::fsync_metadata])
             out.sync();
         out.close();
     }
@@ -434,7 +442,7 @@ void DatabaseOnDisk::renameTable(
     /// We have to lock the table before detaching, because otherwise lockExclusively will throw. But the table may not exist.
     bool need_lock = table != nullptr;
     if (need_lock)
-        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     detachTable(local_context, table_name);
     if (!need_lock)
@@ -549,7 +557,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         /// If database.sql doesn't exist, then engine is Ordinary
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+        ast = parseQuery(
+            parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
@@ -566,7 +575,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
-    if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
+    if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
         (void)fs::remove_all(std::filesystem::path(getContext()->getPath()) / data_path);
         (void)fs::remove_all(getMetadataPath());
@@ -691,7 +700,9 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
                         process_metadata_file(file.first);
                     else
                         process_tmp_drop_metadata_file(file.first);
-            }, Priority{}, getContext()->getSettingsRef().lock_acquire_timeout.totalMicroseconds());
+            },
+            Priority{},
+            getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
     }
     pool.wait();
 }
@@ -737,8 +748,18 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
-    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-        "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
+    auto ast = tryParseQuery(
+        parser,
+        pos,
+        pos + query.size(),
+        error_message,
+        /* hilite = */ false,
+        "in file " + metadata_file_path,
+        /* allow_multi_statements = */ false,
+        0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks],
+        true);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -801,8 +822,8 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         storage,
         ast_storage,
         false,
-        static_cast<unsigned>(settings.max_parser_depth),
-        static_cast<unsigned>(settings.max_parser_backtracks),
+        static_cast<unsigned>(settings[Setting::max_parser_depth]),
+        static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
         throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
@@ -854,7 +875,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeString(statement, out);
 
     out.next();
-    if (getContext()->getSettingsRef().fsync_metadata)
+    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
         out.sync();
     out.close();
 

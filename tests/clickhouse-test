@@ -2,17 +2,18 @@
 
 # pylint: disable=too-many-return-statements
 # pylint: disable=global-variable-not-assigned
+# pylint: disable=global-statement
 # pylint: disable=too-many-lines
 # pylint: disable=anomalous-backslash-in-string
 # pylint: disable=protected-access
 
 import copy
 import enum
-import tempfile
 import glob
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
+import io
 import itertools
 import json
 import math
@@ -28,21 +29,20 @@ import socket
 import string
 import subprocess
 import sys
+import tempfile
 import traceback
 import urllib.parse
-import io
 
 # for crc32
 import zlib
 from argparse import ArgumentParser
+from ast import literal_eval as make_tuple
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 from errno import ESRCH
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
-from contextlib import redirect_stdout
-from ast import literal_eval as make_tuple
-
 
 try:
     import termcolor  # type: ignore
@@ -232,8 +232,7 @@ def trim_for_log(s):
     if len(lines) > 10000:
         separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
         return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
-    else:
-        return "\n".join(lines)
+    return "\n".join(lines)
 
 
 def is_valid_utf_8(fname):
@@ -478,8 +477,7 @@ def get_zookeeper_session_uptime(args):
             """,
                 )
             )
-        else:
-            return int(clickhouse_execute(args, "SELECT zookeeperSessionUptime()"))
+        return int(clickhouse_execute(args, "SELECT zookeeperSessionUptime()"))
     except Exception:
         return None
 
@@ -512,18 +510,17 @@ def get_processlist_size(args):
                 """,
             ).strip()
         )
-    else:
-        return int(
-            clickhouse_execute(
-                args,
-                """
+    return int(
+        clickhouse_execute(
+            args,
+            """
                 SELECT
                     count()
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
                 """,
-            ).strip()
-        )
+        ).strip()
+    )
 
 
 def get_processlist_with_stacktraces(args):
@@ -552,10 +549,9 @@ def get_processlist_with_stacktraces(args):
             },
             timeout=120,
         )
-    else:
-        return clickhouse_execute(
-            args,
-            """
+    return clickhouse_execute(
+        args,
+        """
         SELECT
             p.*,
             arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
@@ -568,11 +564,11 @@ def get_processlist_with_stacktraces(args):
         GROUP BY p.*
         ORDER BY elapsed DESC FORMAT Vertical
         """,
-            settings={
-                "allow_introspection_functions": 1,
-            },
-            timeout=120,
-        )
+        settings={
+            "allow_introspection_functions": 1,
+        },
+        timeout=120,
+    )
 
 
 def get_transactions_list(args):
@@ -583,8 +579,7 @@ def get_transactions_list(args):
                 "SELECT materialize((hostName(), tcpPort())) as host, * FROM "
                 "clusterAllReplicas('test_cluster_database_replicated', system.transactions)",
             )
-        else:
-            return clickhouse_execute_json(args, "select * from system.transactions")
+        return clickhouse_execute_json(args, "select * from system.transactions")
     except Exception as e:
         return f"Cannot get list of transactions: {e}"
 
@@ -718,8 +713,7 @@ def get_server_pid():
 def colored(text, args, color=None, on_color=None, attrs=None):
     if termcolor and (sys.stdout.isatty() or args.force_color):
         return termcolor.colored(text, color, on_color, attrs)
-    else:
-        return text
+    return text
 
 
 class TestStatus(enum.Enum):
@@ -777,8 +771,7 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
 
         if isinstance(min_val, int) and isinstance(max_val, int):
             return random.randint(min_val, max_val)
-        else:
-            return random.uniform(min_val, max_val)
+        return random.uniform(min_val, max_val)
 
     return gen
 
@@ -835,7 +828,9 @@ class SettingsRandomizer:
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
-        "filesystem_cache_segments_batch_size": lambda: random.choice([0, 3, 10, 50]),
+        "filesystem_cache_segments_batch_size": lambda: random.choice(
+            [0, 1, 2, 3, 5, 10, 50, 100]
+        ),
         "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
             0, 1
         ),
@@ -916,6 +911,7 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
+        "parallel_replicas_local_plan": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1236,48 +1232,48 @@ class TestCase:
         if tags and ("disabled" in tags) and not args.disabled:
             return FailureReason.DISABLED
 
-        elif args.private and self.name in suite.private_skip_list:
+        if args.private and self.name in suite.private_skip_list:
             return FailureReason.NOT_SUPPORTED_IN_PRIVATE
 
-        elif args.cloud and ("no-replicated-database" in tags):
+        if args.cloud and ("no-replicated-database" in tags):
             return FailureReason.REPLICATED_DB
 
-        elif args.cloud and self.name in suite.cloud_skip_list:
+        if args.cloud and self.name in suite.cloud_skip_list:
             return FailureReason.NOT_SUPPORTED_IN_CLOUD
 
-        elif (
+        if (
             os.path.exists(os.path.join(suite.suite_path, self.name) + ".disabled")
             and not args.disabled
         ):
             return FailureReason.DISABLED
 
-        elif "no-parallel-replicas" in tags and args.no_parallel_replicas:
+        if "no-parallel-replicas" in tags and args.no_parallel_replicas:
             return FailureReason.NO_PARALLEL_REPLICAS
 
-        elif args.skip and any(s in self.name for s in args.skip):
+        if args.skip and any(s in self.name for s in args.skip):
             return FailureReason.SKIP
 
-        elif not USE_JINJA and self.ext.endswith("j2"):
+        if not USE_JINJA and self.ext.endswith("j2"):
             return FailureReason.NO_JINJA
 
-        elif (
+        if (
             tags
             and (("zookeeper" in tags) or ("replica" in tags))
             and not args.zookeeper
         ):
             return FailureReason.NO_ZOOKEEPER
 
-        elif (
+        if (
             tags
             and (("shard" in tags) or ("distributed" in tags) or ("global" in tags))
             and not args.shard
         ):
             return FailureReason.NO_SHARD
 
-        elif tags and ("no-fasttest" in tags) and args.fast_tests_only:
+        if tags and ("no-fasttest" in tags) and args.fast_tests_only:
             return FailureReason.FAST_ONLY
 
-        elif (
+        if (
             tags
             and (("long" in tags) or ("deadlock" in tags) or ("race" in tags))
             and args.no_long
@@ -1285,37 +1281,37 @@ class TestCase:
             # Tests for races and deadlocks usually are run in a loop for a significant amount of time
             return FailureReason.NO_LONG
 
-        elif tags and ("no-replicated-database" in tags) and args.replicated_database:
+        if tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif tags and ("no-distributed-cache" in tags) and args.distributed_cache:
+        if tags and ("no-distributed-cache" in tags) and args.distributed_cache:
             return FailureReason.DISTRIBUTED_CACHE
 
-        elif (
+        if (
             tags
             and ("atomic-database" in tags)
             and (args.replicated_database or args.db_engine not in (None, "Atomic"))
         ):
             return FailureReason.NON_ATOMIC_DB
 
-        elif (
+        if (
             tags
             and ("no-shared-merge-tree" in tags)
             and args.replace_replicated_with_shared
         ):
             return FailureReason.SHARED_MERGE_TREE
 
-        elif tags and ("no-s3-storage" in tags) and args.s3_storage:
+        if tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
-        elif tags and ("no-azure-blob-storage" in tags) and args.azure_blob_storage:
+        if tags and ("no-azure-blob-storage" in tags) and args.azure_blob_storage:
             return FailureReason.AZURE_BLOB_STORAGE
-        elif (
+        if (
             tags
             and ("no-object-storage" in tags)
             and (args.azure_blob_storage or args.s3_storage)
         ):
             return FailureReason.OBJECT_STORAGE
-        elif (
+        if (
             tags
             and "no-object-storage-with-slow-build" in tags
             and (args.s3_storage or args.azure_blob_storage)
@@ -1323,17 +1319,15 @@ class TestCase:
         ):
             return FailureReason.OBJECT_STORAGE
 
-        elif "no-batch" in tags and (
+        if "no-batch" in tags and (
             args.run_by_hash_num is not None or args.run_by_hash_total is not None
         ):
             return FailureReason.SKIP
 
-        elif "no-flaky-check" in tags and (
-            1 == int(os.environ.get("IS_FLAKY_CHECK", 0))
-        ):
+        if "no-flaky-check" in tags and (1 == int(os.environ.get("IS_FLAKY_CHECK", 0))):
             return FailureReason.SKIP
 
-        elif tags:
+        if tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
                     return FailureReason.BUILD
@@ -1556,8 +1550,7 @@ class TestCase:
     def print_test_time(test_time) -> str:
         if args.print_time:
             return f" {test_time:.2f} sec."
-        else:
-            return ""
+        return ""
 
     def process_result(self, result: TestResult, messages):
         description_full = messages[result.status]
@@ -2006,14 +1999,13 @@ class TestSuite:
         def get_comment_sign(filename):
             if filename.endswith(".sql") or filename.endswith(".sql.j2"):
                 return "--"
-            elif (
+            if (
                 filename.endswith(".sh")
                 or filename.endswith(".py")
                 or filename.endswith(".expect")
             ):
                 return "#"
-            else:
-                raise TestException(f"Unknown file_extension: {filename}")
+            raise TestException(f"Unknown file_extension: {filename}")
 
         def parse_tags_from_line(line, comment_sign) -> Set[str]:
             if not line.startswith(comment_sign):
@@ -2695,17 +2687,16 @@ def do_run_tests(jobs, test_suite: TestSuite):
         )
 
         return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
-    else:
-        num_tests = len(test_suite.all_tests)
-        run_tests_array(
-            (
-                test_suite.all_tests,
-                num_tests,
-                test_suite,
-                False,
-            )
+    num_tests = len(test_suite.all_tests)
+    run_tests_array(
+        (
+            test_suite.all_tests,
+            num_tests,
+            test_suite,
+            False,
         )
-        return num_tests
+    )
+    return num_tests
 
 
 def is_test_from_dir(suite_dir, case):
@@ -3195,11 +3186,9 @@ def get_additional_client_options(args):
         client_options = " ".join("--" + option for option in args.client_option)
         if "CLICKHOUSE_CLIENT_OPT" in os.environ:
             return os.environ["CLICKHOUSE_CLIENT_OPT"] + " " + client_options
-        else:
-            return client_options
-    else:
-        if "CLICKHOUSE_CLIENT_OPT" in os.environ:
-            return os.environ["CLICKHOUSE_CLIENT_OPT"]
+        return client_options
+    if "CLICKHOUSE_CLIENT_OPT" in os.environ:
+        return os.environ["CLICKHOUSE_CLIENT_OPT"]
     return ""
 
 

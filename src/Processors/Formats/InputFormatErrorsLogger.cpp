@@ -6,10 +6,17 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString errors_output_format;
+    extern const SettingsString input_format_record_errors_file_path;
+    extern const SettingsUInt64 max_block_size;
+}
 
 namespace ErrorCodes
 {
@@ -21,9 +28,9 @@ namespace
     const String DEFAULT_OUTPUT_FORMAT = "CSV";
 }
 
-InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : max_block_size(context->getSettingsRef().max_block_size)
+InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : max_block_size(context->getSettingsRef()[Setting::max_block_size])
 {
-    String output_format = context->getSettingsRef().errors_output_format;
+    String output_format = context->getSettingsRef()[Setting::errors_output_format];
     if (!FormatFactory::instance().isOutputFormat(output_format))
         output_format = DEFAULT_OUTPUT_FORMAT;
     if (context->hasInsertionTable())
@@ -31,7 +38,7 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
     if (context->getInsertionTable().hasDatabase())
         database = context->getInsertionTable().getDatabaseName();
 
-    String path_in_setting = context->getSettingsRef().input_format_record_errors_file_path;
+    String path_in_setting = context->getSettingsRef()[Setting::input_format_record_errors_file_path];
 
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
