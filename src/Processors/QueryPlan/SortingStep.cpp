@@ -495,7 +495,7 @@ std::unique_ptr<IQueryPlanStep> SortingStep::deserialize(Deserialization & ctx)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
 
     return std::make_unique<SortingStep>(
-        ctx.input_streams.front(), std::move(result_description), 0, std::move(sort_settings), true);
+        ctx.input_streams.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
 void registerSortingStep(QueryPlanStepRegistry & registry)
