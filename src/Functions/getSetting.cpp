@@ -25,16 +25,12 @@ enum class ErrorHandlingMode : uint8_t
     Default,  /// Return default value if setting not found (getSettingOrDefault())
 };
 
-struct NameGetSetting{ static constexpr auto name = "getSetting"; };
-
-struct NameGetSettingOrDefault{ static constexpr auto name = "getSettingOrDefault"; };
-
 /// Get the value of a setting.
-template <typename Name, ErrorHandlingMode mode>
+template <ErrorHandlingMode mode>
 class FunctionGetSetting : public IFunction, WithContext
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = (mode == ErrorHandlingMode::Exception) ? "getSetting" : "getSettingOrDefault";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
     explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
@@ -42,8 +38,8 @@ public:
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return ( mode == ErrorHandlingMode::Default ? 2 : 1 ); }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0,1}; }
+    size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1 ; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -69,32 +65,21 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
-        if (mode == ErrorHandlingMode::Default)
+
+        std::string_view setting_name{column->getDataAt(0).toView()};
+        Field setting_value;
+        if constexpr (mode == ErrorHandlingMode::Exception)
+            setting_value = getContext()->getSettingsRef().get(setting_name);
+        else
         {
             const auto * default_value_column = arguments[1].column.get();
             if (!default_value_column || default_value_column->size() != 1)
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The 2nd argument of function {} should be a constant", String{name});
+                                "The 2nd argument of function {} should be a constant with the default value of a setting", String{name});
             }
-        }
-
-        std::string_view setting_name{column->getDataAt(0).toView()};
-        Field setting_value;
-        try
-        {
-            setting_value = getContext()->getSettingsRef().get(setting_name);
-        }
-        catch(...)
-        {
-            if (mode == ErrorHandlingMode::Exception)
-                throw;
-            else if (mode == ErrorHandlingMode::Default)
-            {
-                auto default_value_column = arguments[1].column;
-
+            if (!getContext()->getSettingsRef().tryGet(setting_name, setting_value))
                 setting_value = (*default_value_column)[0];
-            }
         }
         return setting_value;
     }
@@ -102,17 +87,10 @@ private:
 
 }
 
-using FunctionGetSettingWithException = FunctionGetSetting<NameGetSetting, ErrorHandlingMode::Exception>;
-using FunctionGetSettingWithDefault = FunctionGetSetting<NameGetSettingOrDefault, ErrorHandlingMode::Default>;
-
 REGISTER_FUNCTION(GetSetting)
 {
-    factory.registerFunction<FunctionGetSettingWithException>();
+    factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Exception>>();
+    factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Default>>();
 }
 
-
-REGISTER_FUNCTION(GetSettingOrDefault)
-{
-    factory.registerFunction<FunctionGetSettingWithDefault>();
-}
 }

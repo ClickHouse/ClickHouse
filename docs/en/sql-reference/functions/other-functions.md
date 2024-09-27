@@ -2827,6 +2827,7 @@ NULL
 **See Also**
 
 - [Custom Settings](../../operations/settings/index.md#custom_settings)
+
 ## isDecimalOverflow
 
 Checks whether the [Decimal](../data-types/decimal.md) value is outside its precision or outside the specified precision.
