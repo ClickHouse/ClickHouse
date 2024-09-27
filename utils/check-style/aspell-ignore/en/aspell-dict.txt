@@ -784,7 +784,6 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
-RIPEMD
 QATlib
 QEMU
 QTCreator
@@ -853,6 +852,7 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
+RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
