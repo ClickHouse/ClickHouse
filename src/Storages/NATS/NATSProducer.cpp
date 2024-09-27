@@ -22,13 +22,11 @@ NATSProducer::NATSProducer(
     const NATSConfiguration & configuration_,
     NATSOptionsPtr options_,
     const String & subject_,
-    std::atomic<bool> & shutdown_called_,
     LoggerPtr log_,
     ReconnectCallback reconnect_callback_)
     : AsynchronousMessageProducer(log_)
     , connection(std::make_shared<NATSConnection>(configuration_, log_, std::move(options_)))
     , subject(subject_)
-    , shutdown_called(shutdown_called_)
     , reconnect_callback(std::move(reconnect_callback_))
     , payloads(BATCH)
 {
@@ -88,7 +86,7 @@ void NATSProducer::startProducingTaskLoop()
 {
     try
     {
-        while ((!payloads.isFinishedAndEmpty() || natsConnection_Buffered(connection->getConnection()) != 0) && !shutdown_called.load())
+        while ((!payloads.isFinishedAndEmpty() || natsConnection_Buffered(connection->getConnection()) != 0))
         {
             if (!connection->isConnected())
                 reconnect_callback(connection);

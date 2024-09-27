@@ -22,7 +22,6 @@ public:
         const NATSConfiguration & configuration_,
         NATSOptionsPtr options_,
         const String & subject_,
-        std::atomic<bool> & shutdown_called_,
         LoggerPtr log_,
         ReconnectCallback reconnect_callback_);
 
@@ -41,11 +40,6 @@ private:
 
     NATSConnectionPtr connection;
     const String subject;
-
-    /* false: when shutdown is called
-     * true: in all other cases
-     */
-    std::atomic<bool> & shutdown_called;
 
     ReconnectCallback reconnect_callback;
 

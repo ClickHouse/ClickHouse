@@ -397,7 +397,6 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
         configuration,
         event_handler.createOptions(),
         subject,
-        shutdown_called,
         log,
         [&](NATSConnectionPtr connection)
         {
