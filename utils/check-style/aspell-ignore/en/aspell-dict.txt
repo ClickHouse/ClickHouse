@@ -800,7 +800,6 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
-RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders
@@ -1935,7 +1934,6 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
-jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
