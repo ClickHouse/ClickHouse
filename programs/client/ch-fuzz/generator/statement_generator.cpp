@@ -519,9 +519,11 @@ int StatementGenerator::GenerateNextRefreshableView(RandomGenerator &rg, sql_que
 
 int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_grammar::CreateView *cv) {
 	SQLView next;
-	const uint32_t vname = this->table_counter++;
+	const bool replace = views.size() > 3 && rg.NextMediumNumber() < 16;
+	const uint32_t vname = replace ? rg.PickValueRandomlyFromMap(this->views).vname : this->table_counter++;
 
 	next.vname = vname;
+	cv->set_replace(replace);
 	next.is_materialized = rg.NextBool();
 	cv->set_materialized(next.is_materialized);
 	next.ncols = (rg.NextMediumNumber() % 5) + 1;
@@ -1191,6 +1193,9 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		const uint32_t vname = static_cast<uint32_t>(std::stoul(query.create_view().est().table_name().table().substr(1)));
 
 		if (success) {
+			if (query.create_view().replace()) {
+				this->views.erase(vname);
+			}
 			this->views[vname] = std::move(this->staged_views[vname]);
 		}
 		this->staged_views.erase(vname);

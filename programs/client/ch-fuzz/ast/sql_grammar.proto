@@ -2800,14 +2800,15 @@ message RefreshableView {
 }
 
 message CreateView {
-  optional bool materialized = 1;
-  required ExprSchemaTable est = 2;
-  optional RefreshableView refresh = 3;
-  optional ExprSchemaTable to_est = 4;
-  optional TableEngine engine = 5;
-  optional bool empty = 6;
-  optional bool populate = 7;
-  required Select select = 8;
+  optional bool replace = 1;
+  optional bool materialized = 2;
+  required ExprSchemaTable est = 3;
+  optional RefreshableView refresh = 4;
+  optional ExprSchemaTable to_est = 5;
+  optional TableEngine engine = 6;
+  optional bool empty = 7;
+  optional bool populate = 8;
+  required Select select = 9;
 }
 
 message AlterTableItem {

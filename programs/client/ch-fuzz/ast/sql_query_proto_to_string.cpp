@@ -2001,7 +2001,8 @@ CONV_FN(RefreshableView, rv) {
 CONV_FN(CreateView, create_view) {
   const bool materialized = create_view.materialized();
 
-  ret += "CREATE ";
+  ret += create_view.replace() ? "REPLACE" : "CREATE";
+  ret += " ";
   if (materialized) {
     ret += "MATERIALIZED ";
   }
