@@ -800,7 +800,6 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
-RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders

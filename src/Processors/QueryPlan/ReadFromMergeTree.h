@@ -189,6 +189,8 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
     bool readsInOrder() const;
+    const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
+    const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool isQueryWithSampling() const;
@@ -211,14 +213,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
-    int getSortDirection() const
-    {
-        if (query_info.input_order_info)
-            return query_info.input_order_info->direction;
-
-        return 1;
-    }
-
     MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
@@ -230,6 +224,8 @@ private:
     ExpressionActionsSettings actions_settings;
 
     const MergeTreeReadTask::BlockSizeParams block_size;
+
+    SortDescription result_sort_description;
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
@@ -273,6 +269,9 @@ private:
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+
+    int getSortDirection() const;
+    void updateSortDescription();
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
