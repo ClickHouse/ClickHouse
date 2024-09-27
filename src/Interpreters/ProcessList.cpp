@@ -291,7 +291,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             query_context,
             query_,
             client_info,
-            priorities.insert(static_cast<int>(settings.priority)),
+            priorities.insert(settings[Setting::priority]),
             std::move(thread_group),
             query_kind,
             settings,
@@ -301,7 +301,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             processes.end(),
             query);
 
-        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef().max_execution_time.totalMilliseconds());
+        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds());
 
         increaseQueryKindAmount(query_kind);
 
