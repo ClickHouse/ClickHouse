@@ -82,7 +82,7 @@ public:
     ConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
     bool isStaticConfiguration() const override { return static_configuration; }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+    ObjectStoragePtr createObjectStorageImpl(ContextPtr context, bool is_readonly) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
@@ -90,10 +90,11 @@ public:
         const String & format,
         ContextPtr context) override;
 
-private:
+protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
+private:
     S3::URI url;
     std::vector<String> keys;
 

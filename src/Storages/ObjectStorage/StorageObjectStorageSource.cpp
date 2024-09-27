@@ -48,7 +48,6 @@ namespace ErrorCodes
 
 StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
-    ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
@@ -60,7 +59,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
-    , object_storage(object_storage_)
     , configuration(configuration_)
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
@@ -68,10 +66,10 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1/* max_threads */))
+          CurrentMetrics::StorageObjectStorageThreads,
+          CurrentMetrics::StorageObjectStorageThreadsActive,
+          CurrentMetrics::StorageObjectStorageThreadsScheduled,
+          1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
@@ -106,7 +104,6 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
     ConfigurationPtr configuration,
     const StorageObjectStorage::QuerySettings & query_settings,
-    ObjectStoragePtr object_storage,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
@@ -128,9 +125,14 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator = std::make_unique<GlobIterator>(
-            object_storage, configuration, predicate, virtual_columns,
-            local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-            query_settings.throw_on_zero_files_match, file_progress_callback);
+            configuration,
+            predicate,
+            virtual_columns,
+            local_context,
+            is_archive ? nullptr : read_keys,
+            query_settings.list_object_keys_size,
+            query_settings.throw_on_zero_files_match,
+            file_progress_callback);
     }
     else
     {
@@ -151,13 +153,16 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
         }
 
         iterator = std::make_unique<KeysIterator>(
-            object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
-            query_settings.ignore_non_existent_file, file_progress_callback);
+            copy_configuration,
+            virtual_columns,
+            is_archive ? nullptr : read_keys,
+            query_settings.ignore_non_existent_file,
+            file_progress_callback);
     }
 
     if (is_archive)
     {
-        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys);
+        return std::make_shared<ArchiveIterator>(configuration, std::move(iterator), local_context, read_keys);
     }
 
     return iterator;
@@ -275,15 +280,24 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
 {
     return createReader(
-        0, file_iterator, configuration, object_storage, read_from_format_info, format_settings,
-        key_condition, getContext(), &schema_cache, log, max_block_size, max_parsing_threads, need_only_count);
+        0,
+        file_iterator,
+        configuration,
+        read_from_format_info,
+        format_settings,
+        key_condition,
+        getContext(),
+        &schema_cache,
+        log,
+        max_block_size,
+        max_parsing_threads,
+        need_only_count);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
     size_t processor,
     const std::shared_ptr<IIterator> & file_iterator,
     const ConfigurationPtr & configuration,
-    const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<const KeyCondition> & key_condition_,
@@ -307,7 +321,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!object_info->metadata)
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            object_info->metadata = object_storage->getObjectMetadata(path);
+            object_info->metadata = configuration->getObjectStorage()->getObjectMetadata(path);
         }
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
@@ -361,7 +375,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-            read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+            read_buf = createReadBuffer(*object_info, configuration->getObjectStorage(), context_, log);
         }
 
         auto input_format = FormatFactory::instance().getInput(
@@ -475,7 +489,6 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::IIterator::next(
 }
 
 StorageObjectStorageSource::GlobIterator::GlobIterator(
-    ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
@@ -486,7 +499,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     std::function<void(FileProgress)> file_progress_callback_)
     : IIterator("GlobIterator")
     , WithContext(context_)
-    , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
@@ -502,7 +514,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     {
         const auto key_with_globs = configuration_->getPath();
         const auto key_prefix = configuration->getPathWithoutGlobs();
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
+        object_storage_iterator = configuration->getObjectStorage()->iterate(key_prefix, list_object_keys_size);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
         if (!matcher->ok())
@@ -623,14 +635,12 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 }
 
 StorageObjectStorageSource::KeysIterator::KeysIterator(
-    ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
     bool ignore_non_existent_files_,
     std::function<void(FileProgress)> file_progress_callback_)
     : IIterator("KeysIterator")
-    , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -661,12 +671,12 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         ObjectMetadata object_metadata{};
         if (ignore_non_existent_files)
         {
-            auto metadata = object_storage->tryGetObjectMetadata(key);
+            auto metadata = configuration->getObjectStorage()->tryGetObjectMetadata(key);
             if (!metadata)
                 continue;
         }
         else
-            object_metadata = object_storage->getObjectMetadata(key);
+            object_metadata = configuration->getObjectStorage()->getObjectMetadata(key);
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
@@ -760,14 +770,10 @@ StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInAr
 }
 
 StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
-    ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
-    std::unique_ptr<IIterator> archives_iterator_,
-    ContextPtr context_,
-    ObjectInfos * read_keys_)
+    ConfigurationPtr configuration_, std::unique_ptr<IIterator> archives_iterator_, ContextPtr context_, ObjectInfos * read_keys_)
     : IIterator("ArchiveIterator")
     , WithContext(context_)
-    , object_storage(object_storage_)
+    , object_storage(configuration_->getObjectStorage())
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
     , archives_iterator(std::move(archives_iterator_))
     , filter(is_path_in_archive_with_globs ? createArchivePathFilter(configuration_->getPathInArchive()) : IArchiveReader::NameFilter{})

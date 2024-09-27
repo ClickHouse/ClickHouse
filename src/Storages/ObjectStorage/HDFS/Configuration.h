@@ -54,7 +54,7 @@ public:
     void check(ContextPtr context) const override;
     ConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+    ObjectStoragePtr createObjectStorageImpl(ContextPtr context, bool is_readonly) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
@@ -62,9 +62,10 @@ public:
         const String & format_,
         ContextPtr context) override;
 
-private:
+protected:
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
+private:
     void setURL(const std::string & url_);
 
     String url;

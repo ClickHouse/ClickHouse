@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -50,9 +51,11 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
 
+    configuration->createObjectStorage(context, false);
+    configuration->update(context);
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context, /* is_readonly */false),
         args.getContext(),
         args.table_id,
         args.columns,
@@ -148,4 +151,109 @@ void registerStorageObjectStorage(StorageFactory & factory)
     UNUSED(factory);
 }
 
+
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+
+void registerStorageIceberg(StorageFactory & factory)
+{
+    factory.registerStorage(
+        "Iceberg",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::S3,
+        });
+
+    factory.registerStorage(
+        "IcebergS3",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::S3,
+        });
+
+    factory.registerStorage(
+        "IcebergAzure",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageAzureIcebergConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), true);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::AZURE,
+        });
+
+    factory.registerStorage(
+        "IcebergLocal",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageLocalIcebergConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::FILE,
+        });
+}
+
+#endif
+
+#if USE_PARQUET
+void registerStorageDeltaLake(StorageFactory & factory)
+{
+    factory.registerStorage(
+        "DeltaLake",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::S3,
+        });
+}
+#endif
+
+void registerStorageHudi(StorageFactory & factory)
+{
+    factory.registerStorage(
+        "Hudi",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageS3HudiConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::S3,
+        });
+}
 }

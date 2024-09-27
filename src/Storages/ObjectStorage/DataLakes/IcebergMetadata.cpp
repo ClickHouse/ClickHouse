@@ -50,7 +50,7 @@ extern const int UNSUPPORTED_METHOD;
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    Configuration * configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -348,6 +348,7 @@ std::pair<Int32, String> getMetadataFileAndVersion(
     ObjectStoragePtr object_storage,
     const StorageObjectStorage::Configuration & configuration)
 {
+    chassert(object_storage.get() != nullptr);
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
@@ -381,10 +382,7 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 
 }
 
-DataLakeMetadataPtr IcebergMetadata::create(
-    ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
-    ContextPtr local_context)
+DataLakeMetadataPtr IcebergMetadata::create(ObjectStoragePtr object_storage, Configuration * configuration, ContextPtr local_context)
 {
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
     LOG_DEBUG(getLogger("IcebergMetadata"), "Parse metadata {}", metadata_file_path);

@@ -10,6 +10,6 @@ class IObjectStorage;
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const StorageObjectStorage::Configuration & configuration,
-    const String & prefix, const String & suffix);
-
+    const String & prefix,
+    const String & suffix);
 }

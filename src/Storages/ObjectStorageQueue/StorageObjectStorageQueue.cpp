@@ -523,7 +523,13 @@ std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQue
 {
     auto settings = configuration->getQuerySettings(local_context);
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
+        configuration,
+        predicate,
+        getVirtualsList(),
+        local_context,
+        nullptr,
+        settings.list_object_keys_size,
+        settings.throw_on_zero_files_match);
 
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
 }

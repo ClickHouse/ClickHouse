@@ -36,14 +36,13 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage>(
             configuration,
-            object_storage,
             context,
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            /* comment */String{},
-            /* format_settings */std::nullopt, /// No format_settings
-            /* distributed_processing */true,
+            /* comment */ String{},
+            /* format_settings */ std::nullopt, /// No format_settings
+            /* distributed_processing */ true,
             /*partition_by_=*/nullptr);
     }
     else
@@ -51,7 +50,6 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
         storage = std::make_shared<StorageObjectStorageCluster>(
             ITableFunctionCluster<Base>::cluster_name,
             configuration,
-            object_storage,
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},

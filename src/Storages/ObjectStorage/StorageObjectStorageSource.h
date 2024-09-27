@@ -32,7 +32,6 @@ public:
 
     StorageObjectStorageSource(
         String name_,
-        ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
@@ -53,7 +52,6 @@ public:
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
         const StorageObjectStorage::QuerySettings & query_settings,
-        ObjectStoragePtr object_storage,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
@@ -68,7 +66,6 @@ public:
 
 protected:
     const String name;
-    ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
@@ -121,7 +118,6 @@ protected:
         size_t processor,
         const std::shared_ptr<IIterator> & file_iterator,
         const ConfigurationPtr & configuration,
-        const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,
         const std::shared_ptr<const KeyCondition> & key_condition_,
@@ -180,7 +176,6 @@ class StorageObjectStorageSource::GlobIterator : public IIterator, WithContext
 {
 public:
     GlobIterator(
-        ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
@@ -200,7 +195,6 @@ private:
     void createFilterAST(const String & any_key);
     void fillBufferForKey(const std::string & uri_key);
 
-    const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
@@ -229,7 +223,6 @@ class StorageObjectStorageSource::KeysIterator : public IIterator
 {
 public:
     KeysIterator(
-        ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         const NamesAndTypesList & virtual_columns_,
         ObjectInfos * read_keys_,
@@ -243,7 +236,6 @@ public:
 private:
     ObjectInfoPtr nextImpl(size_t processor) override;
 
-    const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
@@ -267,11 +259,7 @@ class StorageObjectStorageSource::ArchiveIterator : public IIterator, private Wi
 {
 public:
     explicit ArchiveIterator(
-        ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
-        std::unique_ptr<IIterator> archives_iterator_,
-        ContextPtr context_,
-        ObjectInfos * read_keys_);
+        ConfigurationPtr configuration_, std::unique_ptr<IIterator> archives_iterator_, ContextPtr context_, ObjectInfos * read_keys_);
 
     size_t estimatedKeysCount() override;
 
@@ -312,7 +300,8 @@ private:
     ObjectInfoPtr nextImpl(size_t processor) override;
     std::shared_ptr<IArchiveReader> createArchiveReader(ObjectInfoPtr object_info) const;
 
-    const ObjectStoragePtr object_storage;
+    ObjectStoragePtr object_storage;
+
     const bool is_path_in_archive_with_globs;
     /// Iterator which iterates through different archives.
     const std::unique_ptr<IIterator> archives_iterator;

@@ -88,7 +88,7 @@ Strings HudiMetadata::getDataFilesImpl() const
 
 HudiMetadata::HudiMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    Configuration * configuration_,
     ContextPtr context_)
     : WithContext(context_)
     , object_storage(object_storage_)

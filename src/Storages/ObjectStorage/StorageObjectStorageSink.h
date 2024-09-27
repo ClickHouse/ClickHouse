@@ -11,7 +11,6 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     StorageObjectStorageSink(
-        ObjectStoragePtr object_storage,
         ConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
         const Block & sample_block_,
@@ -42,7 +41,6 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     PartitionedStorageObjectStorageSink(
-        ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
         const Block & sample_block_,
@@ -55,7 +53,6 @@ private:
     void validateKey(const String & str);
     void validateNamespace(const String & str);
 
-    ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
 
     const StorageObjectStorage::QuerySettings query_settings;

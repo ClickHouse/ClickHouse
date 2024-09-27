@@ -53,7 +53,6 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
-        object_storage,
         local_distributed_processing,
         context,
         {}, // predicate
@@ -69,7 +68,6 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
 
 StorageObjectStorage::StorageObjectStorage(
     ConfigurationPtr configuration_,
-    ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -80,7 +78,6 @@ StorageObjectStorage::StorageObjectStorage(
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , configuration(configuration_)
-    , object_storage(object_storage_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
@@ -124,10 +121,10 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::updateConfiguration(ContextPtr context)
+void StorageObjectStorage::Configuration::update(ContextPtr context)
 {
-    IObjectStorage::ApplyNewSettingsOptions options{ .allow_client_change = !configuration->isStaticConfiguration() };
-    object_storage->applyNewSettings(context->getConfigRef(), configuration->getTypeName() + ".", context, options);
+    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+    object_storage->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
 namespace
@@ -138,7 +135,6 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     ReadFromObjectStorageStep(
-        ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         const String & name_,
         const Names & columns_to_read,
@@ -153,7 +149,6 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
-        , object_storage(object_storage_)
         , configuration(configuration_)
         , info(std::move(info_))
         , virtual_columns(virtual_columns_)
@@ -200,8 +195,15 @@ public:
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
-                getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
+                getName(),
+                configuration,
+                info,
+                format_settings,
+                context,
+                max_block_size,
+                iterator_wrapper,
+                max_parsing_threads,
+                need_only_count);
 
             source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));
@@ -218,7 +220,6 @@ public:
     }
 
 private:
-    ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
     std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
 
@@ -237,13 +238,19 @@ private:
             return;
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
+            configuration,
+            configuration->getQuerySettings(context),
+            distributed_processing,
+            context,
+            predicate,
+            virtual_columns,
+            nullptr,
+            context->getFileProgressCallback());
     }
 };
 }
 
-ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
+ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
@@ -262,7 +269,7 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    updateConfiguration(local_context);
+    configuration->update(local_context);
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -270,13 +277,12 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    const auto read_from_format_info = prepareReadingFromFormat(
-        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
+    const auto read_from_format_info
+        = configuration->prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
-        object_storage,
         configuration,
         getName(),
         column_names,
@@ -300,7 +306,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    updateConfiguration(local_context);
+    configuration->update(local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
@@ -332,7 +338,7 @@ SinkToStoragePtr StorageObjectStorage::write(
         if (partition_by_ast)
         {
             return std::make_shared<PartitionedStorageObjectStorageSink>(
-                object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
+                configuration, format_settings, sample_block, local_context, partition_by_ast);
         }
     }
 
@@ -344,12 +350,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
     configuration->setPaths(paths);
 
-    return std::make_shared<StorageObjectStorageSink>(
-        object_storage,
-        configuration->clone(),
-        format_settings,
-        sample_block,
-        local_context);
+    return std::make_shared<StorageObjectStorageSink>(configuration->clone(), format_settings, sample_block, local_context);
 }
 
 void StorageObjectStorage::truncate(
@@ -381,7 +382,6 @@ void StorageObjectStorage::truncate(
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
-    const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
     ObjectInfos & read_keys,
@@ -390,55 +390,53 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(context),
-        object_storage,
-        false/* distributed_processing */,
+        false /* distributed_processing */,
         context,
-        {}/* predicate */,
-        {}/* virtual_columns */,
+        {} /* predicate */,
+        {} /* virtual_columns */,
         &read_keys);
 
     return std::make_unique<ReadBufferIterator>(
-        object_storage, configuration, file_iterator,
-        format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
+        configuration, file_iterator, format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
 }
 
 ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
-    const ObjectStoragePtr & object_storage,
+    const ObjectStoragePtr &,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto iterator = createReadBufferIterator(configuration, format_settings, read_keys, context);
     auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
     sample_path = iterator->getLastFilePath();
     return schema;
 }
 
 std::string StorageObjectStorage::resolveFormatFromData(
-    const ObjectStoragePtr & object_storage,
+    const ObjectStoragePtr &,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto iterator = createReadBufferIterator(configuration, format_settings, read_keys, context);
     auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
     sample_path = iterator->getLastFilePath();
     return format_and_schema;
 }
 
 std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
-    const ObjectStoragePtr & object_storage,
+    const ObjectStoragePtr &,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto iterator = createReadBufferIterator(configuration, format_settings, read_keys, context);
     auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
     sample_path = iterator->getLastFilePath();
     configuration->format = format;
@@ -512,6 +510,7 @@ void StorageObjectStorage::Configuration::check(ContextPtr) const
 
 StorageObjectStorage::Configuration::Configuration(const Configuration & other)
 {
+    object_storage = other.object_storage;
     format = other.format;
     compression_method = other.compression_method;
     structure = other.structure;
@@ -564,5 +563,10 @@ void StorageObjectStorage::Configuration::assertInitialized() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration was not initialized before usage");
     }
+}
+
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
 }
 }

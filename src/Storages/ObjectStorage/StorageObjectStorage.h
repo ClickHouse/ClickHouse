@@ -1,12 +1,14 @@
 #pragma once
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Core/SchemaInferenceMode.h>
-#include <Storages/IStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Common/threadPoolCallbackRunner.h>
+
 
 namespace DB
 {
@@ -48,7 +50,6 @@ public:
 
     StorageObjectStorage(
         ConfigurationPtr configuration_,
-        ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -120,18 +121,9 @@ public:
         const ContextPtr & context);
 
 protected:
-    virtual void updateConfiguration(ContextPtr local_context);
-
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
-    virtual ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        bool supports_subset_of_columns,
-        ContextPtr local_context);
-
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
-        const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
         ObjectInfos & read_keys,
@@ -199,12 +191,29 @@ public:
     virtual void check(ContextPtr context) const;
     virtual void validateNamespace(const String & /* name */) const {}
 
-    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly)
+    {
+        return object_storage = createObjectStorageImpl(context, is_readonly);
+    }
+
+    virtual ObjectStoragePtr getObjectStorage() const { return object_storage; }
+
     virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
+    virtual bool isDataLakeConfiguration() const { return false; }
+
     void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
     const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
+
+    virtual void update(ContextPtr local_context);
+
+
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        ContextPtr local_context);
 
     String format = "auto";
     String compression_method = "auto";
@@ -214,10 +223,14 @@ protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
 
+    virtual ObjectStoragePtr createObjectStorageImpl(ContextPtr context, bool is_readonly) = 0;
+
     void assertInitialized() const;
 
     bool initialized = false;
     DataLakePartitionColumns partition_columns;
+
+    ObjectStoragePtr object_storage;
 };
 
 }

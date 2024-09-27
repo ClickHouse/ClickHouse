@@ -55,13 +55,15 @@ public:
 
     ConfigurationPtr clone() override { return std::make_shared<StorageLocalConfiguration>(*this); }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr, bool) override { return std::make_shared<LocalObjectStorage>("/"); }
+    ObjectStoragePtr createObjectStorageImpl(ContextPtr, bool) override { return std::make_shared<LocalObjectStorage>("/"); }
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr) override { }
 
-private:
+protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+
+private:
     Path path;
     Paths paths;
 };

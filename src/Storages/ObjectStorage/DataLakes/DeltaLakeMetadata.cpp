@@ -55,10 +55,10 @@ namespace ErrorCodes
 
 struct DeltaLakeMetadataImpl
 {
-    using ConfigurationPtr = DeltaLakeMetadata::ConfigurationPtr;
+    using Configuration = DeltaLakeMetadata::Configuration;
 
     ObjectStoragePtr object_storage;
-    ConfigurationPtr configuration;
+    Configuration * configuration;
     ContextPtr context;
 
     /**
@@ -66,7 +66,7 @@ struct DeltaLakeMetadataImpl
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
      DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_,
-          ConfigurationPtr configuration_,
+          Configuration * configuration_,
           ContextPtr context_)
         : object_storage(object_storage_)
         , configuration(configuration_)
@@ -680,7 +680,7 @@ struct DeltaLakeMetadataImpl
 
 DeltaLakeMetadata::DeltaLakeMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    Configuration * configuration_,
     ContextPtr context_)
 {
     auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);

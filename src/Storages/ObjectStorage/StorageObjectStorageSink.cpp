@@ -21,20 +21,18 @@ namespace ErrorCodes
 }
 
 StorageObjectStorageSink::StorageObjectStorageSink(
-    ObjectStoragePtr object_storage,
     ConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block_,
     ContextPtr context,
     const std::string & blob_path)
-    : SinkToStorage(sample_block_)
-    , sample_block(sample_block_)
+    : SinkToStorage(sample_block_), sample_block(sample_block_)
 {
     const auto & settings = context->getSettingsRef();
     const auto path = blob_path.empty() ? configuration->getPaths().back() : blob_path;
     const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
 
-    auto buffer = object_storage->writeObject(
+    auto buffer = configuration->getObjectStorage()->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     write_buf = wrapWriteBufferWithCompressionMethod(
@@ -96,14 +94,12 @@ void StorageObjectStorageSink::cancelBuffers()
 }
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
-    ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
     ContextPtr context_,
     const ASTPtr & partition_by)
     : PartitionedSink(partition_by, context_, sample_block_)
-    , object_storage(object_storage_)
     , configuration(configuration_)
     , query_settings(configuration_->getQuerySettings(context_))
     , format_settings(format_settings_)
@@ -127,19 +123,12 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     validateKey(partition_key);
 
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, partition_key, /* sequence_number */1))
+            *configuration->getObjectStorage(), *configuration, query_settings, partition_key, /* sequence_number */ 1))
     {
         partition_key = *new_key;
     }
 
-    return std::make_shared<StorageObjectStorageSink>(
-        object_storage,
-        configuration,
-        format_settings,
-        sample_block,
-        context,
-        partition_key
-    );
+    return std::make_shared<StorageObjectStorageSink>(configuration, format_settings, sample_block, context, partition_key);
 }
 
 void PartitionedStorageObjectStorageSink::validateKey(const String & str)

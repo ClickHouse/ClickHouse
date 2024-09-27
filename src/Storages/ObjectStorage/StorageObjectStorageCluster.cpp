@@ -33,7 +33,6 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
-        object_storage,
         false, // distributed_processing
         context,
         {}, // predicate
@@ -50,19 +49,16 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
 StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
     ConfigurationPtr configuration_,
-    ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : IStorageCluster(
-        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+    : IStorageCluster(cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
-    , object_storage(object_storage_)
 {
     ColumnsDescription columns{columns_};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
+    resolveSchemaAndFormat(columns, configuration->format, configuration->getObjectStorage(), configuration, {}, sample_path, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata metadata;
@@ -115,8 +111,14 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
+        configuration,
+        configuration->getQuerySettings(local_context),
+        /* distributed_processing */ false,
+        local_context,
+        predicate,
+        virtual_columns,
+        nullptr,
+        local_context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {

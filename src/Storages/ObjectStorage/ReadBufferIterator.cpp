@@ -21,7 +21,6 @@ namespace ErrorCodes
 }
 
 ReadBufferIterator::ReadBufferIterator(
-    ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     const FileIterator & file_iterator_,
     const std::optional<FormatSettings> & format_settings_,
@@ -29,7 +28,6 @@ ReadBufferIterator::ReadBufferIterator(
     ObjectInfos & read_keys_,
     const ContextPtr & context_)
     : WithContext(context_)
-    , object_storage(object_storage_)
     , configuration(configuration_)
     , file_iterator(file_iterator_)
     , format_settings(format_settings_)
@@ -76,7 +74,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             if (!object_info->metadata)
-                object_info->metadata = object_storage->tryGetObjectMetadata(path);
+                object_info->metadata = configuration->getObjectStorage()->tryGetObjectMetadata(path);
 
             return object_info->metadata
                 ? std::optional<time_t>(object_info->metadata->last_modified.epochTime())
@@ -151,7 +149,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    auto impl = object_storage->readObject(StoredObject(path), context->getReadSettings());
+    auto impl = configuration->getObjectStorage()->readObject(StoredObject(path), context->getReadSettings());
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
@@ -204,7 +202,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
                         "The table structure cannot be extracted from a {} format file, "
                         "because there are no files with provided path "
                         "in {} or all files are empty. You can specify table structure manually",
-                        *format, object_storage->getName());
+                        *format,
+                        configuration->getObjectStorage()->getName());
                 }
 
                 throw Exception(
@@ -212,7 +211,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
                     "The data format cannot be detected by the contents of the files, "
                     "because there are no files with provided path "
                     "in {} or all files are empty. You can specify the format manually",
-                    object_storage->getName());
+                    configuration->getObjectStorage()->getName());
             }
 
             return {nullptr, std::nullopt, format};
@@ -277,7 +276,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         else
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            read_buf = object_storage->readObject(
+            read_buf = configuration->getObjectStorage()->readObject(
                 StoredObject(current_object_info->getPath()),
                 getContext()->getReadSettings(),
                 {},

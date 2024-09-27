@@ -117,7 +117,7 @@ StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(con
     };
 }
 
-ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
+ObjectStoragePtr StorageS3Configuration::createObjectStorageImpl(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
     assertInitialized();
 

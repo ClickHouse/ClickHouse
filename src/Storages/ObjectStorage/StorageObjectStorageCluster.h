@@ -16,7 +16,6 @@ public:
     StorageObjectStorageCluster(
         const String & cluster_name_,
         ConfigurationPtr configuration_,
-        ObjectStoragePtr object_storage_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -37,7 +36,6 @@ private:
 
     const String engine_name;
     const StorageObjectStorage::ConfigurationPtr configuration;
-    const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
 };
 

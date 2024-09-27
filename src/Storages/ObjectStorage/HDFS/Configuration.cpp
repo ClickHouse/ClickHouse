@@ -55,7 +55,7 @@ void StorageHDFSConfiguration::check(ContextPtr context) const
     Configuration::check(context);
 }
 
-ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
+ObjectStoragePtr StorageHDFSConfiguration::createObjectStorageImpl( /// NOLINT
     ContextPtr context,
     bool /* is_readonly */)
 {

@@ -61,13 +61,13 @@ namespace DB
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using Configuration = StorageObjectStorage::Configuration;
 
     static constexpr auto name = "Iceberg";
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        Configuration * configuration_,
         ContextPtr context_,
         Int32 metadata_version_,
         Int32 format_version_,
@@ -92,16 +92,13 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage,
-        ConfigurationPtr configuration,
-        ContextPtr local_context);
+    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, Configuration * configuration, ContextPtr local_context);
 
 private:
     size_t getVersion() const { return metadata_version; }
 
     const ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const Configuration * configuration;
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;

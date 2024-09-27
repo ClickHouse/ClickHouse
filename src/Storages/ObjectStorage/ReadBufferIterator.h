@@ -17,7 +17,6 @@ public:
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
     ReadBufferIterator(
-        ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         const FileIterator & file_iterator_,
         const std::optional<FormatSettings> & format_settings_,
@@ -47,7 +46,6 @@ private:
     std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
 
-    ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const FileIterator file_iterator;
     const std::optional<FormatSettings> & format_settings;

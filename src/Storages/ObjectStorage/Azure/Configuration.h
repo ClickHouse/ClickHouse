@@ -68,7 +68,7 @@ public:
     void check(ContextPtr context) const override;
     ConfigurationPtr clone() override { return std::make_shared<StorageAzureConfiguration>(*this); }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+    ObjectStoragePtr createObjectStorageImpl(ContextPtr context, bool is_readonly) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,

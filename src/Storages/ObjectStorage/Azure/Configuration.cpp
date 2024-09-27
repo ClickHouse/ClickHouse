@@ -85,7 +85,7 @@ StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(
     };
 }
 
-ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
+ObjectStoragePtr StorageAzureConfiguration::createObjectStorageImpl(ContextPtr context, bool is_readonly) /// NOLINT
 {
     assertInitialized();
 
