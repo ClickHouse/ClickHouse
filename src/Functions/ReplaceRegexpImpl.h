@@ -201,15 +201,15 @@ struct ReplaceRegexpImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (needle.empty())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
         regexp_options.set_log_errors(false); /// don't write error messages to stderr
@@ -232,13 +232,13 @@ struct ReplaceRegexpImpl
                     case ReplaceRegexpTraits::Replace::All:   return ReplaceStringTraits::Replace::All;
                 }
             };
-            ReplaceStringImpl<Name, convertTrait(replace)>::vectorConstantConstant(haystack_data, haystack_offsets, needle, replacement, res_data, res_offsets);
+            ReplaceStringImpl<Name, convertTrait(replace)>::vectorConstantConstant(haystack_data, haystack_offsets, needle, replacement, res_data, res_offsets, input_rows_count);
             return;
         }
 
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t from = i > 0 ? haystack_offsets[i - 1] : 0;
 
@@ -257,19 +257,19 @@ struct ReplaceRegexpImpl
         const ColumnString::Offsets & needle_offsets,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         assert(haystack_offsets.size() == needle_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
         regexp_options.set_log_errors(false); /// don't write error messages to stderr
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
@@ -302,7 +302,8 @@ struct ReplaceRegexpImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         assert(haystack_offsets.size() == replacement_offsets.size());
 
@@ -311,8 +312,7 @@ struct ReplaceRegexpImpl
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
         regexp_options.set_log_errors(false); /// don't write error messages to stderr
@@ -323,7 +323,7 @@ struct ReplaceRegexpImpl
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
@@ -349,20 +349,20 @@ struct ReplaceRegexpImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         assert(haystack_offsets.size() == needle_offsets.size());
         assert(needle_offsets.size() == replacement_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
         regexp_options.set_log_errors(false); /// don't write error messages to stderr
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
@@ -399,15 +399,15 @@ struct ReplaceRegexpImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (needle.empty())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
         ColumnString::Offset res_offset = 0;
-        size_t haystack_size = haystack_data.size() / n;
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
         regexp_options.set_log_errors(false); /// don't write error messages to stderr
@@ -419,7 +419,7 @@ struct ReplaceRegexpImpl
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t from = i * n;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);

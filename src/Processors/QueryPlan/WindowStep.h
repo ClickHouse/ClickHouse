@@ -6,9 +6,6 @@
 namespace DB
 {
 
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-
 class WindowTransform;
 
 class WindowStep : public ITransformingStep

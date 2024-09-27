@@ -40,7 +40,7 @@ public:
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
@@ -56,6 +56,7 @@ public:
     /// This method is used to select best projection for table.
     ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -120,18 +121,17 @@ private:
     ///  as well as `max_block_number_to_read`.
     static void selectPartsToRead(
         MergeTreeData::DataPartsVector & parts,
-        std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        PartFilterCounters & counters);
+        PartFilterCounters & counters,
+        QueryStatusPtr query_status);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     static void selectPartsToReadWithUUIDFilter(
         MergeTreeData::DataPartsVector & parts,
-        std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
@@ -161,7 +161,7 @@ public:
 
     /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context);
+        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
@@ -170,15 +170,14 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
-        const ActionsDAGPtr & filter_dag,
+        const ActionsDAG * filter_dag,
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
+        MergeTreeData::DataPartsVector & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
-        MergeTreeData::DataPartsVector & parts,
-        std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
@@ -192,7 +191,6 @@ public:
     /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         MergeTreeData::DataPartsVector && parts,
-        std::vector<AlterConversionsPtr> && alter_conversions,
         StorageMetadataPtr metadata_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,

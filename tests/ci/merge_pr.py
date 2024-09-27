@@ -23,7 +23,7 @@ from commit_status_helper import (
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-from report import SUCCESS, FAILURE
+from report import SUCCESS
 from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 from ci_config import CI
@@ -248,23 +248,27 @@ def main():
     repo = gh.get_repo(args.repo)
 
     if args.set_ci_status:
+        CI.GH.print_workflow_results()
         # set Mergeable check status and exit
-        assert args.wf_status in (FAILURE, SUCCESS)
         commit = get_commit(gh, args.pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
 
         has_failed_statuses = False
-        has_native_failed_status = False
         for status in statuses:
             print(f"Check status [{status.context}], [{status.state}]")
-            if CI.is_required(status.context) and status.state != SUCCESS:
-                print(f"WARNING: Failed status [{status.context}], [{status.state}]")
+            if (
+                CI.is_required(status.context)
+                and status.state != SUCCESS
+                and status.context != CI.StatusNames.SYNC
+            ):
+                print(
+                    f"WARNING: Not success status [{status.context}], [{status.state}]"
+                )
                 has_failed_statuses = True
-                if status.context != CI.StatusNames.SYNC:
-                    has_native_failed_status = True
 
-        if args.wf_status == SUCCESS or has_failed_statuses:
-            # set Mergeable check if workflow is successful (green)
+        workflow_ok = CI.is_workflow_ok()
+        if workflow_ok or has_failed_statuses:
+            # set Mergeable Check if workflow is successful (green)
             # or if we have GH statuses with failures (red)
             #    to avoid false-green on a died runner
             state = trigger_mergeable_check(
@@ -283,7 +287,7 @@ def main():
             print(
                 "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"
             )
-        if args.wf_status == SUCCESS and not has_native_failed_status:
+        if workflow_ok and not has_failed_statuses:
             sys.exit(0)
         else:
             sys.exit(1)

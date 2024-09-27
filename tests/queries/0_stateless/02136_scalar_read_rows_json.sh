@@ -7,4 +7,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 echo "#1"
 ${CLICKHOUSE_CLIENT} --query='SELECT count() FROM numbers(100) FORMAT JSON;' | grep -a -v "elapsed"
 echo "#2"
-${CLICKHOUSE_CLIENT} --query='SELECT (SELECT max(number), count(number) FROM numbers(100000) as n) SETTINGS max_block_size = 65505, allow_experimental_analyzer = 1 FORMAT JSON;' | grep -a -v "elapsed" | grep -v "_subquery"
+${CLICKHOUSE_CLIENT} --query='SELECT (SELECT max(number), count(number) FROM numbers(100000) as n) SETTINGS max_block_size = 65505, enable_analyzer = 1 FORMAT JSON;' | grep -a -v "elapsed" | grep -v "_subquery"

@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 database_name="$CLICKHOUSE_DATABASE"_02911_keeper_map
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP DATABASE IF EXISTS $database_name;
     CREATE DATABASE $database_name;
     CREATE TABLE $database_name.02911_backup_restore_keeper_map1 (key UInt64, value String) Engine=KeeperMap('/' || currentDatabase() || '/test02911') PRIMARY KEY key;
@@ -13,20 +13,9 @@ $CLICKHOUSE_CLIENT -nm -q "
     CREATE TABLE $database_name.02911_backup_restore_keeper_map3 (key UInt64, value String) Engine=KeeperMap('/' || currentDatabase() || '/test02911_different') PRIMARY KEY key;
 "
 
-# KeeperMap table engine doesn't have internal retries for interaction with Keeper. Do it on our own, otherwise tests with overloaded server can be flaky.
-while true
-do
-    $CLICKHOUSE_CLIENT -nm -q "INSERT INTO $database_name.02911_backup_restore_keeper_map2 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5000;
-    " | grep -q "KEEPER_EXCEPTION" && sleep 1 && continue
-    break
-done
+$CLICKHOUSE_CLIENT -m -q "INSERT INTO $database_name.02911_backup_restore_keeper_map2 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5000;"
 
-while true
-do
-    $CLICKHOUSE_CLIENT -nm -q "INSERT INTO $database_name.02911_backup_restore_keeper_map3 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 3000;
-    " | grep -q "KEEPER_EXCEPTION" && sleep 1 && continue
-    break
-done
+$CLICKHOUSE_CLIENT -m -q "INSERT INTO $database_name.02911_backup_restore_keeper_map3 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 3000;"
 
 backup_path="$database_name"
 for i in $(seq 1 3); do
