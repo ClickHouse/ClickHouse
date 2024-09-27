@@ -94,6 +94,7 @@ public:
     // Method to add a new task to the multiset
     void appendTask(const std::shared_ptr<QueryStatus> & query, const UInt64 & timeout)
     {
+        std::unique_lock<std::mutex> lock(m);
         LOG_TRACE(getLogger("CANCELLATION CHECKER"), "added. query: {}, timeout: {} milliseconds", query->getInfo().query, timeout);
         const auto & now = std::chrono::steady_clock::now();
         const UInt64 & end_time = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() + timeout;
@@ -104,6 +105,7 @@ public:
     // Used when some task is done
     void appendDoneTasks(const std::shared_ptr<QueryStatus> & query)
     {
+        std::unique_lock<std::mutex> lock(m);
         LOG_TRACE(getLogger("CANCELLATION CHECKER"), "added to done tasks, query: {}", query->getInfo().query);
         done_tasks.push_back(query);
         LOG_TRACE(getLogger("CANCELLATION CHECKER"), "done tasks size: {}", done_tasks.size());
@@ -113,6 +115,7 @@ public:
     // Used when some task is cancelled
     void addToCancelledTasks(const std::shared_ptr<QueryStatus> & query)
     {
+        std::unique_lock<std::mutex> lock(m);
         LOG_TRACE(getLogger("CANCELLATION CHECKER"), "added to cancelled tasks, query: {}", query->getInfo().query);
         cancelled_tasks.push_back(query);
         LOG_TRACE(getLogger("CANCELLATION CHECKER"), "cancelled tasks size: {}", cancelled_tasks.size());

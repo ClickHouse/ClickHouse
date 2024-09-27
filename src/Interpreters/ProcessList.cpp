@@ -333,7 +333,6 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         }
     }
 
-    CancellationChecker::getInstance().appendDoneTasks(query);
     return res;
 }
 
