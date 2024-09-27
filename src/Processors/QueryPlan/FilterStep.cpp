@@ -51,6 +51,7 @@ FilterStep::FilterStep(
     , remove_filter_column(remove_filter_column_)
 {
     actions_dag.removeAliasesForFilter(filter_column_name);
+    actions_dag.removeUnusedActions(false, false);
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
