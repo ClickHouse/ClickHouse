@@ -21,7 +21,9 @@ def test_cluster(request):
         yield cluster
 
         instance = cluster.instances["ch1"]
-        cluster.ddl_check_query(instance, "DROP DATABASE IF EXISTS test ON CLUSTER 'cluster'")
+        cluster.ddl_check_query(
+            instance, "DROP DATABASE IF EXISTS test ON CLUSTER 'cluster'"
+        )
         cluster.ddl_check_query(
             instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'"
         )
@@ -81,7 +83,8 @@ def test_create_view(test_cluster):
         "CREATE MATERIALIZED VIEW test.simple_mat_view ON CLUSTER 'cluster' ENGINE = Memory AS SELECT * FROM system.numbers FORMAT TSV",
     )
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE IF EXISTS test.simple_mat_view ON CLUSTER 'cluster' FORMAT TSV"
+        instance,
+        "DROP TABLE IF EXISTS test.simple_mat_view ON CLUSTER 'cluster' FORMAT TSV",
     )
     test_cluster.ddl_check_query(
         instance,
@@ -210,7 +213,9 @@ ENGINE = Distributed('{cluster}', default, merge, i)
         "".join(["{}\t{}\n".format(x, x) for x in range(4)])
     )
 
-    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS merge ON CLUSTER '{cluster}'")
+    test_cluster.ddl_check_query(
+        instance, "DROP TABLE IF EXISTS merge ON CLUSTER '{cluster}'"
+    )
     test_cluster.ddl_check_query(
         instance, "DROP TABLE IF EXISTS all_merge_32 ON CLUSTER '{cluster}'"
     )
@@ -493,7 +498,8 @@ def test_replicated_without_arguments(test_cluster):
     )
 
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE IF NOT EXISTS test_atomic ON CLUSTER cluster ENGINE=Atomic"
+        instance,
+        "CREATE DATABASE IF NOT EXISTS test_atomic ON CLUSTER cluster ENGINE=Atomic",
     )
     assert (
         "are supported only for ON CLUSTER queries with Atomic database engine"
