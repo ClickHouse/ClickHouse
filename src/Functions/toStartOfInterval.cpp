@@ -227,7 +227,7 @@ public:
 
         const DateLUTImpl * time_zone_tmp;
 
-        if (isDateTimeOrDateTime64(time_column.type))
+        if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
             const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
