@@ -3984,21 +3984,26 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     )
     connection.close()
 
-def view_test(expected_num_messages):
+def view_test(expected_num_messages, *_):
     result = instance.query(
         f"SELECT COUNT(1) FROM test.errors"
     )
 
     assert int(result) == expected_num_messages
 
-def dead_letter_queue_test(expected_num_messages):
+def dead_letter_queue_test(expected_num_messages, exchange_name):
     result = instance.query(
-        f"SELECT * FROM system.dead_letter_queue"
+        f"SELECT * FROM system.dead_letter_queue FORMAT Vertical"
     )
 
     logging.debug(f"system.dead_letter_queue content is {result}")
 
-    # assert int(result) == expected_num_messages
+    rows = int(
+        instance.query(
+            f"SELECT count() FROM system.dead_letter_queue WHERE exchange_name = '{exchange_name}'"
+        )
+    )
+    assert rows == expected_num_messages
 
 
 def rabbitmq_reject_broken_messages(rabbitmq_cluster, handle_error_mode, additional_dml, check_method):
@@ -4104,14 +4109,7 @@ def rabbitmq_reject_broken_messages(rabbitmq_cluster, handle_error_mode, additio
     )
     logging.debug(f"test.errors contains {result}")
 
-    check_method(len(dead_letters))
-
-    # result = instance.query(
-    #     f"SELECT COUNT(1) FROM test.errors"
-    # )
-
-    # assert int(result) == len(dead_letters)
-
+    check_method(len(dead_letters), exchange)
 
     connection.close()
 

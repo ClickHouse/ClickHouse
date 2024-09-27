@@ -31,10 +31,12 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
         {"database_name", low_cardinality_string, "ClickHouse database Kafka table belongs to."},
         {"table_name", low_cardinality_string, "ClickHouse table name."},
         {"error", std::make_shared<DataTypeString>(), "Error text."},
+        {"raw_message", std::make_shared<DataTypeString>(), "Message body."},
 
         {"topic_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Kafka topic name."},
         {"partition", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Kafka partition."},
         {"offset", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Kafka offset."},
+        /* 3 */
 
         {"exchange_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ exchange name."},
         {"message_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ message id."},
@@ -42,8 +44,8 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
         {"message_redelivered", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "RabbitMQ redelivered flag."},
         {"message_delivery_tag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "RabbitMQ delivery tag."},
         {"channel_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ channel id."},
+        /* 9 */
 
-        {"raw_message", std::make_shared<DataTypeString>(), "Message body."}
     };
 }
 
@@ -53,31 +55,40 @@ struct DetailsVisitor
 {
     MutableColumns & columns;
     mutable size_t i;
+    std::vector<bool> & explicitly_set;
 
-    DetailsVisitor(MutableColumns & columns_, size_t i_)
-        : columns(columns_), i(i_)
+    DetailsVisitor(MutableColumns & columns_, size_t i_, std::vector<bool> & explicitly_set_)
+        : columns(columns_), i(i_), explicitly_set(explicitly_set_)
     {
     }
 
     void operator()(const DeadLetterQueueElement::KafkaDetails & kafka) const
     {
+        explicitly_set[i] = true;
         columns[i++]->insertData(kafka.topic_name.data(), kafka.topic_name.size());
+        explicitly_set[i] = true;
         columns[i++]->insert(kafka.partition);
+        explicitly_set[i] = true;
         columns[i++]->insert(kafka.offset);
     }
 
     void operator()(const DeadLetterQueueElement::RabbitMQDetails & rabbit_mq) const
     {
-        i += 3;
+        i += 3; // skip rows specific for previous details
 
+        explicitly_set[i] = true;
         columns[i++]->insertData(rabbit_mq.exchange_name.data(), rabbit_mq.exchange_name.size());
+        explicitly_set[i] = true;
         columns[i++]->insertData(rabbit_mq.message_id.data(), rabbit_mq.message_id.size());
+        explicitly_set[i] = true;
         columns[i++]->insert(rabbit_mq.timestamp);
+        explicitly_set[i] = true;
         columns[i++]->insert(rabbit_mq.redelivered);
+        explicitly_set[i] = true;
         columns[i++]->insert(rabbit_mq.delivery_tag);
+        explicitly_set[i] = true;
         columns[i++]->insertData(rabbit_mq.channel_id.data(), rabbit_mq.channel_id.size());
     }
-
 };
 }
 
@@ -96,13 +107,24 @@ void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(table_name.data(), table_name.size());
     columns[i++]->insertData(error.data(), error.size());
 
-    std::visit(DetailsVisitor{columns, i}, details);
-
-    i = 13;
-
     columns[i++]->insertData(raw_message.data(), raw_message.size());
 
+    auto columns_description = getColumnsDescription();
+    size_t num_columns = columns_description.size();
+    std::vector<bool> explicitly_set(num_columns, false);
 
+    std::visit(DetailsVisitor{columns, i, explicitly_set}, details);
+
+    auto it = explicitly_set.begin();
+    it += i; // start from beginning of details
+
+    for (; it != explicitly_set.end(); ++it)
+    {
+        if (! *it)
+            // not set by details visitor
+            columns[i]->insertDefault();
+        i++;
+    }
 }
 
 NamesAndAliases DeadLetterQueueElement::getNamesAndAliases()
