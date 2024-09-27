@@ -10,8 +10,8 @@ template <typename T>
 void applyPermutation(std::vector<T> & data, const std::vector<size_t> & permutation)
 {
     std::vector<T> res;
-    res.reserve(data.size());
-    for (size_t i = 0; i < data.size(); ++i)
+    res.reserve(permutation.size());
+    for (size_t i = 0; i < permutation.size(); ++i)
         res.emplace_back(std::move(data[permutation[i]]));
     data = std::move(res);
 }
