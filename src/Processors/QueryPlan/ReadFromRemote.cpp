@@ -72,7 +72,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
     });
 }
 
-static void enforceSorting(QueryProcessingStage::Enum stage, DataStream & output_stream, Context & context, SortDescription output_sort_description)
+static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, Context & context)
 {
     if (stage != QueryProcessingStage::WithMergeableState)
         throw Exception(
@@ -81,9 +81,6 @@ static void enforceSorting(QueryProcessingStage::Enum stage, DataStream & output
             QueryProcessingStage::toString(stage));
 
     context.setSetting("enable_memory_bound_merging_of_aggregation_results", true);
-
-    output_stream.sort_description = std::move(output_sort_description);
-    output_stream.sort_scope = DataStream::SortScope::Stream;
 }
 
 static void enforceAggregationInOrder(QueryProcessingStage::Enum stage, Context & context)
@@ -139,9 +136,9 @@ ReadFromRemote::ReadFromRemote(
 {
 }
 
-void ReadFromRemote::enforceSorting(SortDescription output_sort_description)
+void ReadFromRemote::enableMemoryBoundMerging()
 {
-    DB::enforceSorting(stage, *output_stream, *context, output_sort_description);
+    DB::enableMemoryBoundMerging(stage, *context);
 }
 
 void ReadFromRemote::enforceAggregationInOrder()
@@ -415,9 +412,9 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     setStepDescription(std::move(description));
 }
 
-void ReadFromParallelRemoteReplicasStep::enforceSorting(SortDescription output_sort_description)
+void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
 {
-    DB::enforceSorting(stage, *output_stream, *context, output_sort_description);
+    DB::enableMemoryBoundMerging(stage, *context);
 }
 
 void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
