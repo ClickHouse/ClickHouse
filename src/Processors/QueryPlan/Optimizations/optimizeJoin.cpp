@@ -56,11 +56,9 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     const auto & table_join = join->getTableJoin();
-    auto kind = table_join.kind();
-    if (table_join.hasUsing()
-     || table_join.strictness() != JoinStrictness::All
-     || (kind != JoinKind::Inner && kind != JoinKind::Left
-      && kind != JoinKind::Right && kind != JoinKind::Full))
+    /// fixme: USING clause handled specially in join algorithm, so swap breaks it
+    /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
+    if (table_join.hasUsing() || table_join.strictness() != JoinStrictness::All)
         return;
 
     bool need_swap = false;
