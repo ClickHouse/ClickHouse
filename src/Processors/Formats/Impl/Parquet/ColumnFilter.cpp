@@ -765,4 +765,34 @@ bool RowSet::any() const
     }
     return res;
 }
+
+IColumn::Filter ExpressionFilter::execute(const ColumnsWithTypeAndName & columns)
+{
+    auto block = Block(columns);
+    actions->execute(block);
+    auto filter_column = block.getByName(filter_name).column->assumeMutable();
+    ColumnUInt8 * uint8_col = static_cast<ColumnUInt8 *>(filter_column.get());
+    IColumn::Filter filter;
+    filter.swap(uint8_col->getData());
+    return filter;
+}
+NameSet ExpressionFilter::getInputs()
+{
+    NameSet result;
+    auto inputs = actions->getActionsDAG().getInputs();
+    for (const auto & input : inputs)
+    {
+        result.insert(input->result_name);
+    }
+    return result;
+}
+ExpressionFilter::ExpressionFilter(ActionsDAG && dag_)
+{
+    actions = std::make_shared<ExpressionActions>(std::move(dag_));
+    filter_name = actions->getActionsDAG().getOutputs().front()->result_name;
+    if (!isUInt8(actions->getActionsDAG().getOutputs().front()->result_type))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter result type must be UInt8");
+    }
+}
 }

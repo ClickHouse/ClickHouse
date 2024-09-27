@@ -50,6 +50,7 @@ public:
 
     Block read();
     void addFilter(const String & column_name, ColumnFilterPtr filter);
+    void addExpressionFilter(std::shared_ptr<ExpressionFilter> filter);
     void setRemainFilter(std::optional<ActionsDAG> & expr);
     std::unique_ptr<RowGroupChunkReader> getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr prefetch);
     std::unique_ptr<SubRowGroupRangeReader> getSubRowGroupRangeReader(std::vector<Int32> row_group_indices);
@@ -72,6 +73,7 @@ private:
     size_t next_row_group_idx = 0;
     std::shared_ptr<parquet::FileMetaData> meta_data;
     std::unordered_map<String, parquet::schema::NodePtr> parquet_columns;
+    std::vector<std::shared_ptr<ExpressionFilter>> expression_filters;
 };
 
 }

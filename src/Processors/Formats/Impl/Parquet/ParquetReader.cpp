@@ -118,6 +118,10 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
     }
     return std::make_unique<SubRowGroupRangeReader>(row_group_indices_, std::move(row_group_prefetches), [&](const size_t idx, RowGroupPrefetchPtr prefetch) { return getRowGroupChunkReader(idx, std::move(prefetch)); });
 }
+void ParquetReader::addExpressionFilter(std::shared_ptr<ExpressionFilter> filter)
+{
+    expression_filters.emplace_back(filter);
+}
 
 
 SubRowGroupRangeReader::SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, std::vector<RowGroupPrefetchPtr>&& row_group_prefetches_, RowGroupReaderCreator && creator)

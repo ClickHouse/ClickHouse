@@ -10,8 +10,9 @@ struct FilterDescription;
 struct SelectResult
 {
     std::optional<RowSet> set;
-    std::unordered_map<size_t, ColumnPtr> intermediate_columns;
-    std::shared_ptr<FilterDescription> intermediate_filter_description;
+    std::unordered_map<String, ColumnPtr> intermediate_columns;
+    IColumn::Filter intermediate_filter;
+    size_t valid_count = 0;
     bool skip_all = false;
 };
 
@@ -19,15 +20,17 @@ class SelectConditions
 {
 public:
     SelectConditions(
-        std::unordered_map<size_t, SelectiveColumnReaderPtr> & readers,
-        std::vector<size_t> & fastFilterColumnIdxs,
-        std::unordered_map<size_t, ColumnFilterPtr> & actionsFilters);
+        std::unordered_map<String, SelectiveColumnReaderPtr> & readers_,
+        std::vector<String> & fast_filter_columns_,
+        std::vector<std::shared_ptr<ExpressionFilter>>& expression_filters,
+        const Block & header_);
     SelectResult selectRows(size_t rows);
 private:
     bool has_filter = false;
-    std::unordered_map<size_t, SelectiveColumnReaderPtr> & readers;
-    std::vector<size_t> & fast_filter_column_idxs;
-    std::unordered_map<size_t, ColumnFilterPtr>& actions_filters;
+    const std::unordered_map<String, SelectiveColumnReaderPtr> & readers;
+    const std::vector<String> & fast_filter_columns;
+    const std::vector<std::shared_ptr<ExpressionFilter>>& expression_filters;
+    const Block & header;
 };
 
 
@@ -106,5 +109,6 @@ private:
     std::vector<PaddedPODArray<UInt8>> column_buffers;
     size_t remain_rows = 0;
     ReadMetrics metrics;
+    std::unique_ptr<SelectConditions> selectConditions;
 };
 }

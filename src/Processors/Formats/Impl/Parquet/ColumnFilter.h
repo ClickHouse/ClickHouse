@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <base/types.h>
 #include <boost/dynamic_bitset.hpp>
 #include <Common/Exception.h>
@@ -95,6 +96,19 @@ public:
         const PaddedPODArray<Int32> & idx,
         const RowSet & row_set,
         size_t rows_to_read);
+};
+
+class ExpressionFilter
+{
+public:
+    explicit ExpressionFilter(ActionsDAG && dag_);
+    NameSet getInputs();
+
+    IColumn::Filter execute(const ColumnsWithTypeAndName & columns);
+
+private:
+    ExpressionActionsPtr actions;
+    String filter_name;
 };
 
 class ColumnFilter

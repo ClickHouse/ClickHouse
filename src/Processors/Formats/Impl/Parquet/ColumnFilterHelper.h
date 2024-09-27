@@ -11,39 +11,14 @@ using ColumnFilterCreators = std::vector<ColumnFilterCreator>;
 struct FilterSplitResult
 {
     std::unordered_map<String, std::vector<ColumnFilterPtr>> filters;
-    std::optional<ActionsDAG> remain_filter = std::nullopt;
+    std::vector<std::shared_ptr<ExpressionFilter>> expression_filters;
 };
 
 class ColumnFilterHelper
 {
 public:
 
-    static FilterSplitResult splitFilterForPushDown(const ActionsDAG& filter_expression)
-    {
-        if (filter_expression.getOutputs().empty())
-            return {};
-        const auto * filter_node = filter_expression.getOutputs().front();
-        auto conditions = ActionsDAG::extractConjunctionAtoms(filter_node);
-        std::vector<ColumnFilterPtr> filters;
-        ActionsDAG::NodeRawConstPtrs unsupported_conditions;
-        FilterSplitResult split_result;
-        for (const auto * condition : conditions)
-        {
-            if (std::none_of(creators.begin(), creators.end(), [&](ColumnFilterCreator & creator) {
-                                auto result = creator(*condition);
-                                if (result.has_value())
-                                    split_result.filters[result.value().first].emplace_back(result.value().second);
-                                return result.has_value();
-                            }))
-                unsupported_conditions.push_back(condition);
-        }
-        if (!unsupported_conditions.empty())
-        {
-            auto remain_filter = ActionsDAG::buildFilterActionsDAG(unsupported_conditions);
-            split_result.remain_filter = std::move(remain_filter);
-        }
-        return split_result;
-    }
+    static FilterSplitResult splitFilterForPushDown(const ActionsDAG& filter_expression);
 
 private:
     static ColumnFilterCreators creators;
