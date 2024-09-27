@@ -101,7 +101,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (true)
     {
-        if (!definer && s_definer.ignore(pos, expected))
+        if (!definer && !is_definer_current_user && s_definer.ignore(pos, expected))
         {
             s_eq.ignore(pos, expected);
             if (s_current_user.ignore(pos, expected))
