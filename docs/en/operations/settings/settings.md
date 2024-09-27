@@ -5683,14 +5683,23 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 
 Default value: `false`.
 
-## output_format_identifier_quoting_rule
+## show_create_query_identifier_quoting_rule
 
-Define identifier quoting behavior:
-- `when_necessary`: When the identifiers is one of `{"distinct", "all", "table"}` (defined in `DB::writeProbablyQuotedStringImpl`), and ambiguous identifiers: column names, dictionary attribute names (passed to `DB::FormatSettings::writeIdentifier` with `ambiguous=true`)
-- `always`: Always quote identifiers
-- `user_display`: When the identifiers is one of `{"distinct", "all", "table"}` (defined in `DB::writeProbablyQuotedStringImpl`)
+Define identifier quoting behavior of the show create query result:
+- `when_necessary`: When the identifiers is one of `{"distinct", "all", "table"}`, or it can cause ambiguity: column names, dictionary attribute names.
+- `always`: Always quote identifiers.
+- `user_display`: When the identifiers is a keyword.
 
 Default value: `when_necessary`.
+
+## show_create_query_identifier_quoting_style
+
+Define identifier quoting style of the show create query result:
+- `Backticks`: \`clickhouse\` style.
+- `DoubleQuotes`: "postgres" style
+- `BackticksMySQL`: \`mysql\` style, most same as `Backticks`, but it uses '``' to escape '`'
+
+Default value: `Backticks`.
 
 ## mongodb_throw_on_unsupported_query
 

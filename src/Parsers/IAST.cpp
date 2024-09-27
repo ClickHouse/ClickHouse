@@ -220,16 +220,17 @@ String IAST::getColumnNameWithoutAlias() const
 
 void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
 {
-    if (!ambiguous && identifier_quoting_rule == IdentifierQuotingRule::UserDisplay)
-    {
-        // Treat `name` as ambiguous if it is one of the keywords
-        const auto & keywords = getAllKeyWords();
-        ambiguous = std::find(keywords.begin(), keywords.end(), Poco::toUpper(name)) != keywords.end();
-    }
-
     bool must_quote
         = (identifier_quoting_rule == IdentifierQuotingRule::Always
            || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary));
+
+    if (identifier_quoting_rule == IdentifierQuotingRule::UserDisplay && !must_quote)
+    {
+        // Quote `name` if it is one of the keywords when `identifier_quoting_rule` is `IdentifierQuotingRule::UserDisplay`
+        const auto & keyword_set = getKeyWordSet();
+        must_quote = keyword_set.contains(Poco::toUpper(name));
+    }
+
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::Backticks:
