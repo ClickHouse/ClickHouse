@@ -1311,11 +1311,11 @@ void DDLWorker::markReplicasActive(bool reinitialized)
             continue;
         }
 
-        /// Create "active" node (remove previous one if necessary)
         String active_path = fs::path(replicas_dir) / host_id / "active";
-        String active_id = toString(ServerUUID::get());
-        zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+        if (zookeeper->exists(active_path))
+            continue;
 
+        String active_id = toString(ServerUUID::get());
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
 
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
