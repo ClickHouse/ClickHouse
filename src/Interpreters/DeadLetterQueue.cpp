@@ -92,8 +92,6 @@ struct DetailsVisitor
 };
 }
 
-
-
 void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
@@ -131,4 +129,5 @@ NamesAndAliases DeadLetterQueueElement::getNamesAndAliases()
 {
     return NamesAndAliases{};
 }
+
 }

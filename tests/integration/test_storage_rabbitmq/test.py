@@ -3984,17 +3984,15 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     )
     connection.close()
 
+
 def view_test(expected_num_messages, *_):
-    result = instance.query(
-        f"SELECT COUNT(1) FROM test.errors"
-    )
+    result = instance.query(f"SELECT COUNT(1) FROM test.errors")
 
     assert int(result) == expected_num_messages
 
+
 def dead_letter_queue_test(expected_num_messages, exchange_name):
-    result = instance.query(
-        f"SELECT * FROM system.dead_letter_queue FORMAT Vertical"
-    )
+    result = instance.query(f"SELECT * FROM system.dead_letter_queue FORMAT Vertical")
 
     logging.debug(f"system.dead_letter_queue content is {result}")
 
@@ -4006,7 +4004,9 @@ def dead_letter_queue_test(expected_num_messages, exchange_name):
     assert rows == expected_num_messages
 
 
-def rabbitmq_reject_broken_messages(rabbitmq_cluster, handle_error_mode, additional_dml, check_method):
+def rabbitmq_reject_broken_messages(
+    rabbitmq_cluster, handle_error_mode, additional_dml, check_method
+):
     credentials = pika.PlainCredentials("root", "clickhouse")
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
@@ -4104,14 +4104,13 @@ def rabbitmq_reject_broken_messages(rabbitmq_cluster, handle_error_mode, additio
         assert f"Broken message {i}" in str(letter)
         i += 2
 
-    result = instance.query(
-        f"SELECT * FROM test.errors FORMAT Vertical"
-    )
+    result = instance.query(f"SELECT * FROM test.errors FORMAT Vertical")
     logging.debug(f"test.errors contains {result}")
 
     check_method(len(dead_letters), exchange)
 
     connection.close()
+
 
 def test_rabbitmq_reject_broken_messages_stream(rabbitmq_cluster):
     rabbitmq_reject_broken_messages(
@@ -4120,6 +4119,7 @@ def test_rabbitmq_reject_broken_messages_stream(rabbitmq_cluster):
         "CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error)",
         view_test,
     )
+
 
 def test_rabbitmq_reject_broken_messages_dead_letter_queue(rabbitmq_cluster):
     rabbitmq_reject_broken_messages(
