@@ -1785,7 +1785,7 @@ CONV_FN(TableEngine, te) {
 CONV_FN(CreateTable, create_table) {
   ret += create_table.replace() ? "REPLACE" : "CREATE";
   ret += " ";
-  if (create_table.is_temp()) {
+  if (!create_table.replace() && create_table.is_temp()) {
     ret += "TEMPORARY ";
   }
   ret += "TABLE ";
