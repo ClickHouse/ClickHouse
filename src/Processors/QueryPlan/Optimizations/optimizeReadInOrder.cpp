@@ -515,7 +515,7 @@ SortingInputOrder buildInputOrderInfo(
                     // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
                     // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
 
-                    can_optimize_virtual_row = true;
+                    can_optimize_virtual_row = false;
                 }
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
