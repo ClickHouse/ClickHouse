@@ -252,13 +252,13 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
-    extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
