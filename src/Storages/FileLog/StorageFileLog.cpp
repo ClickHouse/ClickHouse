@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -34,13 +33,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
-    extern const SettingsMilliseconds stream_poll_timeout_ms;
-    extern const SettingsBool use_concurrency_control;
-}
 
 namespace ErrorCodes
 {
@@ -160,7 +152,7 @@ StorageFileLog::StorageFileLog(
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
+        if (LoadingStrictnessLevel::ATTACH <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
@@ -424,7 +416,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        (void)std::filesystem::remove_all(metadata_base_path);
+        std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -475,7 +467,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
+            reader.seekg(0, reader.end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -585,20 +577,20 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
 size_t StorageFileLog::getMaxBlockSize() const
 {
     return filelog_settings->max_block_size.changed ? filelog_settings->max_block_size.value
-                                                    : getContext()->getSettingsRef()[Setting::max_insert_block_size].value;
+                                                    : getContext()->getSettingsRef().max_insert_block_size.value;
 }
 
 size_t StorageFileLog::getPollMaxBatchSize() const
 {
     size_t batch_size = filelog_settings->poll_max_batch_size.changed ? filelog_settings->poll_max_batch_size.value
-                                                                      : getContext()->getSettingsRef()[Setting::max_block_size].value;
+                                                                      : getContext()->getSettingsRef().max_block_size.value;
     return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageFileLog::getPollTimeoutMillisecond() const
 {
     return filelog_settings->poll_timeout_ms.changed ? filelog_settings->poll_timeout_ms.totalMilliseconds()
-                                                     : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
+                                                     : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
@@ -748,14 +740,7 @@ bool StorageFileLog::streamToViews()
 
     auto new_context = Context::createCopy(getContext());
 
-    InterpreterInsertQuery interpreter(
-        insert,
-        new_context,
-        /* allow_materialized */ false,
-        /* no_squash */ true,
-        /* no_destination */ true,
-        /* async_isnert */ false);
-
+    InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
     auto block_io = interpreter.execute();
 
     /// Each stream responsible for closing it's files and store meta
@@ -785,7 +770,7 @@ bool StorageFileLog::streamToViews()
     {
         block_io.pipeline.complete(std::move(input));
         block_io.pipeline.setNumThreads(max_streams_number);
-        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef()[Setting::use_concurrency_control]);
+        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef().use_concurrency_control);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -1024,7 +1009,7 @@ bool StorageFileLog::updateFileInfos()
                     file_infos.meta_by_inode.erase(meta);
 
                 if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    (void)std::filesystem::remove(getFullMetaPath(file_name));
+                    std::filesystem::remove(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else

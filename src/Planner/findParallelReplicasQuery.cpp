@@ -4,7 +4,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -24,10 +23,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
-}
 
 namespace ErrorCodes
 {
@@ -56,13 +51,7 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                 const auto & storage = table_node.getStorage();
                 /// Here we check StorageDummy as well, to support a query tree with replaced storages.
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
-                {
-                    /// parallel replicas is not supported with FINAL
-                    if (table_node.getTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
-                        return {};
-
                     return res;
-                }
 
                 return {};
             }
@@ -206,7 +195,7 @@ const QueryNode * findQueryForParallelReplicas(
                 const auto * filter = typeid_cast<FilterStep *>(step);
 
                 const auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(step);
-                bool allowed_creating_sets = settings[Setting::parallel_replicas_allow_in_with_subquery] && creating_sets;
+                bool allowed_creating_sets = settings.parallel_replicas_allow_in_with_subquery && creating_sets;
 
                 if (!expression && !filter && !allowed_creating_sets)
                     can_distribute_full_node = false;
@@ -423,16 +412,17 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get());
-    if (!table_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
+    ClusterProxy::SelectStreamFactory select_stream_factory =
+        ClusterProxy::SelectStreamFactory(
+            header,
+            {},
+            {},
+            processed_stage);
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        table_node->getStorageID(),
-        header,
-        processed_stage,
+        select_stream_factory,
         modified_query_ast,
         context,
         storage_limits);

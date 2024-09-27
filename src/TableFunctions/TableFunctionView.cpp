@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
@@ -12,11 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -55,7 +49,7 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
 
     Block sample_block;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef().allow_experimental_analyzer)
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
     else
         sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);

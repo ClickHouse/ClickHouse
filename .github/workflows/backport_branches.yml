@@ -9,12 +9,6 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'backport/**'
-
-# Cancel the previous wf run in PRs.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -38,6 +32,10 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
           python3 -m unittest discover -s . -p 'test_*.py'
+          for dir in *_lambda/; do
+            echo "Testing $dir"
+            python3 -m unittest discover -s "$dir" -p 'test_*.py'
+          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -60,7 +58,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/docker_test_images.yml
+    uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckX86:
@@ -68,7 +66,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Compatibility check (release)
+      test_name: Compatibility check (amd64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckAarch64:
@@ -157,24 +155,33 @@ jobs:
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
-  Builds_Report:
+  BuilderReport:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
-    needs: [RunConfig, BuilderDebAarch64, BuilderDebAsan, BuilderDebDebug, BuilderDebRelease, BuilderDebTsan, BuilderBinDarwin, BuilderBinDarwinAarch64]
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-      - name: Download reports
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --pre --job-name Builds
-      - name: Builds report
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 ./build_report_check.py --reports package_release package_aarch64 package_asan package_tsan package_debug binary_darwin binary_darwin_aarch64
-      - name: Set status
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --post --job-name Builds
+    if: ${{ !cancelled() }}
+    needs:
+      - RunConfig
+      - BuilderDebAarch64
+      - BuilderDebAsan
+      - BuilderDebDebug
+      - BuilderDebRelease
+      - BuilderDebTsan
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickHouse build check
+      runner_type: style-checker-aarch64
+      data: ${{ needs.RunConfig.outputs.data }}
+  BuilderSpecialReport:
+    # run report check for failed builds to indicate the CI error
+    if: ${{ !cancelled() }}
+    needs:
+      - RunConfig
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickHouse special build check
+      runner_type: style-checker-aarch64
+      data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
 #################################### INSTALL PACKAGES ######################################
 ############################################################################################
@@ -183,7 +190,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Install packages (release)
+      test_name: Install packages (amd64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
@@ -193,7 +200,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Install packages (aarch64)
+      test_name: Install packages (arm64)
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
@@ -243,10 +250,10 @@ jobs:
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
-    if: ${{ !cancelled() }}
+    if: ${{ !failure() && !cancelled() }}
     needs:
-      - RunConfig
-      - Builds_Report
+      - BuilderReport
+      - BuilderSpecialReport
       - FunctionalStatelessTestAsan
       - FunctionalStatefulTestDebug
       - StressTestTsan
@@ -260,23 +267,7 @@ jobs:
         with:
           clear-repository: true
       - name: Finish label
-        if: ${{ !failure() }}
         run: |
-          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
-          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
-          # update mergeable check
-          python3 merge_pr.py --set-ci-status
-          # update overall ci report
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 finish_check.py
           python3 merge_pr.py
-      - name: Check Workflow results
-        if: ${{ !cancelled() }}
-        run: |
-          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
-          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          python3 ./tests/ci/ci_buddy.py --check-wf-status

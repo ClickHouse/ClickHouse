@@ -3,18 +3,12 @@
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
-#include <Core/Settings.h>
-#include <base/sleep.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 database_replicated_initial_query_timeout_sec;
-}
 
 namespace ErrorCodes
 {
@@ -23,8 +17,6 @@ namespace ErrorCodes
     extern const int NOT_A_LEADER;
     extern const int UNFINISHED;
 }
-
-static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
@@ -37,12 +29,6 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
 
 bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
-    {
-        std::lock_guard lock(initialization_duration_timer_mutex);
-        initialization_duration_timer.emplace();
-        initialization_duration_timer->start();
-    }
-
     while (!stop_flag)
     {
         try
@@ -58,32 +44,8 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 /// NOTE It will not stop cleanup thread until DDLWorker::shutdown() call (cleanup thread will just do nothing)
                 break;
             }
-
-            if (database->db_settings.max_retries_before_automatic_recovery &&
-                database->db_settings.max_retries_before_automatic_recovery <= subsequent_errors_count)
-            {
-                String current_task_name;
-                {
-                    std::unique_lock lock{mutex};
-                    current_task_name = current_task;
-                }
-                LOG_WARNING(log, "Database got stuck at processing task {}: it failed {} times in a row with the same error. "
-                                 "Will reset digest to mark our replica as lost, and trigger recovery from the most up-to-date metadata "
-                                 "from ZooKeeper. See max_retries_before_automatic_recovery setting. The error: {}",
-                            current_task, subsequent_errors_count, last_unexpected_error);
-
-                String digest_str;
-                zookeeper->tryGet(database->replica_path + "/digest", digest_str);
-                LOG_WARNING(log, "Resetting digest from {} to {}", digest_str, FORCE_AUTO_RECOVERY_DIGEST);
-                zookeeper->trySet(database->replica_path + "/digest", FORCE_AUTO_RECOVERY_DIGEST);
-            }
-
             initializeReplication();
             initialized = true;
-            {
-                std::lock_guard lock(initialization_duration_timer_mutex);
-                initialization_duration_timer.reset();
-            }
             return true;
         }
         catch (...)
@@ -91,11 +53,6 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
             tryLogCurrentException(log, fmt::format("Error on initialization of {}", database->getDatabaseName()));
             sleepForSeconds(5);
         }
-    }
-
-    {
-        std::lock_guard lock(initialization_duration_timer_mutex);
-        initialization_duration_timer.reset();
     }
 
     return false;
@@ -254,8 +211,6 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
         }
         else if (code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, res);
-
-        sleepForMilliseconds(50);
     }
 
     if (counter_path.empty())
@@ -316,7 +271,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->is_initial_query = true;
 
     LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
-    UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
+    UInt64 timeout = query_context->getSettingsRef().database_replicated_initial_query_timeout_sec;
     {
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
@@ -444,8 +399,6 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         /// Some replica is added or removed, let's update cached cluster
         database->setCluster(database->getClusterImpl());
-        if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }
@@ -479,12 +432,6 @@ UInt32 DatabaseReplicatedDDLWorker::getLogPointer() const
     ///  - max_id can be equal to log_ptr - 1 due to race condition (when it's updated in zk, but not updated in memory yet)
     ///  - max_id can be greater than log_ptr, because log_ptr is not updated for failed and dummy entries
     return max_id.load();
-}
-
-UInt64 DatabaseReplicatedDDLWorker::getCurrentInitializationDurationMs() const
-{
-    std::lock_guard lock(initialization_duration_timer_mutex);
-    return initialization_duration_timer ? initialization_duration_timer->elapsedMilliseconds() : 0;
 }
 
 }

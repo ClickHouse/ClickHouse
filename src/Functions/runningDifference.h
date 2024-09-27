@@ -1,31 +1,24 @@
 #pragma once
-#include <Columns/ColumnNullable.h>
+#include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
-#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_deprecated_error_prone_window_functions;
-}
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int DEPRECATED_FUNCTION;
 }
 
 
@@ -142,15 +135,8 @@ private:
 public:
     static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
-            throw Exception(
-                ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
-                "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
-                name);
-
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
 

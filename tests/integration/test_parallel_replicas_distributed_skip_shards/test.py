@@ -53,9 +53,6 @@ def create_tables(cluster, table_name):
     node1.query(f"INSERT INTO {table_name} SELECT number, number FROM numbers(1000)")
     node2.query(f"INSERT INTO {table_name} SELECT -number, -number FROM numbers(1000)")
     node1.query(f"INSERT INTO {table_name} SELECT number, number FROM numbers(3)")
-    # need to sync replicas to have consistent result
-    node1.query(f"SYSTEM SYNC REPLICA {table_name}")
-    node2.query(f"SYSTEM SYNC REPLICA {table_name}")
 
 
 @pytest.mark.parametrize(
@@ -85,7 +82,7 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "enable_parallel_replicas": 2,
+                "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "skip_unavailable_shards": 1,
@@ -119,7 +116,7 @@ def test_error_on_unavailable_shards(start_cluster, prefer_localhost_replica):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "enable_parallel_replicas": 2,
+                "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "skip_unavailable_shards": 0,
@@ -154,7 +151,7 @@ def test_no_unavailable_shards(start_cluster, skip_unavailable_shards):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "enable_parallel_replicas": 2,
+                "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": 0,
                 "skip_unavailable_shards": skip_unavailable_shards,

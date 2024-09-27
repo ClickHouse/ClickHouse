@@ -5,16 +5,10 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
-#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
-}
 
 namespace
 {
@@ -27,7 +21,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
+        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
             return;
 
         static const std::unordered_set<String> func_supported = {
@@ -78,35 +72,50 @@ public:
 
         const auto lhs = std::make_shared<FunctionNode>("sum");
         lhs->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
-        resolveAggregateFunctionNodeByName(*lhs, lhs->getFunctionName());
+        resolveAsAggregateFunctionNode(*lhs, column_type);
 
         const auto rhs_count = std::make_shared<FunctionNode>("count");
         rhs_count->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
-        resolveAggregateFunctionNodeByName(*rhs_count, rhs_count->getFunctionName());
+        resolveAsAggregateFunctionNode(*rhs_count, column_type);
 
         const auto rhs = std::make_shared<FunctionNode>("multiply");
         rhs->getArguments().getNodes().push_back(func_plus_minus_nodes[literal_id]);
         rhs->getArguments().getNodes().push_back(rhs_count);
-        resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());
+        resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
 
-        auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
+        const auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
         if (column_id == 0)
             new_node->getArguments().getNodes() = {lhs, rhs};
         else if (column_id == 1)
             new_node->getArguments().getNodes() = {rhs, lhs};
-
-        resolveOrdinaryFunctionNodeByName(*new_node, new_node->getFunctionName(), getContext());
+        resolveOrdinaryFunctionNode(*new_node, new_node->getFunctionName());
 
         if (!new_node)
             return;
 
-        QueryTreeNodePtr res = std::move(new_node);
+        node = new_node;
 
-        if (!res->getResultType()->equals(*function_node->getResultType()))
-            res = createCastFunction(res, function_node->getResultType(), getContext());
-
-        node = std::move(res);
     }
+
+private:
+    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    {
+        const auto function = FunctionFactory::instance().get(function_name, getContext());
+        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+    }
+
+    static inline void resolveAsAggregateFunctionNode(FunctionNode & function_node, const DataTypePtr & argument_type)
+    {
+        AggregateFunctionProperties properties;
+        const auto aggregate_function = AggregateFunctionFactory::instance().get(function_node.getFunctionName(),
+            NullsAction::EMPTY,
+            {argument_type},
+            {},
+            properties);
+
+        function_node.resolveAsAggregateFunction(aggregate_function);
+    }
+
 };
 
 }

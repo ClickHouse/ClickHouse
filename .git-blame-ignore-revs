@@ -13,6 +13,3 @@
 # dbms/ → src/
 # (though it is unlikely that you will see it in blame)
 06446b4f08a142d6f1bc30664c47ded88ab51782
-
-# Applied Black formatter for Python code
-e6f5a3f98b21ba99cf274a9833797889e020a2b3

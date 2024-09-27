@@ -23,11 +23,7 @@
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
-#include <Core/Settings.h>
-
 #include <boost/algorithm/string/join.hpp>
-#include <boost/range/adaptor/map.hpp>
-
 #include <filesystem>
 #include <ranges>
 
@@ -36,11 +32,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-}
-
 namespace ErrorCodes
 {
     extern const int BACKUP_ENTRY_NOT_FOUND;
@@ -115,7 +106,7 @@ RestorerFromBackup::~RestorerFromBackup()
     if (getNumFutures() > 0)
     {
         LOG_INFO(log, "Waiting for {} tasks to finish", getNumFutures());
-        waitFutures(/* throw_if_error= */ false);
+        waitFutures();
     }
 }
 
@@ -130,7 +121,7 @@ void RestorerFromBackup::run(Mode mode)
         restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
     /// Do renaming in the create queries according to the renaming config.
-    renaming_map = BackupUtils::makeRenamingMap(restore_query_elements);
+    renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
 
     /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
     findRootPathsInBackup();
@@ -167,7 +158,7 @@ void RestorerFromBackup::run(Mode mode)
     setStage(Stage::COMPLETED);
 }
 
-void RestorerFromBackup::waitFutures(bool throw_if_error)
+void RestorerFromBackup::waitFutures()
 {
     std::exception_ptr error;
 
@@ -182,7 +173,11 @@ void RestorerFromBackup::waitFutures(bool throw_if_error)
         if (futures_to_wait.empty())
             break;
 
-        /// Wait for all tasks to finish.
+        /// Wait for all tasks.
+        for (auto & future : futures_to_wait)
+            future.wait();
+
+        /// Check if there is an exception.
         for (auto & future : futures_to_wait)
         {
             try
@@ -199,12 +194,7 @@ void RestorerFromBackup::waitFutures(bool throw_if_error)
     }
 
     if (error)
-    {
-        if (throw_if_error)
-            std::rethrow_exception(error);
-        else
-            tryLogException(error, log);
-    }
+        std::rethrow_exception(error);
 }
 
 size_t RestorerFromBackup::getNumFutures() const
@@ -227,19 +217,10 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     if (restore_coordination)
     {
         restore_coordination->setStage(new_stage, message);
-
-        /// The initiator of a RESTORE ON CLUSTER query waits for other hosts to complete their work (see waitForStage(Stage::COMPLETED) in BackupsWorker::doRestore),
-        /// but other hosts shouldn't wait for each others' completion. (That's simply unnecessary and also
-        /// the initiator may start cleaning up (e.g. removing restore-coordination ZooKeeper nodes) once all other hosts are in Stage::COMPLETED.)
-        bool need_wait = (new_stage != Stage::COMPLETED);
-
-        if (need_wait)
-        {
-            if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-                restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-            else
-                restore_coordination->waitForStage(new_stage);
-        }
+        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+        else
+            restore_coordination->waitForStage(new_stage);
     }
 }
 
@@ -250,7 +231,7 @@ void RestorerFromBackup::schedule(std::function<void()> && task_, const char * t
 
     checkIsQueryCancelled();
 
-    auto future = scheduleFromThreadPoolUnsafe<void>(
+    auto future = scheduleFromThreadPool<void>(
         [this, task = std::move(task_)]() mutable
         {
             if (exception_caught)
@@ -362,12 +343,12 @@ void RestorerFromBackup::findDatabasesAndTablesInBackup()
         {
             case ASTBackupQuery::ElementType::TABLE:
             {
-                findTableInBackup({element.database_name, element.table_name}, /* skip_if_inner_table= */ false, element.partitions);
+                findTableInBackup({element.database_name, element.table_name}, element.partitions);
                 break;
             }
             case ASTBackupQuery::ElementType::TEMPORARY_TABLE:
             {
-                findTableInBackup({DatabaseCatalog::TEMPORARY_DATABASE, element.table_name}, /* skip_if_inner_table= */ false, element.partitions);
+                findTableInBackup({DatabaseCatalog::TEMPORARY_DATABASE, element.table_name}, element.partitions);
                 break;
             }
             case ASTBackupQuery::ElementType::DATABASE:
@@ -386,14 +367,14 @@ void RestorerFromBackup::findDatabasesAndTablesInBackup()
     LOG_INFO(log, "Will restore {} databases and {} tables", getNumDatabases(), getNumTables());
 }
 
-void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
 {
     schedule(
-        [this, table_name_in_backup, skip_if_inner_table, partitions]() { findTableInBackupImpl(table_name_in_backup, skip_if_inner_table, partitions); },
+        [this, table_name_in_backup, partitions]() { findTableInBackupImpl(table_name_in_backup, partitions); },
         "Restore_FindTbl");
 }
 
-void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
 {
     bool is_temporary_table = (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -438,10 +419,6 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
             = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
     }
 
-    QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
-    if (skip_if_inner_table && BackupUtils::isInnerTable(table_name))
-        return;
-
     auto read_buffer = backup->readFile(*metadata_path);
     String create_query_str;
     readStringUntilEOF(create_query_str, *read_buffer);
@@ -452,8 +429,10 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
     String create_table_query_str = serializeAST(*create_table_query);
 
+    QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
+
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
+    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query);
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
     std::lock_guard lock{mutex};
@@ -586,7 +565,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
         if (except_table_names.contains({database_name_in_backup, table_name_in_backup}))
             continue;
 
-        findTableInBackup({database_name_in_backup, table_name_in_backup}, /* skip_if_inner_table= */ true, /* partitions= */ {});
+        findTableInBackup({database_name_in_backup, table_name_in_backup}, /* partitions= */ {});
     }
 }
 
@@ -785,7 +764,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
 
             ASTPtr existing_database_def = database->getCreateDatabaseQuery();
             ASTPtr database_def_from_backup = database_info.create_database_query;
-            if (!BackupUtils::compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
+            if (!compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
@@ -813,7 +792,7 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
         {
             if (restore_settings.storage_policy.value().empty())
                 /// it has been set to "" deliberately, so the source storage policy is erased
-                storage->settings->changes.removeSetting(setting_name); // NOLINT
+                storage->settings->changes.removeSetting(setting_name);
             else
                 /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
                 storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
@@ -853,7 +832,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         return true; /// Exclude this dependency.
     };
 
-    tables_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
+    tables_dependencies.removeTablesIf(need_exclude_dependency);
 
     if (tables_dependencies.getNumberOfTables() != table_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");
@@ -918,15 +897,11 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             table_info.database = DatabaseCatalog::instance().getDatabase(table_name.database);
         DatabasePtr database = table_info.database;
 
-        auto query_context = Context::createCopy(context);
-        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
-        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
-
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
             create_table_query,
-            query_context,
+            context,
             restore_coordination,
             std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
     }
@@ -954,13 +929,13 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 
         StoragePtr storage = database->getTable(resolved_id.table_name, context);
         table_info.storage = storage;
-        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
 
         if (!restore_settings.allow_different_table_def && !table_info.is_predefined_table)
         {
             ASTPtr existing_table_def = database->getCreateTableQuery(resolved_id.table_name, context);
             ASTPtr table_def_from_backup = table_info.create_table_query;
-            if (!BackupUtils::compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
+            if (!compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
