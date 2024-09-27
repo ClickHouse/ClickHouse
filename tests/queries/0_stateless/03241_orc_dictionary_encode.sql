@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+set input_format_orc_use_fast_decoder = 1;
+
 insert into function file(03241_data_without_dict.orc) 
 select toLowCardinality(cast(if (number % 10 = 0, null, number % 10) as Nullable(String))) as c from numbers(100000)
 settings output_format_orc_dictionary_key_size_threshold = 0, engine_file_truncate_on_insert = 1;
