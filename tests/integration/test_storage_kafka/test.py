@@ -1,45 +1,43 @@
+import ast
+import io
 import json
+import logging
+import math
 import os.path as p
 import random
 import socket
+import string
 import threading
 import time
-import logging
-import io
-import string
-import ast
-import math
+from contextlib import contextmanager
 
-import avro.schema
-import avro.io
 import avro.datafile
+import avro.io
+import avro.schema
+import kafka.errors
+import pytest
 from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
-
-import kafka.errors
-import pytest
 from google.protobuf.internal.encoder import _VarintBytes
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
-from kafka.protocol.admin import DescribeGroupsRequest_v1
-from kafka.protocol.group import MemberAssignment
-from kafka.admin import NewTopic
-from contextlib import contextmanager
 
+from . import kafka_pb2, message_with_repeated_pb2, social_pb2
 
 # protoc --version
 # libprotoc 3.0.0
 # # to create kafka_pb2.py
 # protoc --python_out=. kafka.proto
 
-from . import kafka_pb2
-from . import social_pb2
-from . import message_with_repeated_pb2
 
 if is_arm():
     pytestmark = pytest.mark.skip
