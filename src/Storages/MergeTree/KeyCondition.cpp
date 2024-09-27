@@ -870,6 +870,22 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     return true;
 }
 
+bool KeyCondition::addPrimaryKeyRangeCondition(const String &column, const Range &range, bool addAnd)
+{
+    auto top = *(rpn.begin());
+    if (top.function == RPNElement::FUNCTION_UNKNOWN)
+        rpn.clear();
+    rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, key_columns[column], range);
+    if (addAnd)
+        rpn.emplace_back(RPNElement::FUNCTION_AND);
+    return true;
+}
+bool KeyCondition::addAnOR()
+{
+    rpn.emplace_back(RPNElement::FUNCTION_OR);
+    return true;
+}
+
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
     RPNBuilderTreeContext tree_context(nullptr, block_with_constants, nullptr);

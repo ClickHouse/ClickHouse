@@ -201,7 +201,8 @@ public:
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
-        bool find_exact_ranges);
+        bool find_exact_ranges,
+        bool is_select_query_with_final);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

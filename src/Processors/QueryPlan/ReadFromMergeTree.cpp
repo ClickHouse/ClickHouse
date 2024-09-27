@@ -173,7 +173,7 @@ namespace Setting
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_skip_indexes;
-    extern const SettingsBool use_skip_indexes_if_final;
+    extern const SettingsUInt64 use_skip_indexes_if_final;
     extern const SettingsBool use_uncompressed_cache;
 }
 
@@ -1755,7 +1755,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
-            find_exact_ranges);
+            find_exact_ranges,
+            query_info_.isFinal());
     }
 
     size_t sum_marks_pk = total_marks_pk;

@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsUInt64 use_skip_indexes_if_final;
 }
 
 namespace ErrorCodes
@@ -625,11 +626,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
-    bool find_exact_ranges)
+    bool find_exact_ranges,
+    bool is_select_query_with_final)
 {
     RangesInDataParts parts_with_ranges;
     parts_with_ranges.resize(parts.size());
     const Settings & settings = context->getSettingsRef();
+    KeyConditionPtr new_key_condition = nullptr;
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
@@ -677,6 +680,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+    std::atomic<bool> was_any_skip_index_useful = false;
 
     /// Let's find what range to read from each part.
     {
@@ -701,7 +705,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     part,
                     metadata_snapshot,
-                    key_condition,
+                    new_key_condition ? *new_key_condition : key_condition,
                     part_offset_condition,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
@@ -717,7 +721,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
-            CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+            if (new_key_condition)
+            {
+                if (!ranges.ranges.empty())
+                    parts_with_ranges[part_index] = std::move(ranges);
+                return;  /// NOTE : early exit
+            }
+
+	    CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
             for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
             {
@@ -740,6 +751,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     mark_cache.get(),
                     uncompressed_cache.get(),
                     log);
+
+		if (ranges.ranges.empty() || ranges.ranges.getNumberOfMarks() != total_granules)
+                {
+                    was_any_skip_index_useful = true;
+                }
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
@@ -773,6 +789,41 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 parts_with_ranges[part_index] = std::move(ranges);
         };
 
+        auto create_new_key_condition_from_pk_ranges = [&]()
+        {
+            const auto & primary_key = metadata_snapshot->getPrimaryKey();
+            KeyConditionPtr kc = make_shared<KeyCondition>(nullptr, context, primary_key.column_names, primary_key.expression);
+            size_t range_count = 0;
+            for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+            {
+                auto & part = parts[part_index];
+                const auto & index = part->getIndex();
+                auto ranges = parts_with_ranges[part_index];
+                auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
+                for (size_t i = 0; i < index->size(); i++)
+                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+
+                /// Need to build : (((pk1 BETWEEN 5 AND 10) AND (pk2 BETWEEN 100 AND 110)) OR ((pk1 BETWEEN 1000 AND 1005) AND (pk2 BETWEEEN 2000 AND 2100)) OR ... )
+                for (auto range : ranges.ranges)
+                {
+                    std::vector<FieldRef> index_left(index->size());
+                    std::vector<FieldRef> index_right(index->size());
+                    for (size_t i = 0; i < index->size();i++)
+                    {
+                        index_left[i] = {index_columns.get(), range.begin, i};
+                        index_right[i] = {index_columns.get(), range.end, i};
+                        kc->addPrimaryKeyRangeCondition(primary_key.column_names[i],
+                                               Range(index_left[i], true, index_right[i], true), (i > 0));
+                    }
+                    range_count++;
+                    if (range_count >= 2)
+                    {
+                          kc->addAnOR();
+                    }
+                }
+            }
+            return kc;
+        };
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
         if (settings[Setting::max_threads_for_indexes])
         {
@@ -785,6 +836,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 process_part(part_index);
+
+	    if (is_select_query_with_final &&
+                was_any_skip_index_useful &&
+                settings[Setting::use_skip_indexes_if_final] > 1)
+            {
+                auto kc = create_new_key_condition_from_pk_ranges();
+                std::cerr << "MergeTreeAfterSkipIndex:KeyCondition2 final = " << kc->toString() << std::endl;
+                LOG_TRACE(
+                          log,
+                          "New Primary Key condition after skip index use {}",
+                          kc->toString());
+                new_key_condition = std::move(kc);
+                sum_marks_pk = sum_parts_pk = 0; /// reset
+                for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                    process_part(part_index);
+            }
         }
         else
         {
@@ -819,6 +886,36 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     context->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
             }
 
+            pool.wait();
+            if (is_select_query_with_final &&
+                was_any_skip_index_useful &&
+                settings[Setting::use_skip_indexes_if_final] > 1)
+            {
+                auto kc = create_new_key_condition_from_pk_ranges();
+                std::cerr << "MergeTreeAfterSkipIndex:KeyCondition2 final = " << kc->toString() << std::endl;
+                LOG_TRACE(
+                          log,
+                          "New Primary Key condition after skip index use {}",
+                          kc->toString());
+                new_key_condition = std::move(kc);
+                sum_marks_pk = sum_parts_pk = 0;
+                for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                {
+                  pool.scheduleOrThrow([&, part_index, thread_group = CurrentThread::getGroup()]
+                  {
+                    setThreadName("MergeIndexP2");
+
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    );
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+
+                    process_part(part_index);
+                  }, Priority{}, context->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+                }
+            }
             pool.wait();
         }
 
