@@ -214,7 +214,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
   DEFINER CURRENT_USER
   DEFINER $user2
   AS SELECT * FROM $db.test_table;
-" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "Syntax error" || echo "UNEXPECTED"
 
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
