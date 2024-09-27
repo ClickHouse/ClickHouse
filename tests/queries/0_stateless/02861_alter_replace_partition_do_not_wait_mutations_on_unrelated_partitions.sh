@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t2 VALUES (2, 2000);"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t1 UPDATE i = sleepEachRow(3) IN PARTITION id '1' WHERE p == 1;"
 
 # wait for mutation to start
-while [ "$($CLICKHOUSE_CLIENT -q "SELECT not(is_done) as is_running FROM system.mutations WHERE database==currentDatabase() AND table=='t1'")" != 1 ]
+while [ "$($CLICKHOUSE_CLIENT -q "SELECT is_done as is_running FROM system.mutations WHERE database==currentDatabase() AND table=='t1'")" != 0 ]
 do
    sleep .5
 done
