@@ -10,7 +10,7 @@ namespace DB
 static void writeAlias(const String & name, const ASTWithAlias::FormatSettings & settings)
 {
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_alias : "");
-    settings.writeIdentifier(name);
+    settings.writeIdentifier(name, /*ambiguous=*/false);
     settings.ostr << (settings.hilite ? IAST::hilite_none : "");
 }
 
@@ -22,7 +22,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_identifier : "");
-        settings.writeIdentifier(alias);
+        settings.writeIdentifier(alias, /*ambiguous=*/false);
         settings.ostr << (settings.hilite ? IAST::hilite_none : "");
     }
     else
