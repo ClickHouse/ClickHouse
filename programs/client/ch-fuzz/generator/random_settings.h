@@ -260,6 +260,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"ttl_only_drop_parts", TrueOrFalse},
 	{"update_insert_deduplication_token_in_dependent_materialized_views", TrueOrFalse},
 	{"use_page_cache_for_disks_without_file_cache", TrueOrFalse},
+	{"use_skip_indexes", TrueOrFalse},
 	{"use_structure_from_insertion_table_in_table_functions", ZeroOneTwo},
 	{"use_uncompressed_cache", TrueOrFalse}
 };
