@@ -25,6 +25,7 @@ struct MergeTreeWriterSettings;
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -95,11 +96,11 @@ public:
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 
-    /// Special stuff for vector similarity indexes
-    /// - Returns vector of indexes of ranges in granule which are useful for query.
-    virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr) const
+    /// Special method for vector similarity indexes:
+    /// Returns the row positions of the N nearest neighbors in the index granule
+    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for non-vector-similarity indexes.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 };
 
