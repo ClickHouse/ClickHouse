@@ -160,100 +160,52 @@ ExpressionTransform × 16
         (ReadFromMergeTree)
         MergingSortedTransform 2 → 1
           ExpressionTransform × 2
-            VirtualRowTransform
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                VirtualRowTransform
-                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+              MergingSortedTransform 2 → 1
+                ExpressionTransform × 2
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                     MergingSortedTransform 2 → 1
                       ExpressionTransform × 2
-                        VirtualRowTransform
-                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                            VirtualRowTransform
-                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                          MergingSortedTransform 2 → 1
+                            ExpressionTransform × 2
+                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                                 MergingSortedTransform 2 → 1
                                   ExpressionTransform × 2
-                                    VirtualRowTransform
-                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                        VirtualRowTransform
-                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                      MergingSortedTransform 2 → 1
+                                        ExpressionTransform × 2
+                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                                             MergingSortedTransform 2 → 1
                                               ExpressionTransform × 2
-                                                VirtualRowTransform
-                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                    VirtualRowTransform
-                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                                                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                  MergingSortedTransform 2 → 1
+                                                    ExpressionTransform × 2
+                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                                                         MergingSortedTransform 2 → 1
                                                           ExpressionTransform × 2
-                                                            VirtualRowTransform
-                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                VirtualRowTransform
-                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                                                            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                              MergingSortedTransform 2 → 1
+                                                                ExpressionTransform × 2
+                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                                                                     MergingSortedTransform 2 → 1
                                                                       ExpressionTransform × 2
-                                                                        VirtualRowTransform
-                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                            VirtualRowTransform
-                                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                                                                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                          MergingSortedTransform 2 → 1
+                                                                            ExpressionTransform × 2
+                                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                                                                                 MergingSortedTransform 2 → 1
                                                                                   ExpressionTransform × 2
-                                                                                    VirtualRowTransform
-                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                        VirtualRowTransform
-                                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                                                                                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                                      MergingSortedTransform 2 → 1
+                                                                                        ExpressionTransform × 2
+                                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                                                                                             MergingSortedTransform 2 → 1
                                                                                               ExpressionTransform × 2
-                                                                                                VirtualRowTransform
-                                                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                    VirtualRowTransform
-                                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                        MergingSortedTransform 2 → 1
-                                                                                                          ExpressionTransform × 2
-                                                                                                            VirtualRowTransform
-                                                                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                VirtualRowTransform
-                                                                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                    MergingSortedTransform 2 → 1
-                                                                                                                      ExpressionTransform × 2
-                                                                                                                        VirtualRowTransform
-                                                                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                            VirtualRowTransform
-                                                                                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                MergingSortedTransform 2 → 1
-                                                                                                                                  ExpressionTransform × 2
-                                                                                                                                    VirtualRowTransform
-                                                                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                        VirtualRowTransform
-                                                                                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                            MergingSortedTransform 2 → 1
-                                                                                                                                              ExpressionTransform × 2
-                                                                                                                                                VirtualRowTransform
-                                                                                                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                    VirtualRowTransform
-                                                                                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                        MergingSortedTransform 2 → 1
-                                                                                                                                                          ExpressionTransform × 2
-                                                                                                                                                            VirtualRowTransform
-                                                                                                                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                                VirtualRowTransform
-                                                                                                                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                                    MergingSortedTransform 2 → 1
-                                                                                                                                                                      ExpressionTransform × 2
-                                                                                                                                                                        VirtualRowTransform
-                                                                                                                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                                            VirtualRowTransform
-                                                                                                                                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                                                MergingSortedTransform 2 → 1
-                                                                                                                                                                                  ExpressionTransform × 2
-                                                                                                                                                                                    VirtualRowTransform
-                                                                                                                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                                                        VirtualRowTransform
-                                                                                                                                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                                                            MergingSortedTransform 2 → 1
-                                                                                                                                                                                              ExpressionTransform × 2
-                                                                                                                                                                                                VirtualRowTransform
-                                                                                                                                                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                                                                                                                                                                                                    VirtualRowTransform
-                                                                                                                                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                                                                                                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                                                  MergingSortedTransform 2 → 1
+                                                                                                    ExpressionTransform × 2
+                                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
 1000000
 Skip merging: 1
 Skip merging: 1

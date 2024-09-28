@@ -71,21 +71,13 @@ inline void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtua
         {
             if (!col.type->equals(*pk_col->type))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Virtual row has different tupe for {}. Expected {}, got {}",
+                    "Virtual row has different type for {}. Expected {}, got {}",
                     col.name, col.dumpStructure(), pk_col->dumpStructure());
 
             ordered_columns.push_back(pk_col->column);
         }
         else
             ordered_columns.push_back(col.type->createColumnConstWithDefaultValue(1));
-
-        // ColumnPtr current_column = type_and_name.type->createColumn();
-
-        // size_t pos = type_and_name.name.find_last_of('.');
-        // String column_name = (pos == String::npos) ? type_and_name.name : type_and_name.name.substr(pos + 1);
-
-        // const ColumnWithTypeAndName * column = pk_block.findByName(column_name, true);
-        // ordered_columns.push_back(column ? column->column : current_column->cloneResized(1));
     }
 
     chunk.setColumns(ordered_columns, 1);
