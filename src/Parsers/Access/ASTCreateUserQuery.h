@@ -62,8 +62,6 @@ public:
 
     std::shared_ptr<ASTDatabaseOrNone> default_database;
 
-    ASTPtr valid_until;
-
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;

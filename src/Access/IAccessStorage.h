@@ -233,7 +233,6 @@ protected:
         bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(
         const std::string & user_name,
-        time_t valid_until,
         const AuthenticationData & authentication_method,
         const Credentials & credentials,
         const ExternalAuthenticators & external_authenticators,

@@ -384,12 +384,12 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
 void Session::checkIfUserIsStillValid()
 {
-    if (user && user->valid_until)
+    if (const auto valid_until = user_authenticated_with.getValidUntil())
     {
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-        if (now > user->valid_until)
-            throw Exception(ErrorCodes::USER_EXPIRED, "User expired");
+        if (now > valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used has expired");
     }
 }
 

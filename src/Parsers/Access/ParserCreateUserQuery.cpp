@@ -43,6 +43,19 @@ namespace
         });
     }
 
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+                return false;
+
+            ParserStringAndSubstitution until_p;
+
+            return until_p.parse(pos, valid_until, expected);
+        });
+    }
+
     bool parseAuthenticationData(
         IParserBase::Pos & pos,
         Expected & expected,
@@ -222,6 +235,12 @@ namespace
 
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
+
+            if (parseValidUntil(pos, expected, auth_data->valid_until))
+            {
+                // I am still not sure why this has to be done and if it has to be done
+                auth_data->children.push_back(auth_data->valid_until);
+            }
 
             return true;
         });
@@ -471,19 +490,6 @@ namespace
         });
     }
 
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-                return false;
-
-            ParserStringAndSubstitution until_p;
-
-            return until_p.parse(pos, valid_until, expected);
-        });
-    }
-
     bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -579,11 +585,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
         }
 
-        if (!valid_until)
-        {
-            parseValidUntil(pos, expected, valid_until);
-        }
-
         AllowedClientHosts new_hosts;
         if (parseHosts(pos, expected, "", new_hosts))
         {
@@ -674,7 +675,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
-    query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
@@ -685,8 +685,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->children.push_back(authentication_method);
     }
 
-    if (query->valid_until)
-        query->children.push_back(query->valid_until);
+    // todo arthur
+//    if (query->valid_until)
+//        query->children.push_back(query->valid_until);
 
     return true;
 }

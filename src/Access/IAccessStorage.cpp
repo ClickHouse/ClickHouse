@@ -539,7 +539,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     continue;
                 }
 
-                if (areCredentialsValid(user->getName(), user->valid_until, auth_method, credentials, external_authenticators, auth_result.settings))
+                if (areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, auth_result.settings))
                 {
                     auth_result.authentication_data = auth_method;
                     return auth_result;
@@ -564,7 +564,6 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
 
 bool IAccessStorage::areCredentialsValid(
     const std::string & user_name,
-    time_t valid_until,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
@@ -576,6 +575,7 @@ bool IAccessStorage::areCredentialsValid(
     if (credentials.getUserName() != user_name)
         return false;
 
+    auto valid_until = authentication_method.getValidUntil();
     if (valid_until)
     {
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

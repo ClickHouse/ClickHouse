@@ -14,6 +14,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        valid_until.format(settings);
+    }
+}
+
 std::optional<String> ASTAuthenticationData::getPassword() const
 {
     if (contains_password)
@@ -203,6 +212,11 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     {
         settings.ostr << " SCHEME ";
         children[1]->format(settings);
+    }
+
+    if (valid_until)
+    {
+        formatValidUntil(*valid_until, settings);
     }
 
 }

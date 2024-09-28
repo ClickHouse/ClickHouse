@@ -40,12 +40,6 @@ namespace
         }
     }
 
-    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
-    {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
-        valid_until.format(settings);
-    }
-
     void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
     {
         if (prefix)
@@ -259,9 +253,6 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (format.hilite ? IAST::hilite_none : "");
         formatAuthenticationData(authentication_methods, format);
     }
-
-    if (valid_until)
-        formatValidUntil(*valid_until, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);

@@ -7,6 +7,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <IO/parseDateTimeBestEffort.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>
@@ -38,6 +41,37 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int OPENSSL_ERROR;
+}
+
+namespace
+{
+    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context)
+    {
+        if (context)
+            valid_until = evaluateConstantExpressionAsLiteral(valid_until, context);
+
+        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until, "valid_until");
+
+        if (valid_until_str == "infinity")
+            return 0;
+
+        time_t time = 0;
+        ReadBufferFromString in(valid_until_str);
+
+        if (context)
+        {
+            const auto & time_zone = DateLUT::instance("");
+            const auto & utc_time_zone = DateLUT::instance("UTC");
+
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+        }
+        else
+        {
+            readDateTimeText(time, in);
+        }
+
+        return time;
+    }
 }
 
 AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
@@ -381,14 +415,34 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
     }
 
+
+    if (valid_until)
+    {
+        WriteBufferFromOwnString out;
+        writeDateTimeText(*valid_until, out);
+
+        node->valid_until = std::make_shared<ASTLiteral>(out.str());
+    }
+
     return node;
 }
 
 
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
 {
+    std::optional<time_t> valid_until;
+
+    if (query.valid_until)
+    {
+        valid_until = getValidUntilFromAST(query.valid_until, context);
+    }
+
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
-        return AuthenticationData();
+    {
+        AuthenticationData auth_data;
+        auth_data.setValidUntil(valid_until);
+        return auth_data;
+    }
 
     /// For this type of authentication we have ASTPublicSSHKey as children for ASTAuthenticationData
     if (query.type && query.type == AuthenticationType::SSH_KEY)
@@ -415,6 +469,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         }
 
         auth_data.setSSHKeys(std::move(keys));
+        auth_data.setValidUntil(valid_until);
         return auth_data;
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
@@ -486,11 +541,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
         }
 
+        auth_data.setValidUntil(valid_until);
         auth_data.setPassword(value);
         return auth_data;
     }
 
     AuthenticationData auth_data(*query.type);
+    auth_data.setValidUntil(valid_until);
 
     if (query.contains_hash)
     {

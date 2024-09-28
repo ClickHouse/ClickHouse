@@ -74,6 +74,9 @@ public:
     const String & getHTTPAuthenticationServerName() const { return http_auth_server_name; }
     void setHTTPAuthenticationServerName(const String & name) { http_auth_server_name = name; }
 
+    std::optional<time_t> getValidUntil() const { return valid_until; }
+    void setValidUntil(std::optional<time_t> valid_until_) { valid_until = valid_until_; }
+
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
@@ -106,6 +109,7 @@ private:
     /// HTTP authentication properties
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
+    std::optional<time_t> valid_until;
 };
 
 }
