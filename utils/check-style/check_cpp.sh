@@ -22,10 +22,11 @@ start=$(date +%s)
 runtime=$(($(date +%s)-start))
 echo "Check whitespaces. Done. $runtime seconds."
 
-start=$(date +%s)
-./check-workflows             |& tee /test_output/workflows_output.txt
-runtime=$(($(date +%s)-start))
-echo "Check workflows. Done. $runtime seconds."
+# Disabled for praktika integration. To be removed or re-enabled
+#start=$(date +%s)
+#./check-workflows             |& tee /test_output/workflows_output.txt
+#runtime=$(($(date +%s)-start))
+#echo "Check workflows. Done. $runtime seconds."
 
 start=$(date +%s)
 ./check-submodules            |& tee /test_output/submodules_output.txt

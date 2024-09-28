@@ -1,0 +1,123 @@
+Content-Type: multipart/mixed; boundary="//"
+MIME-Version: 1.0
+
+--//
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="cloud-config.txt"
+
+#cloud-config
+cloud_final_modules:
+- [scripts-user, always]
+
+--//
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="userdata.txt"
+
+#!/bin/bash
+date
+
+echo "export MY_ORG=ClickHouse" >> /etc/profile.d/myvars.sh
+echo "export CLOUD=1" >> /etc/profile.d/myvars.sh
+echo "export RUNNER_SCALING_TYPE=disabled" >> /etc/profile.d/myvars.sh
+export MY_ORG=ClickHouse
+export CLOUD=1
+export RUNNER_SCALING_TYPE=disabled
+
+apt-get update
+apt-get install --yes --no-install-recommends \
+    python3-pip \
+    unzip \
+    gh
+
+# install gh runner
+arch_suffix() {
+  case $(uname -m) in
+    x86_64 )
+      echo x64;;
+    aarch64 )
+      echo arm64;;
+    arm64 )
+      echo arm64;;
+  esac
+}
+os_name() {
+  case $(uname -o) in
+    Darwin )
+      echo osx;;
+    GNU/Linux )
+      echo linux;;
+  esac
+}
+export RUNNER_VERSION=2.319.1
+RUNNER_HOME=/home/ubuntu/gh_actions
+rm -rf $RUNNER_HOME  # if it's the second attempt
+mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
+curl -O -L "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-$(os_name)-$(arch_suffix)-$RUNNER_VERSION.tar.gz"
+tar xzf *tar.gz
+rm -f *tar.gz
+./bin/installdependencies.sh
+chown -R ubuntu:ubuntu $RUNNER_HOME
+echo "GH runner installed"
+
+# install aws cli
+cd /home/ubuntu
+curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
+unzip -q awscliv2.zip
+./aws/install
+rm -rf /home/ubuntu/awscliv2.zip /home/ubuntu/aws
+echo "aws cli installed"
+
+# install aws cloudwatch
+deb_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo amd64;;
+    aarch64 )
+      echo arm64;;
+  esac
+}
+wget --directory-prefix=/tmp https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/"$(deb_arch)"/latest/amazon-cloudwatch-agent.deb{,.sig}
+gpg --recv-key --keyserver keyserver.ubuntu.com D58167303B789C72
+gpg --verify /tmp/amazon-cloudwatch-agent.deb.sig
+dpkg -i /tmp/amazon-cloudwatch-agent.deb
+aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+systemctl enable amazon-cloudwatch-agent.service
+echo "CloudWatch installed"
+
+# install docker
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update
+apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
+usermod -aG docker ubuntu
+
+# enable ipv6 in containers (fixed-cidr-v6 is some random network mask)
+cat <<EOT > /etc/docker/daemon.json
+{
+  "ipv6": true,
+  "fixed-cidr-v6": "2001:db8:1::/64",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-file": "5",
+    "max-size": "1000m"
+  },
+  "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
+  "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+}
+EOT
+
+date
+
+pip3 install jwt==1.3.1 requests==2.32.3 --break-system-packages
+pip3 install https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl --break-system-packages
+cd ~
+
+export PYTHONUNBUFFERED=1
+python3 -m praktika.execution 2>&1 |& tee /var/log/praktika-execution.log
+
+date
+--//
