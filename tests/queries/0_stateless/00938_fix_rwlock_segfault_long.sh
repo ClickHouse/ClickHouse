@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-debug
+# Tags: long, no-debug, no-parallel
 
 # Test fix for issue #5066
 
