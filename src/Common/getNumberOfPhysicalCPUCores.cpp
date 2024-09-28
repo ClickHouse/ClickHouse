@@ -177,9 +177,9 @@ unsigned getNumberOfPhysicalCPUCoresImpl()
     ///
     /// On really big machines, SMT is detrimental to performance (+ ~5% overhead in ClickBench). On such machines, we limit ourself to the physical cores.
     /// Few cores indicate it is a small machine, runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
-    if (DB::Context::getGlobalContextInstance())
+    if (auto context = DB::Context::getGlobalContextInstance())
     {
-        if (cores >= DB::Context::getGlobalContextInstance()->getServerSettings().max_vCPUs_num_to_use_hyper_threading)
+        if (cores >= context->getServerSettings().max_vCPUs_num_to_use_hyper_threading)
             cores = physical_concurrency();
     }
     else
