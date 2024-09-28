@@ -9,7 +9,7 @@ namespace DB
 /// Inside it contains vector of partial sums of rows after mark:
 /// |-----|---|----|----|
 /// |  5  | 8 | 12 | 16 |
-/// If user doesn't specify setting adaptive_index_granularity_bytes for MergeTree* table
+/// If user doesn't specify setting index_granularity_bytes for MergeTree* table
 /// all values in inner vector would have constant stride (default 8192).
 class MergeTreeIndexGranularity
 {
@@ -35,6 +35,7 @@ public:
     ///       ^------------------------^-----------^
     ////  from_mark  offset_in_rows    number_of_rows
     size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const;
+    size_t countMarksForRows(size_t from_mark, size_t number_of_rows) const;
 
     /// Total marks
     size_t getMarksCount() const;

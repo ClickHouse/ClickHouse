@@ -120,6 +120,19 @@ size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t num
     return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
 }
 
+size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t number_of_rows) const
+{
+    size_t rows_before_mark = getMarkStartingRow(from_mark);
+    size_t last_row_pos = rows_before_mark + number_of_rows;
+    auto position = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
+    size_t to_mark;
+    if (position == marks_rows_partial_sums.end())
+        to_mark = marks_rows_partial_sums.size();
+    else
+        to_mark = position - marks_rows_partial_sums.begin();
+    return to_mark - from_mark;
+}
+
 void MergeTreeIndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_granularity)
 {
     marks_rows_partial_sums.resize(size);
