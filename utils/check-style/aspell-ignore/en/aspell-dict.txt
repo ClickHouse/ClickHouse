@@ -100,6 +100,7 @@ BlockWriteBytes
 BlockWriteMerges
 BlockWriteOps
 BlockWriteTime
+Boncz
 Bool
 BrokenDistributedFilesToInsert
 Bugfix
@@ -248,6 +249,7 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
+Dresseler
 Durre
 ECMA
 ETag
@@ -486,6 +488,7 @@ Kubernetes
 LDAP
 LGPL
 LIMITs
+LINEITEM
 LLDB
 LLVM's
 LOCALTIME
@@ -583,6 +586,7 @@ MinHash
 MinIO
 MinMax
 MindsDB
+Mongo
 Mongodb
 Monotonicity
 MsgPack
@@ -611,6 +615,7 @@ NVMe
 NYPD
 NaNs
 Nagios
+Nambiar
 Namenode
 NamesAndTypesList
 Nano
@@ -739,6 +744,7 @@ PendingAsyncInsert
 Percona
 PhpStorm
 PlantUML
+Poess
 PointDistKm
 PointDistM
 PointDistRads
@@ -846,6 +852,7 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
+RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -1928,7 +1935,6 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
-jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -2004,6 +2010,7 @@ linearizable
 linearized
 lineasstring
 linefeeds
+lineitem
 lineorder
 linestring
 linux
@@ -2077,6 +2084,7 @@ metasymbols
 metrica
 metroHash
 mfedotov
+mflix
 minMap
 minMappedArrays
 minSampleSizeContinuous
@@ -2097,6 +2105,8 @@ mmapped
 modularization
 moduli
 moduloOrZero
+mongoc
+mongocxx
 mongodb
 monotonicity
 monthName
@@ -2487,7 +2497,6 @@ rewritable
 rightPad
 rightPadUTF
 rightUTF
-ripeMD
 risc
 riscv
 ro
@@ -2855,6 +2864,8 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+tpcds
+tpch
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
@@ -3038,3 +3049,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+postgres

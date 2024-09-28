@@ -40,7 +40,7 @@ public:
             else
             {
                 String relative_path_from = disk.getRelativeFromRoot(path_from.value());
-                auto res = disk.getDisk()->readFileIfExists(relative_path_from);
+                auto res = disk.getDisk()->readFileIfExists(relative_path_from, getReadSettings());
                 if (res)
                     return res;
                 /// For backward compatibility.

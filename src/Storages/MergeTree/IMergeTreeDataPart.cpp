@@ -1744,7 +1744,7 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartStorage & part_storage, const String & filename)
 {
     size_t file_size = part_storage.getFileSize(filename);
-    return part_storage.readFile(filename, ReadSettings().adjustBufferSize(file_size), file_size, file_size);
+    return part_storage.readFile(filename, getReadSettings().adjustBufferSize(file_size), file_size, file_size);
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const
@@ -1844,7 +1844,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     try
     {
         size_t small_file_size = 4096;
-        auto buf = getDataPartStorage().readFileIfExists(TXN_VERSION_METADATA_FILE_NAME, ReadSettings().adjustBufferSize(small_file_size), small_file_size, std::nullopt);
+        auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
+        /// Avoid cannot allocated thread error. No need in threadpool read method here.
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
+        auto buf = getDataPartStorage().readFileIfExists(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size, std::nullopt);
         if (!buf)
             return false;
 

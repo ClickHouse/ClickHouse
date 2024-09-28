@@ -50,7 +50,7 @@ std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
-    ReadSettings settings;
+    auto settings = getReadSettings();
     settings.enable_filesystem_cache = false;
     settings.remote_fs_method = RemoteFSReadMethod::read;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
