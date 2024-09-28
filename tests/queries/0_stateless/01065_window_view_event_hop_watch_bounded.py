@@ -7,7 +7,7 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from client import client, prompt, end_of_block
+from client import client, end_of_block, prompt
 
 log = None
 # uncomment the line below for debugging
@@ -19,7 +19,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.expect(prompt)
 
-    client1.send("SET allow_experimental_analyzer = 0")
+    client1.send("SET enable_analyzer = 0")
     client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
@@ -27,7 +27,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
-    client2.send("SET allow_experimental_analyzer = 0")
+    client2.send("SET enable_analyzer = 0")
     client2.expect(prompt)
 
     client1.send(

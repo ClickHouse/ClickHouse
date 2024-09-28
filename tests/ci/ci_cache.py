@@ -1,24 +1,23 @@
 import json
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional, Any, Union, Sequence, List, Set
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 from ci_config import CI
-
-from ci_utils import is_hex, GH
+from ci_utils import GH, Utils
 from commit_status_helper import CommitStatusData
+from digest_helper import JobDigester
 from env_helper import (
-    TEMP_PATH,
     CI_CONFIG_PATH,
-    S3_BUILDS_BUCKET,
     GITHUB_RUN_URL,
     REPORT_PATH,
+    S3_BUILDS_BUCKET,
+    TEMP_PATH,
 )
 from report import BuildResult
 from s3_helper import S3Helper
-from digest_helper import JobDigester
 
 
 @dataclass
@@ -240,7 +239,7 @@ class CiCache:
             int(job_properties[-1]),
         )
 
-        if not is_hex(job_digest):
+        if not Utils.is_hex(job_digest):
             print("ERROR: wrong record job digest")
             return None
 
@@ -387,8 +386,7 @@ class CiCache:
         res = record_key in self.records[record_type]
         if release_branch:
             return res and self.records[record_type][record_key].release_branch
-        else:
-            return res
+        return res
 
     def push(
         self,
@@ -731,7 +729,8 @@ class CiCache:
                     job_config=reference_config,
                 ):
                     remove_from_workflow.append(job_name)
-                    has_test_jobs_to_skip = True
+                    if job_name != CI.JobNames.DOCS_CHECK:
+                        has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []

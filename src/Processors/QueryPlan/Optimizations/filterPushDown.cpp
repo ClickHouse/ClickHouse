@@ -442,6 +442,15 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         const auto & params = aggregating->getParams();
         const auto & keys = params.keys;
+        /** The filter is applied either to aggregation keys or aggregation result
+          * (columns under aggregation is not available in outer scope, so we can't have a filter for them).
+          * The filter for the aggregation result is not pushed down, so the only valid case is filtering aggregation keys.
+          * In case keys are empty, do not push down the filter.
+          * Also with empty keys we can have an issue with `empty_result_for_aggregation_by_empty_set`,
+          * since we can gen a result row when everything is filtered.
+          */
+        if (keys.empty())
+            return 0;
 
         const bool filter_column_is_not_among_aggregation_keys
             = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
@@ -511,13 +520,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * array_join = typeid_cast<ArrayJoinStep *>(child.get()))
     {
-        const auto & array_join_actions = array_join->arrayJoin();
-        const auto & keys = array_join_actions->columns;
+        const auto & keys = array_join->getColumns();
+        std::unordered_set<std::string_view> keys_set(keys.begin(), keys.end());
+
         const auto & array_join_header = array_join->getInputStreams().front().header;
 
         Names allowed_inputs;
         for (const auto & column : array_join_header)
-            if (!keys.contains(column.name))
+            if (!keys_set.contains(column.name))
                 allowed_inputs.push_back(column.name);
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))

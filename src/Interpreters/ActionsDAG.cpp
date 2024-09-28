@@ -100,6 +100,13 @@ bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
 
 }
 
+bool ActionsDAG::Node::isDeterministic() const
+{
+    bool deterministic_if_func = type != ActionType::FUNCTION || function_base->isDeterministic();
+    bool deterministic_if_const = type != ActionType::COLUMN || is_deterministic_constant;
+    return deterministic_if_func && deterministic_if_const;
+}
+
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 {
     map.add("Node Type", magic_enum::enum_name(type));
@@ -294,11 +301,11 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
     column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
     column.type = std::make_shared<DataTypeString>();
 
-    const auto * cast_type_constant_node = &addColumn(std::move(column));
+    const auto * cast_type_constant_node = &addColumn(column);
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
+    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, CastType::nonAccurate, {});
 
-    return addFunction(func_builder_cast, std::move(children), result_name);
+    return addFunction(func_base_cast, std::move(children), result_name);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
@@ -318,7 +325,6 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     node.function_base = function_base;
     node.result_type = result_type;
     node.function = node.function_base->prepare(arguments);
-    node.is_deterministic = node.function_base->isDeterministic();
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     if (node.function_base->isSuitableForConstantFolding())
@@ -390,7 +396,7 @@ const ActionsDAG::Node * ActionsDAG::tryFindInOutputs(const std::string & name) 
     return nullptr;
 }
 
-ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutpus(const Names & names) const
+ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) const
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(names.size());
@@ -518,7 +524,7 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
 
 void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
-    auto required_nodes = findInOutpus(required_names);
+    auto required_nodes = findInOutputs(required_names);
     outputs.swap(required_nodes);
     removeUnusedActions(allow_remove_inputs, allow_constant_folding);
 }
@@ -536,64 +542,99 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
 
 void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding)
 {
-    std::unordered_set<const Node *> visited_nodes;
-    std::stack<Node *> stack;
-
-    for (const auto * node : outputs)
-    {
-        visited_nodes.insert(node);
-        stack.push(const_cast<Node *>(node));
-    }
+    NodeRawConstPtrs roots;
+    roots.reserve(outputs.size() + used_inputs.size());
+    roots = outputs;
 
     for (auto & node : nodes)
     {
         /// We cannot remove arrayJoin because it changes the number of rows.
-        bool is_array_join = node.type == ActionType::ARRAY_JOIN;
-
-        if (is_array_join && !visited_nodes.contains(&node))
-        {
-            visited_nodes.insert(&node);
-            stack.push(&node);
-        }
+        if (node.type == ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
 
         if (node.type == ActionType::INPUT && used_inputs.contains(&node))
-            visited_nodes.insert(&node);
+            roots.push_back(&node);
     }
 
-    while (!stack.empty())
+    std::unordered_set<const Node *> required_nodes;
+    std::unordered_set<const Node *> non_deterministic_nodes;
+
+    struct Frame
     {
-        auto * node = stack.top();
-        stack.pop();
+        const ActionsDAG::Node * node;
+        size_t next_child_to_visit = 0;
+    };
 
-        /// Constant folding.
-        if (allow_constant_folding && !node->children.empty() && node->column && isColumnConst(*node->column))
+    std::stack<Frame> stack;
+
+    enum class VisitStage { NonDeterministic, Required };
+
+    for (auto stage : {VisitStage::NonDeterministic, VisitStage::Required})
+    {
+        required_nodes.clear();
+
+        for (const auto * root : roots)
         {
-            node->type = ActionsDAG::ActionType::COLUMN;
-
-            for (const auto & child : node->children)
+            if (!required_nodes.contains(root))
             {
-                if (!child->is_deterministic)
+                required_nodes.insert(root);
+                stack.push({.node = root});
+            }
+
+            while (!stack.empty())
+            {
+                auto & frame = stack.top();
+                auto * node = const_cast<Node *>(frame.node);
+
+                while (frame.next_child_to_visit < node->children.size())
                 {
-                    node->is_deterministic = false;
-                    break;
+                    const auto * child = node->children[frame.next_child_to_visit];
+                    ++frame.next_child_to_visit;
+
+                    if (!required_nodes.contains(child))
+                    {
+                        required_nodes.insert(child);
+                        stack.push({.node = child});
+                        break;
+                    }
+                }
+
+                if (stack.top().node != node)
+                    continue;
+
+                stack.pop();
+
+                if (stage == VisitStage::Required)
+                    continue;
+
+                if (!node->isDeterministic())
+                    non_deterministic_nodes.insert(node);
+                else
+                {
+                    for (const auto * child : node->children)
+                    {
+                        if (non_deterministic_nodes.contains(child))
+                        {
+                            non_deterministic_nodes.insert(node);
+                            break;
+                        }
+                    }
+                }
+
+                /// Constant folding.
+                if (allow_constant_folding && !node->children.empty()
+                    && node->column && isColumnConst(*node->column))
+                {
+                    node->type = ActionsDAG::ActionType::COLUMN;
+                    node->children.clear();
+                    node->is_deterministic_constant = !non_deterministic_nodes.contains(node);
                 }
             }
-
-            node->children.clear();
-        }
-
-        for (const auto * child : node->children)
-        {
-            if (!visited_nodes.contains(child))
-            {
-                stack.push(const_cast<Node *>(child));
-                visited_nodes.insert(child);
-            }
         }
     }
 
-    std::erase_if(nodes, [&](const Node & node) { return !visited_nodes.contains(&node); });
-    std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
+    std::erase_if(nodes, [&](const Node & node) { return !required_nodes.contains(&node); });
+    std::erase_if(inputs, [&](const Node * node) { return !required_nodes.contains(node); });
 }
 
 
@@ -1379,7 +1420,7 @@ bool ActionsDAG::trivial() const
 void ActionsDAG::assertDeterministic() const
 {
     for (const auto & node : nodes)
-        if (!node.is_deterministic)
+        if (!node.isDeterministic())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
 }
@@ -1387,7 +1428,7 @@ void ActionsDAG::assertDeterministic() const
 bool ActionsDAG::hasNonDeterministic() const
 {
     for (const auto & node : nodes)
-        if (!node.is_deterministic)
+        if (!node.isDeterministic())
             return true;
     return false;
 }
@@ -1506,11 +1547,11 @@ ActionsDAG ActionsDAG::makeConvertingActions(
             const auto * left_arg = dst_node;
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
-            FunctionOverloadResolverPtr func_builder_cast
-                = createInternalCastOverloadResolver(CastType::nonAccurate, std::move(diagnostic));
+            ColumnWithTypeAndName left_column{nullptr, dst_node->result_type, {}};
+            auto func_base_cast = createInternalCast(std::move(left_column), res_elem.type, CastType::nonAccurate, std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
-            dst_node = &actions_dag.addFunction(func_builder_cast, std::move(children), {});
+            dst_node = &actions_dag.addFunction(func_base_cast, std::move(children), {});
         }
 
         if (dst_node->column && isColumnConst(*dst_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
@@ -1987,8 +2028,9 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
-ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & array_joined_columns) const
 {
+    std::unordered_set<std::string_view> array_joined_columns_set(array_joined_columns.begin(), array_joined_columns.end());
     struct Frame
     {
         const Node * node = nullptr;
@@ -2031,7 +2073,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
             if (cur.next_child_to_visit == cur.node->children.size())
             {
                 bool depend_on_array_join = false;
-                if (cur.node->type == ActionType::INPUT && array_joined_columns.contains(cur.node->result_name))
+                if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
                 for (const auto * child : cur.node->children)
@@ -3142,34 +3184,6 @@ FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAG & 
 const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
 {
     const auto it = index.find(output_name);
-    if (it == index.end())
-        return nullptr;
-
-    return it->second;
-}
-
-FindAliasForInputName::FindAliasForInputName(const ActionsDAG & actions_)
-{
-    const auto & actions_outputs = actions_.getOutputs();
-    for (const auto * output_node : actions_outputs)
-    {
-        /// find input node which corresponds to alias
-        const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
-        }
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
-            /// node can have several aliases but we consider only the first one
-            index.emplace(node->result_name, output_node);
-    }
-}
-
-const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
-{
-    const auto it = index.find(name);
     if (it == index.end())
         return nullptr;
 

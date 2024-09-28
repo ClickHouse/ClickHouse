@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import logging
-import pytest
 import os
-import minio
 import random
 import string
+
+import minio
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock
@@ -209,7 +210,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     )
     assert create_multipart == 1
     assert upload_parts >= 2
-    assert s3_errors >= 2
+    assert s3_errors == 1
 
 
 @pytest.mark.parametrize(
@@ -708,7 +709,7 @@ def test_no_key_found_disk(cluster, broken_s3):
             """
             SELECT value
             FROM system.metrics
-            WHERE metric = 'S3DiskNoKeyErrors'
+            WHERE metric = 'DiskS3NoSuchKeyErrors'
             """
         ).strip()
     )

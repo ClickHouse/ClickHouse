@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: replica
+# Tags: replica, no-fasttest
+# no-fasttest: Mutation load can be slow
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -46,7 +48,7 @@ tables["wrong_metadata_compact"]="min_bytes_for_wide_part = 10000000"
 for table in "${!tables[@]}"; do
     settings="${tables[$table]}"
 
-    $CLICKHOUSE_CLIENT -n --query="
+    $CLICKHOUSE_CLIENT --query="
         DROP TABLE IF EXISTS $table;
 
         CREATE TABLE $table(
@@ -69,7 +71,7 @@ for table in "${!tables[@]}"; do
 
     wait_column "$table" "\`a1\` UInt64" || exit 2
 
-    $CLICKHOUSE_CLIENT -n --query="
+    $CLICKHOUSE_CLIENT --query="
         -- { echoOn }
         SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
 
@@ -82,7 +84,7 @@ for table in "${!tables[@]}"; do
 
     wait_mutation_loaded "$table" "b1 TO a" || exit 2
 
-    $CLICKHOUSE_CLIENT -n --query="
+    $CLICKHOUSE_CLIENT --query="
         -- { echoOn }
         SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
 
@@ -94,7 +96,7 @@ for table in "${!tables[@]}"; do
 
     wait_for_all_mutations "$table"
 
-    $CLICKHOUSE_CLIENT -n --query="
+    $CLICKHOUSE_CLIENT --query="
         -- { echoOn }
         SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
 

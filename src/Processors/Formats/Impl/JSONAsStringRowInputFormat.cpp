@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -168,10 +169,11 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
-    if (!isObject(header_.getByPosition(0).type))
+    const auto & type = header_.getByPosition(0).type;
+    if (!isObject(type) && !isObjectDeprecated(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Input format JSONAsObject is only suitable for tables with a single column of type Object but the column type is {}",
-            header_.getByPosition(0).type->getName());
+            "Input format JSONAsObject is only suitable for tables with a single column of type Object/JSON but the column type is {}",
+            type->getName());
 }
 
 void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
@@ -186,13 +188,13 @@ Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
     return Chunk({std::move(column)}, rows);
 }
 
-JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings)
+JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings_) : settings(settings_)
 {
-    if (!settings.json.allow_object_type)
+    if (!settings.json.allow_deprecated_object_type && !settings.json.allow_json_type)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot infer the data structure in JSONAsObject format because experimental Object type is not allowed. Set setting "
-            "allow_experimental_object_type = 1 in order to allow it");
+            "Cannot infer the data structure in JSONAsObject format because experimental Object/JSON type is not allowed. Set setting "
+            "allow_experimental_object_type = 1 or allow_experimental_json_type=1 in order to allow it");
 }
 
 void registerInputFormatJSONAsString(FormatFactory & factory)

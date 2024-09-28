@@ -80,13 +80,15 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
-        /// It is deterministic (See IFunction::isDeterministic).
-        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
-        bool is_deterministic = true;
 
+        /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
+        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
+        bool is_deterministic_constant = true;
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
 
+        /// If result of this not is deterministic. Checks only this node, not a subtree.
+        bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
     };
 
@@ -154,7 +156,7 @@ public:
     const Node * tryFindInOutputs(const std::string & name) const;
 
     /// Same, but for the list of names.
-    NodeRawConstPtrs findInOutpus(const Names & names) const;
+    NodeRawConstPtrs findInOutputs(const Names & names) const;
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
@@ -338,7 +340,7 @@ public:
     SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
+    SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Outputs of initial actions must contain column_name.
@@ -434,7 +436,7 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
-    /// Get a list of nodes. For every node, check if it can be compused using allowed subset of inputs.
+    /// Get a list of nodes. For every node, check if it can be computed using allowed subset of inputs.
     /// Returns only those nodes from the list which can be computed.
     static NodeRawConstPtrs filterNodesByAllowedInputs(
         NodeRawConstPtrs nodes,
@@ -484,18 +486,6 @@ class FindOriginalNodeForOutputName
 public:
     explicit FindOriginalNodeForOutputName(const ActionsDAG & actions);
     const ActionsDAG::Node * find(const String & output_name);
-
-private:
-    NameToNodeIndex index;
-};
-
-class FindAliasForInputName
-{
-    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
-
-public:
-    explicit FindAliasForInputName(const ActionsDAG & actions);
-    const ActionsDAG::Node * find(const String & name);
 
 private:
     NameToNodeIndex index;

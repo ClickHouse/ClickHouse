@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -22,7 +23,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -31,6 +31,13 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString s3queue_default_zookeeper_path;
+    extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
+    extern const SettingsBool stream_like_engine_allow_direct_select;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -44,7 +51,7 @@ namespace
 {
     std::string chooseZooKeeperPath(const StorageID & table_id, const Settings & settings, const ObjectStorageQueueSettings & queue_settings)
     {
-        std::string zk_path_prefix = settings.s3queue_default_zookeeper_path.value;
+        std::string zk_path_prefix = settings[Setting::s3queue_default_zookeeper_path].value;
         if (zk_path_prefix.empty())
             zk_path_prefix = "/";
 
@@ -62,11 +69,9 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(
+    void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
-        ASTStorage * engine_args,
-        bool is_attach,
-        const LoggerPtr & log)
+        bool is_attach)
     {
         if (!is_attach && !queue_settings.mode.changed)
         {
@@ -85,26 +90,19 @@ namespace
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
         }
-
-        if (!is_attach && !queue_settings.processing_threads_num.changed)
-        {
-            queue_settings.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
-            engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
-                "processing_threads_num",
-                queue_settings.processing_threads_num.value);
-
-            LOG_TRACE(log, "Set `processing_threads_num` to {}", queue_settings.processing_threads_num);
-        }
     }
 
-    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(const ObjectStoragePtr & storage, const ContextPtr & context, const ObjectStorageQueueSettings & table_settings)
+    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(
+        const ObjectStoragePtr & storage,
+        const ContextPtr & context,
+        const ObjectStorageQueueSettings & table_settings)
     {
         const auto & settings = context->getSettingsRef();
         switch (storage->getType())
         {
             case DB::ObjectStorageType::S3:
             {
-                if (table_settings.enable_logging_to_queue_log || settings.s3queue_enable_logging_to_s3queue_log)
+                if (table_settings.enable_logging_to_queue_log || settings[Setting::s3queue_enable_logging_to_s3queue_log])
                     return context->getS3QueueLog();
                 return nullptr;
             }
@@ -117,7 +115,6 @@ namespace
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
-
     }
 }
 
@@ -130,7 +127,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args,
+    ASTStorage * /* engine_args */,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -154,39 +151,35 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);
+    validateSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context_);
+    std::string sample_path;
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
-    task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 
-    /// Get metadata manager from ObjectStorageQueueMetadataFactory,
-    /// it will increase the ref count for the metadata object.
-    /// The ref count is decreased when StorageObjectStorageQueue::drop() method is called.
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, *queue_settings);
-    try
-    {
-        files_metadata->initialize(configuration_, storage_metadata);
-    }
-    catch (...)
-    {
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
-        throw;
-    }
+    auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
+        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, log);
+
+    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
+        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
+
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
+
+    task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
 
 void StorageObjectStorageQueue::startup()
@@ -292,7 +285,7 @@ void StorageObjectStorageQueue::read(
     size_t max_block_size,
     size_t)
 {
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+    if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`");
@@ -491,7 +484,7 @@ bool StorageObjectStorageQueue::streamToViews()
 
         block_io.pipeline.complete(std::move(pipe));
         block_io.pipeline.setNumThreads(queue_settings->processing_threads_num);
-        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef().use_concurrency_control);
+        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         std::atomic_size_t rows = 0;
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });

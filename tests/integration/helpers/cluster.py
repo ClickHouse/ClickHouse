@@ -1,65 +1,71 @@
 import base64
 import errno
-from functools import cache
 import http.client
 import logging
 import os
-import platform
-import stat
 import os.path as p
+import platform
 import pprint
 import pwd
 import re
+import shlex
 import shutil
 import socket
+import stat
 import subprocess
 import time
 import traceback
 import urllib.parse
-import shlex
-import urllib3
+from functools import cache
+from pathlib import Path
+
 import requests
+import urllib3
 
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
     # without installing tons of unneeded packages that may be not so easy to install.
     import asyncio
-    from cassandra.policies import RoundRobinPolicy
+    import ssl
+
     import cassandra.cluster
+    import nats
     import psycopg2
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
-    import nats
-    import ssl
+    from cassandra.policies import RoundRobinPolicy
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
     from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
+import docker
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
 from helpers.client import QueryRuntimeException
-
-import docker
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 from .client import Client
-from .retry_decorator import retry
-
 from .config_cluster import *
+from .random_settings import write_random_settings_config
+from .retry_decorator import retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
+DEFAULT_BASE_CONFIG_DIR = os.environ.get(
+    "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
+)
 
 SANITIZER_SIGN = "=================="
 
@@ -444,9 +450,7 @@ class ClickHouseCluster:
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)
 
-        self.base_config_dir = base_config_dir or os.environ.get(
-            "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
-        )
+        self.base_config_dir = base_config_dir or DEFAULT_BASE_CONFIG_DIR
         self.server_bin_path = p.realpath(
             server_bin_path
             or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", "/usr/bin/clickhouse")
@@ -541,7 +545,6 @@ class ClickHouseCluster:
         self.with_hdfs = False
         self.with_kerberized_hdfs = False
         self.with_mongo = False
-        self.with_mongo_secure = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -570,6 +573,8 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
+        self.azurite_container = "azurite-container"
+        self.blob_service_client = None
         self._azurite_port = 0
 
         # available when with_hdfs == True
@@ -619,8 +624,10 @@ class ClickHouseCluster:
         # available when with_mongo == True
         self.mongo_host = "mongo1"
         self._mongo_port = 0
-        self.mongo_no_cred_host = "mongo2"
+        self.mongo_no_cred_host = "mongo_no_cred"
         self._mongo_no_cred_port = 0
+        self.mongo_secure_host = "mongo_secure"
+        self._mongo_secure_port = 0
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -737,6 +744,25 @@ class ClickHouseCluster:
         self.jdbc_driver_dir = p.abspath(p.join(self.instances_dir, "jdbc_driver"))
         self.jdbc_driver_logs_dir = os.path.join(self.jdbc_driver_dir, "logs")
 
+        # available when with_prometheus == True
+        self.with_prometheus = False
+        self.prometheus_writer_host = "prometheus_writer"
+        self.prometheus_writer_port = 9090
+        self.prometheus_writer_logs_dir = p.abspath(
+            p.join(self.instances_dir, "prometheus_writer/logs")
+        )
+        self.prometheus_reader_host = "prometheus_reader"
+        self.prometheus_reader_port = 9091
+        self.prometheus_reader_logs_dir = p.abspath(
+            p.join(self.instances_dir, "prometheus_reader/logs")
+        )
+        self.prometheus_remote_write_handler_host = None
+        self.prometheus_remote_write_handler_port = 9092
+        self.prometheus_remote_write_handler_path = "/write"
+        self.prometheus_remote_read_handler_host = None
+        self.prometheus_remote_read_handler_port = 9092
+        self.prometheus_remote_read_handler_path = "/read"
+
         self.docker_client = None
         self.is_up = False
         self.env = os.environ.copy()
@@ -812,6 +838,13 @@ class ClickHouseCluster:
             return self._mongo_no_cred_port
         self._mongo_no_cred_port = self.port_pool.get_port()
         return self._mongo_no_cred_port
+
+    @property
+    def mongo_secure_port(self):
+        if self._mongo_secure_port:
+            return self._mongo_secure_port
+        self._mongo_secure_port = get_free_port()
+        return self._mongo_secure_port
 
     @property
     def redis_port(self):
@@ -1423,29 +1456,6 @@ class ClickHouseCluster:
         ]
         return self.base_nats_cmd
 
-    def setup_mongo_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_mongo = self.with_mongo_secure = True
-        env_variables["MONGO_HOST"] = self.mongo_host
-        env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
-        env_variables["MONGO_INTERNAL_PORT"] = "27017"
-        env_variables["MONGO_CONFIG_PATH"] = HELPERS_DIR
-        self.base_cmd.extend(
-            [
-                "--file",
-                p.join(docker_compose_yml_dir, "docker_compose_mongo_secure.yml"),
-            ]
-        )
-        self.base_mongo_cmd = [
-            "docker-compose",
-            "--env-file",
-            instance.env_file,
-            "--project-name",
-            self.project_name,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_mongo_secure.yml"),
-        ]
-        return self.base_mongo_cmd
-
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
@@ -1453,6 +1463,11 @@ class ClickHouseCluster:
         env_variables["MONGO_INTERNAL_PORT"] = "27017"
         env_variables["MONGO_NO_CRED_EXTERNAL_PORT"] = str(self.mongo_no_cred_port)
         env_variables["MONGO_NO_CRED_INTERNAL_PORT"] = "27017"
+        env_variables["MONGO_SECURE_EXTERNAL_PORT"] = str(self.mongo_secure_port)
+        env_variables["MONGO_SECURE_INTERNAL_PORT"] = "27017"
+        env_variables["MONGO_SECURE_CONFIG_DIR"] = (
+            instance.path + "/" + "mongo_secure_config"
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mongo.yml")]
         )
@@ -1619,6 +1634,42 @@ class ClickHouseCluster:
         ]
         return self.base_hive_cmd
 
+    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        env_variables["PROMETHEUS_WRITER_HOST"] = self.prometheus_writer_host
+        env_variables["PROMETHEUS_WRITER_PORT"] = str(self.prometheus_writer_port)
+        env_variables["PROMETHEUS_WRITER_LOGS"] = self.prometheus_writer_logs_dir
+        env_variables["PROMETHEUS_WRITER_LOGS_FS"] = "bind"
+        env_variables["PROMETHEUS_READER_HOST"] = self.prometheus_reader_host
+        env_variables["PROMETHEUS_READER_PORT"] = str(self.prometheus_reader_port)
+        env_variables["PROMETHEUS_READER_LOGS"] = self.prometheus_reader_logs_dir
+        env_variables["PROMETHEUS_READER_LOGS_FS"] = "bind"
+        if self.prometheus_remote_write_handler_host:
+            env_variables["PROMETHEUS_REMOTE_WRITE_HANDLER"] = (
+                f"http://{self.prometheus_remote_write_handler_host}:{self.prometheus_remote_write_handler_port}/{self.prometheus_remote_write_handler_path.strip('/')}"
+            )
+        if self.prometheus_remote_read_handler_host:
+            env_variables["PROMETHEUS_REMOTE_READ_HANDLER"] = (
+                f"http://{self.prometheus_remote_read_handler_host}:{self.prometheus_remote_read_handler_port}/{self.prometheus_remote_read_handler_path.strip('/')}"
+            )
+        if not self.with_prometheus:
+            self.with_prometheus = True
+            self.base_cmd.extend(
+                [
+                    "--file",
+                    p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
+                ]
+            )
+            self.base_prometheus_cmd = [
+                "docker-compose",
+                "--env-file",
+                instance.env_file,
+                "--project-name",
+                self.project_name,
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
+            ]
+        return self.base_prometheus_cmd
+
     def add_instance(
         self,
         name,
@@ -1649,7 +1700,6 @@ class ClickHouseCluster:
         with_hdfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
-        with_mongo_secure=False,
         with_nginx=False,
         with_redis=False,
         with_minio=False,
@@ -1659,6 +1709,9 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
+        with_prometheus=False,
+        handle_prometheus_remote_write=False,
+        handle_prometheus_remote_read=False,
         use_old_analyzer=None,
         hostname=None,
         env_variables=None,
@@ -1681,6 +1734,7 @@ class ClickHouseCluster:
         copy_common_configs=True,
         config_root_name="clickhouse",
         extra_configs=[],
+        randomize_settings=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1698,8 +1752,7 @@ class ClickHouseCluster:
 
         if name in self.instances:
             raise Exception(
-                "Can't add instance `%s': there is already an instance with the same name!"
-                % name
+                f"Can't add instance '{name}': there is already an instance with the same name in [{self.instances.keys()}]"
             )
 
         if tag is None:
@@ -1749,7 +1802,7 @@ class ClickHouseCluster:
             or with_kerberized_hdfs
             or with_kerberos_kdc
             or with_kerberized_kafka,
-            with_mongo=with_mongo or with_mongo_secure,
+            with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
@@ -1785,6 +1838,7 @@ class ClickHouseCluster:
             mem_limit=mem_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
+            randomize_settings=randomize_settings,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -1923,21 +1977,10 @@ class ClickHouseCluster:
                 )
             )
 
-        if (with_mongo or with_mongo_secure) and not (
-            self.with_mongo or self.with_mongo_secure
-        ):
-            if with_mongo_secure:
-                cmds.append(
-                    self.setup_mongo_secure_cmd(
-                        instance, env_variables, docker_compose_yml_dir
-                    )
-                )
-            else:
-                cmds.append(
-                    self.setup_mongo_cmd(
-                        instance, env_variables, docker_compose_yml_dir
-                    )
-                )
+        if with_mongo and not self.with_mongo:
+            cmds.append(
+                self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
 
         if with_coredns and not self.with_coredns:
             cmds.append(
@@ -2001,6 +2044,17 @@ class ClickHouseCluster:
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
             )
 
+        if with_prometheus:
+            if handle_prometheus_remote_write:
+                self.prometheus_remote_write_handler_host = instance.hostname
+            if handle_prometheus_remote_read:
+                self.prometheus_remote_read_handler_host = instance.hostname
+            cmds.append(
+                self.setup_prometheus_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         logging.debug(
             "Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
                 self.name,
@@ -2041,6 +2095,7 @@ class ClickHouseCluster:
             self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name]
         )
         node.ip_address = self.get_instance_ip(node.name)
+        node.ipv6_address = self.get_instance_global_ipv6(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
 
         logging.info("Restart node with ip change")
@@ -2549,7 +2604,9 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 connection.list_database_names()
-                logging.debug(f"Connected to Mongo dbs: {connection.database_names()}")
+                logging.debug(
+                    f"Connected to Mongo dbs: {connection.list_database_names()}"
+                )
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
@@ -2623,6 +2680,32 @@ class ClickHouseCluster:
                     connection_string
                 )
                 logging.debug(blob_service_client.get_account_information())
+                containers = [
+                    c
+                    for c in blob_service_client.list_containers(
+                        name_starts_with=self.azurite_container
+                    )
+                    if c.name == self.azurite_container
+                ]
+                if len(containers) > 0:
+                    for c in containers:
+                        blob_service_client.delete_container(c)
+
+                container_client = blob_service_client.get_container_client(
+                    self.azurite_container
+                )
+                if container_client.exists():
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' exist, deleting all blobs"
+                    )
+                    for b in container_client.list_blobs():
+                        container_client.delete_blob(b.name)
+                else:
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' doesn't exist, creating it"
+                    )
+                    container_client.create_container()
+
                 self.blob_service_client = blob_service_client
                 return
             except Exception as ex:
@@ -2977,7 +3060,7 @@ class ClickHouseCluster:
                 logging.debug("Setup Mongo")
                 run_and_check(self.base_mongo_cmd + common_opts)
                 self.up_called = True
-                self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
+                self.wait_mongo_to_start(30)
 
             if self.with_coredns and self.base_coredns_cmd:
                 logging.debug("Setup coredns")
@@ -3064,6 +3147,12 @@ class ClickHouseCluster:
                     f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
                 )
 
+            if self.with_prometheus:
+                os.makedirs(self.prometheus_writer_logs_dir)
+                os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                os.makedirs(self.prometheus_reader_logs_dir)
+                os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
                 (
@@ -3079,6 +3168,7 @@ class ClickHouseCluster:
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
+                instance.ipv6_address = self.get_instance_global_ipv6(instance.name)
 
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
@@ -3358,6 +3448,7 @@ class ClickHouseInstance:
         mem_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
+        randomize_settings=True,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3416,6 +3507,9 @@ class ClickHouseInstance:
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
+        self.mongo_secure_config_dir = p.abspath(
+            p.join(base_path, "mongo_secure_config")
+        )
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
@@ -3426,6 +3520,7 @@ class ClickHouseInstance:
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
         self.use_old_analyzer = use_old_analyzer
+        self.randomize_settings = randomize_settings
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -3988,7 +4083,7 @@ class ClickHouseInstance:
         exclusion_substring="",
     ):
         if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
+            # We check first file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
@@ -4484,7 +4579,7 @@ class ClickHouseInstance:
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         # If specific version was used there can be no
-        # allow_experimental_analyzer setting, so do this only if it was
+        # enable_analyzer setting, so do this only if it was
         # explicitly requested.
         if self.tag:
             use_old_analyzer = False
@@ -4496,6 +4591,10 @@ class ClickHouseInstance:
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
+
+        if self.randomize_settings and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR:
+            # If custom main config is used, do not apply random settings to it
+            write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
         version = None
         version_parts = self.tag.split(".")
@@ -4536,6 +4635,12 @@ class ClickHouseInstance:
                 self.secrets_dir,
                 p.abspath(p.join(base_secrets_dir, "secrets")),
                 dirs_exist_ok=True,
+            )
+
+        if self.with_mongo and os.path.exists(self.mongo_secure_config_dir):
+            shutil.copytree(
+                self.mongo_secure_config_dir,
+                p.abspath(p.join(self.path, "mongo_secure_config")),
             )
 
         if self.with_coredns:
@@ -4610,6 +4715,9 @@ class ClickHouseInstance:
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")
+
+        if self.with_ldap:
+            depends_on.append("openldap")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")
