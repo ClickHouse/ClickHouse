@@ -491,6 +491,18 @@ private:
     NameToNodeIndex index;
 };
 
+class FindAliasForInputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindAliasForInputName(const ActionsDAG & actions);
+    const ActionsDAG::Node * find(const String & name);
+
+private:
+    NameToNodeIndex index;
+};
+
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
 struct ActionDAGNodes
 {

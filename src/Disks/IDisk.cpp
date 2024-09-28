@@ -196,7 +196,6 @@ void IDisk::checkAccessImpl(const String & path)
 try
 {
     const std::string_view payload("test", 4);
-    const auto read_settings = getReadSettings();
 
     /// write
     {
@@ -216,7 +215,7 @@ try
 
     /// read
     {
-        auto file = readFile(path, read_settings);
+        auto file = readFile(path);
         String buf(payload.size(), '0');
         file->readStrict(buf.data(), buf.size());
         if (buf != payload)
@@ -228,7 +227,7 @@ try
 
     /// read with offset
     {
-        auto file = readFile(path, read_settings);
+        auto file = readFile(path);
         auto offset = 2;
         String buf(payload.size() - offset, '0');
         file->seek(offset, 0);

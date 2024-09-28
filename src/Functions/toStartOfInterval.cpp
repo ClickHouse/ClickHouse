@@ -1,4 +1,3 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
@@ -421,8 +420,6 @@ private:
 REGISTER_FUNCTION(ToStartOfInterval)
 {
     factory.registerFunction<FunctionToStartOfInterval>();
-    factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
-    factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
 }
 
 }

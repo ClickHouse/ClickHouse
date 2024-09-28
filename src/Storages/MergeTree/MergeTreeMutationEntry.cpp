@@ -123,7 +123,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     , is_temp(false)
 {
     block_number = parseFileName(file_name);
-    auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
+    auto buf = disk->readFile(path_prefix + file_name);
 
     *buf >> "format version: 1\n";
 

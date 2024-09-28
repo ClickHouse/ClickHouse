@@ -26,7 +26,7 @@ public:
         String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
         std::optional<String> path_to = getValueFromCommandLineOptionsWithOptional<String>(options, "path-to");
 
-        auto in = disk.getDisk()->readFile(path_from, getReadSettings());
+        auto in = disk.getDisk()->readFile(path_from);
         std::unique_ptr<WriteBufferFromFileBase> out = {};
         if (path_to.has_value())
         {

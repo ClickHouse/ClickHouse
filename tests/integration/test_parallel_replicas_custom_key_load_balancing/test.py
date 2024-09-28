@@ -56,14 +56,12 @@ def create_tables(table_name):
 
 @pytest.mark.parametrize("use_hedged_requests", [1, 0])
 @pytest.mark.parametrize("custom_key", ["sipHash64(key)", "key"])
-@pytest.mark.parametrize(
-    "parallel_replicas_mode", ["custom_key_sampling", "custom_key_range"]
-)
+@pytest.mark.parametrize("filter_type", ["default", "range"])
 def test_parallel_replicas_custom_key_load_balancing(
     start_cluster,
     use_hedged_requests,
     custom_key,
-    parallel_replicas_mode,
+    filter_type,
 ):
     cluster_name = "test_single_shard_multiple_replicas"
     table = "test_table"
@@ -82,9 +80,8 @@ def test_parallel_replicas_custom_key_load_balancing(
                 "log_comment": log_comment,
                 "prefer_localhost_replica": 0,
                 "max_parallel_replicas": 4,
-                "enable_parallel_replicas": 1,
                 "parallel_replicas_custom_key": custom_key,
-                "parallel_replicas_mode": parallel_replicas_mode,
+                "parallel_replicas_custom_key_filter_type": filter_type,
                 "use_hedged_requests": use_hedged_requests,
                 # avoid considering replica delay on connection choice
                 # otherwise connection can be not distributed evenly among available nodes

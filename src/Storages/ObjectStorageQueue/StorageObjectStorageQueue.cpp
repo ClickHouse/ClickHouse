@@ -23,6 +23,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>

@@ -295,7 +295,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
 
         if (disk->exists(format_version_path))
         {
-            auto buf = disk->readFile(format_version_path, getReadSettings());
+            auto buf = disk->readFile(format_version_path);
             UInt32 current_format_version{0};
             readIntText(current_format_version, *buf);
             if (!buf->eof())
@@ -506,11 +506,13 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
     if (parts.empty())
+    {
         return {};
+    }
 
     ASTPtr expression_ast;
 
-    ConditionSelectivityEstimator estimator;
+    ConditionSelectivityEstimator result;
     PartitionPruner partition_pruner(storage_snapshot->metadata, filter_dag, local_context);
 
     if (partition_pruner.isUseless())
@@ -521,9 +523,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         {
             auto stats = part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            estimator.incrementRowCount(part->rows_count);
+            result.addRows(part->rows_count);
             for (const auto & stat : stats)
-                estimator.addStatistics(part->info.getPartNameV1(), stat);
+                result.merge(part->info.getPartNameV1(), stat);
         }
         catch (...)
         {
@@ -538,9 +540,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             if (!partition_pruner.canBePruned(*part))
             {
                 auto stats = part->loadStatistics();
-                estimator.incrementRowCount(part->rows_count);
+                result.addRows(part->rows_count);
                 for (const auto & stat : stats)
-                    estimator.addStatistics(part->info.getPartNameV1(), stat);
+                    result.merge(part->info.getPartNameV1(), stat);
             }
         }
         catch (...)
@@ -549,7 +551,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         }
     }
 
-    return estimator;
+    return result;
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -3957,7 +3959,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     }
 }
 
-void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction)
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename)
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
@@ -3968,17 +3970,13 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
                bool may_be_cleaned_up = dir_name.starts_with("tmp_") || dir_name.starts_with("tmp-fetch_");
                return !may_be_cleaned_up || temporary_parts.contains(dir_name);
            }());
-    assert(!(!need_rename && rename_in_transaction));
 
-    if (need_rename && !rename_in_transaction)
+    if (need_rename)
         part->renameTo(part->name, true);
 
     LOG_TEST(log, "preparePartForCommit: inserting {} into data_parts_indexes", part->getNameWithState());
     data_parts_indexes.insert(part);
-    if (rename_in_transaction)
-        out_transaction.addPart(part, need_rename);
-    else
-        out_transaction.addPart(part, /* need_rename= */ false);
+    out_transaction.addPart(part);
 }
 
 bool MergeTreeData::addTempPart(
@@ -4027,8 +4025,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    DataPartsVector * out_covered_parts,
-    bool rename_in_transaction)
+    DataPartsVector * out_covered_parts)
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
@@ -4067,7 +4064,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, out_transaction, /* need_rename= */ true, rename_in_transaction);
+    preparePartForCommit(part, out_transaction, /* need_rename */ true);
 
     if (out_covered_parts)
     {
@@ -4082,31 +4079,29 @@ bool MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    bool rename_in_transaction)
+    DataPartsVector * out_covered_parts)
 {
-    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction);
+    return renameTempPartAndReplaceImpl(part, out_transaction, lock, out_covered_parts);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
-    Transaction & out_transaction,
-    bool rename_in_transaction)
+    Transaction & out_transaction)
 {
     auto part_lock = lockParts();
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, out_transaction, part_lock, &covered_parts, rename_in_transaction);
+    renameTempPartAndReplaceImpl(part, out_transaction, part_lock, &covered_parts);
     return covered_parts;
 }
 
 bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
-    DataPartsLock & lock,
-    bool rename_in_transaction)
+    DataPartsLock & lock)
 {
     DataPartsVector covered_parts;
 
-    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction))
+    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts))
         return false;
 
     if (!covered_parts.empty())
@@ -4147,9 +4142,9 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         resetObjectColumnsFromActiveParts(acquired_lock);
 }
 
-void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove, DataPartsLock * acquired_lock)
+void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
 {
-    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
+    auto lock = lockParts();
 
     for (const auto & part : remove)
     {
@@ -4315,7 +4310,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         auto [new_data_part, tmp_dir_holder] = createEmptyPart(empty_info, partition, empty_part_name, NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        renameTempPartAndAdd(new_data_part, transaction, lock);     /// All covered parts must be already removed
 
         /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
         transaction.rollback(&lock);
@@ -6714,53 +6709,24 @@ TransactionID MergeTreeData::Transaction::getTID() const
     return Tx::PrehistoricTID;
 }
 
-void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part, bool need_rename)
+void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part)
 {
     precommitted_parts.insert(part);
-    if (need_rename)
-        precommitted_parts_need_rename.insert(part);
 }
 
 void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
 {
     if (!isEmpty())
     {
-        for (const auto & part : precommitted_parts)
-            part->version.creation_csn.store(Tx::RolledBackCSN);
-
-        auto non_detached_precommitted_parts = precommitted_parts;
-
-        /// Remove detached parts from working set.
-        ///
-        /// It is possible to have detached parts here, only when rename (in
-        /// commit()) of detached parts had been broken (i.e. during ATTACH),
-        /// i.e. the part itself is broken.
-        DataPartsVector detached_precommitted_parts;
-        for (auto it = non_detached_precommitted_parts.begin(); it != non_detached_precommitted_parts.end();)
-        {
-            const auto & part = *it;
-            if (part->getDataPartStorage().getParentDirectory() == DETACHED_DIR_NAME)
-            {
-                detached_precommitted_parts.push_back(part);
-                it = non_detached_precommitted_parts.erase(it);
-            }
-            else
-                ++it;
-        }
-
         WriteBufferFromOwnString buf;
         buf << "Removing parts:";
-        for (const auto & part : non_detached_precommitted_parts)
+        for (const auto & part : precommitted_parts)
             buf << " " << part->getDataPartStorage().getPartDirectory();
         buf << ".";
-        if (!detached_precommitted_parts.empty())
-        {
-            buf << " Rollbacking parts state to temporary and removing from working set:";
-            for (const auto & part : detached_precommitted_parts)
-                buf << " " << part->getDataPartStorage().getPartDirectory();
-            buf << ".";
-        }
         LOG_DEBUG(data.log, "Undoing transaction {}. {}", getTID(), buf.str());
+
+        for (const auto & part : precommitted_parts)
+            part->version.creation_csn.store(Tx::RolledBackCSN);
 
         /// It would be much better with TSA...
         auto our_lock = (lock) ? DataPartsLock() : data.lockParts();
@@ -6771,7 +6737,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
             if (!data.all_data_dropped)
             {
                 Strings part_names;
-                for (const auto & part : non_detached_precommitted_parts)
+                for (const auto & part : precommitted_parts)
                     part_names.emplace_back(part->name);
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "There are some PreActive parts ({}) to rollback, "
                                 "but data parts set is empty and table {} was not dropped. It's a bug",
@@ -6780,12 +6746,8 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
         }
         else
         {
-            data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
-                detached_precommitted_parts,
-                &our_lock);
-
             data.removePartsFromWorkingSet(txn,
-                DataPartsVector(non_detached_precommitted_parts.begin(), non_detached_precommitted_parts.end()),
+                DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
                 /* clear_without_timeout = */ true, &our_lock);
         }
     }
@@ -6795,19 +6757,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
 
 void MergeTreeData::Transaction::clear()
 {
-    chassert(precommitted_parts.size() >= precommitted_parts_need_rename.size());
     precommitted_parts.clear();
-    precommitted_parts_need_rename.clear();
-}
-
-void MergeTreeData::Transaction::renameParts()
-{
-    for (const auto & part_need_rename : precommitted_parts_need_rename)
-    {
-        LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);
-        part_need_rename->renameTo(part_need_rename->name, true);
-    }
-    precommitted_parts_need_rename.clear();
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
@@ -6816,9 +6766,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
     if (!isEmpty())
     {
-        if (!precommitted_parts_need_rename.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts had not been renamed");
-
         auto settings = data.getSettings();
         auto parts_lock = acquired_parts_lock ? DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;

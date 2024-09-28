@@ -31,7 +31,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int TABLE_IS_BEING_RESTARTED;
 }
 
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
@@ -67,13 +66,12 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
 TableLockHolder IStorage::lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
-    auto table_id = getStorageID();
-    if (!table_id.hasUUID() && (is_dropped || is_detached))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
 
-    if (is_being_restarted)
-        throw Exception(
-            ErrorCodes::TABLE_IS_BEING_RESTARTED, "Table {}.{} is being restarted", table_id.database_name, table_id.table_name);
+    if (is_dropped || is_detached)
+    {
+        auto table_id = getStorageID();
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
+    }
     return result;
 }
 
@@ -81,10 +79,12 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    auto table_id = getStorageID();
-    if (is_being_restarted || (!table_id.hasUUID() && (is_dropped || is_detached)))
-        // Table was dropped or is being restarted while acquiring the lock
+    if (is_dropped || is_detached)
+    {
+        // Table was dropped while acquiring the lock
         result = nullptr;
+    }
+
     return result;
 }
 
