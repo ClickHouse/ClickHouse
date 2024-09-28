@@ -179,7 +179,7 @@ unsigned getNumberOfPhysicalCPUCoresImpl()
     /// Few cores indicate it is a small machine, runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
     if (auto context = DB::Context::getGlobalContextInstance())
     {
-        if (cores >= context->getServerSettings().max_vCPUs_num_to_use_hyper_threading)
+        if (cores >= context->getServerSettings().max_vcpu_num_to_use_hyper_threading)
             cores = physical_concurrency();
     }
     else
