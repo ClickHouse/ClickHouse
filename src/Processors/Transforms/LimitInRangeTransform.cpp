@@ -26,38 +26,31 @@ Block LimitInRangeTransform::transformHeader(
 
     std::cerr << "Original header: " << header.dumpStructure() << " " << remove_filter_column << '\n';
 
-    if (!from_filter_column_name.empty())
+    auto processFilterColumn = [&](const String & filter_column_name, const char * filter_name)
     {
-        auto from_filter_type = header.getByName(from_filter_column_name).type;
-        if (!from_filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(from_filter_type))))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "Illegal type {} of column {} for from_filter. Must be UInt8 or Nullable(UInt8).",
-                from_filter_type->getName(),
-                from_filter_column_name);
+        if (!filter_column_name.empty())
+        {
+            auto filter_type = header.getByName(filter_column_name).type;
+            if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                    "Illegal type {} of column '{}' for {}. Must be UInt8 or Nullable(UInt8).",
+                    filter_type->getName(),
+                    filter_column_name,
+                    filter_name);
+            }
 
-        if (remove_filter_column)
-            header.erase(from_filter_column_name);
-        //  else
-        //      replaceFilterToConstant(header, filter_column_name);
-    }
+            if (remove_filter_column)
+                header.erase(filter_column_name);
+            // else
+            // replaceFilterToConstant(header, filter_column_name);
+        }
+    };
 
+    processFilterColumn(from_filter_column_name, "from_filter");
+    processFilterColumn(to_filter_column_name, "to_filter");
 
-    if (!to_filter_column_name.empty())
-    {
-        auto to_filter_type = header.getByName(to_filter_column_name).type;
-        if (!to_filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(to_filter_type))))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "Illegal type {} of column {} for to_filter. Must be UInt8 or Nullable(UInt8).",
-                to_filter_type->getName(),
-                to_filter_column_name);
-
-        if (remove_filter_column)
-            header.erase(to_filter_column_name);
-        //  else
-        //      replaceFilterToConstant(header, filter_column_name);
-    }
     std::cerr << "TransformHeader ending structure: " << header.dumpStructure() << '\n';
     return header;
 }
@@ -192,22 +185,10 @@ void LimitInRangeTransform::removeFilterIfNeed(Chunk & chunk) const
 
 const IColumn::Filter * initializeColumn(const Columns & columns, size_t filter_column_position)
 {
-    ColumnPtr filter_column = columns[filter_column_position];
-    ColumnPtr data_holder = nullptr;
-    if (filter_column->isSparse())
-        data_holder = recursiveRemoveSparse(filter_column->getPtr());
+    const IColumn & filter_column = *columns[filter_column_position];
+    FilterDescription filter_description(filter_column);
 
-    if (filter_column->lowCardinality() && !data_holder)
-    {
-        data_holder = filter_column->convertToFullColumnIfLowCardinality();
-    }
-
-    const auto & column = data_holder ? *data_holder : *filter_column;
-    const IColumn::Filter * filter_concrete_column = nullptr;
-    if (const ColumnUInt8 * concrete_column = typeid_cast<const ColumnUInt8 *>(&column))
-        filter_concrete_column = &concrete_column->getData();
-
-    return filter_concrete_column;
+    return filter_description.data;
 }
 
 std::optional<size_t> findFirstMatchingIndex(const IColumn::Filter * filter)
@@ -237,9 +218,6 @@ void LimitInRangeTransform::transform(Chunk & chunk)
 void LimitInRangeTransform::doFromTransform(Chunk & chunk)
 {
     std::cerr << "FilterTransform::doFromTransform\n";
-
-    size_t num_rows_before_filtration = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
     // DataTypes types;
     // auto select_final_indices_info = getSelectByFinalIndices(chunk);
     // std::cerr << constant_filter_description.always_true << " " << constant_filter_description.always_false << '\n';
@@ -249,34 +227,35 @@ void LimitInRangeTransform::doFromTransform(Chunk & chunk)
         std::cerr << "##############\n";
         std::cerr << "INDEX ALREADY EXIST;\n";
         std::cerr << "##############\n";
-        chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
     }
 
-    auto from_filter_mask = initializeColumn(columns, from_filter_column_position);
+    auto from_filter_mask = initializeColumn(chunk.getColumns(), from_filter_column_position);
     std::optional<size_t> index = findFirstMatchingIndex(from_filter_mask);
 
-    if (index.has_value())
-    {
-        from_index_found = true;
-        std::cerr << "##############\n";
-        std::cerr << "FOUND INDEX: " << index.value() << "; " << '\n';
-        std::cerr << "##############\n";
-    }
-    else
+    if (!index)
     {
         // also can be checked with memory size = 0;
         std::cerr << "##############\n";
         std::cerr << "NOT FOUND"
                   << "; " << '\n';
         std::cerr << "##############\n";
+        chunk.clear();
         return;
     }
 
-    size_t length = num_rows_before_filtration - index.value();
+    from_index_found = true;
+    std::cerr << "##############\n";
+    std::cerr << "FOUND INDEX: " << *index << "; " << '\n';
+    std::cerr << "##############\n";
+
+
+    size_t start = *index, length = chunk.getNumRows() - start;
+    auto columns = chunk.detachColumns();
+
     for (auto & col : columns)
-        col = col->cut(index.value(), length);
+        col = col->cut(start, length);
 
     chunk.setColumns(std::move(columns), length);
     removeFilterIfNeed(chunk);
@@ -286,37 +265,34 @@ void LimitInRangeTransform::doToTransform(Chunk & chunk)
 {
     std::cerr << "FilterTransform::doToTransform\n";
 
-    size_t num_rows_before_filtration = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
     // can be wrapped into filterDescription
-    auto to_filter_mask = initializeColumn(columns, to_filter_column_position);
+    auto to_filter_mask = initializeColumn(chunk.getColumns(), to_filter_column_position);
     std::optional<size_t> index = findFirstMatchingIndex(to_filter_mask);
-    if (index.has_value())
-    {
-        to_index_found = true;
-        std::cerr << "##############\n";
-        std::cerr << "FOUND INDEX: " << index.value() << "; " << '\n';
-        std::cerr << "##############\n";
-    }
-    else
-    {
+
+    if (!index) {
         // also can be checked with memory size = 0;
         std::cerr << "##############\n";
         std::cerr << "NOT FOUND" << ";\n";
         std::cerr << "##############\n";
-        chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
     }
 
+    to_index_found = true;
+    std::cerr << "##############\n";
+    std::cerr << "FOUND INDEX: " << *index << "; " << '\n';
+    std::cerr << "##############\n";
 
-    size_t length = index.value() + 1;
+    auto columns = chunk.detachColumns();
+    size_t length = *index + 1;
+
     for (auto & col : columns)
         col = col->cut(0, length);
 
-    stopReading(); // optimization as to_index_found
     chunk.setColumns(std::move(columns), length);
+
+    stopReading(); // optimization as to_index_found
+
     removeFilterIfNeed(chunk);
     // SELECT * FROM temp_table150 LIMIT INRANGE TO id = 100
 }
@@ -337,12 +313,9 @@ void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
 
     std::cerr << "FilterTransform::doFromAndToTransform\n";
 
-    size_t num_rows_before_filtration = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
     // can be wraped into filterDescription if needed(check below functions)? with including the cut
-    auto from_filter_mask = initializeColumn(columns, from_filter_column_position);
-    auto to_filter_mask = initializeColumn(columns, to_filter_column_position);
+    auto from_filter_mask = initializeColumn(chunk.getColumns(), from_filter_column_position);
+    auto to_filter_mask = initializeColumn(chunk.getColumns(), to_filter_column_position);
 
     if (from_index_found)
     {
@@ -351,17 +324,20 @@ void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
         std::cerr << "##############\n";
 
         std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_mask);
-        if (to_index.has_value())
+        if (to_index)
         {
             to_index_found = true;
             std::cerr << "##############\n";
-            std::cerr << "TO INDEX FOUND: " << to_index.value() << ";\n";
+            std::cerr << "TO INDEX FOUND: " << *to_index << ";\n";
             std::cerr << "##############\n";
 
-            for (auto & col : columns)
-                col = col->cut(0, to_index.value() + 1);
+            auto columns = chunk.detachColumns();
+            size_t length = *to_index + 1;
 
-            chunk.setColumns(std::move(columns), to_index.value() + 1);
+            for (auto & col : columns)
+                col = col->cut(0, length);
+
+            chunk.setColumns(std::move(columns), length);
             stopReading(); // SELECT * FROM temp_table150 LIMIT INRANGE FROM id = 67000 TO id = 67100
         }
         else
@@ -370,7 +346,6 @@ void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
             std::cerr << "##############\n";
             std::cerr << "TO INDEX NOT FOUND" << ";\n";
             std::cerr << "##############\n";
-            chunk.setColumns(std::move(columns), num_rows_before_filtration);
         }
         removeFilterIfNeed(chunk);
         return;
@@ -378,47 +353,57 @@ void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
 
     std::optional<size_t> from_index = findFirstMatchingIndex(from_filter_mask);
     std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_mask);
-    if (from_index.has_value() && to_index.has_value())
+    if (from_index && to_index)
     { // SELECT * FROM temp_table150 LIMIT INRANGE FROM id = 5 TO id = 100
         from_index_found = true;
         to_index_found = true;
         // check that from_index <= to_index else throw exception
 
         std::cerr << "##############\n";
-        std::cerr << "FROM AND TO INDICES FOUND: " << from_index.value() << ", " << to_index.value() << '\n';
+        std::cerr << "FROM AND TO INDICES FOUND: " << *from_index << ", " << *to_index << '\n';
         std::cerr << "##############\n";
-        if (to_index.value() < from_index.value())
+
+        // try find next index
+        if (*to_index < *from_index)
         { // SELECT * FROM temp_table150 LIMIT INRANGE FROM id = 100 TO id = 5
             throw Exception(
                 ErrorCodes::UNKNOWN_TYPE_OF_QUERY,
                 "First occurence of to_expression (index = {}) found earlier than first occurence of from_expression (index = {})",
-                to_index.value(),
-                from_index.value());
+                *to_index,
+                *from_index);
         }
 
-        for (auto & col : columns)
-            col = col->cut(from_index.value(), to_index.value() - from_index.value() + 1);
+        auto columns = chunk.detachColumns();
+        size_t length = *to_index - *from_index + 1;
 
-        chunk.setColumns(std::move(columns), to_index.value() - from_index.value() + 1);
+        for (auto & col : columns)
+            col = col->cut(*from_index, length);
+
+        chunk.setColumns(std::move(columns), length);
         removeFilterIfNeed(chunk);
+
         stopReading();
     }
-    else if (from_index.has_value())
+    else if (from_index)
     { // SELECT * FROM temp_table150 LIMIT INRANGE FROM id = 5 TO id = 70000
         std::cerr << "##############\n";
-        std::cerr << "FROM INDEX FOUND: " << from_index.value() << '\n';
+        std::cerr << "FROM INDEX FOUND: " << *from_index << '\n';
         std::cerr << "##############\n";
         from_index_found = true;
-        for (auto & col : columns)
-            col = col->cut(from_index.value(), num_rows_before_filtration - from_index.value());
 
-        chunk.setColumns(std::move(columns), num_rows_before_filtration - from_index.value());
+        size_t length = chunk.getNumRows() - *from_index;
+        auto columns = chunk.detachColumns();
+
+        for (auto & col : columns)
+            col = col->cut(*from_index, length);
+
+        chunk.setColumns(std::move(columns), length);
         removeFilterIfNeed(chunk);
     }
-    else if (to_index.has_value())
+    else if (to_index)
     { // SELECT * FROM temp_table150 LIMIT INRANGE FROM id = 90000 TO id = 100
         std::cerr << "##############\n";
-        std::cerr << "TO INDEX FOUND earlier (when FROM not): " << to_index.value() << '\n';
+        std::cerr << "TO INDEX FOUND earlier (when FROM not): " << *to_index << '\n';
         std::cerr << "##############\n";
         stopReading();
         throw Exception(
