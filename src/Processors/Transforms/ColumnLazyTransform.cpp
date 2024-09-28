@@ -16,11 +16,14 @@ Block ColumnLazyTransform::transformHeader(Block header)
     return header;
 }
 
-ColumnLazyTransform::ColumnLazyTransform(const Block & header_)
+ColumnLazyTransform::ColumnLazyTransform(
+    const Block & header_,
+    const LazilyReadInfoPtr & lazily_read_info_)
     : ISimpleTransform(
     header_,
     transformHeader(header_),
     true)
+    , lazily_read_info(lazily_read_info_)
 {}
 
 void ColumnLazyTransform::transform(Chunk & chunk)
@@ -35,7 +38,10 @@ void ColumnLazyTransform::transform(Chunk & chunk)
         if (isColumnLazy(*column))
         {
             const auto * column_lazy = typeid_cast<const ColumnLazy *>(column.get());
-            column_lazy->transform(res_columns);
+            if (column_lazy->getColumns().empty())
+                continue;
+
+            lazily_read_info->column_lazy_helper->transformLazyColumns(*column_lazy, res_columns);
         }
     }
 

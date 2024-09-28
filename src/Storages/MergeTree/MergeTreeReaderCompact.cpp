@@ -130,7 +130,7 @@ void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type,
     ColumnPtr & column,
     size_t rows_to_read,
-    size_t offset,
+    size_t rows_offset,
     const InputStreamGetter & getter)
 {
     try
@@ -141,7 +141,6 @@ void MergeTreeReaderCompact::readData(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = getter;
         deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
-        bool is_skipped = false;
 
         if (name_and_type.isSubcolumn())
         {
@@ -151,16 +150,8 @@ void MergeTreeReaderCompact::readData(
             auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
             ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
 
-            if (offset > 0 && serialization->deserializeBinaryBulkWithMultipleStreamsSilently(temp_column, offset, deserialize_settings,
-                                                                                              deserialize_binary_bulk_state_map[name]))
-            {
-                is_skipped = true;
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings,
-                                                                        deserialize_binary_bulk_state_map[name], nullptr);
-            }
-            else
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read + offset, deserialize_settings,
-                                                                        deserialize_binary_bulk_state_map[name], nullptr);
+            serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_offset, rows_to_read, deserialize_settings,
+                                                                    deserialize_binary_bulk_state_map[name], nullptr);
 
             auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
@@ -173,24 +164,8 @@ void MergeTreeReaderCompact::readData(
         else
         {
             auto serialization = getSerializationInPart(name_and_type);
-            if (offset > 0 && serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings,
-                                                                                              deserialize_binary_bulk_state_map[name]))
-            {
-                is_skipped = true;
-                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings,
-                                                                        deserialize_binary_bulk_state_map[name], nullptr);
-            }
-            else
-                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read + offset, deserialize_settings,
-                                                                        deserialize_binary_bulk_state_map[name], nullptr);
-        }
-
-        if (offset > 0 && !is_skipped)
-        {
-            if (!partially_read_columns.contains(name_and_type.name))
-                column = column->cut(offset, rows_to_read);
-            else
-                rows_to_read += offset;
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings,
+                                                                    deserialize_binary_bulk_state_map[name], nullptr);
         }
 
         size_t read_rows_in_column = column->size() - column_size_before_reading;

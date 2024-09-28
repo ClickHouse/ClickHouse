@@ -270,6 +270,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -286,7 +287,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantDiscriminators);
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
-        col.getLocalDiscriminatorsPtr() = cached_discriminators;
+        if (rows_offset)
+            col.getLocalDiscriminatorsPtr() = IColumn::mutate(cached_discriminators);
+        else
+            col.getLocalDiscriminatorsPtr() = cached_discriminators;
     }
     else
     {
@@ -294,15 +298,37 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (!discriminators_stream)
             return;
 
-        SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, limit, 0);
-        addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
+        SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
+            *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+
+        if (rows_offset)
+            addToSubstreamsCache(cache, settings.path, IColumn::mutate(col.getLocalDiscriminatorsPtr()));
+        else
+            addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
     }
     settings.path.pop_back();
 
     /// Second, calculate limits for each variant by iterating through new discriminators.
     std::vector<size_t> variant_limits(variants.size(), 0);
+    std::vector<size_t> variant_rows_offsets(variants.size(), 0);
     auto & discriminators_data = col.getLocalDiscriminators();
-    size_t discriminators_offset = discriminators_data.size() - limit;
+    size_t discriminators_offset = discriminators_data.size() - limit - rows_offset;
+
+    if (rows_offset)
+    {
+        for (size_t i = discriminators_offset; i < discriminators_offset + rows_offset; ++i)
+        {
+            ColumnVariant::Discriminator discr = discriminators_data[i];
+            if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+                ++variant_rows_offsets[discr];
+        }
+
+        for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
+            discriminators_data[i] = discriminators_data[i + rows_offset];
+
+        col.getLocalDiscriminatorsPtr()->assumeMutable()->popBack(rows_offset);
+    }
+
     for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
     {
         ColumnVariant::Discriminator discr = discriminators_data[i];
@@ -316,7 +342,8 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     for (size_t i = 0; i != variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variants[i]->deserializeBinaryBulkWithMultipleStreams(col.getVariantPtrByLocalDiscriminator(i), variant_limits[i], settings, variant_state->states[i], cache);
+        variants[i]->deserializeBinaryBulkWithMultipleStreams(
+            col.getVariantPtrByLocalDiscriminator(i), variant_rows_offsets[i], variant_limits[i], settings, variant_state->states[i], cache);
         settings.path.pop_back();
     }
     settings.path.pop_back();

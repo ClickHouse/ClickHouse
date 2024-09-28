@@ -92,6 +92,7 @@ void SerializationDynamicElement::serializeBinaryBulkWithMultipleStreams(const I
 
 void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -105,7 +106,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     if (dynamic_element_state->variant_serialization)
     {
         settings.path.push_back(Substream::DynamicData);
-        dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_element_state->variant_element_state, cache);
+        dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
     }
     else

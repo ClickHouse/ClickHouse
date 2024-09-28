@@ -1,15 +1,87 @@
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
+
+#include <base/defines.h>
 #include <Columns/ColumnLazy.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeTuple.h>
-#include "base/defines.h"
 #include <Common/Logger.h>
+#include <Common/typeid_cast.h>
+#include "Columns/IColumn.h"
+#include <DataTypes/DataTypeTuple.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
 namespace DB
 {
+
+struct RowOffsetWithIdx
+{
+    size_t row_offset;
+    size_t row_idx;
+
+    RowOffsetWithIdx(const size_t row_offset_, const size_t row_idx_)
+        : row_offset(row_offset_), row_idx(row_idx_) {}
+};
+
+using RowOffsetsWithIdx = std::vector<RowOffsetWithIdx>;
+using PartIndexToRowOffsets = std::map<size_t, RowOffsetsWithIdx>;
+
+void matchDataPartToRowOffsets(
+    const ColumnUInt64 * row_num_column,
+    const ColumnUInt64 * part_num_column,
+    PartIndexToRowOffsets & part_to_row_offsets,
+    IColumn::Permutation & permutation)
+{
+    const size_t rows_size = row_num_column->size();
+
+    for (size_t row_idx = 0; row_idx < rows_size; ++row_idx)
+    {
+        size_t row_offset = row_num_column->getUInt(row_idx);
+        size_t part_index = part_num_column->getUInt(row_idx);
+
+        part_to_row_offsets[part_index].emplace_back(row_offset, row_idx);
+    }
+
+    size_t curr_idx = 0;
+    permutation.resize(rows_size);
+
+    for (auto & part_and_row_offsets : part_to_row_offsets)
+    {
+        auto & row_offsets_with_idx = part_and_row_offsets.second;
+
+        std::sort(row_offsets_with_idx.begin(), row_offsets_with_idx.end(), [](const RowOffsetWithIdx & left,
+                                                                                                 const RowOffsetWithIdx & right)
+        {
+            return left.row_offset < right.row_offset;
+        });
+
+        for (const auto & row_offset_with_idx : row_offsets_with_idx)
+        {
+            permutation[row_offset_with_idx.row_idx] = curr_idx++;
+        }
+    }
+}
+
+void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num_rows)
+{
+    bool has_columns = false;
+    for (const auto & column : res_columns)
+    {
+        if (column)
+        {
+            has_columns = true;
+            break;
+        }
+    }
+
+    if (has_columns)
+        return;
+
+    ColumnWithTypeAndName dummy_column;
+    dummy_column.column = DataTypeUInt8().createColumnConst(num_rows, Field(1));
+    dummy_column.type = std::make_shared<DataTypeUInt8>();
+    dummy_column.name = "....dummy...." + toString(UUIDHelpers::generateV4());
+    block.insert(dummy_column);
+}
 
 MergeTreeLazilyReader::MergeTreeLazilyReader(
     const Block & header_,
@@ -39,40 +111,20 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     }
 }
 
-void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num_rows)
-{
-    bool has_columns = false;
-    for (const auto & column : res_columns)
-    {
-        if (column)
-        {
-            has_columns = true;
-            break;
-        }
-    }
-
-    if (has_columns)
-        return;
-
-    ColumnWithTypeAndName dummy_column;
-    dummy_column.column = DataTypeUInt8().createColumnConst(num_rows, Field(1));
-    dummy_column.type = std::make_shared<DataTypeUInt8>();
-    dummy_column.name = "....dummy...." + toString(UUIDHelpers::generateV4());
-    block.insert(dummy_column);
-}
-
 void MergeTreeLazilyReader::transformLazyColumns(
     const ColumnLazy & column_lazy,
     ColumnsWithTypeAndName & res_columns)
 {
     const size_t columns_size = lazy_columns.size();
     const auto & columns = column_lazy.getColumns();
-    const size_t origin_size = res_columns.size();
 
+    chassert(res_columns.empty());
     chassert(columns.size() == 2);
     const auto * row_num_column = typeid_cast<const ColumnUInt64 *>(columns[0].get());
     const auto * part_num_column = typeid_cast<const ColumnUInt64 *>(columns[1].get());
-    const size_t rows_size = part_num_column->size();
+
+    chassert(row_num_column->size() == part_num_column->size());
+    const size_t rows_size = row_num_column->size();
 
     ReadSettings read_settings;
     read_settings.direct_io_threshold = 1;
@@ -93,15 +145,26 @@ void MergeTreeLazilyReader::transformLazyColumns(
         res_columns.emplace_back(column_with_type_and_name.type, column_with_type_and_name.name);
     }
 
-    for (size_t row_idx = 0; row_idx < rows_size; ++row_idx)
-    {
-        size_t row_offset = row_num_column->getUInt(row_idx);
-        size_t part_index = part_num_column->getUInt(row_idx);
+    PartIndexToRowOffsets part_to_row_offsets;
+    IColumn::Permutation permutation;
 
+    matchDataPartToRowOffsets(row_num_column, part_num_column, part_to_row_offsets, permutation);
+
+    for (const auto & it : part_to_row_offsets)
+    {
+        auto part_index = it.first;
+        const auto & row_offsets = it.second;
         MergeTreeData::DataPartPtr data_part = (*data_parts_info)[part_index].data_part;
+        MarkRanges mark_ranges;
+
+        for (const auto & row_offset_with_idx : row_offsets)
+        {
+            auto row_offset = row_offset_with_idx.row_offset;
+            MarkRange mark_range = data_part->index_granularity.getMarkRangeForRowOffset(row_offset);
+            mark_ranges.push_back(mark_range);
+        }
+
         AlterConversionsPtr alter_conversions = (*data_parts_info)[part_index].alter_conversions;
-        MarkRange mark_range = data_part->index_granularity.getMarkRangeForRowOffset(row_offset);
-        MarkRanges mark_ranges{mark_range};
 
         Names tmp_requested_column_names(requested_column_names.begin(), requested_column_names.end());
         injectRequiredColumns(
@@ -121,41 +184,78 @@ void MergeTreeLazilyReader::transformLazyColumns(
             storage.getContext()->getMarkCache().get(), alter_conversions,
             reader_settings, {}, {});
 
-        Columns columns_to_read;
-        columns_to_read.resize(columns_for_reader.size());
-        size_t current_offset = row_offset - data_part->index_granularity.getMarkStartingRow(mark_range.begin);
+        size_t idx = 0;
+        auto mark_range_iter = mark_ranges.begin();
+        auto row_offset = row_offsets[idx].row_offset;
+        size_t next_offset = row_offset - data_part->index_granularity.getMarkStartingRow(mark_range_iter->begin);
+        size_t skipped_rows = next_offset;
+        bool continue_reading = false;
 
-        reader->readRows(
-            mark_range.begin, mark_range.end, /* continue_reading */false,
-            1, current_offset, columns_to_read);
-
-        bool should_evaluate_missing_defaults = false;
-        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1, current_offset);
-
-        if (should_evaluate_missing_defaults)
+        while (mark_range_iter != mark_ranges.end())
         {
-            Block block;
-            addDummyColumnWithRowCount(block, columns_to_read, 1);
-            reader->evaluateMissingDefaults(block, columns_to_read);
+            Columns columns_to_read;
+            columns_to_read.resize(columns_for_reader.size());
+
+            auto read_rows = reader->readRows(mark_range_iter->begin, mark_range_iter->end, continue_reading,
+                                                      1, skipped_rows, columns_to_read);
+
+            bool should_evaluate_missing_defaults = false;
+            reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, read_rows);
+
+            if (should_evaluate_missing_defaults)
+            {
+                Block block;
+                addDummyColumnWithRowCount(block, columns_to_read, read_rows);
+                reader->evaluateMissingDefaults(block, columns_to_read);
+            }
+
+            reader->performRequiredConversions(columns_to_read);
+
+            for (size_t i = 0; i < columns_size; ++i)
+                lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
+
+            auto prev_mark = mark_range_iter->begin;
+            auto prev_offset = next_offset;
+
+            while (true)
+            {
+                ++mark_range_iter;
+                ++idx;
+
+                if (mark_range_iter == mark_ranges.end())
+                    break;
+
+                row_offset = row_offsets[idx].row_offset;
+                next_offset = row_offset - data_part->index_granularity.getMarkStartingRow(mark_range_iter->begin);
+                skipped_rows = next_offset;
+
+                if (mark_range_iter->begin == prev_mark)
+                {
+                    if (next_offset - prev_offset < read_rows)
+                    {
+                        for (size_t i = 0; i < columns_size; ++i)
+                            lazily_read_columns[i]->insert((*columns_to_read[i])[next_offset - prev_offset]);
+                    }
+                    else
+                    {
+                        chassert(next_offset > prev_offset);
+                        skipped_rows = next_offset - prev_offset - 1;
+                        continue_reading = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    continue_reading = false;
+                    break;
+                }
+            }
+
         }
-
-        reader->performRequiredConversions(columns_to_read);
-
-        for (size_t i = 0; i < columns_size; ++i)
-            lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
     }
 
-    for (size_t i = origin_size; i < lazily_read_columns.size(); ++i)
-        res_columns[i].column = std::move(lazily_read_columns[i]);
-}
-
-SerializationPtr MergeTreeLazilyReader::getSerialization()
-{
-    DataTypes types;
-    types.push_back(std::make_shared<DataTypeUInt64>());
-    types.push_back(std::make_shared<DataTypeUInt64>());
-
-    return DataTypeTuple(types).getDefaultSerialization();
+    for (size_t i = 0; i < lazily_read_columns.size(); ++i)
+        res_columns[i].column = lazily_read_columns[i]->permute(permutation, 0);
 }
 
 }

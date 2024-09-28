@@ -22,7 +22,7 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, size_t current_task_last_mark,
                     bool continue_reading, size_t max_rows_to_read,
-                    size_t offset, Columns & res_columns) override;
+                    size_t rows_offset, Columns & res_columns) override;
 
 private:
     void init();

@@ -1763,7 +1763,7 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
     if (std::find_if(all_column_names.begin(), all_column_names.end(), [] (const String & column_name)
         { return column_name == "_part_offset"; }) == all_column_names.end())
     {
-        lazily_read_info->do_remove_column = true;
+        lazily_read_info->remove_part_offset_column = true;
         all_column_names.emplace_back("_part_offset");
     }
 

@@ -43,7 +43,7 @@ protected:
         const NameAndTypePair & name_and_type,
         ColumnPtr & column,
         size_t rows_to_read,
-        size_t offset,
+        size_t rows_offset,
         const InputStreamGetter & getter);
 
     void readPrefix(

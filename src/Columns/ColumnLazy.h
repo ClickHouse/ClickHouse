@@ -10,12 +10,8 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 
-
 namespace DB
 {
-
-class IColumnLazyHelper;
-using ColumnLazyHelperPtr = std::shared_ptr<IColumnLazyHelper>;
 
 /** Column for lazy materialization.
   */
@@ -26,7 +22,6 @@ private:
 
     using CapturedColumns = std::vector<WrappedPtr>;
     CapturedColumns captured_columns;
-    ColumnLazyHelperPtr column_lazy_helper;
     size_t s = 0;
 
     explicit ColumnLazy(MutableColumns && mutable_columns_);
@@ -35,12 +30,12 @@ private:
 public:
     using Base = COWHelper<IColumn, ColumnLazy>;
 
-    static Ptr create(const Columns & columns, ColumnLazyHelperPtr column_lazy_helper);
-    static Ptr create(const CapturedColumns & columns, ColumnLazyHelperPtr column_lazy_helper);
+    static Ptr create(const Columns & columns);
+    static Ptr create(const CapturedColumns & columns);
     static Ptr create(size_t s = 0);
-    static Ptr create(Columns && arg, ColumnLazyHelperPtr column_lazy_helper)
+    static Ptr create(Columns && arg)
     {
-        return create(arg, column_lazy_helper);
+        return create(arg);
     }
 
     template <typename Arg>
@@ -54,7 +49,7 @@ public:
 
     size_t size() const override
     {
-        if (column_lazy_helper)
+        if (!captured_columns.empty())
             return captured_columns[0]->size();
         return s;
     }
@@ -115,9 +110,8 @@ public:
     bool isFinalized() const override;
 
     const CapturedColumns & getColumns() const { return captured_columns; }
-    ColumnLazyHelperPtr getColumnLazyHelper() const { return column_lazy_helper; }
 
-    void transform(ColumnsWithTypeAndName & res_columns) const;
+    SerializationPtr getDefaultSerialization() const;
 };
 
 }

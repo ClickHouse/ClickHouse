@@ -251,6 +251,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
     DB::ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -272,7 +273,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
 
     settings.path.push_back(Substream::DynamicData);
-    dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumnPtr(), limit, settings, dynamic_state->variant_state, cache);
+    dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumnPtr(), rows_offset, limit, settings, dynamic_state->variant_state, cache);
     settings.path.pop_back();
 
     column = std::move(mutable_column);

@@ -50,7 +50,7 @@ TEST(SerializationObject, FromString)
         settings.getter = [&in](const auto &) { return &in; };
 
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serialization->deserializeBinaryBulkWithMultipleStreams(result_column, column_string->size(), settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(result_column, 0, column_string->size(), settings, state, nullptr);
     }
 
     auto & column_object = assert_cast<ColumnObject &>(*result_column->assumeMutable());

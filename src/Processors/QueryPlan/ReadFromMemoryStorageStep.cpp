@@ -69,7 +69,7 @@ protected:
             ++name_and_type;
         }
 
-        fillMissingColumns(columns, src.rows(), 0, column_names_and_types, column_names_and_types, {}, nullptr);
+        fillMissingColumns(columns, src.rows(), column_names_and_types, column_names_and_types, {}, nullptr);
         assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
 
         return Chunk(std::move(columns), src.rows());

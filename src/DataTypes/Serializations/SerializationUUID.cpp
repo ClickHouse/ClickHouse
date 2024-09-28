@@ -181,8 +181,9 @@ void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer 
 #pragma clang diagnostic pop
 }
 
-void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
+    istr.ignore(sizeof(UUID) * rows_offset);
     typename ColumnVector<UUID>::Container & x = typeid_cast<ColumnVector<UUID> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
@@ -195,19 +196,6 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 #pragma clang diagnostic pop
-}
-
-bool SerializationUUID::deserializeBinaryBulkWithMultipleStreamsSilently(
-    ColumnPtr & /* column */,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & /* state */) const
-{
-    if (ReadBuffer * istr = settings.getter(settings.path))
-    {
-        istr->ignore(sizeof(UUID) * limit);
-    }
-    return true;
 }
 
 }

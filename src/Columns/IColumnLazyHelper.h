@@ -18,8 +18,6 @@ public:
         const ColumnLazy & column_lazy,
         ColumnsWithTypeAndName & res_columns) = 0;
 
-    virtual SerializationPtr getSerialization() = 0;
-
     virtual ~IColumnLazyHelper() = default;
 };
 

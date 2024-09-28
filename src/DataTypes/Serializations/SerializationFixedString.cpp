@@ -82,9 +82,15 @@ void SerializationFixedString::serializeBinaryBulk(const IColumn & column, Write
 }
 
 
-void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
+
+    size_t skipped_bytes;
+
+    if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
     size_t max_bytes;
@@ -279,25 +285,6 @@ void SerializationFixedString::serializeTextMarkdown(
     }
     else
         serializeTextEscaped(column, row_num, ostr, settings);
-}
-
-bool SerializationFixedString::deserializeBinaryBulkWithMultipleStreamsSilently(
-    ColumnPtr & /* column */,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & /* state */) const
-{
-    if (ReadBuffer * istr = settings.getter(settings.path))
-    {
-        size_t max_bytes;
-
-        if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
-        if (unlikely(max_bytes > MAX_STRINGS_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large sizes of FixedString to deserialize: {}", max_bytes);
-        istr->ignore(max_bytes);
-    }
-    return true;
 }
 
 }

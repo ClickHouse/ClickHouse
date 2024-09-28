@@ -206,7 +206,7 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
                 column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
             else
             {
-                column_with_type_and_name.column = ColumnLazy::create(columns, lazily_read_info->column_lazy_helper);
+                column_with_type_and_name.column = ColumnLazy::create(columns);
                 create_empty_column_lazy = true;
             }
             block.insert(column_with_type_and_name);
@@ -226,14 +226,14 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
                 column_with_type_and_name.column = ColumnLazy::create();
             else
             {
-                column_with_type_and_name.column = ColumnLazy::create(columns, lazily_read_info->column_lazy_helper);
+                column_with_type_and_name.column = ColumnLazy::create(columns);
                 create_empty_column_lazy = true;
             }
             block.insert(column_with_type_and_name);
         }
     }
 
-    if (lazily_read_info->do_remove_column)
+    if (lazily_read_info->remove_part_offset_column)
         block.erase("_part_offset");
 }
 

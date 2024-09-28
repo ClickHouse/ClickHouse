@@ -53,6 +53,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -89,6 +90,7 @@ private:
 
     void deserializeBinaryBulkFromString(
         ColumnObject & column_object,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeStateObject & state,
@@ -96,6 +98,7 @@ private:
 
     void deserializeBinaryBulkFromTuple(
         ColumnObject & column_object,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeStateObject & state,

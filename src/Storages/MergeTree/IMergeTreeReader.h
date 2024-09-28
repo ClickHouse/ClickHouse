@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -36,7 +35,7 @@ public:
     /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
     virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
-                            size_t offset, Columns & res_columns) = 0;
+                            size_t rows_offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -50,8 +49,7 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
-                            size_t offset = 0) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 

@@ -3,6 +3,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -81,6 +82,7 @@ void SerializationVariantElement::serializeBinaryBulkWithMultipleStreams(const I
 
 void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -92,7 +94,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantDiscriminators);
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
-        variant_element_state->discriminators = cached_discriminators;
+        if (rows_offset)
+            variant_element_state->discriminators = IColumn::mutate(cached_discriminators);
+        else
+            variant_element_state->discriminators = cached_discriminators;
     }
     else
     {
@@ -104,19 +109,37 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         if (!variant_element_state->discriminators || result_column->empty())
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
 
-        SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*variant_element_state->discriminators->assumeMutable(), *discriminators_stream, limit, 0);
-        addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
+        SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
+            *variant_element_state->discriminators->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+
+        if (rows_offset)
+            addToSubstreamsCache(cache, settings.path, IColumn::mutate(variant_element_state->discriminators));
+        else
+            addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
     }
     settings.path.pop_back();
 
     /// Iterate through new discriminators to calculate the limit for our variant.
-    const auto & discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators).getData();
-    size_t discriminators_offset = variant_element_state->discriminators->size() - limit;
+    auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
+    size_t discriminators_offset = variant_element_state->discriminators->size() - rows_offset - limit;
     size_t variant_limit = 0;
+    size_t variant_rows_offset = 0;
+
+    if (rows_offset)
+    {
+        for (size_t i = discriminators_offset; i < discriminators_offset + rows_offset; ++i)
+            variant_rows_offset += (discriminators_data[i] == variant_discriminator);
+
+        for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
+            discriminators_data[i] = discriminators_data[i + rows_offset];
+
+        variant_element_state->discriminators->assumeMutable()->popBack(rows_offset);
+    }
+
     for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
         variant_limit += (discriminators_data[i] == variant_discriminator);
 
-    /// Now we know the limit for our variant and can deserialize it.
+    /// Now we know the rows_offset and limit for our variant and can deserialize it.
 
     /// If result column is Nullable, fill null map and extract nested column.
     MutableColumnPtr mutable_column = result_column->assumeMutable();
@@ -159,12 +182,22 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     /// If nothing to deserialize, just insert defaults.
     if (variant_limit == 0)
     {
+        if (variant_rows_offset)
+        {
+            addVariantToPath(settings.path);
+            ColumnPtr tmp_column = mutable_column->cloneEmpty();
+            nested_serialization->deserializeBinaryBulkWithMultipleStreams(
+                tmp_column, 0, variant_rows_offset, settings, variant_element_state->variant_element_state, nullptr);
+            removeVariantFromPath(settings.path);
+        }
+
         mutable_column->insertManyDefaults(limit);
         return;
     }
 
     addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, variant_limit, settings, variant_element_state->variant_element_state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(
+        variant_element_state->variant, variant_rows_offset, variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
     /// If nothing was deserialized when variant_limit > 0

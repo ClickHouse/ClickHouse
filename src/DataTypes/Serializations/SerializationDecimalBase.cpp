@@ -55,31 +55,18 @@ void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
+void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double) const
 {
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
+    istr.ignore(sizeof(FieldType) * rows_offset);
     const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
 
     if constexpr (std::endian::native == std::endian::big)
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
-}
-
-template <typename T>
-bool SerializationDecimalBase<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
-    ColumnPtr & /* column */,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & /* state */) const
-{
-    if (ReadBuffer * istr = settings.getter(settings.path))
-    {
-        istr->ignore(sizeof(FieldType) * limit);
-    }
-    return true;
 }
 
 template class SerializationDecimalBase<Decimal32>;

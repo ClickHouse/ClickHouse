@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -7,7 +8,9 @@ namespace DB
 class ColumnLazyTransform : public ISimpleTransform
 {
 public:
-    explicit ColumnLazyTransform(const Block & header_);
+    explicit ColumnLazyTransform(
+        const Block & header_,
+        const LazilyReadInfoPtr & lazily_read_info_);
 
     static Block transformHeader(Block header);
 
@@ -15,6 +18,9 @@ public:
 
 protected:
     void transform(Chunk & chunk) override;
+
+private:
+    LazilyReadInfoPtr lazily_read_info;
 };
 
 }

@@ -97,7 +97,7 @@ void NativeReader::readData(const ISerialization & serialization, ColumnPtr & co
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
 
     if (column->size() != rows)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -185,9 +185,9 @@ Block NativeReader::read()
 
         if (column_lazy)
         {
-            if (column_lazy->getColumnLazyHelper())
+            if (!column_lazy->getColumns().empty())
             {
-                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+                serialization = column_lazy->getDefaultSerialization();
                 const auto & tmp_columns = column_lazy->getColumns();
                 read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
             }
@@ -243,7 +243,7 @@ Block NativeReader::read()
                 if (!skip_reading && column_lazy)
                 {
                     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
-                        column.column = ColumnLazy::create(column_tuple->getColumns(), column_lazy->getColumnLazyHelper());
+                        column.column = ColumnLazy::create(column_tuple->getColumns());
                     else
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
                                         column.name,

@@ -61,10 +61,10 @@ void SerializationInterval::deserializeBinary(IColumn & column, ReadBuffer & ist
         settings);
 }
 
-void SerializationInterval::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void SerializationInterval::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
 {
     dispatch(
-        &ISerialization::deserializeBinaryBulk, FormatSettings::IntervalOutputFormat::Numeric, column, istr, limit, avg_value_size_hint);
+        &ISerialization::deserializeBinaryBulk, FormatSettings::IntervalOutputFormat::Numeric, column, istr, rows_offset, limit, avg_value_size_hint);
 }
 
 void SerializationInterval::deserializeBinaryBulkStatePrefix(
@@ -76,6 +76,7 @@ void SerializationInterval::deserializeBinaryBulkStatePrefix(
 
 void SerializationInterval::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -85,6 +86,7 @@ void SerializationInterval::deserializeBinaryBulkWithMultipleStreams(
         &ISerialization::deserializeBinaryBulkWithMultipleStreams,
         FormatSettings::IntervalOutputFormat::Numeric,
         column,
+        rows_offset,
         limit,
         settings,
         state,

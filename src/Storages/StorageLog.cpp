@@ -258,7 +258,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     }
 
     settings.getter = create_stream_getter(false);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
 }
 
 bool LogSource::isFinished()

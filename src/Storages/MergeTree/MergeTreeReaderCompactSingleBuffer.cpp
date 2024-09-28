@@ -10,7 +10,7 @@ namespace DB
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
     size_t from_mark, size_t current_task_last_mark,
     bool continue_reading, size_t max_rows_to_read,
-    size_t offset, Columns & res_columns)
+    size_t rows_offset, Columns & res_columns)
 try
 {
     init();
@@ -27,13 +27,13 @@ try
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
-        if (rows_to_read <= offset)
+        if (rows_to_read <= rows_offset)
         {
-            offset -= rows_to_read;
+            rows_offset -= rows_to_read;
             ++from_mark;
             continue;
         }
-        rows_to_read -= offset;
+        rows_to_read -= rows_offset;
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -63,12 +63,12 @@ try
             };
 
             readPrefix(columns_to_read[pos], buffer_getter, buffer_getter_for_prefix, columns_for_offsets[pos]);
-            readData(columns_to_read[pos], column, rows_to_read, offset, buffer_getter);
+            readData(columns_to_read[pos], column, rows_to_read, rows_offset, buffer_getter);
         }
 
         ++from_mark;
         read_rows += rows_to_read;
-        offset = 0;
+        rows_offset = 0;
     }
 
     next_mark = from_mark;
@@ -86,7 +86,7 @@ catch (...)
     }
     catch (Exception & e)
     {
-        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, offset));
+        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
     }
 
     throw;

@@ -6,7 +6,8 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -24,20 +25,18 @@ ColumnLazy::ColumnLazy(MutableColumns && mutable_columns)
         captured_columns.push_back(std::move(column));
 }
 
-ColumnLazy::Ptr ColumnLazy::create(const Columns & columns, ColumnLazyHelperPtr column_lazy_helper)
+ColumnLazy::Ptr ColumnLazy::create(const Columns & columns)
 {
     auto column_lazy = ColumnLazy::create(MutableColumns());
     column_lazy->captured_columns.assign(columns.begin(), columns.end());
-    column_lazy->column_lazy_helper = column_lazy_helper;
 
     return column_lazy;
 }
 
-ColumnLazy::Ptr ColumnLazy::create(const CapturedColumns & columns, ColumnLazyHelperPtr column_lazy_helper)
+ColumnLazy::Ptr ColumnLazy::create(const CapturedColumns & columns)
 {
     auto column_lazy = ColumnLazy::create(MutableColumns());
     column_lazy->captured_columns = columns;
-    column_lazy->column_lazy_helper = column_lazy_helper;
 
     return column_lazy;
 }
@@ -51,7 +50,7 @@ ColumnLazy::Ptr ColumnLazy::create(size_t s)
 
 MutableColumnPtr ColumnLazy::cloneResized(size_t new_size) const
 {
-    if (!column_lazy_helper)
+    if (captured_columns.empty())
         return ColumnLazy::create(new_size)->assumeMutable();
 
     const size_t column_size = captured_columns.size();
@@ -60,7 +59,6 @@ MutableColumnPtr ColumnLazy::cloneResized(size_t new_size) const
         new_columns[i] = captured_columns[i]->cloneResized(new_size);
 
     auto column_lazy = ColumnLazy::create(std::move(new_columns));
-    column_lazy->column_lazy_helper = column_lazy_helper;
     return column_lazy;
 }
 
@@ -101,7 +99,7 @@ bool ColumnLazy::tryInsert(const Field &)
 
 void ColumnLazy::insertFrom(const IColumn & src_, size_t n)
 {
-    if (!column_lazy_helper)
+    if (captured_columns.empty())
     {
         ++s;
         return;
@@ -153,7 +151,7 @@ void ColumnLazy::updateHashFast(SipHash &) const
 
 void ColumnLazy::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    if (!column_lazy_helper)
+    if (captured_columns.empty())
     {
         s += length;
         return;
@@ -168,7 +166,7 @@ void ColumnLazy::insertRangeFrom(const IColumn & src, size_t start, size_t lengt
 
 ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (!column_lazy_helper)
+    if (captured_columns.empty())
     {
         size_t new_size = countBytesInFilter(filt);
         return ColumnLazy::create(new_size);
@@ -180,7 +178,7 @@ ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) cons
     for (size_t i = 0; i < column_size; ++i)
         new_columns[i] = captured_columns[i]->filter(filt, result_size_hint);
 
-    return ColumnLazy::create(new_columns, column_lazy_helper);
+    return ColumnLazy::create(new_columns);
 }
 
 void ColumnLazy::expand(const Filter &, bool)
@@ -190,7 +188,7 @@ void ColumnLazy::expand(const Filter &, bool)
 
 ColumnPtr ColumnLazy::permute(const Permutation & perm, size_t limit) const
 {
-    if (!column_lazy_helper)
+    if (captured_columns.empty())
     {
         limit = getLimitForPermutation(size(), perm.size(), limit);
         return ColumnLazy::create(limit);
@@ -202,12 +200,12 @@ ColumnPtr ColumnLazy::permute(const Permutation & perm, size_t limit) const
     for (size_t i = 0; i < column_size; ++i)
         new_columns[i] = captured_columns[i]->permute(perm, limit);
 
-    return ColumnLazy::create(new_columns, column_lazy_helper);
+    return ColumnLazy::create(new_columns);
 }
 
 ColumnPtr ColumnLazy::index(const IColumn & indexes, size_t limit) const
 {
-    if (!column_lazy_helper)
+    if (captured_columns.empty())
     {
         if (limit == 0)
             limit = indexes.size();
@@ -220,7 +218,7 @@ ColumnPtr ColumnLazy::index(const IColumn & indexes, size_t limit) const
     for (size_t i = 0; i < column_size; ++i)
         new_columns[i] = captured_columns[i]->index(indexes, limit);
 
-    return ColumnLazy::create(new_columns, column_lazy_helper);
+    return ColumnLazy::create(new_columns);
 }
 
 ColumnPtr ColumnLazy::replicate(const Offsets &) const
@@ -284,7 +282,7 @@ void ColumnLazy::gather(ColumnGathererStream &)
 
 void ColumnLazy::reserve(size_t n)
 {
-    if (!column_lazy_helper)
+    if (captured_columns.empty())
         return;
 
     const size_t column_size = captured_columns.size();
@@ -374,10 +372,13 @@ bool ColumnLazy::isFinalized() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isFinalized is not supported for {}", getName());
 }
 
-void ColumnLazy::transform(ColumnsWithTypeAndName & res_columns) const
+SerializationPtr ColumnLazy::getDefaultSerialization() const
 {
-    if (column_lazy_helper)
-        column_lazy_helper->transformLazyColumns(*this, res_columns);
+    DataTypes types;
+    types.push_back(std::make_shared<DataTypeUInt64>());
+    types.push_back(std::make_shared<DataTypeUInt64>());
+
+    return DataTypeTuple(types).getDefaultSerialization();
 }
 
 }

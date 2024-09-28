@@ -145,8 +145,8 @@ size_t NativeWriter::write(const Block & block)
         bool skip_writing = false;
         if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
         {
-            if (column_lazy->getColumnLazyHelper())
-                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+            if (!column_lazy->getColumns().empty())
+                serialization = column_lazy->getDefaultSerialization();
             else
                 skip_writing = true;
         }

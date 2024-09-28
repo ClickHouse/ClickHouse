@@ -110,31 +110,16 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     }
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
-                                          size_t offset) const
+void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
 {
     try
     {
         NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
-        const auto & converted_requested_columns = Nested::convertToSubcolumns(requested_columns);
-        auto converted_requested_column = converted_requested_columns.begin();
-        auto num_columns = converted_requested_columns.size();
 
         DB::fillMissingColumns(
-            res_columns, num_rows, offset, converted_requested_columns,
+            res_columns, num_rows, Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
             partially_read_columns, storage_snapshot->metadata);
-
-        if (offset > 0)
-        {
-            for (size_t i = 0; i < num_columns; ++i, ++converted_requested_column)
-            {
-                const auto & [name, type] = *converted_requested_column;
-                auto tmp_column = res_columns[i];
-                if (tmp_column && partially_read_columns.contains(name))
-                    res_columns[i] = tmp_column->cut(offset, tmp_column->size() - offset);
-            }
-        }
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });

@@ -120,7 +120,8 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 }
 
 size_t MergeTreeReaderWide::readRows(
-    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, size_t offset, Columns & res_columns)
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read,
+    size_t rows_offset, Columns & res_columns)
 {
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
@@ -158,7 +159,7 @@ size_t MergeTreeReaderWide::readRows(
                 readData(
                     column_to_read, serializations[pos], column,
                     from_mark, continue_reading, current_task_last_mark,
-                    max_rows_to_read, offset, cache, deserialize_states_cache, /* was_prefetched =*/ !prefetched_streams.empty());
+                    max_rows_to_read, rows_offset, cache, deserialize_states_cache, /* was_prefetched =*/ !prefetched_streams.empty());
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -195,7 +196,7 @@ size_t MergeTreeReaderWide::readRows(
         }
         catch (Exception & e)
         {
-            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, offset));
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
         }
 
         throw;
@@ -375,7 +376,7 @@ void MergeTreeReaderWide::readData(
     bool continue_reading,
     size_t current_task_last_mark,
     size_t max_rows_to_read,
-    size_t offset,
+    size_t rows_offset,
     ISerialization::SubstreamsCache & cache,
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
     bool was_prefetched)
@@ -386,10 +387,9 @@ void MergeTreeReaderWide::readData(
 
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache, deserialize_states_cache);
 
-    bool data_skipped = false;
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks && !data_skipped;
+        bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
             /* seek_to_start = */false, substream_path,
@@ -400,17 +400,8 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
-    if (offset > 0 && serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, deserialize_state))
-    {
-        data_skipped = true;
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-    }
-    else
-    {
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-        if (offset > 0 && !partially_read_columns.contains(name_and_type.name))
-            column = column->cut(offset, column->size() - offset);
-    }
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
 }
 

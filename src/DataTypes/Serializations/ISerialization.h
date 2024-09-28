@@ -319,22 +319,21 @@ public:
     /// Read no more than limit values and append them into column.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
 
-    /// Read limit values silently.
-    virtual bool deserializeBinaryBulkWithMultipleStreamsSilently(
-        ColumnPtr & column,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const;
-
     /** Override these methods for data types that require just single stream (most of data types).
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
+    virtual void deserializeBinaryBulk(
+        IColumn & column,
+        ReadBuffer & istr,
+        size_t rows_offset,
+        size_t limit,
+        double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.
       *
