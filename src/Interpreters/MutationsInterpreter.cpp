@@ -863,7 +863,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (materialize_ttl_recalculate_only)
+            bool suitable_for_ttl_optimization = source.getMergeTreeData()->getSettings()->ttl_only_drop_parts
+                && metadata_snapshot->hasOnlyRowsTTL();
+
+            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
