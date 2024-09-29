@@ -62,6 +62,9 @@ private:
     std::unique_ptr<natsConnection, decltype(&natsConnection_Destroy)> connection;
 
     std::mutex mutex;
+
+    /// disconnectedCallback may be called after connection destroy
+    static LoggerPtr callback_logger;
 };
 
 using NATSConnectionPtr = std::shared_ptr<NATSConnection>;

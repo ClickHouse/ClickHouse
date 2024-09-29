@@ -11,6 +11,9 @@ namespace DB
 
 static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 
+/// disconnectedCallback may be called after connection destroy
+LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
+
 NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
     : configuration(configuration_)
     , log(std::move(log_))
@@ -53,7 +56,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     natsOptions_SetMaxReconnect(options.get(), configuration.max_reconnect);
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, log.get());
-    natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, log.get());
+    natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, nullptr);
 }
 NATSConnection::~NATSConnection()
 {
@@ -143,9 +146,9 @@ void NATSConnection::reconnectedCallback(natsConnection * nc, void * log)
     LOG_DEBUG(static_cast<Poco::Logger *>(log), "Got reconnected to NATS server: {}.", buffer);
 }
 
-void NATSConnection::disconnectedCallback(natsConnection *, void * log)
+void NATSConnection::disconnectedCallback(natsConnection *, void *)
 {
-    LOG_DEBUG(static_cast<Poco::Logger *>(log), "Got disconnected from NATS server.");
+    LOG_DEBUG(callback_logger, "Got disconnected from NATS server.");
 }
 
 }
