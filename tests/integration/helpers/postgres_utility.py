@@ -1,5 +1,6 @@
-import psycopg2
 import time
+
+import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 postgres_table_template = """

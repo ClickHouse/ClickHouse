@@ -134,7 +134,7 @@
 3	Hello World	not_found	x	Hello World
 4	Hello World	[eo]	x	Hxllo World
 5	Hello World	.	x	xello World
-Check that an exception is thrown if the needle is empty
+Check that whether an exception is thrown if the needle is empty
 Hexxo Worxd
 Hello World
 Hexlo World

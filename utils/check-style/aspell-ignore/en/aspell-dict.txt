@@ -852,6 +852,7 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
+RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -3048,3 +3049,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+postgres
