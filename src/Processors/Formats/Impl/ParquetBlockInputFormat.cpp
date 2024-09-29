@@ -344,8 +344,8 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
                 /// Allow conversion in some simple cases, otherwise ignore the min/max values.
                 auto min_type = min.getType();
                 auto max_type = max.getType();
-                min = convertFieldToType(min, *type);
-                max = convertFieldToType(max, *type);
+                min = tryConvertFieldToType(min, *type);
+                max = tryConvertFieldToType(max, *type);
                 auto ok_cast = [&](Field::Types::Which from, Field::Types::Which to) -> bool
                 {
                     if (from == to)
@@ -869,8 +869,11 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-        *schema, "Parquet", format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
-    if (format_settings.schema_inference_make_columns_nullable)
+        *schema,
+        "Parquet",
+        format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
+        format_settings.schema_inference_make_columns_nullable != 0);
+    if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
