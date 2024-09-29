@@ -6,7 +6,8 @@ import logging
 import os
 
 import pytest  # pylint:disable=import-error; for style check
-from helpers.cluster import run_and_check, is_port_free
+
+from helpers.cluster import is_port_free, run_and_check
 from helpers.network import _NetworkManager
 
 # This is a workaround for a problem with logging in pytest [1].
@@ -22,8 +23,8 @@ def pdb_history(request):
     Fixture loads and saves pdb history to file, so it can be preserved between runs
     """
     if request.config.getoption("--pdb"):
-        import readline  # pylint:disable=import-outside-toplevel
         import pdb  # pylint:disable=import-outside-toplevel
+        import readline  # pylint:disable=import-outside-toplevel
 
         def save_history():
             readline.write_history_file(".pdb_history")
