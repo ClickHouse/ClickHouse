@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include "Core/Block.h"
 
 
 namespace DB
@@ -83,10 +84,14 @@ public:
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
     using ProcessorGetterWithStreamKind = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
+    using ProcessorGetterSharedHeader = std::function<ProcessorPtr(const ConstBlockPtr & header)>;
+    using ProcessorGetterSharedHeaderWithStreamKind = std::function<ProcessorPtr(const ConstBlockPtr & header, StreamType stream_type)>;
 
     /// Add transform with single input and single output for each port.
     void addSimpleTransform(const ProcessorGetter & getter);
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
+    void addSimpleTransform(const ProcessorGetterSharedHeader & getter);
+    void addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & getter);
 
     /// Add chain to every output port.
     void addChains(std::vector<Chain> chains);

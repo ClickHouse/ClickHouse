@@ -576,7 +576,7 @@ void Pipe::addTransform(
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
+void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & getter)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add simple transform to empty Pipe.");
@@ -588,7 +588,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
         if (!port)
             return;
 
-        auto transform = getter(port->getHeader(), stream_type);
+        auto transform = getter(port->getHeaderPtr(), stream_type);
 
         if (transform)
         {
@@ -636,9 +636,19 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
     header = std::move(new_header);
 }
 
+void Pipe::addSimpleTransform(const ProcessorGetterSharedHeader & getter)
+{
+    addSimpleTransform([&](const ConstBlockPtr & stream_header_ptr, StreamType) { return getter(stream_header_ptr); });
+}
+
 void Pipe::addSimpleTransform(const ProcessorGetter & getter)
 {
     addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
+}
+
+void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
+{
+    addSimpleTransform([&](const ConstBlockPtr & stream_header_ptr, StreamType stream_type) { return getter(*stream_header_ptr,stream_type); });
 }
 
 void Pipe::addChains(std::vector<Chain> chains)

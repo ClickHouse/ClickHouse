@@ -177,6 +177,7 @@ private:
     friend class ActionsDAG;
 };
 
+using ConstBlockPtr =  std::shared_ptr<const Block>;
 using BlockPtr = std::shared_ptr<Block>;
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;

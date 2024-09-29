@@ -1,5 +1,7 @@
+#include <memory>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -10,6 +12,12 @@ Block ExpressionTransform::transformHeader(const Block & header, const ActionsDA
     return expression.updateHeader(header);
 }
 
+
+ExpressionTransform::ExpressionTransform(const ConstBlockPtr & header_, ExpressionActionsPtr expression_)
+    : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, expression_->getActionsDAG())), false)
+    , expression(std::move(expression_))
+{
+}
 
 ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_)
     : ISimpleTransform(header_, transformHeader(header_, expression_->getActionsDAG()), false)
