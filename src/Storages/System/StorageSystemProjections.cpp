@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
@@ -41,6 +42,9 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
             { "table", std::make_shared<DataTypeString>(), "Table name."},
             { "name", std::make_shared<DataTypeString>(), "Projection name."},
             { "type", std::move(projection_type_datatype), "Projection type."},
+            { "total_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows."},
+            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
+            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
             { "sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
             { "query", std::make_shared<DataTypeString>(), "Projection query."},
         }));
@@ -108,12 +112,14 @@ protected:
                     continue;
 
                 const auto table = tables_it->table();
-                if (!table)
+                if (!table || !table->isMergeTree())
                     continue;
                 StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
+
+                auto parts = dynamic_cast<MergeTreeData *>(table.get())->getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, nullptr);
 
                 for (const auto & projection : projections)
                 {
@@ -134,6 +140,31 @@ protected:
                     // 'type' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(projection.type);
+
+                    size_t total_rows = 0;
+                    size_t data_compressed = 0;
+                    size_t data_uncompressed = 0;
+                    for (const auto & part : parts)
+                    {
+                        auto projection_parts = part->getProjectionParts();
+                        auto projection_part = projection_parts[projection.name];
+                        auto column_size = projection_part->getTotalColumnsSize();
+
+                        total_rows += projection_part->rows_count;
+                        data_compressed += column_size.data_compressed;
+                        data_uncompressed += column_size.data_uncompressed;
+                    }
+
+                    // 'total_rows' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(total_rows);
+                    // 'data_compressed_bytes' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(data_compressed);
+                    // 'data_uncompressed_bytes' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(data_uncompressed);
+
                     // 'sorting_key' column
                     if (column_mask[src_index++])
                     {
