@@ -1,4 +1,5 @@
 #include <Common/quoteString.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -21,11 +22,7 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
         res->children.push_back(res->workload_parent);
     }
 
-    if (settings)
-    {
-        res->settings = settings->clone();
-        res->children.push_back(res->settings);
-    }
+    res->changes = changes;
 
     return res;
 }
@@ -54,10 +51,25 @@ void ASTCreateWorkloadQuery::formatImpl(const IAST::FormatSettings & format, IAS
         format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format.hilite ? hilite_none : "");
     }
 
-    if (settings)
+    if (!changes.empty())
     {
         format.ostr << ' ' << (format.hilite ? hilite_keyword : "") << "SETTINGS" << (format.hilite ? hilite_none : "") << ' ';
-        settings->format(format);
+
+        bool first = true;
+
+        for (const auto & change : changes)
+        {
+            if (!first)
+                format.ostr << ", ";
+            else
+                first = false;
+            format.ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            if (!change.resource.empty())
+            {
+                format.ostr << ' ' << (format.hilite ? hilite_keyword : "") << "FOR" << (format.hilite ? hilite_none : "") << ' ';
+                format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(change.resource) << (format.hilite ? hilite_none : "");
+            }
+        }
     }
 }
 

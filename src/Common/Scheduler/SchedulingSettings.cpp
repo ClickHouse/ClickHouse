@@ -12,11 +12,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void SchedulingSettings::updateFromAST(const ASTPtr & settings, const String & resource_name)
+// TODO(serxa): we should validate workloads with this function before storing in WorkloadEntityStorage
+// TODO(serxa): and probably we should add and persist version in filename for future changes
+void SchedulingSettings::updateFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
 {
-    UNUSED(resource_name); // TODO(serxa): read resource specific settings from AST
-    if (auto * set = typeid_cast<ASTSetQuery *>(settings.get()))
-    {
+    struct {
         std::optional<Float64> new_weight;
         std::optional<Priority> new_priority;
         std::optional<Float64> new_max_speed;
@@ -24,7 +24,8 @@ void SchedulingSettings::updateFromAST(const ASTPtr & settings, const String & r
         std::optional<Int64> new_max_requests;
         std::optional<Int64> new_max_cost;
 
-        auto get_not_negative_float64 = [] (const String & name, const Field & field) {
+        static Float64 getNotNegativeFloat64(const String & name, const Field & field)
+        {
             {
                 UInt64 val;
                 if (field.tryGet(val))
@@ -42,9 +43,10 @@ void SchedulingSettings::updateFromAST(const ASTPtr & settings, const String & r
             }
 
             return field.safeGet<Float64>();
-        };
+        }
 
-        auto get_not_negative_int64 = [] (const String & name, const Field & field) {
+        static Int64 getNotNegativeInt64(const String & name, const Field & field)
+        {
             {
                 UInt64 val;
                 if (field.tryGet(val))
@@ -67,74 +69,64 @@ void SchedulingSettings::updateFromAST(const ASTPtr & settings, const String & r
             }
 
             return field.safeGet<Int64>();
-        };
+        }
 
-        // Read changed setting values
-        for (const auto & [name, value] : set->changes)
+        void read(const String & name, const Field & value)
         {
-            // TODO(serxa): we should validate workloads with this function before storing in WorkloadEntityStorage
-            // TODO(serxa): and probably we should add and persist version in filename for future changes
             if (name == "weight")
-                new_weight = get_not_negative_float64(name, value);
+                new_weight = getNotNegativeFloat64(name, value);
             else if (name == "priority")
                 new_priority = Priority{value.safeGet<Priority::Value>()};
             else if (name == "max_speed")
-                new_max_speed = get_not_negative_float64(name, value);
+                new_max_speed = getNotNegativeFloat64(name, value);
             else if (name == "max_burst")
-                new_max_burst = get_not_negative_float64(name, value);
+                new_max_burst = getNotNegativeFloat64(name, value);
             else if (name == "max_requests")
-                new_max_requests = get_not_negative_int64(name, value);
+                new_max_requests = getNotNegativeInt64(name, value);
             else if (name == "max_cost")
-                new_max_cost = get_not_negative_int64(name, value);
+                new_max_cost = getNotNegativeInt64(name, value);
         }
+    } regular, specific;
 
-        // Read setting to be reset to default values
-        static SchedulingSettings default_settings;
-        bool reset_max_burst = false;
-        for (const String & name : set->default_settings)
-        {
-            if (name == "weight")
-                new_weight = default_settings.weight;
-            else if (name == "priority")
-                new_priority = default_settings.priority;
-            else if (name == "max_speed")
-                new_max_speed = default_settings.max_speed;
-            else if (name == "max_burst")
-                reset_max_burst = true;
-            else if (name == "max_requests")
-                new_max_requests = default_settings.max_requests;
-            else if (name == "max_cost")
-                new_max_cost = default_settings.max_cost;
-        }
-        if (reset_max_burst)
-            new_max_burst = default_burst_seconds * (new_max_speed ? *new_max_speed : max_speed);
-
-        // Validate we could use values we read in a scheduler node
-        {
-            SchedulerNodeInfo validating_node(new_weight ? *new_weight : weight, new_priority ? *new_priority : priority);
-        }
-
-        // Save new values into the `this` object
-        // Leave previous value intentionally for ALTER query to be able to skip not mentioned setting value
-        if (new_weight)
-            weight = *new_weight;
-        if (new_priority)
-            priority = *new_priority;
-        if (new_max_speed)
-        {
-            max_speed = *new_max_speed;
-            // We always set max_burst if max_speed is changed.
-            // This is done for users to be able to ignore more advanced max_burst setting and rely only on max_speed
-            if (!new_max_burst)
-                max_burst = default_burst_seconds * max_speed;
-        }
-        if (new_max_burst)
-            max_burst = *new_max_burst;
-        if (new_max_requests)
-            max_requests = *new_max_requests;
-        if (new_max_cost)
-            max_cost = *new_max_cost;
+    // Read changed setting values
+    for (const auto & [name, value, resource] : changes)
+    {
+        if (resource.empty())
+            regular.read(name, value);
+        else if (resource == resource_name)
+            specific.read(name, value);
     }
+
+    auto get_value = [] <typename T> (const std::optional<T> & specific_new, const std::optional<T> & regular_new, T & old)
+    {
+        if (specific_new)
+            return *specific_new;
+        if (regular_new)
+            return *regular_new;
+        return old;
+    };
+
+    // Validate that we could use values read in a scheduler node
+    {
+        SchedulerNodeInfo validating_node(
+            get_value(specific.new_weight, regular.new_weight, weight),
+            get_value(specific.new_priority, regular.new_priority, priority));
+    }
+
+    // Commit new values.
+    // Previous values are left intentionally for ALTER query to be able to skip not mentioned setting values
+    weight = get_value(specific.new_weight, regular.new_weight, weight);
+    priority = get_value(specific.new_priority, regular.new_priority, priority);
+    if (specific.new_max_speed || regular.new_max_speed)
+    {
+        max_speed = get_value(specific.new_max_speed, regular.new_max_speed, max_speed);
+        // We always set max_burst if max_speed is changed.
+        // This is done for users to be able to ignore more advanced max_burst setting and rely only on max_speed
+        max_burst = default_burst_seconds * max_speed;
+    }
+    max_burst = get_value(specific.new_max_burst, regular.new_max_burst, max_burst);
+    max_requests = get_value(specific.new_max_requests, regular.new_max_requests, max_requests);
+    max_cost = get_value(specific.new_max_cost, regular.new_max_cost, max_cost);
 }
 
 }

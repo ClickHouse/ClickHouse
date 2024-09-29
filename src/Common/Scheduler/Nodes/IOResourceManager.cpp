@@ -43,7 +43,7 @@ IOResourceManager::NodeInfo::NodeInfo(const ASTPtr & ast, const String & resourc
     auto * create = typeid_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
     parent = create->getWorkloadParent();
-    settings.updateFromAST(create->settings, resource_name);
+    settings.updateFromChanges(create->changes, resource_name);
 }
 
 IOResourceManager::Resource::Resource(const ASTPtr & resource_entity_)

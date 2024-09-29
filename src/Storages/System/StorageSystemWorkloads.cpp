@@ -35,13 +35,13 @@ void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr c
 
 void StorageSystemWorkloads::backupData(BackupEntriesCollector & /*backup_entries_collector*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
 {
-    // TODO(serxa): add backup for workloads and resources
+    // TODO(serxa): add backup for workloads
     // storage.backup(backup_entries_collector, data_path_in_backup);
 }
 
 void StorageSystemWorkloads::restoreDataFromBackup(RestorerFromBackup & /*restorer*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
 {
-    // TODO(serxa): add restore for workloads and resources
+    // TODO(serxa): add restore for workloads
     // storage.restore(restorer, data_path_in_backup);
 }
 
