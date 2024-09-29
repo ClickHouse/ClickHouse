@@ -13,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -206,8 +205,8 @@ struct ReplaceRegexpImpl
     {
         if (needle.empty())
         {
-            res_data.assign(haystack_data.begin(), haystack_data.end());
-            res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+            res_data.assign(haystack_data);
+            res_offsets.assign(haystack_offsets);
             return;
         }
 
