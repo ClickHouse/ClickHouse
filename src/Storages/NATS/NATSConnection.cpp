@@ -9,8 +9,6 @@
 namespace DB
 {
 
-static const auto CONNECTED_TO_BUFFER_SIZE = 256;
-
 /// disconnectedCallback may be called after connection destroy
 LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
 
@@ -138,12 +136,9 @@ void NATSConnection::disconnectImpl()
     natsConnection_Close(connection.get());
 }
 
-void NATSConnection::reconnectedCallback(natsConnection * nc, void * log)
+void NATSConnection::reconnectedCallback(natsConnection *, void *)
 {
-    char buffer[CONNECTED_TO_BUFFER_SIZE];
-    buffer[0] = '\0';
-    natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
-    LOG_DEBUG(static_cast<Poco::Logger *>(log), "Got reconnected to NATS server: {}.", buffer);
+    LOG_DEBUG(callback_logger, "Got reconnected to NATS server.");
 }
 
 void NATSConnection::disconnectedCallback(natsConnection *, void *)
