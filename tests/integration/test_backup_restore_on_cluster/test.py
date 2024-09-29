@@ -1,10 +1,12 @@
-import pytest
-import re
 import os.path
-import random, string
+import random
+import re
+import string
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
-
 
 cluster = ClickHouseCluster(__file__)
 
