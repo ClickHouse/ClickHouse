@@ -826,19 +826,23 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             properties.projections = as_storage_metadata->getProjections().clone();
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
-            if (!getContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+            /// Note: only supports the source table engine is using the new syntax.
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
             {
-                if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
-                    create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
+                if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+                {
+                    if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
+                        create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
 
-                if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
-                    create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+                    if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                        create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
 
-                if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
-                    create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+                    if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                        create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
 
-                if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
-                    create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
+                    if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
+                        create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
+                }
             }
         }
         else
