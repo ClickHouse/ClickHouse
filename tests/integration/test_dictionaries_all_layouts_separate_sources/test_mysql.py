@@ -1,12 +1,13 @@
-import os
 import math
+import os
+
 import pytest
 
-from .common import *
-
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 from helpers.external_sources import SourceMySQL
+
+from .common import *
 
 SOURCE = None
 cluster = None

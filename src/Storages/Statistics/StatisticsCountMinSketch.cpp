@@ -27,7 +27,7 @@ static constexpr auto num_buckets = 2718uz;
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , sketch(num_hashes, num_buckets)
-    , data_type(data_type_)
+    , data_type(removeNullable(data_type_))
 {
 }
 

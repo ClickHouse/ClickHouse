@@ -295,7 +295,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
 
         if (disk->exists(format_version_path))
         {
-            auto buf = disk->readFile(format_version_path);
+            auto buf = disk->readFile(format_version_path, getReadSettings());
             UInt32 current_format_version{0};
             readIntText(current_format_version, *buf);
             if (!buf->eof())

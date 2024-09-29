@@ -101,7 +101,6 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
-arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked

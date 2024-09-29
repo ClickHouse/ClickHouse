@@ -2,8 +2,8 @@
 # To run this script you must install docker and piddeptree python package
 #
 
-import subprocess
 import os
+import subprocess
 import sys
 
 
