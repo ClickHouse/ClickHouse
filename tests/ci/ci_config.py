@@ -1,10 +1,10 @@
 import random
 import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
+from ci_definitions import *  # pylint:disable=unused-wildcard-import
 from ci_utils import Utils
-from ci_definitions import *
 
 
 class CI:
@@ -17,24 +17,24 @@ class CI:
 
     # reimport types to CI class so that they visible as CI.* and mypy is happy
     # pylint:disable=useless-import-alias,reimported,import-outside-toplevel
+    from ci_definitions import MQ_JOBS as MQ_JOBS
+    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import BuildConfig as BuildConfig
+    from ci_definitions import BuildNames as BuildNames
     from ci_definitions import DigestConfig as DigestConfig
     from ci_definitions import JobConfig as JobConfig
-    from ci_definitions import Tags as Tags
     from ci_definitions import JobNames as JobNames
-    from ci_definitions import BuildNames as BuildNames
-    from ci_definitions import StatusNames as StatusNames
-    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
-    from ci_definitions import SyncState as SyncState
-    from ci_definitions import MQ_JOBS as MQ_JOBS
-    from ci_definitions import WorkflowStages as WorkflowStages
-    from ci_definitions import Runners as Runners
-    from ci_utils import Envs as Envs
-    from ci_utils import Utils as Utils
-    from ci_utils import GH as GH
-    from ci_utils import Shell as Shell
     from ci_definitions import Labels as Labels
+    from ci_definitions import Runners as Runners
+    from ci_definitions import StatusNames as StatusNames
+    from ci_definitions import SyncState as SyncState
+    from ci_definitions import Tags as Tags
     from ci_definitions import WorkFlowNames as WorkFlowNames
+    from ci_definitions import WorkflowStages as WorkflowStages
+    from ci_utils import GH as GH
+    from ci_utils import Envs as Envs
+    from ci_utils import Shell as Shell
+    from ci_utils import Utils as Utils
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
@@ -559,7 +559,7 @@ class CI:
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_label="pr-bugfix",
             run_command="bugfix_validate_check.py",
-            timeout=900,
+            timeout=2400,
             runner_type=Runners.STYLE_CHECKER,
         ),
     }
