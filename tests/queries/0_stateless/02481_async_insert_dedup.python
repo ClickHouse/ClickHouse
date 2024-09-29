@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import sys
-import random
 import queue
+import random
+import sys
 import time
 from threading import Thread
 
@@ -48,9 +48,11 @@ def generate_data(q, total_number, use_token):
     partitions = ["2022-11-11 10:10:10", "2022-12-12 10:10:10"]
     last_number = 0
     while True:
-        dup_simulate = random.randint(0, 3)
+        # 0 to simulate duplication
+        # 1 to simulate empty
+        simulate_flag = random.randint(0, 4)
         # insert old data randomly. 25% of them are dup.
-        if dup_simulate == 0:
+        if simulate_flag == 0:
             last_idx = len(old_data) - 1
             if last_idx < 0:
                 continue
@@ -58,6 +60,11 @@ def generate_data(q, total_number, use_token):
             if idx < 0:
                 idx = 0
             q.put(old_data[idx])
+        if simulate_flag == 1:
+            empty_insert_stmt = (
+                "insert into t_async_insert_dedup values format JSONEachRow"
+            )
+            q.put((empty_insert_stmt, ""))
         else:
             # insert new data.
             chunk_size = random.randint(1, max_chunk_size)

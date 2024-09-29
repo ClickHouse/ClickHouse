@@ -1,15 +1,16 @@
 import argparse
 import time
 from pathlib import Path
-from typing import Optional
 from shutil import copy2
+from typing import Optional
+
+from ci_utils import Shell, WithIter
 from create_release import (
     PackageDownloader,
-    ReleaseInfo,
     ReleaseContextManager,
+    ReleaseInfo,
     ReleaseProgress,
 )
-from ci_utils import WithIter, Shell
 
 
 class MountPointApp(metaclass=WithIter):
@@ -54,21 +55,27 @@ class R2MountPoint:
                     "-o passwd_file /home/ubuntu/.passwd-s3fs_packages "
                 )
             # without -o nomultipart there are errors like "Error 5 writing to /home/ubuntu/***.deb: Input/output error"
-            self.mount_cmd = f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} -o use_path_request_style -o umask=0000 -o nomultipart -o logfile={self.LOG_FILE} {self.aux_mount_options}"
+            self.mount_cmd = (
+                f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} "
+                f"-o use_path_request_style -o umask=0000 -o nomultipart "
+                f"-o logfile={self.LOG_FILE} {self.aux_mount_options}"
+            )
         elif self.app == MountPointApp.GEESEFS:
             self.cache_dir = "/home/ubuntu/geesefs_cache"
             self.aux_mount_options += (
                 f" --cache={self.cache_dir} " if self.CACHE_ENABLED else ""
             )
             if not dry_run:
-                self.aux_mount_options += f" --shared-config=/home/ubuntu/.r2_auth "
+                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth "
             else:
-                self.aux_mount_options += (
-                    f" --shared-config=/home/ubuntu/.r2_auth_test "
-                )
+                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth_test "
             if self.DEBUG:
                 self.aux_mount_options += " --debug_s3 "
-            self.mount_cmd = f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=1000 --gc-interval=100 --max-flushers=10 --max-parallel-parts=1 --max-parallel-copy=10 --log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
+            self.mount_cmd = (
+                f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=1000 "
+                f"--gc-interval=100 --max-flushers=10 --max-parallel-parts=1 --max-parallel-copy=10 "
+                f"--log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
+            )
         else:
             assert False
 
@@ -143,18 +150,33 @@ class DebianArtifactory:
             print(f"  {cmd}")
             Shell.check(cmd, strict=True)
             Shell.check("sync")
+        time.sleep(10)
+        Shell.check("lsof +D R2MountPoint.MOUNT_POINT", verbose=True)
 
     def test_packages(self):
         Shell.check("docker pull ubuntu:latest", strict=True)
         print(f"Test packages installation, version [{self.version}]")
-        debian_command = f"echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
-        cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
+        debian_command = (
+            f"echo 'deb {self.repo_url} stable main' | "
+            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; "
+            f"apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
+        )
+        cmd = (
+            "docker run --rm ubuntu:latest bash -c "
+            f'"apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
+        )
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd)
-        print(f"Test packages installation, version [latest]")
-        debian_command_2 = f"echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static clickhouse-client"
-        cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command_2}"'
+        print("Test packages installation, version [latest]")
+        debian_command_2 = (
+            f"echo 'deb {self.repo_url} stable main' | "
+            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static clickhouse-client"
+        )
+        cmd = (
+            "docker run --rm ubuntu:latest bash -c "
+            f'"apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command_2}"'
+        )
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd)
@@ -234,7 +256,7 @@ class RpmArtifactory:
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd)
-        print(f"Test package installation, version [latest]")
+        print("Test package installation, version [latest]")
         rpm_command_2 = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client"
         cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
         print("Running test command:")
@@ -357,7 +379,7 @@ if __name__ == "__main__":
     """
     S3FS - very slow with a big repo
     RCLONE - fuse had many different errors with r2 remote and completely removed
-    GEESEFS ? 
+    GEESEFS ?
     """
     mp = R2MountPoint(MountPointApp.GEESEFS, dry_run=args.dry_run)
     if args.export_debian:

@@ -1,8 +1,9 @@
-import threading
 import os
+import threading
 from tempfile import NamedTemporaryFile
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 TEST_DIR = os.path.dirname(__file__)
