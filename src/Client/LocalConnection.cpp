@@ -33,7 +33,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 implicit_select;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
