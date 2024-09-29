@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-import pytest
-from helpers.cluster import ClickHouseCluster
-import string
 import os
+import string
 import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
