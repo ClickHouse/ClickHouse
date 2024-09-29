@@ -136,6 +136,9 @@ private:
     std::optional<size_t> getKeyIndex(const std::string & key_column_name);
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
+    std::optional<size_t> getKeyIndexForMapValuesLower(const std::string & map_column_name);
+    ASTPtr parseExpression(const String & expression);
+
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor);
 
