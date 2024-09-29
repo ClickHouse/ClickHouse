@@ -591,7 +591,7 @@ def test_create_workload():
         f"""
         create resource io_write (write disk s3_no_resource);
         create resource io_read (read disk s3_no_resource);
-        create workload all settings max_cost = 1000000;
+        create workload all settings max_cost = 1000000 for io_write, max_cost = 2000000 for io_read;
         create workload admin in all settings priority = 0;
         create workload production in all settings priority = 1, weight = 9;
         create workload development in all settings priority = 1, weight = 1;
@@ -628,6 +628,18 @@ def test_create_workload():
                 f"select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
             )
             == "2\n"
+        )
+        assert (
+            node.query(
+                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='io_write' and max_cost=1000000"
+            )
+            == "1\n"
+        )
+        assert (
+            node.query(
+                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='io_read' and max_cost=2000000"
+            )
+            == "1\n"
         )
 
     do_checks()
