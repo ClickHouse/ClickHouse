@@ -1,62 +1,63 @@
 import base64
 import errno
-from functools import cache
 import http.client
 import logging
 import os
-import platform
-import stat
 import os.path as p
+import platform
 import pprint
 import pwd
 import re
+import shlex
 import shutil
 import socket
+import stat
 import subprocess
 import time
 import traceback
 import urllib.parse
-import shlex
-import urllib3
-import requests
+from functools import cache
 from pathlib import Path
+
+import requests
+import urllib3
 
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
     # without installing tons of unneeded packages that may be not so easy to install.
     import asyncio
-    from cassandra.policies import RoundRobinPolicy
+    import ssl
+
     import cassandra.cluster
+    import nats
     import psycopg2
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
-    import nats
-    import ssl
+    from cassandra.policies import RoundRobinPolicy
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
     from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
+import docker
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
 from helpers.client import QueryRuntimeException
-
-import docker
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 from .client import Client
+from .config_cluster import *
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-
-from .config_cluster import *
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -1751,8 +1752,7 @@ class ClickHouseCluster:
 
         if name in self.instances:
             raise Exception(
-                "Can't add instance `%s': there is already an instance with the same name!"
-                % name
+                f"Can't add instance '{name}': there is already an instance with the same name in [{self.instances.keys()}]"
             )
 
         if tag is None:

@@ -217,7 +217,7 @@ Block InterpreterInsertQuery::getSampleBlockImpl(
     for (const auto & current_name : names)
     {
         if (res.has(current_name))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} specified more than once", current_name);
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} in table {} specified more than once", current_name, table->getStorageID().getNameForLogs());
 
         /// Column is not ordinary or ephemeral
         if (!table_sample_insertable.has(current_name))
