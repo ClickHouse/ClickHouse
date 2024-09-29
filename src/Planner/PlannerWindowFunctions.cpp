@@ -16,6 +16,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
+}
 
 namespace ErrorCodes
 {
@@ -56,8 +61,8 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
     const auto & query_context = planner_context.getQueryContext();
     const auto & query_context_settings = query_context->getSettingsRef();
 
-    bool compile_sort_description = query_context_settings.compile_sort_description;
-    size_t min_count_to_compile_sort_description = query_context_settings.min_count_to_compile_sort_description;
+    bool compile_sort_description = query_context_settings[Setting::compile_sort_description];
+    size_t min_count_to_compile_sort_description = query_context_settings[Setting::min_count_to_compile_sort_description];
 
     window_description.partition_by.compile_sort_description = compile_sort_description;
     window_description.partition_by.min_count_to_compile_sort_description = min_count_to_compile_sort_description;

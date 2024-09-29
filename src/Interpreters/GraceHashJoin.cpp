@@ -23,6 +23,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsUInt64 grace_hash_join_max_buckets;
+}
 
 namespace ErrorCodes
 {
@@ -254,7 +259,8 @@ void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & bucket
 }
 
 GraceHashJoin::GraceHashJoin(
-    ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
+    ContextPtr context_,
+    std::shared_ptr<TableJoin> table_join_,
     const Block & left_sample_block_,
     const Block & right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
@@ -265,8 +271,7 @@ GraceHashJoin::GraceHashJoin(
     , left_sample_block{left_sample_block_}
     , right_sample_block{right_sample_block_}
     , any_take_last_row{any_take_last_row_}
-    , max_num_buckets{context->getSettingsRef().grace_hash_join_max_buckets}
-    , max_block_size{context->getSettingsRef().max_block_size}
+    , max_num_buckets{context->getSettingsRef()[Setting::grace_hash_join_max_buckets]}
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(std::make_unique<TemporaryDataOnDisk>(tmp_data_, CurrentMetrics::TemporaryFilesForJoin))
@@ -284,7 +289,8 @@ void GraceHashJoin::initBuckets()
 
     const auto & settings = context->getSettingsRef();
 
-    size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp<size_t>(settings.grace_hash_join_initial_buckets, 1, settings.grace_hash_join_max_buckets));
+    size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(
+        std::clamp<size_t>(settings[Setting::grace_hash_join_initial_buckets], 1, settings[Setting::grace_hash_join_max_buckets]));
 
     addBuckets(initial_num_buckets);
 

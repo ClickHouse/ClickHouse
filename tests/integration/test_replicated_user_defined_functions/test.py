@@ -1,13 +1,13 @@
 import inspect
+import os.path
+import time
 from contextlib import nullcontext as does_not_raise
 
 import pytest
-import time
-import os.path
 
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 

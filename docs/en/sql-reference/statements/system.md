@@ -15,7 +15,7 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## RELOAD DICTIONARIES
 
 Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
 **Syntax**
@@ -136,11 +136,17 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 ## DROP QUERY CACHE
 
+```sql
+SYSTEM DROP QUERY CACHE;
+SYSTEM DROP QUERY CACHE TAG '<tag>'
+````
+
 Clears the [query cache](../../operations/query-cache.md).
+If a tag is specified, only query cache entries with the specified tag are deleted.
 
 ## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
-Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path).
+Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
 Supported formats:
 

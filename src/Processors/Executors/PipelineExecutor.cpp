@@ -28,6 +28,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_processors_profiles;
+    extern const SettingsBool opentelemetry_trace_processors;
+}
 
 namespace ErrorCodes
 {
@@ -40,8 +45,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 {
     if (process_list_element)
     {
-        profile_processors = process_list_element->getContext()->getSettingsRef().log_processors_profiles;
-        trace_processors = process_list_element->getContext()->getSettingsRef().opentelemetry_trace_processors;
+        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles];
+        trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
     }
     try
     {
@@ -79,6 +84,10 @@ const Processors & PipelineExecutor::getProcessors() const
 
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
+    /// It is allowed to cancel not started query by user.
+    if (reason == ExecutionStatus::CancelledByUser)
+        tryUpdateExecutionStatus(ExecutionStatus::NotStarted, reason);
+
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
     graph->cancel();
@@ -346,10 +355,11 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     use_threads = cpu_slots->grantedCount();
 
     Queue queue;
-    graph->initializeExecution(queue);
+    Queue async_queue;
+    graph->initializeExecution(queue, async_queue);
 
     tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get());
-    tasks.fill(queue);
+    tasks.fill(queue, async_queue);
 
     if (num_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
