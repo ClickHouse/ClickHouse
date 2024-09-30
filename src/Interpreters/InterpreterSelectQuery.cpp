@@ -495,7 +495,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , metadata_snapshot(metadata_snapshot_)
     , prepared_sets(prepared_sets_)
 {
-    std::cerr << "InterpreterSelectQuery::InterpreterSelectQuery(_starts\n";
     checkStackSize();
 
     if (!prepared_sets)
@@ -896,9 +895,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         /// Calculate structure of the result.
-        std::cerr << "result_header = getSampleBlockImpl()_1";
         result_header = getSampleBlockImpl();
-        std::cerr << "result_header = getSampleBlockImpl()_2";
     };
 
 
@@ -997,7 +994,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
-    std::cerr << "here0\n";
     sanitizeBlock(result_header, true);
 }
 
@@ -1085,7 +1081,6 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    std::cerr << "here2";
     executeImpl(query_plan, std::move(input_pipe));
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
@@ -1113,16 +1108,16 @@ BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
     QueryPlan query_plan;
-    std::cerr << "InterpreterSelectQuery::execute()_1\n";
+
     buildQueryPlan(query_plan);
-    std::cerr << "InterpreterSelectQuery::execute()_2\n";
+
     auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-    std::cerr << "InterpreterSelectQuery::execute()_3\n";
+
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    std::cerr << "InterpreterSelectQuery::execute()_4\n";
+
     setQuota(res.pipeline);
-    std::cerr << "InterpreterSelectQuery::execute()_5\n";
+
     return res;
 }
 
@@ -1161,13 +1156,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
-    std::cerr << "before ExpressionAnalysisResult\n";
     analysis_result = ExpressionAnalysisResult(
         *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, source_header);
 
-    std::cerr << "after ExpressionAnalysisResult\n";
-    // std::cerr << analysis_result.dump() << '\n';
-    // std::cerr << "after dump\n";
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
         auto header = source_header;
@@ -1575,7 +1566,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     bool intermediate_stage = false;
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
-    std::cerr << "HERE3\n";
+
     /// Do I need to aggregate in a separate row that has not passed max_rows_to_group_by?
     bool aggregate_overflow_row =
         expressions.need_aggregate &&
@@ -2771,7 +2762,6 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsA
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
-    std::cerr << "InterpreterSelectQuery::executeWhere ends\n";
 }
 
 static Aggregator::Params getAggregatorParams(
@@ -3220,8 +3210,6 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
 void InterpreterSelectQuery::executeLimitInRange(QueryPlan & query_plan, bool remove_filter_column)
 {
-    std::cerr << "IN executeLimitInRange\n";
-
     remove_filter_column = true;
     auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
         query_plan.getCurrentDataStream(),
