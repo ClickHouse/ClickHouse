@@ -1,3 +1,4 @@
+#include "sql_catalog.h"
 #include "sql_types.h"
 #include "statement_generator.h"
 
@@ -119,7 +120,7 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq1) {
 	bool first = true;
 	NestedType *ntp = nullptr;
-	const SQLTable &t = rg.PickValueRandomlyFromMap(this->tables);
+	const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 	sql_query_grammar::Insert *ins = sq1.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();

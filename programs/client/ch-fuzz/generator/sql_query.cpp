@@ -1,3 +1,4 @@
+#include "sql_catalog.h"
 #include "statement_generator.h"
 
 namespace chfuzz {
@@ -77,8 +78,8 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 	std::string name;
 	const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->max_depth && this->width < this->max_width),
 				   cte = 10 * static_cast<uint32_t>(!this->ctes.empty()),
-				   table = 40 * static_cast<uint32_t>(!this->tables.empty()),
-				   view = 20 * static_cast<uint32_t>(!this->views.empty()),
+				   table = 40 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
+				   view = 20 * static_cast<uint32_t>(CollectionHas<SQLView>(attached_views)),
 				   prob_space = derived_table + cte + table + view;
 
 	name += "t";
@@ -109,7 +110,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			this->levels[this->current_level].rels.push_back(std::move(rel));
 		} else if (table && nopt < (derived_table + cte + table + 1)) {
 			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
-			const SQLTable &t = rg.PickValueRandomlyFromMap(this->tables);
+			const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
 			jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 			jt->mutable_table_alias()->set_table(name);
@@ -118,7 +119,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 		} else if (view && nopt < (derived_table + cte + table + view + 1)) {
 			SQLRelation rel(name);
 			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
-			const SQLView &v = rg.PickValueRandomlyFromMap(this->views);
+			const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
 
 			jt->mutable_est()->mutable_table_name()->set_table("v" + std::to_string(v.vname));
 			jt->mutable_table_alias()->set_table(name);

@@ -2595,13 +2595,16 @@ message CreateTable {
   optional Select as_select_stmt = 9;
 }
 
+enum SQLObject {
+  TABLE = 1;
+  VIEW = 2;
+  DICTIONARY = 3;
+  DATABASE = 4;
+}
+
 message Drop {
-  enum WhatToDrop {
-    TABLE = 1;
-    VIEW = 2;
-  }
   optional bool is_temp = 1;
-  required WhatToDrop wdrop = 2;
+  required SQLObject sobject = 2;
   optional bool if_exists = 3;
   optional bool if_empty = 4;
   required ExprSchemaTable est = 5;
@@ -2853,6 +2856,18 @@ message AlterTable {
   repeated AlterTableItem other_alters = 3;
 }
 
+message Attach {
+  required SQLObject sobject = 1;
+  required ExprSchemaTable est = 2;
+}
+
+message Detach {
+  required SQLObject sobject = 1;
+  required ExprSchemaTable est = 2;
+  optional bool permanentely = 3;
+  optional bool sync = 4;
+}
+
 message SQLQueryInner {
   oneof query_inner_oneof {
     TopSelect select = 1;
@@ -2868,8 +2883,9 @@ message SQLQueryInner {
     AlterTable alter_table = 11;
     SettingValues setting_values = 12;
     CreateView create_view = 13;
+    Attach attach = 14;
+    Detach detach = 15;
   }
-  required TopSelect def_select = 14;
 }
 
 message ExplainQuery {

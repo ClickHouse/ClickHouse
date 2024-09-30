@@ -1815,13 +1815,13 @@ CONV_FN(CreateTable, create_table) {
 }
 
 CONV_FN(Drop, dt) {
-  const bool is_table = dt.wdrop() == sql_query_grammar::Drop_WhatToDrop::Drop_WhatToDrop_TABLE;
+  const bool is_table = dt.sobject() == sql_query_grammar::SQLObject::TABLE;
 
   ret += "DROP ";
   if (is_table && dt.is_temp()) {
     ret += "TEMPORARY ";
   }
-  ret += Drop_WhatToDrop_Name(dt.wdrop());
+  ret += SQLObject_Name(dt.sobject());
   if (dt.if_exists()) {
     ret += " IF EXISTS";
   }
@@ -2231,6 +2231,26 @@ CONV_FN(AlterTable, alter_table) {
   }
 }
 
+CONV_FN(Attach, at) {
+  ret += "ATTACH ";
+  ret += SQLObject_Name(at.sobject());
+  ret += " ";
+  ExprSchemaTableToString(ret, at.est());
+}
+
+CONV_FN(Detach, dt) {
+  ret += "DETACH ";
+  ret += SQLObject_Name(dt.sobject());
+  ret += " ";
+  ExprSchemaTableToString(ret, dt.est());
+  if (dt.permanentely()) {
+    ret += " PERMANENTLY";
+  }
+  if (dt.sync()) {
+    ret += " SYNC";
+  }
+}
+
 CONV_FN(TopSelect, top) {
   SelectToString(ret, top.sel());
   if (top.has_format()) {
@@ -2282,8 +2302,14 @@ CONV_FN(SQLQueryInner, query) {
     case QueryType::kCreateView:
       CreateViewToString(ret, query.create_view());
       break;
+    case QueryType::kAttach:
+      AttachToString(ret, query.attach());
+      break;
+    case QueryType::kDetach:
+      DetachToString(ret, query.detach());
+      break;
     default:
-      TopSelectToString(ret, query.def_select());
+      ret += "SELECT 1";
   }
 }
 

@@ -81,10 +81,74 @@ private:
 
 	std::vector<uint32_t> ids;
 	std::vector<InsertEntry> entries;
+	std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
+	std::vector<std::reference_wrapper<const SQLView>> filtered_views;
 	uint32_t depth = 0, width = 0, max_depth = 3, max_width = 3, max_tables = 10, max_views = 5;
 
 	std::map<uint32_t, std::map<std::string, SQLRelation>> ctes;
 	std::map<uint32_t, QueryLevel> levels;
+
+	const std::function<bool (const SQLView&)> attached_views = [](const SQLView& t){return t.attached;};
+
+	const std::function<bool (const SQLTable&)> detached_tables = [](const SQLTable& t){return !t.attached;};
+	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& t){return !t.attached;};
+
+	template<typename T>
+	const std::map<uint32_t, T>& GetNextCollection() const {
+		if constexpr (std::is_same<T, SQLTable>::value) {
+			return tables;
+		} else {
+			return views;
+		}
+	}
+
+public:
+	template<typename T>
+	bool CollectionHas(const std::function<bool (const T&)> func) const {
+		const auto &input = GetNextCollection<T>();
+
+		for (const auto &entry : input) {
+			if (func(entry.second)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+private:
+	template<typename T>
+	uint32_t CollectionCount(const std::function<bool (const T&)> func) const {
+		uint32_t res = 0;
+		const auto &input = GetNextCollection<T>();
+
+		for (const auto &entry : input) {
+			res += func(entry.second) ? 1 : 0;
+		}
+		return res;
+	}
+
+	template<typename T>
+	std::vector<std::reference_wrapper<const T>>& GetNextCollectionResult() {
+		if constexpr (std::is_same<T, SQLTable>::value) {
+			return filtered_tables;
+		} else {
+			return filtered_views;
+		}
+	}
+
+	template<typename T>
+	std::vector<std::reference_wrapper<const T>>& FilterCollection(const std::function<bool (const T&)> func) {
+		const auto &input = GetNextCollection<T>();
+		auto &res = GetNextCollectionResult<T>();
+
+		res.clear();
+		for (const auto &entry : input) {
+			if (func(entry.second)) {
+				res.push_back(std::ref<const T>(entry.second));
+			}
+		}
+		return res;
+	}
 
 	void AddTableRelation(RandomGenerator &rg, const bool allow_internal_cols, const std::string &rel_name, const SQLTable &t);
 	void AppendDecimal(RandomGenerator &rg, std::string &ret, const uint32_t left, const uint32_t right);
@@ -126,6 +190,8 @@ private:
 							  sql_query_grammar::SettingValues *vals);
 	int GenerateSettingList(RandomGenerator &rg, const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
 							sql_query_grammar::SettingList *pl);
+	int GenerateAttach(RandomGenerator &rg, sql_query_grammar::Attach *att);
+	int GenerateDetach(RandomGenerator &rg, sql_query_grammar::Detach *det);
 
 	int AddFieldAccess(RandomGenerator &rg, sql_query_grammar::Expr *expr, const uint32_t nested_prob);
 	int AddColNestedAccess(RandomGenerator &rg, sql_query_grammar::ExprColumn *expr, const uint32_t nested_prob);
@@ -163,6 +229,8 @@ private:
 	SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types);
 	SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
 public:
+	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return t.attached;};
+
 	int GenerateNextCreateTable(RandomGenerator &rg, sql_query_grammar::CreateTable *sq);
 	int GenerateNextStatement(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq);
 

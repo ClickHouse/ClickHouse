@@ -1041,7 +1041,7 @@ bool Client::chFuzz()
                 chfuzz::SQLQueryToString(full_query, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
             }
-            else if (noption < 41)
+            else if (gen.CollectionHas<chfuzz::SQLTable>(gen.attached_tables) && noption < 41)
             {
                 //test in and out formats
                 (void) gen.GenerateExportQuery(rg, sq1);
