@@ -97,7 +97,6 @@ void NATSProducer::startProducingTaskLoop()
             else
                 publish();
         }
-        natsConnection_Flush(connection->getConnection());
     }
     catch (...)
     {
