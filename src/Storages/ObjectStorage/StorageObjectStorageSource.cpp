@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <Formats/FormatFactory.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -436,27 +437,27 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     /// User's object may change, don't cache it.
     read_settings.use_page_cache_for_disks_without_file_cache = false;
 
+    auto impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
+
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    if (use_prefetch)
-    {
-        LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+    if (!use_prefetch)
+        return impl;
 
-        auto async_reader = object_storage->readObjects(
-            StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
+    auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+    impl = std::make_unique<AsynchronousBoundedReadBuffer>(
+        std::move(impl), reader, read_settings,
+        context_->getAsyncReadCounters(),
+        context_->getFilesystemReadPrefetchesLog());
 
-        async_reader->setReadUntilEnd();
-        if (read_settings.remote_fs_prefetch)
-            async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
+    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
-        return async_reader;
-    }
-    else
-    {
-        /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
-        return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
-    }
+    impl->setReadUntilEnd();
+    if (read_settings.remote_fs_prefetch)
+        impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
+
+    return impl;
 }
 
 StorageObjectStorageSource::IIterator::IIterator(const std::string & logger_name_)

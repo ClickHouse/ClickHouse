@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -48,9 +49,7 @@ CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string &
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    ReadSettings modified_settings{read_settings};
-    modified_settings.remote_fs_cache = cache;
-    return object_storage->patchSettings(modified_settings);
+    return object_storage->patchSettings(read_settings);
 }
 
 void CachedObjectStorage::startup()
@@ -63,21 +62,57 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
     return object_storage->exists(object);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
-    return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
-}
-
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    if (read_settings.enable_filesystem_cache)
+    {
+        if (cache->isInitialized())
+        {
+            auto read_buffer_creator = [=, this]()
+            {
+                return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+            };
+
+            auto cache_key = cache->createKeyForPath(object.remote_path);
+            auto global_context = Context::getGlobalContextInstance();
+            auto modified_read_settings = read_settings.withNestedBuffer();
+
+            return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                object.remote_path,
+                cache_key,
+                cache,
+                FileCache::getCommonUser(),
+                read_buffer_creator,
+                modified_read_settings,
+                std::string(CurrentThread::getQueryId()),
+                object.bytes_size,
+                /* allow_seeks */!read_settings.remote_read_buffer_restrict_seek,
+                /* use_external_buffer */true,
+                /* read_until_position */std::nullopt,
+                global_context->getFilesystemCacheLog());
+        }
+        else
+        {
+            cache->throwInitExceptionIfNeeded();
+        }
+    }
+    else if (read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
+    {
+        /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
+        /// former doesn't support seeks.
+
+        auto inner = object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+        const auto cache_path_prefix = toString(object_storage->getType()) + ":" + object_storage->getObjectsNamespace() + "/";
+        const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object.remote_path };
+
+        return std::make_unique<CachedInMemoryReadBufferFromFile>(
+            cache_key, read_settings.page_cache, std::move(inner), read_settings);
+    }
+
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
 }
 
