@@ -1,9 +1,10 @@
+import ipaddress
+import logging
 import os
 import subprocess
 import time
-import logging
+
 import docker
-import ipaddress
 
 
 class PartitionManager:
