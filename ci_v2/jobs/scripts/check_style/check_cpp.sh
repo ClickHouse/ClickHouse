@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 LC_ALL="en_US.UTF-8"
-ROOT_PATH=$(git rev-parse --show-toplevel)
+ROOT_PATH="."
 EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
 
 # From [1]:
@@ -172,134 +172,10 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
 
-# Broken XML files (requires libxml2-utils)
-find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs xmllint --noout --nonet
-
-find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
-    grep -vP $EXCLUDE_DIRS |
-    xargs yamllint --config-file=$ROOT_PATH/.yamllint
-
-# Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
-find $ROOT_PATH/tests/queries -iname '*fail*' |
-    grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
-
-# Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
-# NOTE: it is not that accurate, but at least something.
-tests_with_query_log=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
-) )
-for test_case in "${tests_with_query_log[@]}"; do
-    grep -qE current_database.*currentDatabase "$test_case" || {
-        grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
-    } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
-done
-
-grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateful/stateless tests, because it will break concurrently running queries"
-
-# There shouldn't be large jumps between test numbers (since they should be consecutive)
-max_diff=$(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-          grep -oP '\d+\D+\K\d+' | sort -n -u | awk 's{print ($0-s) " diff " s " and " $0 }{s=$0}' | sort -n | tail -n 1
-)
-max_diff_value=( $(echo $max_diff) )
-if [[ $max_diff_value -ge 100 ]];
-then
-    echo "Too big of a difference between test numbers: $max_diff"
-fi
-
-# Queries to:
-tables_with_database_column=(
-    system.tables
-    system.parts
-    system.detached_parts
-    system.parts_columns
-    system.columns
-    system.projection_parts
-    system.mutations
-)
-# should have database = currentDatabase() condition
-#
-# NOTE: it is not that accuate, but at least something.
-tests_with_database_column=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
-        grep -v -e ':--' -e ':#' |
-        cut -d: -f1 | sort -u
-) )
-for test_case in "${tests_with_database_column[@]}"; do
-    grep -qE database.*currentDatabase "$test_case" || {
-        grep -qE 'database.*\$CLICKHOUSE_DATABASE' "$test_case"
-    } || {
-        # explicit database
-        grep -qE "database[ ]*=[ ]*'" "$test_case"
-    } || {
-        echo "Queries to ${tables_with_database_column[*]} does not have database = currentDatabase()/\$CLICKHOUSE_DATABASE condition in $test_case"
-    }
-done
-
-# Queries with ReplicatedMergeTree
-# NOTE: it is not that accuate, but at least something.
-tests_with_replicated_merge_tree=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep --with-filename -e "Replicated.*MergeTree[ ]*(.*" | cut -d: -f1 | sort -u
-) )
-for test_case in "${tests_with_replicated_merge_tree[@]}"; do
-    case "$test_case" in
-        *.gen.*)
-            ;;
-        *.sh)
-            test_case_zk_prefix="\(\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX\|{database}\)"
-            grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
-            ;;
-        *.sql|*.sql.j2)
-            test_case_zk_prefix="\({database}\|currentDatabase()\|{uuid}\|{default_path_test}\)"
-            grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
-            ;;
-        *.py)
-            # Right now there is not such tests anyway
-            echo "No ReplicatedMergeTree style check for *.py ($test_case)"
-            ;;
-    esac
-done
-
-# All submodules should be from https://github.com/
-git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.url' | \
-while read -r line; do
-    name=${line#submodule.}; name=${name%.url*}
-    url=${line#* }
-    [[ "$url" != 'https://github.com/'* ]] && echo "All submodules should be from https://github.com/, submodule '$name' has '$url'"
-done
-
-# All submodules should be of this form: [submodule "contrib/libxyz"] (for consistency, the submodule name does matter too much)
-# - restrict the check to top-level .gitmodules file
-git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.path' | \
-while read -r line; do
-    name=${line#submodule.}; name=${name%.path*}
-    path=${line#* }
-    [ "$name" != "$path" ] && echo "Submodule name '$name' is not equal to it's path '$path'"
-done
-
-# There shouldn't be any code snippets under GPL or LGPL
-find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
-
-# There shouldn't be any docker compose files outside docker directory
-find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE_DIRS | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
-
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
     grep -vP $EXCLUDE_DIRS |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
-
-# Check for executable bit on non-executable files
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.j2' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
-
-# Check for BOM
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
 
 # Too many exclamation marks
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -358,26 +234,13 @@ sources_with_std_cerr_cout=( $(
         grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
         xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
 ) )
+
 # Exclude comments
 for src in "${sources_with_std_cerr_cout[@]}"; do
     # suppress stderr, since it may contain warning for #pargma once in headers
     if gcc -fpreprocessed -dD -E "$src" 2>/dev/null | grep -F -q -e std::cerr -e std::cout; then
         echo "$src: uses std::cerr/std::cout"
     fi
-done
-
-# Queries with event_date should have yesterday() not today()
-#
-# NOTE: it is not that accuate, but at least something.
-tests_with_event_time_date=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        grep -vP $EXCLUDE_DIRS |
-        xargs grep --with-filename -e event_time -e event_date | cut -d: -f1 | sort -u
-) )
-for test_case in "${tests_with_event_time_date[@]}"; do
-    cat "$test_case" | tr '\n' ' ' | grep -q -i -e 'WHERE.*event_date[ ]*=[ ]*today()' -e 'WHERE.*event_date[ ]*=[ ]*today()' && {
-        echo "event_time/event_date should be filtered using >=yesterday() in $test_case (to avoid flakiness)"
-    }
 done
 
 expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
@@ -398,14 +261,6 @@ for test_case in "${expect_tests[@]}"; do
     grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 done
 
-# Conflict markers
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
-    xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
-
-# Forbid subprocess.check_call(...) in integration tests because it does not provide enough information on errors
-find $ROOT_PATH'/tests/integration' -name '*.py' |
-    xargs grep -F 'subprocess.check_call' | grep -v "STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL" && echo "Use helpers.cluster.run_and_check or subprocess.run instead of subprocess.check_call to print detailed info on error"
-
 # Forbid non-unique error codes
 if [[ "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | wc -l)" != "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | sort | uniq | wc -l)" ]]
 then
@@ -421,9 +276,6 @@ fi
 if git grep -e find_path -e find_library -- :**CMakeLists.txt; then
     echo "There is find_path/find_library usage. ClickHouse should use everything bundled. Consider adding one more contrib module."
 fi
-
-# Forbid files that differ only by character case
-find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
 
 # Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -446,17 +298,11 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -e ' close(.*fd' -e ' ::close(' | grep -v = && echo "Return value of close() should be checked"
 
-# Check for existence of __init__.py files
-for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
-
 # A small typo can lead to debug code in release builds, see https://github.com/ClickHouse/ClickHouse/pull/47647
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -F '#ifdef NDEBUG' | xargs -I@FILE awk '/#ifdef NDEBUG/ { inside = 1; dirty = 1 } /#endif/ { if (inside && dirty) { print "File @FILE has suspicious #ifdef NDEBUG, possibly confused with #ifndef NDEBUG" }; inside = 0 } /#else/ { dirty = 0 }' @FILE
 
 # If a user is doing dynamic or typeid cast with a pointer, and immediately dereferencing it, it is unsafe.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep --line-number -P '(dynamic|typeid)_cast<[^>]+\*>\([^\(\)]+\)->' | grep -P '.' && echo "It's suspicious when you are doing a dynamic_cast or typeid_cast with a pointer and immediately dereferencing it. Use references instead of pointers or check a pointer to nullptr."
-
-# The stateful directory should only contain the tests that depend on the test dataset (hits or visits).
-find $ROOT_PATH/tests/queries/1_stateful -name '*.sql' -or -name '*.sh' | grep -v '00076_system_columns_bytes' | xargs -I{} bash -c 'grep -q -P "hits|visits" "{}" || echo "The test {} does not depend on the test dataset (hits or visits table) and should be located in the 0_stateless directory. You can also add an exception to the check-style script."'
 
 # Check for bad punctuation: whitespace before comma.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
@@ -474,9 +320,6 @@ join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sor
 # Don't allow dynamic compiler check with CMake, because we are using hermetic, reproducible, cross-compiled, static (TLDR, good) builds.
 ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or -name '*.cmake' | xargs grep --with-filename -i -P 'check_c_compiler_flag|check_cxx_compiler_flag|check_c_source_compiles|check_cxx_source_compiles|check_include_file|check_symbol_exists|cmake_push_check_state|cmake_pop_check_state|find_package|CMAKE_REQUIRED_FLAGS|CheckIncludeFile|CheckCCompilerFlag|CheckCXXCompilerFlag|CheckCSourceCompiles|CheckCXXSourceCompiles|CheckCSymbolExists|CheckCXXSymbolExists' | grep -v Rust && echo "^ It's not allowed to have dynamic compiler checks with CMake."
 
-# DOS/Windows newlines
-find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
-
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
@@ -487,6 +330,9 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
+
+# There shouldn't be any code snippets under GPL or LGPL
+find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
 
 PATTERN="allow_";
 DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
