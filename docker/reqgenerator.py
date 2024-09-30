@@ -13,7 +13,11 @@ def build_docker_deps(image_name: str, imagedir: str) -> None:
         "pip install pipdeptree 2>/dev/null 1>/dev/null && pipdeptree --freeze "
         "--warn silence --exclude pipdeptree"
     )
-    cmd = rf"""docker run --rm --entrypoint "/bin/bash" {image_name} -c "{pip_cmd} | sed '/=/!d;s/\s//g' | sort -u" > {imagedir}/requirements.txt"""
+    # /=/!d - remove dependencies without pin
+    # ubuntu - ignore system packages
+    # \s - remove spaces
+    sed = r"sed '/==/!d; /==.*+ubuntu/d; s/\s//g'"
+    cmd = rf"""docker run --rm --entrypoint "/bin/bash" {image_name} -c "{pip_cmd} | {sed} | sort -u" > {imagedir}/requirements.txt"""
     print("Running the command:", cmd)
     subprocess.check_call(cmd, shell=True)
 
