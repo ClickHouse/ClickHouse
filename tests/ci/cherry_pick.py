@@ -34,11 +34,11 @@ from typing import List, Optional
 
 import __main__
 
+from ci_config import Labels
 from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from ci_config import Labels
 from ssh import SSHKey
 
 
