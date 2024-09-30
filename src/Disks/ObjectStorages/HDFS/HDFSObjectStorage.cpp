@@ -85,27 +85,6 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
         fs::path(url_without_path) / "", fs::path(data_directory) / path, config, patchSettings(read_settings));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
-{
-    initializeHDFSFS();
-    auto disk_read_settings = patchSettings(read_settings);
-    auto read_buffer_creator =
-        [this, disk_read_settings]
-        (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        auto path = extractObjectKeyFromURL(object_);
-        return std::make_unique<ReadBufferFromHDFS>(
-            fs::path(url_without_path) / "", fs::path(data_directory) / path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
-    };
-
-    return std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator), objects, "hdfs:", disk_read_settings, nullptr, /* use_external_buffer */false);
-}
-
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,

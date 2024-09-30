@@ -11,6 +11,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -496,16 +498,46 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> file_size) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
+    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
+    auto global_context = Context::getGlobalContextInstance();
 
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 
-    return object_storage->readObjects(
+    bool use_async_read_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    if (use_async_read_buffer)
+        read_settings = read_settings.withNestedBuffer();
+
+    auto read_buffer_creator =
+        [this, read_settings, read_hint, file_size]
+        (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        read_settings.remote_read_buffer_restrict_seek = restricted_seek;
+        return object_storage->readObject(
+            object_,
+            read_settings,
+            read_hint,
+            file_size);
+    };
+
+    auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
         storage_objects,
-        updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName()),
-        read_hint,
-        file_size);
+        read_settings,
+        global_context->getFilesystemCacheLog(),
+        /* use_external_buffer */read_settings.remote_read_buffer_use_external_buffer);
+
+    if (use_async_read_buffer)
+    {
+        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        return std::make_unique<AsynchronousBoundedReadBuffer>(
+            std::move(impl), reader, read_settings,
+            global_context->getAsyncReadCounters(),
+            global_context->getFilesystemReadPrefetchesLog());
+
+    }
+    return impl;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(

@@ -40,26 +40,6 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
     return fs::exists(object.remote_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
-{
-    auto modified_settings = patchSettings(read_settings);
-    auto global_context = Context::getGlobalContextInstance();
-    auto read_buffer_creator = [=](bool /* restricted_seek */, const StoredObject & object) -> std::unique_ptr<ReadBufferFromFileBase>
-    { return std::make_unique<ReadBufferFromFile>(object.remote_path); };
-
-    return std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        objects,
-        "file:",
-        modified_settings,
-        global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */ false);
-}
-
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     if (!read_settings.enable_filesystem_cache)
