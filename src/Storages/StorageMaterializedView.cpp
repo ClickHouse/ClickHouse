@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 
@@ -496,6 +497,9 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
 
+    auto select_query = getInMemoryMetadataPtr()->getSelectQuery().select_query;
+    InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
+
     if (!append)
     {
         CurrentThread::QueryScope query_scope(refresh_context);
@@ -527,7 +531,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     auto query_scope = std::make_unique<CurrentThread::QueryScope>(refresh_context);
 
     auto insert_query = std::make_shared<ASTInsertQuery>();
-    insert_query->select = getInMemoryMetadataPtr()->getSelectQuery().select_query;
+    insert_query->select = select_query;
     insert_query->setTable(target_table.table_name);
     insert_query->setDatabase(target_table.database_name);
     insert_query->table_id = target_table;
