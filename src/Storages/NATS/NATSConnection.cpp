@@ -9,8 +9,7 @@
 namespace DB
 {
 
-/// disconnectedCallback may be called after connection destroy
-LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
+static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 
 NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
     : configuration(configuration_)
@@ -53,15 +52,14 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     }
     natsOptions_SetMaxReconnect(options.get(), configuration.max_reconnect);
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
-    natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, log.get());
-    natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, nullptr);
+    natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
+    natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
 }
 NATSConnection::~NATSConnection()
 {
-    if (connection && !natsConnection_IsClosed(connection.get()))
-    {
-        natsConnection_Close(connection.get());
-    }
+    disconnect();
+
+    LOG_DEBUG(log, "Destroy connection {}", connectionInfoForLog());
 }
 
 
@@ -103,8 +101,16 @@ bool NATSConnection::reconnect()
 
 void NATSConnection::disconnect()
 {
-    std::lock_guard lock(mutex);
-    disconnectImpl();
+    std::unique_lock lock(mutex);
+
+    auto future = disconnectImpl();
+    if (!future.has_value())
+    {
+        return;
+    }
+    lock.unlock();
+
+    future->wait();
 }
 
 bool NATSConnection::isConnectedImpl() const
@@ -126,24 +132,43 @@ void NATSConnection::connectImpl()
     connection.reset(new_conection);
 }
 
-void NATSConnection::disconnectImpl()
+std::optional<std::shared_future<void>> NATSConnection::disconnectImpl()
 {
-    if (!isConnectedImpl())
+    if (isConnectedImpl() && !connection_closed_future.has_value())
     {
-        return;
+        connection_closed_promise = std::make_optional<std::promise<void>>();
+        connection_closed_future = connection_closed_promise->get_future();
+
+        natsConnection_Close(connection.get());
     }
 
-    natsConnection_Close(connection.get());
+    return connection_closed_future;
 }
 
-void NATSConnection::reconnectedCallback(natsConnection *, void *)
+void NATSConnection::reconnectedCallback(natsConnection * nc, void * this_)
 {
-    LOG_DEBUG(callback_logger, "Got reconnected to NATS server.");
+    auto * connection = static_cast<NATSConnection *>(this_);
+
+    char buffer[CONNECTED_TO_BUFFER_SIZE];
+    buffer[0] = '\0';
+    natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
+
+    LOG_DEBUG(connection->log, "Got reconnected to NATS server: {}.", buffer);
 }
 
-void NATSConnection::disconnectedCallback(natsConnection *, void *)
+void NATSConnection::disconnectedCallback(natsConnection *, void * this_)
 {
-    LOG_DEBUG(callback_logger, "Got disconnected from NATS server.");
+    auto * connection = static_cast<NATSConnection *>(this_);
+
+    std::lock_guard lock(connection->mutex);
+
+    if (connection->connection_closed_promise){
+        connection->connection_closed_promise->set_value();
+    }
+    connection->connection_closed_promise = std::nullopt;
+    connection->connection_closed_future = std::nullopt;
+
+    LOG_DEBUG(connection->log, "Got disconnected from NATS server.");
 }
 
 }
