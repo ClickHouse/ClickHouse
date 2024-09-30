@@ -26,6 +26,8 @@ public:
 				log_path = std::filesystem::path(nvalue);
 			} else if (key == "seed") {
 				seed = static_cast<uint32_t>(std::stoul(nvalue));
+			} else {
+				throw std::runtime_error("Unknown option: " + key);
 			}
 		}
 	}
