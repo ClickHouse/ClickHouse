@@ -18,6 +18,7 @@ def report(source: str, reason: str, call_stack: list, test_unit: str):
     print("########### END OF REPORT ###########")
 
 
+# pylint: disable=unused-argument
 def process_fuzzer_output(output: str):
     pass
 
@@ -33,6 +34,7 @@ def process_error(error: str):
     call_stack = []
     is_call_stack = False
 
+    # pylint: disable=unused-variable
     for line_num, line in enumerate(error.splitlines(), 1):
 
         if is_call_stack:
@@ -40,10 +42,10 @@ def process_error(error: str):
             if match:
                 call_stack.append(match.group(1))
                 continue
-            else:
-                if re.search(SUMMARY, line):
-                    is_call_stack = False
-                continue
+
+            if re.search(SUMMARY, line):
+                is_call_stack = False
+            continue
 
         if not call_stack and not is_call_stack:
             match = re.search(ERROR, line)
