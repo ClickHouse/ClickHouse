@@ -4,13 +4,15 @@ from typing import List, Type
 
 
 def retry(
+    *exceptions: Type[BaseException],
     retries: int = 5,
     delay: float = 1,
     backoff: float = 1.5,
     jitter: float = 2,
     log_function=None,  # should take **kwargs or arguments: `retry_number`, `exception` and `sleep_time`
-    retriable_expections_list: List[Type[BaseException]] = [Exception],
 ):
+    exceptions = exceptions or (Exception,)
+
     def inner(func, *args, **kwargs):
         current_delay = delay
         for retry in range(retries):
@@ -18,8 +20,8 @@ def retry(
                 func(*args, **kwargs)
                 break
             except Exception as e:
-                should_retry = (retry <= retries - 1) and any(
-                    isinstance(e, re) for re in retriable_expections_list
+                should_retry = (retry < retries - 1) and any(
+                    isinstance(e, re) for re in exceptions
                 )
                 if not should_retry:
                     raise e

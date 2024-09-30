@@ -110,13 +110,6 @@ def test_s3_upload(started_cluster):
             cluster.minio_client.remove_object("snapshots", s.object_name)
 
     # Keeper sends snapshots asynchornously, hence we need to retry.
-    @retry(
-        retries=10,
-        delay=2,
-        jitter=0,
-        backoff=0,
-        retriable_expections_list=[AssertionError],
-    )
     def _check_snapshots():
         assert set(get_saved_snapshots()) == set(
             [
@@ -127,7 +120,7 @@ def test_s3_upload(started_cluster):
             ]
         )
 
-    _check_snapshots()
+    retry(AssertionError, retries=10, delay=2, jitter=0, backoff=1)(_check_snapshots)
 
     destroy_zk_client(node1_zk)
     node1.stop_clickhouse(kill=True)
@@ -139,15 +132,12 @@ def test_s3_upload(started_cluster):
     for _ in range(200):
         node2_zk.create("/test", sequence=True)
 
-    @retry(
-        retries=10,
-        delay=2,
-        jitter=0,
-        backoff=0,
-        retriable_expections_list=[AssertionError],
-    )
     def _check_snapshots_without_quorum():
         assert len(get_saved_snapshots()) > 4
+
+    retry(AssertionError, retries=10, delay=2, jitter=0, backoff=1)(
+        _check_snapshots_without_quorum
+    )
 
     _check_snapshots_without_quorum()
 
