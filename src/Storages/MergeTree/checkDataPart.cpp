@@ -440,7 +440,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             {
                 LOG_DEBUG(
                     getLogger("checkDataPart"),
-                    "Got reriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
+                    "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
 
                 return IMergeTreeDataPart::Checksums{};
             }
@@ -470,7 +470,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         {
             LOG_DEBUG(
                 getLogger("checkDataPart"),
-                "Got reriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
+                "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
 
             return {};
         }
