@@ -73,7 +73,6 @@ void IOResourceManager::Resource::createNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for creating workload '{}' already exist in resource '{}'",
             info.name, resource_name);
 
-    // TODO(serxa): make sure all possible callers validate parent existence, add tests for creating workload with invalid parent
     if (!info.parent.empty() && !node_for_workload.contains(info.parent))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for creating workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
@@ -111,7 +110,6 @@ void IOResourceManager::Resource::deleteNode(const NodeInfo & info)
 
     auto node = node_for_workload[info.name];
 
-    // TODO(serxa): make sure all possible callers validate that removing workload has no children workloads
     if (node->hasUnifiedChildren())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Removing workload '{}' with children in resource '{}'",
         info.name, resource_name);

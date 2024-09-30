@@ -236,7 +236,9 @@ bool WorkloadEntityStorageBase::storeEntity(
             // Validate that we could parse the settings for specific resource
             if (type == ReferenceType::ForResource)
             {
-                // TODO(serxa): check this is a target is a resource, not workload
+                if (typeid_cast<ASTCreateResourceQuery *>(entities[target].get()) == nullptr)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
+
                 SchedulingSettings validator;
                 validator.updateFromChanges(workload->changes, target);
             }

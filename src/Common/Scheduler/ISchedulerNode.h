@@ -74,7 +74,7 @@ struct SchedulerNodeInfo
         if (value <= 0 || !isfinite(value))
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Negative and non-finite node weights are not allowed: {}",
+                "Zero, negative and non-finite node weights are not allowed: {}",
                 value);
         weight = value;
     }
