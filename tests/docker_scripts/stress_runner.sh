@@ -10,8 +10,7 @@ dmesg --clear
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
 
-ln -s /repo/tests/clickhouse-test/ci/stress.py /usr/bin/stress
-ln -s /repo/tests/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
@@ -63,7 +62,7 @@ start_server
 setup_logs_replication
 
 clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client --multiquery < /repo/tests/docker_scripts/create.sql
+clickhouse-client < /repo/tests/docker_scripts/create.sql
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
@@ -266,6 +265,7 @@ fi
 
 start_server
 
+cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
 python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv

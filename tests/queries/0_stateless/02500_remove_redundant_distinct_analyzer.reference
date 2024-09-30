@@ -46,19 +46,17 @@ ORDER BY number
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        Distinct (Preliminary DISTINCT)
-          Union
-            Expression ((Projection + (Change column names to column identifiers + Project names)))
-              Distinct (DISTINCT)
-                Distinct (Preliminary DISTINCT)
-                  Expression ((Projection + Change column names to column identifiers))
-                    ReadFromSystemNumbers
-            Expression (( + ( + Project names)))
-              Distinct (DISTINCT)
-                Distinct (Preliminary DISTINCT)
-                  Expression ((Projection + Change column names to column identifiers))
-                    ReadFromSystemNumbers
+      Union
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+          Distinct (DISTINCT)
+            Distinct (Preliminary DISTINCT)
+              Expression ((Projection + Change column names to column identifiers))
+                ReadFromSystemNumbers
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+          Distinct (DISTINCT)
+            Distinct (Preliminary DISTINCT)
+              Expression ((Projection + Change column names to column identifiers))
+                ReadFromSystemNumbers
 -- execute
 0
 1
@@ -534,19 +532,17 @@ ORDER BY number
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        Distinct (Preliminary DISTINCT)
-          Union
-            Expression ((Projection + (Change column names to column identifiers + Project names)))
-              Distinct (DISTINCT)
-                Distinct (Preliminary DISTINCT)
-                  Expression ((Projection + Change column names to column identifiers))
-                    ReadFromSystemNumbers
-            Expression (( + ( + Project names)))
-              Distinct (DISTINCT)
-                Distinct (Preliminary DISTINCT)
-                  Expression ((Projection + Change column names to column identifiers))
-                    ReadFromSystemNumbers
+      Union
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+          Distinct (DISTINCT)
+            Distinct (Preliminary DISTINCT)
+              Expression ((Projection + Change column names to column identifiers))
+                ReadFromSystemNumbers
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+          Distinct (DISTINCT)
+            Distinct (Preliminary DISTINCT)
+              Expression ((Projection + Change column names to column identifiers))
+                ReadFromSystemNumbers
 -- execute
 0
 1

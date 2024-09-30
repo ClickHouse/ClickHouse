@@ -67,6 +67,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsFloat max_streams_multiplier_for_merge_tables;
+}
 
 namespace
 {
@@ -214,6 +220,7 @@ void StorageMerge::forEachTable(F && func) const
     getFirstTable([&func](const auto & table)
     {
         func(table);
+        /// Always continue to the next table.
         return false;
     });
 }
@@ -369,7 +376,7 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage == QueryProcessingStage::Complete)
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage == QueryProcessingStage::Complete)
     {
         /// Remove constants.
         /// For StorageDistributed some functions like `hostName` that are constants only for local queries.
@@ -472,8 +479,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
-            tables_count,
-            std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+            tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
         size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
 
         // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
@@ -519,7 +525,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
-        = std::min(tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+        = std::min(tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
     size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
@@ -590,7 +596,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         auto modified_query_info
             = getModifiedQueryInfo(modified_context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
 
-        if (!context->getSettingsRef().allow_experimental_analyzer)
+        if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             auto storage_columns = storage_metadata_snapshot->getColumns();
             auto syntax_result = TreeRewriter(context).analyzeSelect(
@@ -642,10 +648,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
             }
         }
-        else
-        {
-
-        }
 
         auto child = createPlanForTable(
             nested_storage_snaphsot,
@@ -657,6 +659,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             row_policy_data_opt,
             modified_context,
             current_streams);
+
         child.plan.addInterpreterContext(modified_context);
 
         if (child.plan.isInitialized())
@@ -914,12 +917,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-        if (storage_snapshot_->storage.supportsSubcolumns())
-            get_column_options.withSubcolumns();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
+            .withExtendedObjects()
+            .withSubcolumns(storage_snapshot_->storage.supportsSubcolumns());
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
 
+        /// Consider only non-virtual columns of storage while checking for _table and _database columns.
+        /// I.e. always override virtual columns with these names from underlying table (if any).
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
         {
             auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
@@ -946,6 +951,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             column_name_to_node.emplace("_database", function_node);
         }
 
+        get_column_options.withVirtuals();
         auto storage_columns = storage_snapshot_->metadata->getColumns();
 
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
@@ -1047,13 +1053,12 @@ void ReadFromMerge::addVirtualColumns(
     const StorageWithLockAndName & storage_with_lock) const
 {
     const auto & [database_name, _, storage, table_name] = storage_with_lock;
-    bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
 
     /// Add virtual columns if we don't already have them.
 
     Block plan_header = child.plan.getCurrentDataStream().header;
 
-    if (allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         String table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
 
@@ -1133,8 +1138,8 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!builder->initialized())
         return builder;
 
-    bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
-    if (processed_stage > child.stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
+    if (processed_stage > child.stage
+        || (context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage != QueryProcessingStage::FetchColumns))
     {
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -1168,7 +1173,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_select.setFinal();
     }
 
-    bool allow_experimental_analyzer = modified_context->getSettingsRef().allow_experimental_analyzer;
+    bool use_analyzer = modified_context->getSettingsRef()[Setting::allow_experimental_analyzer];
 
     auto storage_stage = storage->getQueryProcessingStage(modified_context,
         processed_stage,
@@ -1201,13 +1206,13 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
                 row_policy_data_opt->addStorageFilter(source_step_with_filter);
         }
     }
-    else if (processed_stage > storage_stage || allow_experimental_analyzer)
+    else if (processed_stage > storage_stage || use_analyzer)
     {
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
-        if (allow_experimental_analyzer)
+        if (use_analyzer)
         {
             /// Converting query to AST because types might be different in the source table.
             /// Need to resolve types again.
@@ -1329,7 +1334,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
 
             if (storage.get() != storage_merge.get())
             {
-                auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings.lock_acquire_timeout);
+                auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
                 res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
                 if (filter_by_table_virtual_column)
                     table_name_virtual_column->insert(iterator->name());
@@ -1479,7 +1484,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto storage_sample_block = snapshot->metadata->getSampleBlock();
     auto pipe_columns = before_block_header.getNamesAndTypesList();
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         for (const auto & alias : aliases)
         {
@@ -1522,7 +1527,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
         && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
@@ -1625,9 +1630,11 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
-bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr ctx) const
+bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr ctx) const
 {
-    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(storage_snapshot, ctx); }) == nullptr;
+    /// Here we actually need storage snapshot of all nested tables.
+    /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const

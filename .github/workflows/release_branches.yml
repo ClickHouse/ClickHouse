@@ -24,6 +24,8 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -130,6 +132,7 @@ jobs:
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
+      force: true
   BuilderBinDarwin:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
