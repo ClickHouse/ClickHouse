@@ -5,17 +5,20 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
-#include <Common/Macros.h>
-#include <Common/randomSeed.h>
-#include <Common/atomicRename.h>
-#include <Common/PoolId.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
+#include <Common/Exception.h>
+#include <Common/Macros.h>
+#include <Common/PoolId.h>
+#include <Common/StringUtils.h>
+#include <Common/atomicRename.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -871,6 +874,43 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        if (create.is_clone_as)
+        {
+            if (!endsWith(as_storage->getName(), "MergeTree"))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS from tables of the MergeTree family");
+
+            if (create.storage)
+            {
+                if (!endsWith(create.storage->engine->name, "MergeTree"))
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
+
+                /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
+                auto query_to_string = [](const IAST * ast) { return ast ? queryToString(*ast) : ""; };
+
+                const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
+                const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());
+                const String as_storage_partition_key_str = query_to_string(as_storage_metadata->getPartitionKeyAST().get());
+
+                const String storage_sorting_key_str = query_to_string(create.storage->order_by);
+                const String storage_primary_key_str = query_to_string(create.storage->primary_key);
+                const String storage_partition_key_str = query_to_string(create.storage->partition_by);
+
+                if (as_storage_sorting_key_str != storage_sorting_key_str)
+                {
+                    /// It is possible that the storage only has primary key and an empty sorting key, and as_storage has both primary key and sorting key with the same value.
+                    if (as_storage_sorting_key_str != as_storage_primary_key_str || as_storage_sorting_key_str != storage_primary_key_str)
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
+                    }
+                }
+                if (as_storage_partition_key_str != storage_partition_key_str)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
+
+                if (as_storage_primary_key_str != storage_primary_key_str)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+            }
+        }
     }
     else if (create.select)
     {
@@ -1537,37 +1577,47 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
         validateMaterializedViewColumnsAndEngine(create, properties, database);
 
-    bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
-    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool is_storage_replicated = false;
+    if (create.storage && isReplicated(*create.storage))
+        is_storage_replicated = true;
+
+    if (create.targets)
     {
-        bool is_storage_replicated = false;
-
-        if (create.storage && isReplicated(*create.storage))
-            is_storage_replicated = true;
-
-        if (create.targets)
+        for (const auto & inner_table_engine : create.targets->getInnerEngines())
         {
-            for (const auto & inner_table_engine : create.targets->getInnerEngines())
+            if (isReplicated(*inner_table_engine))
+                is_storage_replicated = true;
+        }
+        }
+
+        bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
+        if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+        {
+            const bool allow_create_select_for_replicated
+                = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
+            if (!allow_create_select_for_replicated)
             {
-                if (isReplicated(*inner_table_engine))
-                    is_storage_replicated = true;
+                /// POPULATE can be enabled with setting, provide hint in error message
+                if (create.is_populate)
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT "
+                        "queries. "
+                        "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with "
+                        "caution");
+
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
             }
         }
 
-        const bool allow_create_select_for_replicated = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
-        if (!allow_create_select_for_replicated)
-        {
-            /// POPULATE can be enabled with setting, provide hint in error message
-            if (create.is_populate)
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
-                    "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
-
+    if (create.is_clone_as)
+    {
+        if (database && database->getEngineName() == "Replicated")
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
-        }
+                "CREATE CLONE AS is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
@@ -2011,6 +2061,38 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
                    /* no_destination */ false,
                    /* async_isnert */ false)
             .execute();
+    }
+
+    /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
+    if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view && !create.is_live_view
+        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+    {
+        String as_database_name = getContext()->resolveDatabase(create.as_database);
+
+        auto partition = std::make_shared<ASTPartition>();
+        partition->all = true;
+
+        auto command = std::make_shared<ASTAlterCommand>();
+        command->replace = false;
+        command->type = ASTAlterCommand::REPLACE_PARTITION;
+        command->partition = command->children.emplace_back(std::move(partition)).get();
+        command->from_database = as_database_name;
+        command->from_table = as_table_saved;
+        command->to_database = create.getDatabase();
+        command->to_table = create.getTable();
+
+        auto command_list = std::make_shared<ASTExpressionList>();
+        command_list->children.push_back(command);
+
+        auto query = std::make_shared<ASTAlterQuery>();
+        query->database = create.database;
+        query->table = create.table;
+        query->uuid = create.uuid;
+        auto * alter = query->as<ASTAlterQuery>();
+
+        alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+        alter->set(alter->command_list, command_list);
+        return InterpreterAlterQuery(query, getContext()).execute();
     }
 
     return {};

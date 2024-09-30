@@ -77,7 +77,7 @@ ReadBufferFromFile::~ReadBufferFromFile()
     if (fd < 0)
         return;
 
-    int err = ::close(fd);
+    [[maybe_unused]] int err = ::close(fd);
     chassert(!err || errno == EINTR);
 }
 

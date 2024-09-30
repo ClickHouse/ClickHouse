@@ -6,28 +6,30 @@
 # pylint: disable=broad-except
 
 import contextlib
+import logging
+import os
+import sys
+import time
+from pathlib import Path
+
 import grpc
 import psycopg2
 import pymysql.connections
 import pymysql.err
 import pytest
-import sys
-import os
-import time
-import logging
-from helpers.cluster import ClickHouseCluster, run_and_check
-from helpers.client import Client, QueryRuntimeException
 from kazoo.exceptions import NodeExistsError
-from pathlib import Path
 from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
+
+from helpers.client import Client, QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
 if grpc_protocol_pb2_dir not in sys.path:
     sys.path.append(grpc_protocol_pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
-
+import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

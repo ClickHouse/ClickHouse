@@ -445,6 +445,48 @@ TEST(AccessRights, Intersection)
     ASSERT_EQ(lhs.toString(), "GRANT SELECT ON toaster.*");
 }
 
+TEST(AccessRights, Difference)
+{
+    AccessRights lhs, rhs;
+    lhs.grant(AccessType::SELECT);
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "system");
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON system.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "toaster");
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON toaster.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    lhs.grant(AccessType::CREATE_TABLE, "jam");
+    auto lhs_old = lhs;
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs, lhs_old);
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT, "toast");
+    rhs.grant(AccessType::CREATE_TABLE, "jam");
+    lhs_old = lhs;
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs, lhs_old);
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::ALL);
+    rhs.grant(AccessType::ALL);
+    rhs.revoke(AccessType::SELECT, "system");
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON system.*");
+}
+
 TEST(AccessRights, Contains)
 {
     AccessRights lhs, rhs;
