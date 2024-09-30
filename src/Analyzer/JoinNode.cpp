@@ -23,11 +23,13 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     QueryTreeNodePtr join_expression_,
     JoinLocality locality_,
     JoinStrictness strictness_,
-    JoinKind kind_)
+    JoinKind kind_,
+    bool is_using_join_expression_)
     : IQueryTreeNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)
+    , is_using_join_expression(is_using_join_expression_)
 {
     children[left_table_expression_child_index] = std::move(left_table_expression_);
     children[right_table_expression_child_index] = std::move(right_table_expression_);
@@ -94,7 +96,9 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
-    return std::make_shared<JoinNode>(getLeftTableExpression(), getRightTableExpression(), getJoinExpression(), locality, strictness, kind);
+    return std::make_shared<JoinNode>(
+        getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
+        locality, strictness, kind, is_using_join_expression);
 }
 
 ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & options) const
