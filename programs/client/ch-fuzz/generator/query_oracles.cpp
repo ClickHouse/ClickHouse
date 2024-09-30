@@ -124,11 +124,12 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 	sql_query_grammar::Insert *ins = sq1.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();
+	const std::filesystem::path nfile = fc.db_file_path / "table.data";
 
-	if (std::filesystem::exists(fc.db_file_path)) {
-		std::filesystem::resize_file(fc.db_file_path, 0); //truncate the file
+	if (std::filesystem::exists(nfile)) {
+		std::filesystem::resize_file(nfile, 0); //truncate the file
 	}
-	ff->set_path(fc.db_file_path.generic_string());
+	ff->set_path(nfile.generic_string());
 	ff->set_outformat(rg.PickKeyRandomlyFromMap(out_in));
 
 	buf.resize(0);

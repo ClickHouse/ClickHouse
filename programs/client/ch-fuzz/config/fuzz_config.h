@@ -18,14 +18,12 @@ public:
 		const json jdata = json::parse(ifs);
 
 		for (const auto& [key, value] : jdata.items()) {
-			const std::string nvalue = static_cast<std::string>(value);
-
 			if (key == "db_file_path") {
-				db_file_path = std::filesystem::path(nvalue);
+				db_file_path = std::filesystem::path(value);
 			} else if (key == "log_path") {
-				log_path = std::filesystem::path(nvalue);
+				log_path = std::filesystem::path(value);
 			} else if (key == "seed") {
-				seed = static_cast<uint32_t>(std::stoul(nvalue));
+				seed = static_cast<uint32_t>(value);
 			} else {
 				throw std::runtime_error("Unknown option: " + key);
 			}

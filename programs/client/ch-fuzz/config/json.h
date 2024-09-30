@@ -7515,9 +7515,11 @@ class lexer : public lexer_base<BasicJsonType>
     JSON_HEDLEY_PURE
     static char get_decimal_point() noexcept
     {
+        /* CH dislikes localeconv
         const auto* loc = localeconv();
         JSON_ASSERT(loc != nullptr);
-        return (loc->decimal_point == nullptr) ? '.' : *(loc->decimal_point);
+        return (loc->decimal_point == nullptr) ? '.' : *(loc->decimal_point);*/
+        return '.';
     }
 
     /////////////////////
