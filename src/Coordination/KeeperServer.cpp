@@ -1207,8 +1207,6 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
         result.synced_follower_count = getSyncedFollowerCount();
     }
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
-    result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
-    result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;
 }
 

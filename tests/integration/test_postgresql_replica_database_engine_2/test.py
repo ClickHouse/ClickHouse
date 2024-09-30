@@ -1,43 +1,39 @@
-import pytest
-
-import uuid
-import time
-import psycopg2
 import os.path as p
 import random
+import threading
+import time
+import uuid
+from random import randrange
+
+import psycopg2
+import pytest
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from helpers.test_tools import TSV
-
-from random import randrange
-import threading
-
-from helpers.postgres_utility import get_postgres_conn
-from helpers.postgres_utility import PostgresManager
-
-from helpers.postgres_utility import create_replication_slot, drop_replication_slot
-from helpers.postgres_utility import create_postgres_schema, drop_postgres_schema
-from helpers.postgres_utility import create_postgres_table, drop_postgres_table
 from helpers.postgres_utility import (
+    PostgresManager,
+    assert_nested_table_is_created,
+    assert_number_of_columns,
+    check_several_tables_are_synchronized,
+    check_tables_are_synchronized,
+    create_postgres_schema,
+    create_postgres_table,
     create_postgres_table_with_schema,
+    create_replication_slot,
+    drop_postgres_schema,
+    drop_postgres_table,
     drop_postgres_table_with_schema,
-)
-from helpers.postgres_utility import check_tables_are_synchronized
-from helpers.postgres_utility import check_several_tables_are_synchronized
-from helpers.postgres_utility import assert_nested_table_is_created
-from helpers.postgres_utility import assert_number_of_columns
-from helpers.postgres_utility import (
+    drop_replication_slot,
+    get_postgres_conn,
     postgres_table_template,
     postgres_table_template_2,
     postgres_table_template_3,
     postgres_table_template_4,
     postgres_table_template_5,
     postgres_table_template_6,
+    queries,
 )
-from helpers.postgres_utility import queries
-
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -1249,6 +1245,110 @@ def test_partial_and_full_table(started_cluster):
     )
     check_tables_are_synchronized(
         instance, f"{table}2", postgres_database=pg_manager.get_default_database()
+    )
+
+
+def test_quoting_publication(started_cluster):
+    postgres_database = "postgres-postgres"
+    pg_manager3 = PostgresManager()
+    pg_manager3.init(
+        instance,
+        cluster.postgres_ip,
+        cluster.postgres_port,
+        default_database=postgres_database,
+    )
+    NUM_TABLES = 5
+    materialized_database = "test-database"
+
+    pg_manager3.create_and_fill_postgres_tables(NUM_TABLES, 10000)
+
+    check_table_name_1 = "postgresql-replica-5"
+    pg_manager3.create_and_fill_postgres_table(check_table_name_1)
+
+    pg_manager3.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=materialized_database,
+    )
+    check_several_tables_are_synchronized(
+        instance,
+        NUM_TABLES,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    result = instance.query(f"SHOW TABLES FROM `{materialized_database}`")
+    assert (
+        result
+        == "postgresql-replica-5\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_1,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+    instance.query(
+        f"INSERT INTO `{postgres_database}`.`{check_table_name_1}` SELECT number, number from numbers(10000, 10000)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_1,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    check_table_name_2 = "postgresql-replica-6"
+    pg_manager3.create_and_fill_postgres_table(check_table_name_2)
+
+    instance.query(f"ATTACH TABLE `{materialized_database}`.`{check_table_name_2}`")
+
+    result = instance.query(f"SHOW TABLES FROM `{materialized_database}`")
+    assert (
+        result
+        == "postgresql-replica-5\npostgresql-replica-6\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_2,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+    instance.query(
+        f"INSERT INTO `{postgres_database}`.`{check_table_name_2}` SELECT number, number from numbers(10000, 10000)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_2,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_1,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+    check_tables_are_synchronized(
+        instance,
+        check_table_name_2,
+        materialized_database=materialized_database,
+        postgres_database=postgres_database,
+    )
+
+    instance.query(
+        f"DETACH TABLE `{materialized_database}`.`{check_table_name_2}` PERMANENTLY"
+    )
+    time.sleep(5)
+
+    result = instance.query(f"SHOW TABLES FROM `{materialized_database}`")
+    assert (
+        result
+        == "postgresql-replica-5\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
     )
 
 

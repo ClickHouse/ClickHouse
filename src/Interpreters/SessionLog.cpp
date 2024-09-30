@@ -237,8 +237,9 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
     if (const auto profile_info = access->getDefaultProfileInfo())
         log_entry.profiles = profile_info->getProfileNames();
 
-    for (const auto & s : settings.allChanged())
-        log_entry.settings.emplace_back(s.getName(), s.getValueString());
+    SettingsChanges changes = settings.changes();
+    for (const auto & change : changes)
+        log_entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
 
     add(std::move(log_entry));
 }
