@@ -31,7 +31,7 @@ CachedObjectStorage::CachedObjectStorage(
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    return cache->createKeyForPath(path);
+    return FileCacheKey::fromPath(path);
 }
 
 ObjectStorageKey
