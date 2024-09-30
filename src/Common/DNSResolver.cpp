@@ -428,7 +428,7 @@ bool DNSResolver::updateCacheImpl(
     {
         updated = true;
         String deleted_elements;
-        for (auto it : elements_to_drop)
+        for (auto & it : elements_to_drop)
         {
             if (!deleted_elements.empty())
                 deleted_elements += ", ";

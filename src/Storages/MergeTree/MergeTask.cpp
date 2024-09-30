@@ -604,7 +604,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
     new_ctx->rows_sources_temporary_file = std::move(ctx->rows_sources_temporary_file);
     new_ctx->column_sizes = std::move(ctx->column_sizes);
     new_ctx->compression_codec = std::move(ctx->compression_codec);
-    new_ctx->it_name_and_type = std::move(ctx->it_name_and_type);
+    new_ctx->it_name_and_type = std::move(ctx->it_name_and_type); /// NOLINT(performance-move-const-arg)
     new_ctx->read_with_direct_io = std::move(ctx->read_with_direct_io);
     new_ctx->need_sync = std::move(ctx->need_sync);
 
