@@ -454,6 +454,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
     {
         if (drop_table)
         {
+            std::lock_guard lock(consumers_mutex);
             for (auto & consumer : consumers)
                 consumer->unsubscribe();
         }
