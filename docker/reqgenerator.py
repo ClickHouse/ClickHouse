@@ -7,14 +7,20 @@ import subprocess
 import sys
 
 
-def build_docker_deps(image_name, imagedir):
-    cmd = f"""docker run  --entrypoint "/bin/bash" {image_name} -c "pip install pipdeptree 2>/dev/null 1>/dev/null && pipdeptree --freeze  --warn silence | sed 's/ \+//g' | sort | uniq" > {imagedir}/requirements.txt"""
+def build_docker_deps(image_name: str, imagedir: str) -> None:
+    print("Fetch the newest manifest for", image_name)
+    pip_cmd = (
+        "pip install pipdeptree 2>/dev/null 1>/dev/null && pipdeptree --freeze "
+        "--warn silence --exclude pipdeptree"
+    )
+    cmd = rf"""docker run --rm --entrypoint "/bin/bash" {image_name} -c "{pip_cmd} | sed 's/ \+//g' | sort | uniq" > {imagedir}/requirements.txt"""
+    print("Running the command:", cmd)
     subprocess.check_call(cmd, shell=True)
 
 
 def check_docker_file_install_with_pip(filepath):
     image_name = None
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             if "docker build" in line:
                 arr = line.split(" ")
@@ -25,7 +31,7 @@ def check_docker_file_install_with_pip(filepath):
     return image_name, False
 
 
-def process_affected_images(images_dir):
+def process_affected_images(images_dir: str) -> None:
     for root, _dirs, files in os.walk(images_dir):
         for f in files:
             if f == "Dockerfile":
