@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
+#include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -174,34 +175,6 @@ namespace
             user.grantees = *override_grantees;
         else if (query.grantees)
             user.grantees = *query.grantees;
-    }
-
-    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context)
-    {
-        if (context)
-            valid_until = evaluateConstantExpressionAsLiteral(valid_until, context);
-
-        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until, "valid_until");
-
-        if (valid_until_str == "infinity")
-            return 0;
-
-        time_t time = 0;
-        ReadBufferFromString in(valid_until_str);
-
-        if (context)
-        {
-            const auto & time_zone = DateLUT::instance("");
-            const auto & utc_time_zone = DateLUT::instance("UTC");
-
-            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
-        }
-        else
-        {
-            readDateTimeText(time, in);
-        }
-
-        return time;
     }
 }
 
