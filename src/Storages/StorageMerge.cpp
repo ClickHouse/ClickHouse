@@ -220,6 +220,7 @@ void StorageMerge::forEachTable(F && func) const
     getFirstTable([&func](const auto & table)
     {
         func(table);
+        /// Always continue to the next table.
         return false;
     });
 }
