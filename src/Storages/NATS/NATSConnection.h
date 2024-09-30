@@ -4,7 +4,6 @@
 
 #include <Storages/NATS/NATSHandler.h>
 
-#include <future>
 #include <mutex>
 
 namespace DB
@@ -55,10 +54,10 @@ private:
 
     void connectImpl();
 
-    std::optional<std::shared_future<void>> disconnectImpl();
+    void disconnectImpl();
 
-    static void disconnectedCallback(natsConnection * nc, void * this_);
-    static void reconnectedCallback(natsConnection * nc, void * this_);
+    static void disconnectedCallback(natsConnection * nc, void * connection);
+    static void reconnectedCallback(natsConnection * nc, void * connection);
 
     NATSConfiguration configuration;
     LoggerPtr log;
@@ -68,8 +67,8 @@ private:
 
     std::mutex mutex;
 
-    std::optional<std::promise<void>> connection_closed_promise;
-    std::optional<std::shared_future<void>> connection_closed_future;
+    /// disconnectedCallback may be called after connection destroy
+    static LoggerPtr callback_logger;
 };
 
 using NATSConnectionPtr = std::shared_ptr<NATSConnection>;
