@@ -5597,12 +5597,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         {
             has_node_in_alias_table = true;
 
-            bool matched = it->second->isEqual(*node);
+            auto original_node = it->second;
+            resolveExpressionNode(original_node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+            bool matched = original_node->isEqual(*node);
             if (!matched)
                 /// Table expression could be resolved as scalar subquery,
                 /// but for duplicating alias we allow table expression to be returned.
                 /// So, check constant node source expression as well.
-                if (const auto * constant_node = it->second->as<ConstantNode>())
+                if (const auto * constant_node = original_node->as<ConstantNode>())
                     if (const auto & source_expression = constant_node->getSourceExpression())
                         matched = source_expression->isEqual(*node);
 
@@ -5610,7 +5613,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
                     node->formatASTForErrorMessage(),
-                    it->second->formatASTForErrorMessage(),
+                    original_node->formatASTForErrorMessage(),
                     node_alias,
                     scope.scope_node->formatASTForErrorMessage());
         }
@@ -5620,11 +5623,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         {
             has_node_in_alias_table = true;
 
-            if (!it->second->isEqual(*node))
+            auto original_node = it->second;
+            resolveExpressionNode(original_node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+            if (!original_node->isEqual(*node))
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
                     node->formatASTForErrorMessage(),
-                    it->second->formatASTForErrorMessage(),
+                    original_node->formatASTForErrorMessage(),
                     node_alias,
                     scope.scope_node->formatASTForErrorMessage());
         }
