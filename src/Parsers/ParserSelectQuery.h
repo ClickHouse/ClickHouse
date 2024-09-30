@@ -19,7 +19,7 @@ protected:
     bool implicit_select = false;
 
 public:
-    ParserSelectQuery(bool implicit_select_ = false) : implicit_select(implicit_select_) {}
+    explicit ParserSelectQuery(bool implicit_select_ = false) : implicit_select(implicit_select_) {}
 };
 
 }
