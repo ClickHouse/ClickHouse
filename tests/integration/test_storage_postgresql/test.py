@@ -895,8 +895,6 @@ def test_filter_pushdown(started_cluster):
     node1.query("DROP TABLE test_filter_pushdown_pg_table")
 
 
-
-
 def test_fixed_string_type(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_fixed_string")
