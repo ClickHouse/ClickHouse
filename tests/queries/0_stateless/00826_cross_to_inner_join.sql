@@ -48,7 +48,8 @@ SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a;
 SELECT '--- comma nullable ---';
 SELECT * FROM t1_00826, t2_00826 where t1_00826.b = t2_00826.b;
 SELECT '--- comma and or ---';
-SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a AND (t2_00826.b IS NULL OR t2_00826.b < 2);
+SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a AND (t2_00826.b IS NULL OR t2_00826.b < 2)
+ORDER BY ALL;
 
 
 SELECT '--- cross ---';

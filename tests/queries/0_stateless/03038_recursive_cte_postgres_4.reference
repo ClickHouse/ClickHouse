@@ -52,7 +52,9 @@ WITH RECURSIVE search_graph AS (
 	FROM graph g, search_graph sg
 	WHERE g.f = sg.t AND NOT is_cycle
 )
-SELECT * FROM search_graph;
+SELECT * FROM search_graph
+SETTINGS query_plan_join_inner_table_selection = 'right'
+;
 1	2	arc 1 -> 2	false	[(1,2)]
 1	3	arc 1 -> 3	false	[(1,3)]
 2	3	arc 2 -> 3	false	[(2,3)]
