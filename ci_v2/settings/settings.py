@@ -1,4 +1,4 @@
-from ci.settings.definitions import (
+from ci_v2.settings.definitions import (
     S3_BUCKET_HTTP_ENDPOINT,
     S3_BUCKET_NAME,
     RunnerLabels,
