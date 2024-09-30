@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 
 namespace DB
@@ -45,12 +46,16 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , after_processing(engine_settings.after_processing.toString())
     , mode(engine_settings.mode.toString())
     , tracked_files_limit(engine_settings.tracked_files_limit)
-    , tracked_file_ttl_sec(engine_settings.tracked_file_ttl_sec)
+    , tracked_files_ttl_sec(engine_settings.tracked_file_ttl_sec)
     , buckets(engine_settings.buckets)
-    , processing_threads_num(engine_settings.processing_threads_num)
     , last_processed_path(engine_settings.last_processed_path)
     , loading_retries(engine_settings.loading_retries)
 {
+    processing_threads_num_changed = engine_settings.processing_threads_num.changed;
+    if (!processing_threads_num_changed && engine_settings.processing_threads_num <= 1)
+        processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+    else
+        processing_threads_num = engine_settings.processing_threads_num;
 }
 
 String ObjectStorageQueueTableMetadata::toString() const
@@ -59,7 +64,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("after_processing", after_processing);
     json.set("mode", mode);
     json.set("tracked_files_limit", tracked_files_limit);
-    json.set("tracked_file_ttl_sec", tracked_file_ttl_sec);
+    json.set("tracked_files_ttl_sec", tracked_files_ttl_sec);
     json.set("processing_threads_num", processing_threads_num);
     json.set("buckets", buckets);
     json.set("format_name", format_name);
@@ -100,11 +105,11 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , after_processing(json->getValue<String>("after_processing"))
     , mode(json->getValue<String>("mode"))
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
-    , tracked_file_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "s3queue_", 0))
+    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
     , buckets(getOrDefault(json, "buckets", "", 0))
-    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10))
+    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
 {
     validateMode(mode);
 }
@@ -114,6 +119,24 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
     return ObjectStorageQueueTableMetadata(json);
+}
+
+void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
+{
+    if (processing_threads_num != from_zk.processing_threads_num)
+    {
+        auto log = getLogger("ObjectStorageQueueTableMetadata");
+        const std::string message = fmt::format(
+            "Using `processing_threads_num` from keeper: {} (local: {})",
+            from_zk.processing_threads_num, processing_threads_num);
+
+        if (processing_threads_num_changed)
+            LOG_WARNING(log, "{}", message);
+        else
+            LOG_TRACE(log, "{}", message);
+
+        processing_threads_num = from_zk.processing_threads_num;
+    }
 }
 
 void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const
@@ -142,18 +165,18 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
     if (tracked_files_limit != from_zk.tracked_files_limit)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in max set size. "
+            "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
             "Stored in ZooKeeper: {}, local: {}",
             from_zk.tracked_files_limit,
             tracked_files_limit);
 
-    if (tracked_file_ttl_sec != from_zk.tracked_file_ttl_sec)
+    if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in max set age. "
+            "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_file_ttl_sec,
-            tracked_file_ttl_sec);
+            from_zk.tracked_files_ttl_sec,
+            tracked_files_ttl_sec);
 
     if (format_name != from_zk.format_name)
         throw Exception(

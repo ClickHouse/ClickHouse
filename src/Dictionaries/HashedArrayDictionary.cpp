@@ -17,6 +17,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -1179,10 +1184,10 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         const auto & settings = context->getSettingsRef();
 
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings[Setting::dictionary_use_async_executor];
 
-        if (settings.max_execution_time.totalSeconds() > 0)
-            configuration.load_timeout = std::chrono::seconds(settings.max_execution_time.totalSeconds());
+        if (settings[Setting::max_execution_time].totalSeconds() > 0)
+            configuration.load_timeout = std::chrono::seconds(settings[Setting::max_execution_time].totalSeconds());
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {

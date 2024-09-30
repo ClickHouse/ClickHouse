@@ -50,6 +50,29 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
+# Duplicated or incorrect setting declarations
+SETTINGS_FILE=$(mktemp)
+cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "M(" | awk '{print substr($2, 0, length($2) - 1) " " substr($1, 3, length($1) - 3) " SettingsDeclaration" }' > ${SETTINGS_FILE}
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep "extern const Settings" -T | awk '{print substr($5, 0, length($5) -1) " " substr($4, 9) " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
+
+# Duplicate extern declarations for settings
+awk '{if (seen[$0]++) print $3 " -> " $1 ;}' ${SETTINGS_FILE} | while read line;
+do
+    echo "Found duplicated setting declaration in: $line"
+done
+
+# Incorrect declarations for settings
+for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | sort | uniq | awk '{ print $1 }' | sort | uniq -d);
+do
+    expected=$(grep "^$setting " ${SETTINGS_FILE} | grep SettingsDeclaration | awk '{ print $2 }')
+    grep "^$setting " ${SETTINGS_FILE} | grep -v " $expected" | awk '{ print $3 " found setting " $1 " with type " $2 }' | while read line;
+    do
+      echo "In $line but it should be $expected"
+    done
+done
+
+rm ${SETTINGS_FILE}
+
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
@@ -445,7 +468,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep 
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number 'std::regex' | grep -P '.' && echo "^ Please use re2 instead of std::regex"
 
 # Cyrillic characters hiding inside Latin.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | grep -v StorageSystemContributors.generated.cpp | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
 
 # Orphaned header files.
 join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sort | uniq) <(find $ROOT_PATH/{src,programs,utils} -name '*.cpp' -or -name '*.c' -or -name '*.h' -or -name '*.S' | xargs grep --no-filename -o -P '[\w-]+\.h' | sort | uniq) |
@@ -469,5 +492,5 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
 
 PATTERN="allow_";
-DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.h | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
+DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
 [ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"

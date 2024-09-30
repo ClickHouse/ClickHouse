@@ -6,6 +6,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/TableZnodeInfo.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -28,6 +29,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_suspicious_primary_key;
+    extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool create_table_empty_primary_key_by_default;
+    extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -88,32 +98,23 @@ See details in documentation: https://clickhouse.com/docs/en/engines/table-engin
 If you use the Replicated version of engines, see https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/.
 )";
 
-static ColumnsDescription getColumnsDescriptionFromZookeeper(const String & raw_zookeeper_path, ContextMutablePtr context)
+static ColumnsDescription getColumnsDescriptionFromZookeeper(const TableZnodeInfo & zookeeper_info, ContextMutablePtr context)
 {
-    String zookeeper_name = zkutil::extractZooKeeperName(raw_zookeeper_path);
-    String zookeeper_path = zkutil::extractZooKeeperPath(raw_zookeeper_path, true);
-
-    if (!context->hasZooKeeper() && !context->hasAuxiliaryZooKeeper(zookeeper_name))
-        throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot get replica structure without zookeeper, you must specify the structure manually"};
-
     zkutil::ZooKeeperPtr zookeeper;
     try
     {
-        if (zookeeper_name == StorageReplicatedMergeTree::getDefaultZooKeeperName())
-            zookeeper = context->getZooKeeper();
-        else
-            zookeeper = context->getAuxiliaryZooKeeper(zookeeper_name);
+        zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_info.zookeeper_name);
     }
     catch (...)
     {
         throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot get replica structure from zookeeper, because cannot get zookeeper: {}. You must specify structure manually", getCurrentExceptionMessage(false)};
     }
 
-    if (!zookeeper->exists(zookeeper_path + "/replicas"))
+    if (!zookeeper->exists(zookeeper_info.path + "/replicas"))
         throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot get replica structure, because there no other replicas in zookeeper. You must specify the structure manually"};
 
     Coordination::Stat columns_stat;
-    return ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns", &columns_stat));
+    return ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_info.path) / "columns", &columns_stat));
 }
 
 /// Returns whether a new syntax is used to define a table engine, i.e. MergeTree() PRIMARY KEY ... PARTITION BY ... SETTINGS ...
@@ -184,22 +185,15 @@ static std::string_view getNamePart(const String & engine_name)
 /// Extracts zookeeper path and replica name from the table engine's arguments.
 /// The function can modify those arguments (that's why they're passed separately in `engine_args`) and also determines RenamingRestrictions.
 /// The function assumes the table engine is Replicated.
-static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
+static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const ASTCreateQuery & query,
     const StorageID & table_id,
     const String & engine_name,
     ASTs & engine_args,
     LoadingStrictnessLevel mode,
-    const ContextPtr & local_context,
-    String & zookeeper_path,
-    String & replica_name,
-    RenamingRestrictions & renaming_restrictions)
+    const ContextPtr & local_context)
 {
     chassert(isReplicated(engine_name));
-
-    zookeeper_path = "";
-    replica_name = "";
-    renaming_restrictions = RenamingRestrictions::ALLOW_ANY;
 
     bool is_extended_storage_def = isExtendedStorageDef(query);
 
@@ -210,62 +204,12 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
         evaluateEngineArgs(engine_args, local_context);
     }
 
-    bool is_on_cluster = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
-
-    /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-    /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
-    bool allow_uuid_macro = is_on_cluster || is_replicated_database || query.attach || query.has_uuid;
-
-    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
+    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
     {
-        /// Unfold {database} and {table} macro on table creation, so table can be renamed.
-        if (mode < LoadingStrictnessLevel::ATTACH)
-        {
-            Macros::MacroExpansionInfo info;
-            /// NOTE: it's not recursive
-            info.expand_special_macros_only = true;
-            info.table_id = table_id;
-            /// Avoid unfolding {uuid} macro on this step.
-            /// We did unfold it in previous versions to make moving table from Atomic to Ordinary database work correctly,
-            /// but now it's not allowed (and it was the only reason to unfold {uuid} macro).
-            info.table_id.uuid = UUIDHelpers::Nil;
-            zookeeper_path = local_context->getMacros()->expand(zookeeper_path, info);
-
-            info.level = 0;
-            replica_name = local_context->getMacros()->expand(replica_name, info);
-        }
-
-        ast_zk_path->value = zookeeper_path;
-        ast_replica_name->value = replica_name;
-
-        /// Expand other macros (such as {shard} and {replica}). We do not expand them on previous step
-        /// to make possible copying metadata files between replicas.
-        Macros::MacroExpansionInfo info;
-        info.table_id = table_id;
-        if (is_replicated_database)
-        {
-            auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-            info.shard = getReplicatedDatabaseShardName(database);
-            info.replica = getReplicatedDatabaseReplicaName(database);
-        }
-        if (!allow_uuid_macro)
-            info.table_id.uuid = UUIDHelpers::Nil;
-        zookeeper_path = local_context->getMacros()->expand(zookeeper_path, info);
-
-        info.level = 0;
-        info.table_id.uuid = UUIDHelpers::Nil;
-        replica_name = local_context->getMacros()->expand(replica_name, info);
-
-        /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
-        /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
-        /// or if one of these macros is recursively expanded from some other macro.
-        /// Also do not allow to move table from Atomic to Ordinary database if there's {uuid} macro
-        if (info.expanded_database || info.expanded_table)
-            renaming_restrictions = RenamingRestrictions::DO_NOT_ALLOW;
-        else if (info.expanded_uuid)
-            renaming_restrictions = RenamingRestrictions::ALLOW_PRESERVING_UUID;
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context);
+        ast_zk_path->value = res.full_path_for_metadata;
+        ast_replica_name->value = res.replica_name_for_metadata;
+        return res;
     };
 
     size_t arg_num = 0;
@@ -277,7 +221,10 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     if (has_valid_arguments)
     {
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
+        bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
+
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "It's not allowed to specify explicit zookeeper_path and replica_name "
@@ -285,7 +232,7 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
                             "specify them explicitly, enable setting "
                             "database_replicated_allow_replicated_engine_arguments.");
         }
-        else if (!query.attach && is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 1)
+        else if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "It's not recommended to explicitly specify "
                                                             "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
@@ -293,27 +240,22 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
         /// Get path and name from engine arguments
         auto * ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
-        if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
-            zookeeper_path = ast_zk_path->value.safeGet<String>();
-        else
+        if (!ast_zk_path || ast_zk_path->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path in ZooKeeper must be a string literal{}", verbose_help_message);
 
         auto * ast_replica_name = engine_args[arg_num + 1]->as<ASTLiteral>();
-        if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
-            replica_name = ast_replica_name->value.safeGet<String>();
-        else
+        if (!ast_replica_name || ast_replica_name->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
 
-
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 2)
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
-                                                                     "with default arguments", zookeeper_path, replica_name);
-            engine_args[arg_num]->as<ASTLiteral>()->value = zookeeper_path = server_settings.default_replica_path;
-            engine_args[arg_num + 1]->as<ASTLiteral>()->value = replica_name = server_settings.default_replica_name;
+                                                                     "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
+            ast_zk_path->value = server_settings.default_replica_path;
+            ast_replica_name->value = server_settings.default_replica_name;
         }
 
-        expand_macro(ast_zk_path, ast_replica_name);
+        return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
     }
     else if (is_extended_storage_def
         && (arg_cnt == 0
@@ -322,24 +264,24 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
     {
         /// Try use default values if arguments are not specified.
         /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-        zookeeper_path = server_settings.default_replica_path;
         /// TODO maybe use hostname if {replica} is not defined?
-        replica_name = server_settings.default_replica_name;
 
         /// Modify query, so default values will be written to metadata
         assert(arg_num == 0);
         ASTs old_args;
         std::swap(engine_args, old_args);
-        auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
-        auto name_arg = std::make_shared<ASTLiteral>(replica_name);
+        auto path_arg = std::make_shared<ASTLiteral>("");
+        auto name_arg = std::make_shared<ASTLiteral>("");
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
-        expand_macro(ast_zk_path, ast_replica_name);
+        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings.default_replica_path, server_settings.default_replica_name);
 
         engine_args.emplace_back(std::move(path_arg));
         engine_args.emplace_back(std::move(name_arg));
         std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
+
+        return res;
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
@@ -363,15 +305,11 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
     for (auto & engine_arg : engine_args)
         engine_arg = engine_arg->clone();
 
-    LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
-    String zookeeper_path;
-    String replica_name;
-    RenamingRestrictions renaming_restrictions;
-
     try
     {
-        extractZooKeeperPathAndReplicaNameFromEngineArgs(query, table_id, engine_name, engine_args, mode, local_context,
-                                                         zookeeper_path, replica_name, renaming_restrictions);
+        auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
+            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context);
+        return res.full_path;
     }
     catch (Exception & e)
     {
@@ -382,8 +320,6 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
         }
         throw;
     }
-
-    return zookeeper_path;
 }
 
 static StoragePtr create(const StorageFactory::Arguments & args)
@@ -543,7 +479,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// In new syntax argument can be literal or identifier or array/tuple of identifiers.
         evaluateEngineArgs(engine_args, args.getLocalContext());
     }
-    else if (args.mode <= LoadingStrictnessLevel::CREATE && !local_settings.allow_deprecated_syntax_for_merge_tree)
+    else if (args.mode <= LoadingStrictnessLevel::CREATE && !local_settings[Setting::allow_deprecated_syntax_for_merge_tree])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -551,19 +487,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     /// Extract zookeeper path and replica name from engine arguments.
-    String zookeeper_path;
-    String replica_name;
-    RenamingRestrictions renaming_restrictions = RenamingRestrictions::ALLOW_ANY;
+    TableZnodeInfo zookeeper_info;
 
     if (replicated)
     {
-        extractZooKeeperPathAndReplicaNameFromEngineArgs(args.query, args.table_id, args.engine_name, args.engine_args, args.mode,
-                                                         args.getLocalContext(), zookeeper_path, replica_name, renaming_restrictions);
+        zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
+            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext());
 
-        if (replica_name.empty())
+        if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
         // '\t' and '\n' will interrupt parsing 'source replica' in ReplicatedMergeTreeLogEntryData::readText
-        if (replica_name.find('\t') != String::npos || replica_name.find('\n') != String::npos)
+        if (zookeeper_info.replica_name.find('\t') != String::npos || zookeeper_info.replica_name.find('\n') != String::npos)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must not contain '\\t' or '\\n'");
 
         arg_cnt = engine_args.size(); /// Update `arg_cnt` here because extractZooKeeperPathAndReplicaNameFromEngineArgs() could add arguments.
@@ -649,7 +583,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     ColumnsDescription columns;
     if (args.columns.empty() && replicated)
-        columns = getColumnsDescriptionFromZookeeper(zookeeper_path, context);
+        columns = getColumnsDescriptionFromZookeeper(zookeeper_info, context);
     else
         columns = args.columns;
 
@@ -676,7 +610,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!args.storage_def->order_by)
         {
-            if (local_settings.create_table_empty_primary_key_by_default)
+            if (local_settings[Setting::create_table_empty_primary_key_by_default])
             {
                 args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
             }
@@ -697,7 +631,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
-        if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
+        if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
@@ -723,7 +657,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
-        bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings.allow_suspicious_ttl_expressions;
+        bool allow_suspicious_ttl
+            = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
 
         if (args.storage_def->ttl_table)
         {
@@ -811,7 +746,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key
             = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
-        if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
+        if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
@@ -879,8 +814,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             need_check_table_structure = txn->isInitialQuery();
 
         return std::make_shared<StorageReplicatedMergeTree>(
-            zookeeper_path,
-            replica_name,
+            zookeeper_info,
             args.mode,
             args.table_id,
             args.relative_data_path,
@@ -889,7 +823,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            renaming_restrictions,
             need_check_table_structure);
     }
     else

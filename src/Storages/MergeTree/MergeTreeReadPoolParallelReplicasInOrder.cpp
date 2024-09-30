@@ -55,8 +55,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     for (const auto & part : parts_ranges)
         buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
 
-    extension.all_callback(
-        InitialAllRangesAnnouncement(mode, parts_ranges.getDescriptions(), extension.number_of_current_replica, /*mark_segment_size_=*/0));
+    extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
@@ -90,8 +89,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    auto response
-        = extension.callback(ParallelReadRequest(mode, extension.number_of_current_replica, min_marks_per_task * request.size(), request));
+    auto response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
 
     if (!response || response->description.empty() || response->finish)
     {
