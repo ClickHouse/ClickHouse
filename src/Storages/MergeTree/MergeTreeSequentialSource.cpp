@@ -39,7 +39,8 @@ public:
         std::optional<MarkRanges> mark_ranges_,
         bool apply_deleted_mask,
         bool read_with_direct_io_,
-        bool prefetch);
+        bool prefetch,
+        const Names & virtual_columns_needed);
 
     ~MergeTreeSequentialSource() override;
 
@@ -96,7 +97,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     std::optional<MarkRanges> mark_ranges_,
     bool apply_deleted_mask,
     bool read_with_direct_io_,
-    bool prefetch)
+    bool prefetch,
+    const Names & virtual_columns_needed)
     : ISource(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -128,7 +130,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
-        .withVirtuals()
         .withSubcolumns(storage.supportsSubcolumns());
 
     auto columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
@@ -170,7 +171,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         columns_for_reader,
         storage_snapshot,
         *mark_ranges,
-        /*virtual_fields=*/ {},
+        virtual_columns_needed,
         /*uncompressed_cache=*/ {},
         mark_cache.get(),
         alter_conversions,
@@ -360,7 +361,8 @@ public:
         bool read_with_direct_io_,
         bool prefetch_,
         ContextPtr context_,
-        LoggerPtr log_)
+        LoggerPtr log_,
+        const Names virtual_columns_needed_)
         : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
         , type(type_)
         , storage(storage_)
@@ -375,6 +377,7 @@ public:
         , prefetch(prefetch_)
         , context(std::move(context_))
         , log(log_)
+        , virtual_columns_needed(virtual_columns_needed_)
     {
     }
 
@@ -419,7 +422,8 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            prefetch);
+            prefetch,
+            virtual_columns_needed);
 
         pipeline.init(Pipe(std::move(source)));
     }
@@ -438,6 +442,7 @@ private:
     const bool prefetch;
     const ContextPtr context;
     const LoggerPtr log;
+    const Names virtual_columns_needed;
 };
 
 void createReadFromPartStep(
@@ -454,7 +459,8 @@ void createReadFromPartStep(
     bool read_with_direct_io,
     bool prefetch,
     ContextPtr context,
-    LoggerPtr log)
+    LoggerPtr log,
+    const Names & virtual_columns_needed)
 {
     auto reading = std::make_unique<ReadFromPart>(
         type,
@@ -469,7 +475,8 @@ void createReadFromPartStep(
         read_with_direct_io,
         prefetch,
         std::move(context),
-        log);
+        log,
+        virtual_columns_needed);
 
     plan.addStep(std::move(reading));
 }

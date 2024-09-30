@@ -45,6 +45,7 @@ void createReadFromPartStep(
     bool read_with_direct_io,
     bool prefetch,
     ContextPtr context,
-    LoggerPtr log);
+    LoggerPtr log,
+    const Names & virtual_columns_needed);
 
 }
