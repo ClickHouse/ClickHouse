@@ -417,7 +417,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         ReadSettings read_settings;
-        read_settings.read_through_distributed_cache = false;
         read_settings.enable_filesystem_cache = false;
         read_settings.enable_filesystem_cache_log = false;
         read_settings.enable_filesystem_read_prefetches_log = false;
