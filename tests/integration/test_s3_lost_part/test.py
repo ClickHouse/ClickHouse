@@ -1,4 +1,4 @@
-# Tag no-fasttest: requires S3
+# Tag no-fasttest: requires S3, no-parallel
 
 import logging
 import os
