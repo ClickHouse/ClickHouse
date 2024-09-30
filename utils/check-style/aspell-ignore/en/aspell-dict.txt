@@ -750,6 +750,7 @@ PointDistM
 PointDistRads
 PostHistory
 PostLink
+PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -852,6 +853,7 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
+RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -1745,6 +1747,7 @@ getMacro
 getOSKernelVersion
 getServerPort
 getSetting
+getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -3048,3 +3051,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+postgres

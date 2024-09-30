@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 
-import os, itertools, urllib.request, urllib.parse, urllib.error, urllib.request, urllib.error, urllib.parse, sys
+import itertools
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
