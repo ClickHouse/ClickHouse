@@ -577,6 +577,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
+    for (const auto & [column_name, _] : columns)
+    {
+        auto & column = block.getByName(column_name);
+        if (column.column->isSparse() && infos.getKind(column_name) != ISerialization::Kind::SPARSE)
+            column.column = recursiveRemoveSparse(column.column);
+    }
+
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
