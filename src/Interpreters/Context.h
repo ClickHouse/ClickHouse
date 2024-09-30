@@ -9,6 +9,7 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
+#include <Core/ParallelReplicasMode.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -1015,6 +1016,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+    /// If name == "default", same as getZooKeeper(), otherwise same as getAuxiliaryZooKeeper().
+    std::shared_ptr<zkutil::ZooKeeper> getDefaultOrAuxiliaryZooKeeper(const String & name) const;
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
@@ -1373,15 +1376,6 @@ public:
     void disableOffsetParallelReplicas();
 
     ClusterPtr getClusterForParallelReplicas() const;
-
-    enum class ParallelReplicasMode : uint8_t
-    {
-        SAMPLE_KEY,
-        CUSTOM_KEY,
-        READ_TASKS,
-    };
-
-    ParallelReplicasMode getParallelReplicasMode() const;
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
