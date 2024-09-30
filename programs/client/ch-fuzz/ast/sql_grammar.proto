@@ -2809,8 +2809,8 @@ message CreateView {
   optional RefreshableView refresh = 4;
   optional ExprSchemaTable to_est = 5;
   optional TableEngine engine = 6;
-  optional bool empty = 7;
-  optional bool populate = 8;
+  optional bool populate = 7;
+  optional bool empty = 8;
   required Select select = 9;
 }
 

@@ -571,7 +571,7 @@ int StatementGenerator::GenerateNextDrop(RandomGenerator &rg, sql_query_grammar:
 
 		dp->set_sobject(sql_query_grammar::SQLObject::VIEW);
 		tab->set_table("v" + std::to_string(v.vname));
-	} else if (!has_tables) {
+	} else if (has_tables) {
 		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
 		dp->set_is_temp(t.is_temp);
@@ -1104,16 +1104,16 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 
 int StatementGenerator::GenerateAttach(RandomGenerator &rg, sql_query_grammar::Attach *att) {
 	sql_query_grammar::Table *tab = att->mutable_est()->mutable_table_name();
-	const bool has_tables = CollectionHas<SQLTable>(attached_tables),
-			   has_views = CollectionHas<SQLView>(attached_views);
+	const bool has_tables = CollectionHas<SQLTable>(detached_tables),
+			   has_views = CollectionHas<SQLView>(detached_views);
 
 	if (has_views && (!has_tables || rg.NextBool())) {
-		const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
+		const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(detached_views));
 
-		att->set_sobject(sql_query_grammar::SQLObject::VIEW);
+		att->set_sobject(sql_query_grammar::SQLObject::TABLE);
 		tab->set_table("v" + std::to_string(v.vname));
 	} else if (has_tables) {
-		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
+		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(detached_tables));
 
 		att->set_sobject(sql_query_grammar::SQLObject::TABLE);
 		tab->set_table("t" + std::to_string(t.tname));
@@ -1125,16 +1125,16 @@ int StatementGenerator::GenerateAttach(RandomGenerator &rg, sql_query_grammar::A
 
 int StatementGenerator::GenerateDetach(RandomGenerator &rg, sql_query_grammar::Detach *det) {
 	sql_query_grammar::Table *tab = det->mutable_est()->mutable_table_name();
-	const bool has_tables = CollectionHas<SQLTable>(detached_tables),
-			   has_views = CollectionHas<SQLView>(detached_views);
+	const bool has_tables = CollectionHas<SQLTable>(attached_tables),
+			   has_views = CollectionHas<SQLView>(attached_views);
 
 	if (has_views && (!has_tables || rg.NextBool())) {
-		const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(detached_views));
+		const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
 
-		det->set_sobject(sql_query_grammar::SQLObject::VIEW);
+		det->set_sobject(sql_query_grammar::SQLObject::TABLE);
 		tab->set_table("v" + std::to_string(v.vname));
 	} else if (has_tables) {
-		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(detached_tables));
+		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
 		det->set_sobject(sql_query_grammar::SQLObject::TABLE);
 		tab->set_table("t" + std::to_string(t.tname));
@@ -1162,10 +1162,10 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar
 				   alter_table = 5 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 														   CollectionHas<SQLView>(attached_views)),
 				   set_values = 5,
-				   attach = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
-													  CollectionHas<SQLView>(attached_views)),
-				   dettach = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(detached_tables) ||
-													   CollectionHas<SQLView>(detached_views)),
+				   attach = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(detached_tables) ||
+													  CollectionHas<SQLView>(detached_views)),
+				   dettach = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
+													   CollectionHas<SQLView>(attached_views)),
 				   select_query = 250,
 				   prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table +
 								check_table + desc_table + exchange_tables + alter_table + set_values + attach +
@@ -1369,21 +1369,23 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		}
 	} else if (sq.has_inner_query() && query.has_attach() && success) {
 		const sql_query_grammar::Attach &att = sq.inner_query().attach();
+		const bool isview = att.est().table_name().table()[0] == 'v';
 		const uint32_t tname = static_cast<uint32_t>(std::stoul(att.est().table_name().table().substr(1)));
 
-		if (att.sobject() == sql_query_grammar::SQLObject::TABLE) {
-			this->tables[tname].attached = true;
-		} else {
+		if (isview) {
 			this->views[tname].attached = true;
+		} else {
+			this->tables[tname].attached = true;
 		}
 	} else if (sq.has_inner_query() && query.has_detach() && success) {
 		const sql_query_grammar::Detach &det = sq.inner_query().detach();
+		const bool isview = det.est().table_name().table()[0] == 'v';
 		const uint32_t tname = static_cast<uint32_t>(std::stoul(det.est().table_name().table().substr(1)));
 
-		if (det.sobject() == sql_query_grammar::SQLObject::TABLE) {
-			this->tables[tname].attached = false;
-		} else {
+		if (isview) {
 			this->views[tname].attached = false;
+		} else {
+			this->tables[tname].attached = false;
 		}
 	}
 }

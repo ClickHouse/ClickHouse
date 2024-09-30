@@ -2020,11 +2020,11 @@ CONV_FN(CreateView, create_view) {
     if (create_view.has_engine()) {
       TableEngineToString(ret, create_view.engine());
     }
-    if (create_view.has_refresh() && create_view.empty()) {
-      ret += " EMPTY";
-    }
     if (create_view.populate()) {
       ret += " POPULATE";
+    }
+    if (create_view.has_refresh() && create_view.empty()) {
+      ret += " EMPTY";
     }
   }
   ret += " AS ";
