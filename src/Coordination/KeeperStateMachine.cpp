@@ -834,14 +834,14 @@ static int bufferFromFile(LoggerPtr log, const std::string & path, nuraft::ptr<n
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        int err = ::close(fd);
+        [[maybe_unused]] int err = ::close(fd);
         chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    int err = ::close(fd);
+    [[maybe_unused]] int err = ::close(fd);
     chassert(!err || errno == EINTR);
     return 0;
 }
