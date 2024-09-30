@@ -1,19 +1,18 @@
 from typing import List
 
-from praktika import Job, Workflow
-
-from ci.settings.definitions import (
+from ci_v2.settings.definitions import (
     BASE_BRANCH,
     DOCKERS,
     SECRETS,
     JobNames,
     RunnerLabels,
 )
+from praktika import Job, Workflow
 
-style_cpp_job = Job.Config(
+style_check_job = Job.Config(
     name=JobNames.STYLE_CHECK,
     runs_on=[RunnerLabels.CI_SERVICES],
-    command="python3 ./ci/jobs/check_style.py",
+    command="python3 ./ci_v2/jobs/check_style.py",
     run_in_docker="clickhouse/style-test",
 )
 
@@ -22,7 +21,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        style_cpp_job,
+        style_check_job,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
@@ -40,6 +39,6 @@ if __name__ == "__main__":
     # example: local job test inside praktika environment
     from praktika.runner import Runner
 
-    Runner.generate_dummy_environment(workflow, style_cpp_job)
+    Runner.generate_dummy_environment(workflow, style_check_job)
 
-    Runner().run(workflow, style_cpp_job)
+    Runner().run(workflow, style_check_job)

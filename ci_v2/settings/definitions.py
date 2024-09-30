@@ -169,7 +169,7 @@ DOCKERS = [
     # ),
     Docker.Config(
         name="clickhouse/style-test",
-        path="./ci/docker/style-test",
+        path="./ci_v2/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
