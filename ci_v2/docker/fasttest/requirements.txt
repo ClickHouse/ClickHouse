@@ -1,0 +1,1 @@
+https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl
