@@ -238,7 +238,7 @@ namespace
 
             if (parseValidUntil(pos, expected, auth_data->valid_until))
             {
-                // I am still not sure why this has to be done and if it has to be done
+                // todo arthur I am still not sure why this has to be done and if it has to be done
                 auth_data->children.push_back(auth_data->valid_until);
             }
 
@@ -560,7 +560,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
-    ASTPtr valid_until;
+    ASTPtr global_valid_until;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -641,6 +641,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
+        if (auth_data.empty() && !global_valid_until)
+        {
+            parseValidUntil(pos, expected, global_valid_until);
+        }
+
         break;
     }
 
@@ -675,6 +680,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
+    query->global_valid_until = std::move(global_valid_until);
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
@@ -685,9 +691,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->children.push_back(authentication_method);
     }
 
-    // todo arthur
-//    if (query->valid_until)
-//        query->children.push_back(query->valid_until);
+    if (query->global_valid_until)
+        query->children.push_back(query->global_valid_until);
 
     return true;
 }

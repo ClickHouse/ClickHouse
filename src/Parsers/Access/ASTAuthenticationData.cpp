@@ -55,6 +55,12 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " no_password"
                       << (settings.hilite ? IAST::hilite_none : "");
+
+        if (valid_until)
+        {
+            formatValidUntil(*valid_until, settings);
+        }
+
         return;
     }
 
