@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include "Columns/FilterDescription.h"
 
 namespace DB
 {
@@ -159,12 +160,10 @@ void LimitInRangeTransform::removeFilterIfNeed(Chunk & chunk) const
     }
 }
 
-const IColumn::Filter * initializeColumn(const Columns & columns, size_t filter_column_position)
+FilterDescription initializeColumn(const Columns & columns, size_t filter_column_position)
 {
     const IColumn & filter_column = *columns[filter_column_position];
-    FilterDescription filter_description(filter_column);
-
-    return filter_description.data;
+    return FilterDescription(filter_column);
 }
 
 void cutChunkColumns(Chunk & chunk, size_t start, size_t length)
@@ -183,7 +182,7 @@ std::optional<size_t> findFirstMatchingIndex(const IColumn::Filter * filter, siz
     if (!filter || memoryIsZero(filter->data(), 0, filter->size()) || start >= filter->size())
         return std::nullopt;
 
-    auto it = std::find(filter->begin() + start, filter->end(), 1);
+    const auto * it = std::find(filter->begin() + start, filter->end(), 1);
     if (it == filter->end())
         return std::nullopt;
 
@@ -214,9 +213,9 @@ void LimitInRangeTransform::doFromTransform(Chunk & chunk)
         return;
     }
 
-    auto from_filter_mask = initializeColumn(chunk.getColumns(), from_filter_column_position);
+    auto from_filter_description = initializeColumn(chunk.getColumns(), from_filter_column_position);
 
-    std::optional<size_t> index = findFirstMatchingIndex(from_filter_mask);
+    std::optional<size_t> index = findFirstMatchingIndex(from_filter_description.data);
     if (!index)
     {
         chunk.clear();
@@ -232,9 +231,9 @@ void LimitInRangeTransform::doToTransform(Chunk & chunk)
 {
     /// If 'to index' is not found, return all chunks and then throw an exception.
 
-    auto to_filter_mask = initializeColumn(chunk.getColumns(), to_filter_column_position);
+    auto to_filter_description = initializeColumn(chunk.getColumns(), to_filter_column_position);
 
-    std::optional<size_t> index = findFirstMatchingIndex(to_filter_mask);
+    std::optional<size_t> index = findFirstMatchingIndex(to_filter_description.data);
     if (!index)
     {
         removeFilterIfNeed(chunk);
@@ -250,12 +249,12 @@ void LimitInRangeTransform::doToTransform(Chunk & chunk)
 
 void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
 {
-    auto from_filter_mask = initializeColumn(chunk.getColumns(), from_filter_column_position);
-    auto to_filter_mask = initializeColumn(chunk.getColumns(), to_filter_column_position);
+    auto from_filter_description = initializeColumn(chunk.getColumns(), from_filter_column_position);
+    auto to_filter_description = initializeColumn(chunk.getColumns(), to_filter_column_position);
 
     if (from_index_found)
     {
-        std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_mask);
+        std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_description.data);
         if (to_index)
         {
             to_index_found = true;
@@ -267,12 +266,12 @@ void LimitInRangeTransform::doFromAndToTransform(Chunk & chunk)
         return;
     }
 
-    std::optional<size_t> from_index = findFirstMatchingIndex(from_filter_mask);
+    std::optional<size_t> from_index = findFirstMatchingIndex(from_filter_description.data);
     if (from_index)
     {
         from_index_found = true;
 
-        std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_mask, *from_index + 1);
+        std::optional<size_t> to_index = findFirstMatchingIndex(to_filter_description.data, *from_index + 1);
         if (to_index)
         {
             cutChunkColumns(chunk, *from_index, *to_index - *from_index + 1);
