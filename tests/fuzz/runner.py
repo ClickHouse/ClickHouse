@@ -133,6 +133,7 @@ def run_fuzzer(fuzzer: str):
             text=True,
             check=True,
             shell=True,
+            errors='replace',
         )
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
