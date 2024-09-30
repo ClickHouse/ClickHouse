@@ -119,7 +119,7 @@ protected:
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
 
-                auto parts = dynamic_cast<MergeTreeData *>(table.get())->getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, nullptr);
+                auto parts = static_cast<const MergeTreeData &>(*table).getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, nullptr);
 
                 for (const auto & projection : projections)
                 {
