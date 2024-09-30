@@ -87,7 +87,6 @@ void User::clearAllExceptDependencies()
     access = {};
     settings.removeSettingsKeepProfiles();
     default_database = {};
-    valid_until = 0;
 }
 
 }
