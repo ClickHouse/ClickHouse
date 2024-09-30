@@ -240,6 +240,7 @@ namespace ErrorCodes
     M(Bool, output_format_parallel_formatting, true, "Enable parallel formatting for some data formats.", 0) \
     M(UInt64, output_format_compression_level, 3, "Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when inserting to table function `file`, `url`, `hdfs`, `s3`, and `azureBlobStorage`.", 0) \
     M(UInt64, output_format_compression_zstd_window_log, 0, "Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression.", 0) \
+    M(Bool, enable_parsing_to_custom_serialization, true, "If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.", 0) \
     \
     M(UInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), "If at least as many lines are read from one file, the reading can be parallelized.", 0) \
     M(UInt64, merge_tree_min_bytes_for_concurrent_read, (24 * 10 * 1024 * 1024), "If at least as many bytes are read from one file, the reading can be parallelized.", 0) \
@@ -1249,12 +1250,15 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
+            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
+            auto final_name = SettingsTraits::resolveName(change.name);
+
             /// If this setting was changed manually, we don't change it
-            if (isChanged(change.name) && !settings_changed_by_compatibility_setting.contains(change.name))
+            if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
                 continue;
 
-            BaseSettings::set(change.name, change.previous_value);
-            settings_changed_by_compatibility_setting.insert(change.name);
+            BaseSettings::set(final_name, change.previous_value);
+            settings_changed_by_compatibility_setting.insert(final_name);
         }
     }
 }
