@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -q "create view refreshes as select * from system.view_refres
 # Basic refreshing.
 $CLICKHOUSE_CLIENT -q "
     create materialized view a
-        refresh after 2 second
+        refresh every 2 second
         engine Memory
         empty
         as select number as x from numbers(2) union all select rand64() as x;
