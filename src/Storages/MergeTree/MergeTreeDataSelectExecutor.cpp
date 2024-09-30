@@ -702,6 +702,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
+                LOG_TRACE(
+                      log,
+                      "merge_tree_skip_index_pk_search : part_index {}, KeyCondition {}",
+                      part_index, key_condition.toString());
                 ranges.ranges = markRangesFromPKRange(
                     part,
                     metadata_snapshot,
@@ -728,7 +732,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 return;  /// NOTE : early exit
             }
 
-	    CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+            CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
             for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
             {
@@ -752,7 +756,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     uncompressed_cache.get(),
                     log);
 
-		if (ranges.ranges.empty() || ranges.ranges.getNumberOfMarks() != total_granules)
+                if (ranges.ranges.empty() || ranges.ranges.getNumberOfMarks() != total_granules)
                 {
                     was_any_skip_index_useful = true;
                 }
@@ -789,11 +793,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 parts_with_ranges[part_index] = std::move(ranges);
         };
 
-        auto create_new_key_condition_from_pk_ranges = [&]()
+        auto check_and_create_new_key_condition_from_pk_ranges = [&]()
         {
+            size_t range_count = 0;
+            size_t first_part_for_next_pass = UINT64_MAX;
+            if (!is_select_query_with_final || !was_any_skip_index_useful || settings[Setting::use_skip_indexes_if_final] <= 1)
+                return std::make_tuple(range_count, first_part_for_next_pass, static_cast<KeyConditionPtr>(nullptr));
+
             const auto & primary_key = metadata_snapshot->getPrimaryKey();
             KeyConditionPtr kc = make_shared<KeyCondition>(nullptr, context, primary_key.column_names, primary_key.expression);
-            size_t range_count = 0;
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
             {
                 auto & part = parts[part_index];
@@ -820,10 +828,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                           kc->addAnOR();
                     }
+                    if (first_part_for_next_pass == UINT64_MAX)
+                        first_part_for_next_pass = part_index + 1;
                 }
             }
-            return kc;
+            LOG_TRACE(
+                      log,
+                      "merge_tree_skip_index_2nd_pass_for_final : range_count {}, first_part {}, new KeyCondition {}",
+                      range_count, first_part_for_next_pass, kc->toString());
+            return make_tuple(range_count, first_part_for_next_pass, kc);
         };
+
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
         if (settings[Setting::max_threads_for_indexes])
         {
@@ -837,19 +852,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 process_part(part_index);
 
-	    if (is_select_query_with_final &&
-                was_any_skip_index_useful &&
-                settings[Setting::use_skip_indexes_if_final] > 1)
+            auto tuple = check_and_create_new_key_condition_from_pk_ranges();
+            if (std::get<0>(tuple) > 0)  /// if 2nd pass required
             {
-                auto kc = create_new_key_condition_from_pk_ranges();
-                std::cerr << "MergeTreeAfterSkipIndex:KeyCondition2 final = " << kc->toString() << std::endl;
-                LOG_TRACE(
-                          log,
-                          "New Primary Key condition after skip index use {}",
-                          kc->toString());
-                new_key_condition = std::move(kc);
                 sum_marks_pk = sum_parts_pk = 0; /// reset
-                for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                new_key_condition = std::move(std::get<2>(tuple));
+                for (size_t part_index = std::get<1>(tuple); part_index < parts.size(); ++part_index)
                     process_part(part_index);
             }
         }
@@ -887,19 +895,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             pool.wait();
-            if (is_select_query_with_final &&
-                was_any_skip_index_useful &&
-                settings[Setting::use_skip_indexes_if_final] > 1)
+
+            auto tuple = check_and_create_new_key_condition_from_pk_ranges();
+            if (std::get<0>(tuple) > 0)  /// if 2nd pass required
             {
-                auto kc = create_new_key_condition_from_pk_ranges();
-                std::cerr << "MergeTreeAfterSkipIndex:KeyCondition2 final = " << kc->toString() << std::endl;
-                LOG_TRACE(
-                          log,
-                          "New Primary Key condition after skip index use {}",
-                          kc->toString());
-                new_key_condition = std::move(kc);
-                sum_marks_pk = sum_parts_pk = 0;
-                for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                sum_marks_pk = sum_parts_pk = 0; /// reset
+                new_key_condition = std::move(std::get<2>(tuple));
+                for (size_t part_index = std::get<1>(tuple); part_index < parts.size(); ++part_index)
                 {
                   pool.scheduleOrThrow([&, part_index, thread_group = CurrentThread::getGroup()]
                   {
