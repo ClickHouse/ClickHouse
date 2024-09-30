@@ -103,6 +103,8 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+    extern const SettingsBool allow_suspicious_types_in_group_by;
+    extern const SettingsBool allow_suspicious_types_in_order_by;
 }
 
 
@@ -4100,7 +4102,7 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
 
 void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const
 {
-    if (scope.context->getSettingsRef().allow_suspicious_types_in_order_by)
+    if (scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_order_by])
         return;
 
     auto check = [](const IDataType & type)
@@ -4109,6 +4111,7 @@ void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type,
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. "
+                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn). "
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
     };
 
@@ -4189,7 +4192,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
   */
 void QueryAnalyzer::validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const
 {
-    if (scope.context->getSettingsRef().allow_suspicious_types_in_group_by)
+    if (scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
         return;
 
     auto check = [](const IDataType & type)
@@ -4198,6 +4201,7 @@ void QueryAnalyzer::validateGroupByKeyType(const DataTypePtr & group_by_key_type
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
+                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn). "
                 "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
     };
 
