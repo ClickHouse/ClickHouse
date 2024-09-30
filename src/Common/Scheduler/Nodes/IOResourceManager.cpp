@@ -61,12 +61,10 @@ IOResourceManager::Resource::~Resource()
 
 void IOResourceManager::Resource::createNode(const NodeInfo & info)
 {
-    // TODO(serxa): make sure all possible callers validate empty workload name!
     if (info.name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload must have a name in resource '{}'",
             resource_name);
 
-    // TODO(serxa): make sure all possible callers validate self-reference!
     if (info.name == info.parent)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Self-referencing workload '{}' is not allowed in resource '{}'",
             info.name, resource_name);
@@ -80,7 +78,6 @@ void IOResourceManager::Resource::createNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for creating workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
 
-    // TODO(serxa): make sure all possible callers validate second root, add tests for creating the second root
     if (info.parent.empty() && root_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The second root workload '{}' is not allowed (current root '{}') in resource '{}'",
             info.name, root_node->basename, resource_name);

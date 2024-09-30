@@ -94,8 +94,11 @@ protected:
     std::vector<Event> queue;
 
     mutable std::recursive_mutex mutex;
-    std::unordered_map<String, ASTPtr> entities; // Maps entity name into CREATE entity query
-    std::unordered_map<String, std::unordered_set<String>> references; // Keep track of references between entities for validation
+    std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query
+
+    // Validation
+    std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities
+    String root_name; /// current root workload name
 
     ContextPtr global_context;
 };

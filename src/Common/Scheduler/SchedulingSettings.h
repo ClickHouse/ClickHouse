@@ -33,7 +33,7 @@ struct SchedulingSettings
     bool hasThrottler() const { return max_speed != 0; }
     bool hasSemaphore() const { return max_requests != default_max_requests || max_cost != default_max_cost; }
 
-    void updateFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name);
+    void updateFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {});
 };
 
 }
