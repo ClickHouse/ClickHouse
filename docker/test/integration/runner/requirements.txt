@@ -68,6 +68,7 @@ psycopg2-binary==2.9.6
 py4j==0.10.9.5
 pyarrow-hotfix==0.6
 pyarrow==17.0.0
+pycairo==1.27.0
 pycparser==2.22
 pycryptodome==3.20.0
 pymongo==3.11.0
@@ -81,6 +82,7 @@ pytest-reportlog==0.4.0
 pytest-timeout==2.2.0
 pytest-xdist==3.5.0
 pytest==7.4.4
+python-meson==0.16.0
 python-dateutil==2.9.0.post0
 pytz==2023.3.post1
 redis==5.0.1
