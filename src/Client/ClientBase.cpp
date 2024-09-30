@@ -2825,11 +2825,12 @@ void ClientBase::runLibFuzzer() {}
 
 void ClientBase::clearTerminal()
 {
-    /// Clear from cursor until end of screen.
+    /// Move to the beginning of the line
+    /// and clear until end of screen.
     /// It is needed if garbage is left in terminal.
     /// Show cursor. It can be left hidden by invocation of previous programs.
     /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    output_stream << "\033[0J" "\033[?25h";
+    output_stream << "\r" "\033[0J" "\033[?25h";
 }
 
 void ClientBase::showClientVersion()

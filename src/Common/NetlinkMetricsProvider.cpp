@@ -283,7 +283,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
     {
         if (netlink_socket_fd >= 0)
         {
-            int err = close(netlink_socket_fd);
+            [[maybe_unused]] int err = close(netlink_socket_fd);
             chassert(!err || errno == EINTR);
         }
         throw;
@@ -320,7 +320,7 @@ NetlinkMetricsProvider::~NetlinkMetricsProvider()
 {
     if (netlink_socket_fd >= 0)
     {
-        int err = close(netlink_socket_fd);
+        [[maybe_unused]] int err = close(netlink_socket_fd);
         chassert(!err || errno == EINTR);
     }
 }
