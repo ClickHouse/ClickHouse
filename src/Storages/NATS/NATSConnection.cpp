@@ -78,6 +78,18 @@ bool NATSConnection::isConnected()
     return isConnectedImpl();
 }
 
+bool NATSConnection::isDisconnected()
+{
+    std::lock_guard lock(mutex);
+    return isDisconnectedImpl();
+}
+
+bool NATSConnection::isClosed()
+{
+    std::lock_guard lock(mutex);
+    return isClosedImpl();
+}
+
 bool NATSConnection::connect()
 {
     std::lock_guard lock(mutex);
@@ -90,6 +102,8 @@ bool NATSConnection::reconnect()
     std::lock_guard lock(mutex);
     if (isConnectedImpl())
         return true;
+    else if(!isDisconnectedImpl())
+        return false;
 
     disconnectImpl();
 
@@ -115,8 +129,19 @@ void NATSConnection::disconnect()
 
 bool NATSConnection::isConnectedImpl() const
 {
-    return connection && !natsConnection_IsClosed(connection.get());
+    return connection && (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_CONNECTED || natsConnection_IsDraining(connection.get()));
 }
+
+bool NATSConnection::isDisconnectedImpl() const
+{
+    return !connection || (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_DISCONNECTED || natsConnection_IsClosed(connection.get()));
+}
+
+bool NATSConnection::isClosedImpl() const
+{
+    return !connection || natsConnection_IsClosed(connection.get());
+}
+
 
 void NATSConnection::connectImpl()
 {
@@ -128,13 +153,14 @@ void NATSConnection::connectImpl()
                   connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
         return;
     }
-
     connection.reset(new_conection);
+
+    LOG_DEBUG(log, "New connection to {} connected.", connectionInfoForLog());
 }
 
 std::optional<std::shared_future<void>> NATSConnection::disconnectImpl()
 {
-    if (isConnectedImpl() && !connection_closed_future.has_value())
+    if (!isDisconnectedImpl() && !connection_closed_future.has_value())
     {
         connection_closed_promise = std::make_optional<std::promise<void>>();
         connection_closed_future = connection_closed_promise->get_future();

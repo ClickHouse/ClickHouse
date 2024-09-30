@@ -243,7 +243,7 @@ void StorageNATS::startReconnection(DB::NATSConnectionPtr connection_)
     event_handler.post(
         [&, connection = std::move(connection_)]()
         {
-            if (connection->isConnected())
+            if (!connection->isDisconnected())
             {
                 return;
             }
@@ -433,7 +433,7 @@ void StorageNATS::startup()
     }
     looping_task->activateAndSchedule();
 
-    if (!consumers_connection->isConnected() || !subscribeConsumers())
+    if (consumers_connection->isDisconnected() || !subscribeConsumers())
         reconnection_task->activateAndSchedule();
 }
 

@@ -33,6 +33,8 @@ public:
     ~NATSConnection();
 
     bool isConnected();
+    bool isDisconnected();
+    bool isClosed();
 
     /// Must bse called from event loop thread
     bool connect();
@@ -48,6 +50,8 @@ public:
 
 private:
     bool isConnectedImpl() const;
+    bool isDisconnectedImpl() const;
+    bool isClosedImpl() const;
 
     void connectImpl();
 
