@@ -162,7 +162,8 @@ void NATSConnection::disconnectedCallback(natsConnection *, void * this_)
 
     std::lock_guard lock(connection->mutex);
 
-    if (connection->connection_closed_promise){
+    if (connection->connection_closed_promise)
+    {
         connection->connection_closed_promise->set_value();
     }
     connection->connection_closed_promise = std::nullopt;
