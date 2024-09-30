@@ -82,7 +82,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     {
         if (settings.remote_fs_cache->isInitialized())
         {
-            auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
+            auto cache_key = settings.filecache_key.has_value() ? FileCacheKey::fromPath(object_path) : *settings.filecache_key;
             buf = std::make_unique<CachedOnDiskReadBufferFromFile>(
                 object_path,
                 cache_key,

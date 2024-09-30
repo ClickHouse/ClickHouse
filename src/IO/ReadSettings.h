@@ -4,6 +4,7 @@
 #include <string>
 #include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
@@ -101,6 +102,7 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     size_t filesystem_cache_segments_batch_size = 20;
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    std::string filesystem_cache_name;
 
     bool use_page_cache_for_disks_without_file_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
@@ -113,6 +115,7 @@ struct ReadSettings
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
     FileCachePtr remote_fs_cache;
+    std::optional<FileCacheKey> filecache_key;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;

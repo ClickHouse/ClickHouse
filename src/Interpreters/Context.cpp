@@ -186,6 +186,7 @@ namespace Setting
     extern const SettingsUInt64 backup_threads;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool enable_filesystem_cache;
+    extern const SettingsString filesystem_cache_name;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
     extern const SettingsBool enable_filesystem_read_prefetches_log;
@@ -5638,6 +5639,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_name = settings_ref[Setting::filesystem_cache_name];
 
     res.filesystem_cache_max_download_size = settings_ref[Setting::filesystem_cache_max_download_size];
     res.skip_download_if_exceeds_query_cache = settings_ref[Setting::skip_download_if_exceeds_query_cache];

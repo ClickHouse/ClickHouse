@@ -7,6 +7,9 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -418,13 +421,38 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
 }
 
+static void patchReadSettings(
+    ReadSettings & read_settings,
+    const StorageObjectStorage::ObjectInfo & object_info,
+    const LoggerPtr & log)
+{
+    if (read_settings.enable_filesystem_cache && !read_settings.filesystem_cache_name.empty())
+    {
+        if (object_info.metadata->etag.empty())
+        {
+            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+        }
+        else
+        {
+            SipHash hash;
+            hash.update(object_info.getPath());
+            hash.update(object_info.metadata->etag);
+            read_settings.filecache_key = FileCacheKey::fromKey(hash.get128());
+            read_settings.remote_fs_cache = FileCacheFactory::instance().get(read_settings.filesystem_cache_name);
+
+            LOG_TEST(log, "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                     read_settings.filesystem_cache_name, object_info.getPath(),
+                     object_info.metadata->etag, toString(hash.get128()));
+        }
+    }
+}
+
 std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
 {
     const auto & object_size = object_info.metadata->size_bytes;
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
-    read_settings.enable_filesystem_cache = false;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
 
@@ -433,6 +461,8 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
     /// User's object may change, don't cache it.
     read_settings.use_page_cache_for_disks_without_file_cache = false;
+
+    patchReadSettings(read_settings, object_info, log);
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -452,6 +482,29 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     }
     else
     {
+        if (!read_settings.filesystem_cache_name.empty())
+        {
+            /// TODO: fix inconsistency with readObject and readObjects...
+
+            auto read_buffer_creator = [&]()
+            {
+                return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
+            };
+            return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                object_info.getPath(),
+                read_settings.filecache_key.value(),
+                read_settings.remote_fs_cache,
+                FileCache::getCommonUser(),
+                read_buffer_creator,
+                read_settings,
+                std::string(CurrentThread::getQueryId()),
+                object_info.metadata->size_bytes,
+                /* allow_seeks */false,
+                /* use_external_buffer */true,
+                /* read_until_position */std::nullopt,
+                nullptr);
+        }
+
         /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
         return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
     }
