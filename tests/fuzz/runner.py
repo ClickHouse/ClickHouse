@@ -3,12 +3,13 @@
 import configparser
 import logging
 import os
-from pathlib import Path
 import re
 import subprocess
+from pathlib import Path
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
+
 
 def report(source: str, reason: str, call_stack: list, test_unit: str):
     print(f"########### REPORT: {source} {reason} {test_unit}")
@@ -16,17 +17,19 @@ def report(source: str, reason: str, call_stack: list, test_unit: str):
         print(f"    {line}")
     print("########### END OF REPORT ###########")
 
+
 def process_fuzzer_output(output: str):
     pass
 
+
 def process_error(error: str):
-    ERROR = r'^==\d+== ERROR: (\S+): (.*)'
-    error_source = ''
-    error_reason = ''
-    SUMMARY = r'^SUMMARY: '
+    ERROR = r"^==\d+== ERROR: (\S+): (.*)"
+    error_source = ""
+    error_reason = ""
+    SUMMARY = r"^SUMMARY: "
     TEST_UNIT_LINE = r"artifact_prefix='.*/'; Test unit written to (.*)"
-    test_unit = ''
-    CALL_STACK_LINE = r'^\s+(#\d+.*)'
+    test_unit = ""
+    CALL_STACK_LINE = r"^\s+(#\d+.*)"
     call_stack = []
     is_call_stack = False
 
@@ -56,6 +59,7 @@ def process_error(error: str):
 
     report(error_source, error_reason, call_stack, test_unit)
 
+
 def run_fuzzer(fuzzer: str):
     logging.info("Running fuzzer %s...", fuzzer)
 
@@ -67,7 +71,6 @@ def run_fuzzer(fuzzer: str):
     active_corpus_dir = f"{fuzzer}.corpus"
     if not os.path.exists(active_corpus_dir):
         os.makedirs(active_corpus_dir)
-
 
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
@@ -104,7 +107,9 @@ def run_fuzzer(fuzzer: str):
                     for key, value in parser["fuzzer_arguments"].items()
                 )
 
-    cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {active_corpus_dir} {seed_corpus_dir}"
+    cmd_line = (
+        f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {active_corpus_dir} {seed_corpus_dir}"
+    )
     if custom_libfuzzer_options:
         cmd_line += f" {custom_libfuzzer_options}"
     if fuzzer_arguments:
@@ -116,7 +121,7 @@ def run_fuzzer(fuzzer: str):
     cmd_line += " < /dev/null"
 
     logging.info("...will execute: %s", cmd_line)
-    #subprocess.check_call(cmd_line, shell=True)
+    # subprocess.check_call(cmd_line, shell=True)
 
     try:
         result = subprocess.run(
@@ -125,14 +130,15 @@ def run_fuzzer(fuzzer: str):
             stdout=subprocess.DEVNULL,
             text=True,
             check=True,
-            shell=True
+            shell=True,
         )
     except subprocess.CalledProcessError as e:
-#        print("Command failed with error:", e)
+        # print("Command failed with error:", e)
         print("Stderr output:", e.stderr)
         process_error(e.stderr)
     else:
         process_fuzzer_output(result.stderr)
+
 
 def main():
     logging.basicConfig(level=logging.INFO)
