@@ -4,8 +4,10 @@
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/IRestoreCoordination.h>
 #include <Backups/RestoreSettings.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
@@ -14,6 +16,7 @@
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
+#include <base/range.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -68,6 +71,18 @@ std::vector<UUID> IAccessStorage::find(AccessEntityType type, const Strings & na
             ids.push_back(*id);
     }
     return ids;
+}
+
+
+std::vector<UUID> IAccessStorage::findAllImpl() const
+{
+    std::vector<UUID> res;
+    for (auto type : collections::range(AccessEntityType::MAX))
+    {
+        auto ids = findAllImpl(type);
+        res.insert(res.end(), ids.begin(), ids.end());
+    }
+    return res;
 }
 
 
@@ -598,67 +613,59 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
     if (!isBackupAllowed())
         throwBackupNotAllowed();
 
-    auto entities = readAllWithIDs(type);
-    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
-
-    if (entities.empty())
+    auto entities_ids = findAll(type);
+    if (entities_ids.empty())
         return;
 
-    auto backup_entry = makeBackupEntryForAccess(
-        entities,
-        data_path_in_backup,
-        backup_entries_collector.getAccessCounter(type),
-        backup_entries_collector.getContext()->getAccessControl());
+    auto backup_entry_with_path = makeBackupEntryForAccessEntities(
+        entities_ids,
+        backup_entries_collector.getAllAccessEntities(),
+        backup_entries_collector.getBackupSettings().write_access_entities_dependents,
+        data_path_in_backup);
 
-    backup_entries_collector.addBackupEntry(backup_entry);
+    if (isReplicated())
+    {
+        auto backup_coordination = backup_entries_collector.getBackupCoordination();
+        auto replication_id = getReplicationID();
+        backup_coordination->addReplicatedAccessFilePath(replication_id, type, backup_entry_with_path.first);
+
+        backup_entries_collector.addPostTask(
+            [backup_entry = backup_entry_with_path.second,
+            replication_id,
+            type,
+            &backup_entries_collector,
+            backup_coordination]
+            {
+                for (const String & path : backup_coordination->getReplicatedAccessFilePaths(replication_id, type))
+                    backup_entries_collector.addBackupEntry(path, backup_entry);
+            });
+    }
+    else
+    {
+        backup_entries_collector.addBackupEntry(backup_entry_with_path);
+    }
 }
 
 
-void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
     if (!isRestoreAllowed())
         throwRestoreNotAllowed();
 
-    if (isReplicated() && !acquireReplicatedRestore(restorer))
-        return;
-
-    auto entities = restorer.getAccessEntitiesToRestore();
-    if (entities.empty())
-        return;
-
-    auto create_access = restorer.getRestoreSettings().create_access;
-    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
-
-    restorer.addDataRestoreTask([this, entities_to_restore = std::move(entities), replace_if_exists, throw_if_exists] mutable
+    if (isReplicated())
     {
-        std::unordered_map<UUID, UUID> new_to_existing_ids;
-        for (auto & [id, entity] : entities_to_restore)
-        {
-            UUID existing_entity_id;
-            if (!insert(id, entity, replace_if_exists, throw_if_exists, &existing_entity_id))
-            {
-                /// Couldn't insert `entity` because there is an existing entity with the same name.
-                new_to_existing_ids[id] = existing_entity_id;
-            }
-        }
+        auto restore_coordination = restorer.getRestoreCoordination();
+        if (!restore_coordination->acquireReplicatedAccessStorage(getReplicationID()))
+            return;
+    }
 
-        if (!new_to_existing_ids.empty())
+    restorer.addDataRestoreTask(
+        [this, &restorer, data_path_in_backup]
         {
-            /// If new entities restored from backup have dependencies on other entities from backup which were not restored because they existed,
-            /// then we should correct those dependencies.
-            auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
-            {
-                auto res = entity;
-                IAccessEntity::replaceDependencies(res, new_to_existing_ids);
-                return res;
-            };
-            std::vector<UUID> ids;
-            ids.reserve(entities_to_restore.size());
-            boost::copy(entities_to_restore | boost::adaptors::map_keys, std::back_inserter(ids));
-            tryUpdate(ids, update_func);
-        }
-    });
+            auto entities_to_restore = restorer.getAccessEntitiesToRestore(data_path_in_backup);
+            const auto & restore_settings = restorer.getRestoreSettings();
+            restoreAccessEntitiesFromBackup(*this, entities_to_restore, restore_settings);
+        });
 }
 
 

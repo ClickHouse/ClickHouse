@@ -800,7 +800,6 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
-RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders
@@ -853,6 +852,7 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
+RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -1935,7 +1935,6 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
-jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -3050,3 +3049,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+postgres
