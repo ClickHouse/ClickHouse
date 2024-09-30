@@ -474,6 +474,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
 void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
 {
     std::lock_guard lock(consumers_mutex);
+    LOG_DEBUG(log, "Push consumer");
     consumers.push_back(consumer);
     semaphore.set();
 }
@@ -500,6 +501,8 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
     std::lock_guard lock(consumers_mutex);
     auto consumer = consumers.back();
     consumers.pop_back();
+
+    LOG_DEBUG(log, "Pop consumer");
 
     return consumer;
 }
@@ -676,7 +679,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        LOG_DEBUG(log, "Current queue size: {}", consumers[0]->queueSize());
+        LOG_DEBUG(log, "Current queue[{}] size: {}", i, consumers[i]->queueSize());
         auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, nats_settings->nats_handle_error_mode);
         sources.emplace_back(source);
         pipes.emplace_back(source);

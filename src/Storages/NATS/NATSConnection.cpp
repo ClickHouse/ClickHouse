@@ -59,7 +59,7 @@ NATSConnection::~NATSConnection()
 {
     disconnect();
 
-    LOG_DEBUG(log, "Destroy connection {}", connectionInfoForLog());
+    LOG_DEBUG(log, "Destroy connection {} to {}", static_cast<void*>(this), connectionInfoForLog());
 }
 
 
@@ -107,7 +107,7 @@ bool NATSConnection::reconnect()
 
     disconnectImpl();
 
-    LOG_DEBUG(log, "Trying to restore connection to NATS {}", connectionInfoForLog());
+    LOG_DEBUG(log, "Trying to restore connection {} to NATS {}", static_cast<void*>(this), connectionInfoForLog());
     connectImpl();
 
     return isConnectedImpl();
@@ -149,13 +149,13 @@ void NATSConnection::connectImpl()
     natsStatus status = natsConnection_Connect(&new_conection, options.get());
     if (status != NATS_OK)
     {
-        LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
-                  connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
+        LOG_DEBUG(log, "New connection {} to {} failed. Nats status text: {}. Last error message: {}",
+                  static_cast<void*>(this), connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
         return;
     }
     connection.reset(new_conection);
 
-    LOG_DEBUG(log, "New connection to {} connected.", connectionInfoForLog());
+    LOG_DEBUG(log, "New connection {} to {} connected.", static_cast<void*>(this), connectionInfoForLog());
 }
 
 std::optional<std::shared_future<void>> NATSConnection::disconnectImpl()
@@ -179,7 +179,7 @@ void NATSConnection::reconnectedCallback(natsConnection * nc, void * this_)
     buffer[0] = '\0';
     natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
 
-    LOG_DEBUG(connection->log, "Got reconnected to NATS server: {}.", buffer);
+    LOG_DEBUG(connection->log, "Got reconnected {} to NATS server: {}.", static_cast<void*>(connection), buffer);
 }
 
 void NATSConnection::disconnectedCallback(natsConnection *, void * this_)
@@ -195,7 +195,7 @@ void NATSConnection::disconnectedCallback(natsConnection *, void * this_)
     connection->connection_closed_promise = std::nullopt;
     connection->connection_closed_future = std::nullopt;
 
-    LOG_DEBUG(connection->log, "Got disconnected from NATS server.");
+    LOG_DEBUG(connection->log, "Got disconnected {} from NATS server.", static_cast<void*>(connection));
 }
 
 }
