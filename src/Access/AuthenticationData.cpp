@@ -431,7 +431,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
 {
-    std::optional<time_t> valid_until;
+    time_t valid_until = 0;
 
     if (query.valid_until)
     {
@@ -441,7 +441,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
     {
         AuthenticationData auth_data;
-        auth_data.setValidUntilIfNotNull(valid_until);
+        auth_data.setValidUntil(valid_until);
         return auth_data;
     }
 
@@ -470,7 +470,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         }
 
         auth_data.setSSHKeys(std::move(keys));
-        auth_data.setValidUntilIfNotNull(valid_until);
+        auth_data.setValidUntil(valid_until);
         return auth_data;
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
@@ -542,13 +542,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
         }
 
-        auth_data.setValidUntilIfNotNull(valid_until);
+        auth_data.setValidUntil(valid_until);
         auth_data.setPassword(value);
         return auth_data;
     }
 
     AuthenticationData auth_data(*query.type);
-    auth_data.setValidUntilIfNotNull(valid_until);
+    auth_data.setValidUntil(valid_until);
 
     if (query.contains_hash)
     {

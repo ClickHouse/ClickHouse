@@ -76,12 +76,6 @@ public:
 
     time_t getValidUntil() const { return valid_until; }
     void setValidUntil(time_t valid_until_) { valid_until = valid_until_; }
-    void setValidUntilIfNotNull(std::optional<time_t> valid_until_) {
-        if (valid_until_)
-        {
-            setValidUntil(*valid_until_);
-        }
-    }
 
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }

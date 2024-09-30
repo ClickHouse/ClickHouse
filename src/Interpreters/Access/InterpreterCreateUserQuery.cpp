@@ -104,7 +104,10 @@ namespace
 
         for (auto & authentication_method : user.authentication_methods)
         {
-            authentication_method.setValidUntilIfNotNull(global_valid_until);
+            if (global_valid_until)
+            {
+                authentication_method.setValidUntil(*global_valid_until);
+            }
 
             if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
             {
