@@ -2430,6 +2430,8 @@ def test_filesystem_cache(started_cluster):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert count == int(instance.query(
-        f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-    ))
+    assert count == int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
