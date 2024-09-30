@@ -54,11 +54,12 @@ SHOW CREATE USER u4_01292;
 SHOW CREATE USER u5_01292;
 
 SELECT '-- no passwords or hashes in query_log';
+SYSTEM FLUSH LOGS;
 SELECT query
 FROM system.query_log
 WHERE
     query NOT LIKE '%query_log%' AND
-    (query LIKE '%qwe123%' OR
+    (query LIKE '%qwe123%' OR query LIKE '%123qwe%' OR
     query LIKE '%18138372FAD4B94533CD4881F03DC6C69296DD897234E0CEE83F727E2E6B1F63%' OR
     query LIKE '%8DCDD69CE7D121DE8013062AEAEB2A148910D50E%' OR
     query like '%$2a$12$rz5iy2LhuwBezsM88ZzWiemOVUeJ94xHTzwAlLMDhTzwUxOHaY64q%');
