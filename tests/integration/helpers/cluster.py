@@ -2837,7 +2837,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images)(run_and_check)(images_pull_cmd)
+            retry(log_function=logging_pulling_images)(run_and_check, images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3118,9 +3118,7 @@ class ClickHouseCluster:
 
                 retry(
                     log_function=logging_azurite_initialization,
-                )(
-                    run_and_check
-                )(azurite_start_cmd)
+                )(run_and_check, azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()

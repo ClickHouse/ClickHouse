@@ -4,10 +4,10 @@ from time import sleep
 import pytest
 from kazoo.client import KazooClient
 from minio.deleteobjects import DeleteObject
-from retry import retry
 
-import helpers.keeper_utils as keeper_utils
+from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
+from helpers.retry_decorator import retry
 
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
@@ -110,7 +110,13 @@ def test_s3_upload(started_cluster):
             cluster.minio_client.remove_object("snapshots", s.object_name)
 
     # Keeper sends snapshots asynchornously, hence we need to retry.
-    @retry(AssertionError, tries=10, delay=2)
+    @retry(
+        retries=10,
+        delay=2,
+        jitter=0,
+        backoff=0,
+        retriable_expections_list=[AssertionError],
+    )
     def _check_snapshots():
         assert set(get_saved_snapshots()) == set(
             [
@@ -133,7 +139,13 @@ def test_s3_upload(started_cluster):
     for _ in range(200):
         node2_zk.create("/test", sequence=True)
 
-    @retry(AssertionError, tries=10, delay=2)
+    @retry(
+        retries=10,
+        delay=2,
+        jitter=0,
+        backoff=0,
+        retriable_expections_list=[AssertionError],
+    )
     def _check_snapshots_without_quorum():
         assert len(get_saved_snapshots()) > 4
 
