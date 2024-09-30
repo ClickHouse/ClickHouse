@@ -3,6 +3,9 @@ name: CreateRelease
 concurrency:
   group: release
 
+env:
+  PYTHONUNBUFFERED: 1
+
 'on':
   workflow_dispatch:
     inputs:

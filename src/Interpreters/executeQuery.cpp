@@ -847,7 +847,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -876,7 +882,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1247,7 +1259,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
-
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
