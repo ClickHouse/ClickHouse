@@ -11,7 +11,7 @@ namespace DB
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits 
+    return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
