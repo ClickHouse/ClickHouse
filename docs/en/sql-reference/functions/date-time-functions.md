@@ -1629,6 +1629,17 @@ The second overload emulates TimescaleDB's `time_bucket()` function, respectivel
 ``` SQL
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));
 ```
+
+result:
+
+``` reference
+┌───toStartOfInterval(...)─┐
+│      2023-01-01 14:44:30 │
+└──────────────────────────┘
+```
+
+Aliases: `time_bucket`, `date_bin`.
+
 **See Also**
 - [date_trunc](#date_trunc)
 
