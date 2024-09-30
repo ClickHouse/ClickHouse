@@ -58,18 +58,16 @@ Header: id UInt64
 Actions: INPUT : 0 -> __table1.id UInt64 : 0
          INPUT : 1 -> __table1.value_1 String : 1
          INPUT : 2 -> __table2.value_1 String : 2
-         INPUT :: 3 -> __table2.value_2 UInt64 : 3
-         INPUT : 4 -> __table2.id UInt64 : 4
-         ALIAS __table1.id :: 0 -> id UInt64 : 5
+         INPUT : 3 -> __table2.id UInt64 : 3
+         ALIAS __table1.id :: 0 -> id UInt64 : 4
          ALIAS __table1.value_1 :: 1 -> value_1 String : 0
          ALIAS __table2.value_1 :: 2 -> rhs.value_1 String : 1
-         ALIAS __table2.id :: 4 -> rhs.id UInt64 : 2
-Positions: 5 0 2 1
+         ALIAS __table2.id :: 3 -> rhs.id UInt64 : 2
+Positions: 4 0 2 1
   Join (JOIN FillRightFirst)
   Header: __table1.id UInt64
           __table1.value_1 String
           __table2.value_1 String
-          __table2.value_2 UInt64
           __table2.id UInt64
   Type: INNER
   Strictness: ASOF

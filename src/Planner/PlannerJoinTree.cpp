@@ -1641,7 +1641,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             settings[Setting::max_block_size],
             settings[Setting::max_threads],
             outer_scope_columns,
-            false /*optimize_read_in_order*/);
+            false /*optimize_read_in_order*/,
+            true /*optimize_skip_unused_shards*/);
         join_step->inner_table_selection_mode = settings[Setting::query_plan_join_inner_table_selection];
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));

@@ -21,7 +21,8 @@ public:
         size_t max_block_size_,
         size_t max_streams_,
         NameSet required_output_,
-        bool keep_left_read_in_order_);
+        bool keep_left_read_in_order_,
+        bool use_new_analyzer_);
 
     String getName() const override { return "Join"; }
 
@@ -53,6 +54,7 @@ private:
     NameSet required_output;
     std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
+    bool use_new_analyzer = false;
 };
 
 /// Special step for the case when Join is already filled.
