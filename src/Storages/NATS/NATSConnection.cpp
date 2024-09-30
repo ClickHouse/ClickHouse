@@ -102,7 +102,7 @@ bool NATSConnection::reconnect()
     std::lock_guard lock(mutex);
     if (isConnectedImpl())
         return true;
-    else if(!isDisconnectedImpl())
+    else if (!isDisconnectedImpl())
         return false;
 
     disconnectImpl();
