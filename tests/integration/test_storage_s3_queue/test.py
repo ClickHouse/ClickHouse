@@ -1,15 +1,15 @@
 import io
+import json
 import logging
 import random
 import string
 import time
-
-import pytest
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-import json
 from uuid import uuid4
 
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]

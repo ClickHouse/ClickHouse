@@ -187,6 +187,20 @@ static void addMissedColumnsToSerializationInfos(
     }
 }
 
+bool MergeTask::GlobalRuntimeContext::isCancelled() const
+{
+    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.partition_id) : merges_blocker->isCancelled())
+        || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
+}
+
+void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
+{
+    if (isCancelled())
+    {
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+    }
+}
+
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns() const
 {
@@ -280,8 +294,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
 
-    if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+    global_ctx->checkOperationIsNotCanceled();
 
     /// We don't want to perform merge assigned with TTL as normal merge, so
     /// throw exception
@@ -526,9 +539,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
         need_remove = ctx->need_remove_expired_values,
-        merge_list_element = global_ctx->merge_list_element_ptr]() -> bool
+        merge_list_element = global_ctx->merge_list_element_ptr,
+        partition_id = global_ctx->future_part->part_info.partition_id]() -> bool
     {
-        return merges_blocker->isCancelled()
+        return merges_blocker->isCancelledForPartition(partition_id)
             || (need_remove && ttl_merges_blocker->isCancelled())
             || merge_list_element->is_cancelled.load(std::memory_order_relaxed);
     };
@@ -805,8 +819,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
 
-    if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+    global_ctx->checkOperationIsNotCanceled();
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
@@ -1069,8 +1082,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
     {
         Block block;
 
-        if (global_ctx->merges_blocker->isCancelled()
-            || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
+        if (global_ctx->isCancelled()
             || !ctx->executor->pull(block))
             return false;
 
@@ -1086,8 +1098,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
     const String & column_name = ctx->it_name_and_type->name;
-    if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+    global_ctx->checkOperationIsNotCanceled();
 
     ctx->executor.reset();
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
