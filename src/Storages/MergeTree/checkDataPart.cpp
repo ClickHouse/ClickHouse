@@ -130,7 +130,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     const NamesAndTypesList & columns_list,
     const MergeTreeDataPartType & part_type,
     const NameSet & files_without_checksums,
-    ReadSettings read_settings,
+    const ReadSettings & read_settings,
     bool require_checksums,
     std::function<bool()> is_cancelled,
     bool & is_broken_projection,
