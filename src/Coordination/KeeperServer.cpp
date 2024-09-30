@@ -26,7 +26,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -444,7 +444,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// At least 16 threads for network communication in asio.
     /// asio is async framework, so even with 1 thread it should be ok, but
     /// still as safeguard it's better to have some redundant capacity here
-    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfPhysicalCPUCores());
+    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
 
     if (state_manager->isSecure())
     {

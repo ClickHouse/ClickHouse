@@ -12,7 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -49,14 +49,14 @@ void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopw
 AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
     : name(init.name)
     , priority(init.priority)
-    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores())
+    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfCPUCoresToUse())
     , thread_pool(std::make_unique<ThreadPool>(
-        init.metric_threads,
-        init.metric_active_threads,
-        init.metric_scheduled_threads,
-        /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
-        /* max_free_threads = */ 0, // We do not require free threads
-        /* queue_size = */0)) // Unlimited queue to avoid blocking during worker spawning
+          init.metric_threads,
+          init.metric_active_threads,
+          init.metric_scheduled_threads,
+          /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
+          /* max_free_threads = */ 0, // We do not require free threads
+          /* queue_size = */ 0)) // Unlimited queue to avoid blocking during worker spawning
 {}
 
 AsyncLoader::Pool::Pool(Pool&& o) noexcept
@@ -491,7 +491,7 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
 void AsyncLoader::setMaxThreads(size_t pool, size_t value)
 {
     if (value == 0)
-        value = getNumberOfPhysicalCPUCores();
+        value = getNumberOfCPUCoresToUse();
     std::unique_lock lock{mutex};
     auto & p = pools[pool];
     // Note that underlying `ThreadPool` always has unlimited `queue_size` and `max_threads`.
