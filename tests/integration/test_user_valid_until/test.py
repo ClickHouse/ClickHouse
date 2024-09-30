@@ -136,29 +136,39 @@ def test_multiple_authentication_methods(started_cluster):
     )
 
     assert (
-            node.query("SHOW CREATE USER user_basic")
-            == "CREATE USER user_basic IDENTIFIED WITH plaintext_password, plaintext_password VALID UNTIL \\'2040-11-06 00:00:00\\', "
-               "plaintext_password VALID UNTIL \\'2010-11-06 00:00:00\\', plaintext_password\n"
+        node.query("SHOW CREATE USER user_basic")
+        == "CREATE USER user_basic IDENTIFIED WITH plaintext_password, plaintext_password VALID UNTIL \\'2040-11-06 00:00:00\\', "
+        "plaintext_password VALID UNTIL \\'2010-11-06 00:00:00\\', plaintext_password\n"
     )
     assert node.query("SELECT 1", user="user_basic", password="no_expiration") == "1\n"
     assert node.query("SELECT 1", user="user_basic", password="not_expired") == "1\n"
     assert node.query("SELECT 1", user="user_basic", password="infinity") == "1\n"
 
     error = "Authentication failed"
-    assert error in node.query_and_get_error("SELECT 1", user="user_basic", password="expired")
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="expired"
+    )
 
     # Expire them all
     node.query("ALTER USER user_basic VALID UNTIL '06/11/2010 08:03:20'")
 
     assert (
-            node.query("SHOW CREATE USER user_basic")
-            == "CREATE USER user_basic IDENTIFIED WITH plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
-               " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
-               " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
-               " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\'\n"
+        node.query("SHOW CREATE USER user_basic")
+        == "CREATE USER user_basic IDENTIFIED WITH plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
+        " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
+        " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
+        " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\'\n"
     )
 
-    assert error in node.query_and_get_error("SELECT 1", user="user_basic", password="no_expiration")
-    assert error in node.query_and_get_error("SELECT 1", user="user_basic", password="not_expired")
-    assert error in node.query_and_get_error("SELECT 1", user="user_basic", password="infinity")
-    assert error in node.query_and_get_error("SELECT 1", user="user_basic", password="expired")
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="no_expiration"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="not_expired"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="infinity"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="expired"
+    )
