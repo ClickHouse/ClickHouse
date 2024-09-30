@@ -996,10 +996,11 @@ bool Client::chFuzz()
     bool server_up = true;
     std::string full_query;
     int nsuccessfull = 0, total_create_table_tries = 0;
-    chfuzz::StatementGenerator gen;
-    chfuzz::RandomGenerator rg(0);
+    chfuzz::FuzzConfig fc(ch_fuzz_options_path);
+    chfuzz::RandomGenerator rg(fc.seed);
+    std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
+    chfuzz::StatementGenerator gen(std::move(fc));
     sql_query_grammar::SQLQuery sq1, sq2, sq3;
-    std::ofstream outf("/tmp/out.sql", std::ios::out | std::ios::trunc);
 
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -1106,7 +1107,7 @@ void Client::addOptions(OptionsDescription & options_description)
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")
-        ("ch-fuzz", po::value<bool>()->default_value(false), "")
+        ("ch-fuzz-config", po::value<std::string>(), "Path to configuration file for CH fuzzer")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
 
@@ -1265,7 +1266,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
-    ch_fuzz = options["ch-fuzz"].as<bool>();
+    ch_fuzz_options_path = options["ch-fuzz-config"].as<std::string>();
+    ch_fuzz = ch_fuzz_options_path != "";
     if (query_fuzzer_runs || ch_fuzz)
     {
         // Ignore errors in parsing queries.

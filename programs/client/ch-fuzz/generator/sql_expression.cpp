@@ -660,9 +660,7 @@ int StatementGenerator::GenerateExpression(RandomGenerator &rg, sql_query_gramma
 		this->depth++;
 		this->levels[this->current_level].allow_window_funcs = false;
 		if (rg.NextSmallNumber() < 7) {
-			sql_query_grammar::SQLFuncCall *fc = sfc->mutable_agg_func();
-
-			GenerateFuncCall(rg, false, true, fc);
+			GenerateFuncCall(rg, false, true, sfc->mutable_agg_func());
 		} else {
 			uint32_t nargs = 0;
 			sql_query_grammar::SQLWindowCall *wc = sfc->mutable_win_func();

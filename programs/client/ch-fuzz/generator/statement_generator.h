@@ -3,6 +3,7 @@
 #include "random_generator.h"
 #include "random_settings.h"
 #include "sql_catalog.h"
+#include "../config/fuzz_config.h"
 
 namespace chfuzz {
 
@@ -74,6 +75,7 @@ typedef struct InsertEntry {
 class StatementGenerator {
 private:
 	std::string buf;
+	const FuzzConfig &fc;
 	bool in_transaction = false, inside_projection = false;
 	uint32_t table_counter = 0, current_level = 0;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
@@ -230,6 +232,8 @@ private:
 	SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
 public:
 	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return t.attached;};
+
+	StatementGenerator(const FuzzConfig &ffc) : fc(ffc) {}
 
 	int GenerateNextCreateTable(RandomGenerator &rg, sql_query_grammar::CreateTable *sq);
 	int GenerateNextStatement(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq);

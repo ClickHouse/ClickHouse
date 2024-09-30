@@ -12,7 +12,7 @@ set (CLICKHOUSE_CLIENT_SOURCES
     ch-fuzz/generator/query_oracles.cpp
     ${GRAMMAR_SRC}
 )
-set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused")
+set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-covered-switch-default")
 
 set (CLICKHOUSE_CLIENT_LINK
     PRIVATE
@@ -36,6 +36,7 @@ set (CLICKHOUSE_CLIENT_INCLUDE
     PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/ch-fuzz/ast"
+    "${CMAKE_CURRENT_BINARY_DIR}/ch-fuzz/config"
     "${CMAKE_CURRENT_BINARY_DIR}/ch-fuzz/generator"
 )
 
