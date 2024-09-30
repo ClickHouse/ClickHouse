@@ -901,7 +901,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    Chunk result_chunk = squashing.flush();
+    Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
     {
         return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.header, query_context);
