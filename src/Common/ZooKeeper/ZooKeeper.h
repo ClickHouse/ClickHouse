@@ -47,6 +47,10 @@ namespace zkutil
 /// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
+/// Path "default:/foo" refers to znode "/foo" in the default zookeeper,
+/// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
+constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
+
 struct ShuffleHost
 {
     enum AvailabilityZoneInfo
@@ -623,7 +627,7 @@ public:
 
     std::optional<int8_t> getConnectedHostIdx() const;
     String getConnectedHostPort() const;
-    int32_t getConnectionXid() const;
+    int64_t getConnectionXid() const;
 
     String getConnectedHostAvailabilityZone() const;
 

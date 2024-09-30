@@ -66,6 +66,7 @@ public:
 
     /// Returns true if this storage is replicated.
     virtual bool isReplicated() const { return false; }
+    virtual String getReplicationID() const { return ""; }
 
     /// Starts periodic reloading and updating of entities in this storage.
     virtual void startPeriodicReloading() {}
@@ -90,8 +91,9 @@ public:
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
 
-    template <typename EntityClassT>
-    std::vector<UUID> findAll() const { return findAll(EntityClassT::TYPE); }
+    /// Returns the identifiers of all the entities in the storage.
+    template <typename EntityClassT = IAccessEntity>
+    std::vector<UUID> findAll() const;
 
     /// Searches for an entity with specified type and name. Returns std::nullopt if not found.
     std::optional<UUID> find(AccessEntityType type, const String & name) const;
@@ -148,7 +150,7 @@ public:
     std::optional<std::pair<String, AccessEntityType>> tryReadNameWithType(const UUID & id) const;
 
     /// Reads all entities and returns them with their IDs.
-    template <typename EntityClassT>
+    template <typename EntityClassT = IAccessEntity>
     std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> readAllWithIDs() const;
 
     std::vector<std::pair<UUID, AccessEntityPtr>> readAllWithIDs(AccessEntityType type) const;
@@ -180,7 +182,7 @@ public:
     /// Removes multiple entities from the storage. Returns the list of successfully dropped.
     std::vector<UUID> tryRemove(const std::vector<UUID> & ids);
 
-    using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &)>;
+    using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &, const UUID &)>;
 
     /// Updates an entity stored in the storage. Throws an exception if couldn't update.
     bool update(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists = true);
@@ -214,11 +216,12 @@ public:
 
     /// Makes a backup of this access storage.
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
-    virtual void restoreFromBackup(RestorerFromBackup & restorer);
+    virtual void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
+    virtual std::vector<UUID> findAllImpl() const;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
     virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
@@ -264,6 +267,16 @@ private:
     mutable OnceFlag log_initialized;
     mutable LoggerPtr log = nullptr;
 };
+
+
+template <typename EntityClassT>
+std::vector<UUID> IAccessStorage::findAll() const
+{
+    if constexpr (std::is_same_v<EntityClassT, IAccessEntity>)
+        return findAllImpl();
+    else
+        return findAllImpl(EntityClassT::TYPE);
+}
 
 
 template <typename EntityClassT>
