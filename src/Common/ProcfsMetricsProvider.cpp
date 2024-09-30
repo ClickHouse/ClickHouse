@@ -98,7 +98,7 @@ ProcfsMetricsProvider::ProcfsMetricsProvider(pid_t /*tid*/)
     thread_stat_fd = ::open(thread_stat, O_RDONLY | O_CLOEXEC);
     if (-1 == thread_stat_fd)
     {
-        int err = ::close(thread_schedstat_fd);
+        [[maybe_unused]] int err = ::close(thread_schedstat_fd);
         chassert(!err || errno == EINTR);
         throwWithFailedToOpenFile(thread_stat);
     }

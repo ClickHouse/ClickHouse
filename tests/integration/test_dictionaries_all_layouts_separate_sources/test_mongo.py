@@ -1,10 +1,11 @@
 import os
-import pytest
 
-from .common import *
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.external_sources import SourceMongo
+
+from .common import *
 
 simple_tester = None
 complex_tester = None
