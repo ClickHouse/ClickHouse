@@ -216,6 +216,19 @@ Possible values:
 
 Default value: 1.
 
+## use_skip_indexes_if_final {#use_skip_indexes_if_final}
+
+Controls whether skipping indexes are used when executing a query with the FINAL modifier.
+
+By default, this setting is disabled because skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results. When enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
 ## force_data_skipping_indices {#force_data_skipping_indices}
 
 Disables query execution if passed data skipping indices wasn't used.
@@ -5669,6 +5682,24 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## show_create_query_identifier_quoting_rule
+
+Define identifier quoting behavior of the show create query result:
+- `when_necessary`: When the identifiers is one of `{"distinct", "all", "table"}`, or it can cause ambiguity: column names, dictionary attribute names.
+- `always`: Always quote identifiers.
+- `user_display`: When the identifiers is a keyword.
+
+Default value: `when_necessary`.
+
+## show_create_query_identifier_quoting_style
+
+Define identifier quoting style of the show create query result:
+- `Backticks`: \`clickhouse\` style.
+- `DoubleQuotes`: "postgres" style
+- `BackticksMySQL`: \`mysql\` style, most same as `Backticks`, but it uses '``' to escape '`'
+
+Default value: `Backticks`.
 
 ## mongodb_throw_on_unsupported_query
 

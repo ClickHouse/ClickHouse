@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include <atomic>
 #include <ranges>
 #include <chrono>
 
@@ -561,6 +562,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         if (!is_first_replica)
             createReplica(metadata_snapshot);
+
+        createNewZooKeeperNodes();
+        syncPinnedPartUUIDs();
+
+        if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
+            createTableSharedID();
+
+
     }
     catch (...)
     {
@@ -568,12 +577,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         dropIfEmpty();
         throw;
     }
-
-    createNewZooKeeperNodes();
-    syncPinnedPartUUIDs();
-
-    if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
-        createTableSharedID();
 
     initialization_done = true;
 }
@@ -5721,7 +5724,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     String query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
+        IAST::FormatSettings ast_format_settings(
+            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         query.IAST::format(ast_format_settings);
         query_str = buf.str();
     }
@@ -7095,6 +7099,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
     res.active_replicas = 0;
     res.lost_part_count = 0;
     res.last_queue_update_exception = getLastQueueUpdateException();
+    res.readonly_start_time = readonly_start_time.load(std::memory_order_relaxed);
 
     if (with_zk_fields && !res.is_session_expired)
     {
