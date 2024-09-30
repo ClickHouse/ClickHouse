@@ -248,6 +248,14 @@ public:
         cache_policy->setQuotaForUser(user_id, max_size_in_bytes, max_entries);
     }
 
+    /// For unit tests.
+    /// Do not use it anywhere else as this is not thread-safe.
+    const CachePolicy & getCachePolicy()
+    {
+        std::lock_guard lock(mutex);
+        return *cache_policy;
+    }
+
     virtual ~CacheBase() = default;
 
 protected:

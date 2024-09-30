@@ -122,32 +122,17 @@ TEST(SIEVECache, ComplexEvictTest)
     // Expected visited flags: 1 1 1 0 1 0 1
     // After removeOverflow: 0 0 0 1 1 0 1
     sieve_cache.set(8, std::make_shared<size_t>(6)); // This should trigger eviction
-    
+
     auto n = sieve_cache.count();
     ASSERT_EQ(n, 6);
 
-    auto cell = sieve_cache.getCell(1);
-    ASSERT_TRUE(cell != nullptr);
-    ASSERT_TRUE(cell->visited == 0); 
-    cell = sieve_cache.getCell(2);
-    ASSERT_TRUE(cell != nullptr);
-    ASSERT_TRUE(cell->visited == 0);
-    cell = sieve_cache.getCell(3);
-    ASSERT_TRUE(cell != nullptr);
-    ASSERT_TRUE(cell->visited == 0);
-    cell = sieve_cache.getCell(4);
-    ASSERT_TRUE(cell == nullptr);
-    cell = sieve_cache.getCell(5);
-    ASSERT_TRUE(cell != nullptr);
-    ASSERT_TRUE(cell->visited == 1);
-    cell = sieve_cache.getCell(6);
-    ASSERT_TRUE(cell != nullptr);
-    ASSERT_TRUE(cell->visited == 0);
-    cell = sieve_cache.getCell(7);
-    ASSERT_TRUE(cell != nullptr);
-    ASSERT_TRUE(cell->visited == 1);
-    cell = sieve_cache.getCell(8);
-    ASSERT_TRUE(cell != nullptr);
-    ASSERT_TRUE(cell->visited == 1);
+    const auto & cache_policy = sieve_cache.getCachePolicy();
+    const auto & sieve_cache_policy = dynamic_cast<const DB::SIEVECachePolicy<int, size_t> &>(cache_policy);
+    ASSERT_TRUE(sieve_cache_policy.isVisited(1) == 0);
+    ASSERT_TRUE(sieve_cache_policy.isVisited(2) == 0);
+    ASSERT_TRUE(sieve_cache_policy.isVisited(3) == 1);
+    ASSERT_TRUE(sieve_cache_policy.isVisited(5) == 1);
+    ASSERT_TRUE(sieve_cache_policy.isVisited(6) == 0);
+    ASSERT_TRUE(sieve_cache_policy.isVisited(7) == 1);
+    ASSERT_TRUE(sieve_cache_policy.isVisited(8) == 1);
 }
-

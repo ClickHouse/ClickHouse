@@ -164,6 +164,16 @@ public:
         return res;
     }
 
+    /// For unit tests.
+    std::optional<bool> isVisited(const Key & key) const
+    {
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return std::nullopt;
+        const Cell & cell = it->second;
+        return cell.visited;
+    }
+
 private:
     using SIEVEQueue = std::list<Key>;
     using SIEVEQueueIterator = typename SIEVEQueue::iterator;
