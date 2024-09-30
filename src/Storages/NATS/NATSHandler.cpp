@@ -17,6 +17,10 @@ NATSHandler::NATSHandler(LoggerPtr log_)
     , loop_state(Loop::STOP)
 {
 }
+NATSHandler::~NATSHandler()
+{
+    LOG_DEBUG(log, "Destroy event loop.");
+}
 
 void NATSHandler::runLoop()
 {

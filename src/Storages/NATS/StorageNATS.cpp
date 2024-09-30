@@ -112,6 +112,10 @@ StorageNATS::StorageNATS(
     reconnection_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConnectionManagerTask", [this] { reconnectionFunc(); });
     reconnection_task->deactivate();
 }
+StorageNATS::~StorageNATS()
+{
+    LOG_DEBUG(log, "Destroy storage.");
+}
 
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {

@@ -24,6 +24,7 @@ public:
         const String & subject_,
         LoggerPtr log_,
         ReconnectCallback reconnect_callback_);
+    ~NATSProducer() override;
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 

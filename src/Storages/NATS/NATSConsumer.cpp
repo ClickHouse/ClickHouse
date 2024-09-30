@@ -33,6 +33,10 @@ NATSConsumer::NATSConsumer(
     , received(queue_size_)
 {
 }
+NATSConsumer::~NATSConsumer()
+{
+    LOG_DEBUG(log, "Destroy consumer");
+}
 
 void NATSConsumer::subscribe()
 {

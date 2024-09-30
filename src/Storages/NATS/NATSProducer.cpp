@@ -31,6 +31,10 @@ NATSProducer::NATSProducer(
     , payloads(BATCH)
 {
 }
+NATSProducer::~NATSProducer()
+{
+    LOG_DEBUG(log, "Destroy producer to subject '{}'", subject);
+}
 
 void NATSProducer::initialize()
 {
@@ -93,6 +97,7 @@ void NATSProducer::startProducingTaskLoop()
             else
                 publish();
         }
+        natsConnection_Flush(connection->getConnection());
     }
     catch (...)
     {

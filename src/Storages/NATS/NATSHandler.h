@@ -30,6 +30,7 @@ class NATSHandler
 
 public:
     explicit NATSHandler(LoggerPtr log_);
+    ~NATSHandler();
 
     /// Loop for background thread worker.
     void runLoop();

@@ -26,6 +26,7 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode);
+    ~StorageNATS() override;
 
     std::string getName() const override { return "NATS"; }
 
