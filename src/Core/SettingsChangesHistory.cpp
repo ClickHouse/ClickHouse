@@ -71,6 +71,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
             {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
             {"parallel_replicas_mode", "read_tasks", "read_tasks", "This setting was introduced as a part of making parallel replicas feature Beta"},
+            {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
         }
