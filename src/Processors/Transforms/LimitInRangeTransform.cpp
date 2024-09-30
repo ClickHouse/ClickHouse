@@ -15,7 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-extern const int UNKNOWN_TYPE_OF_QUERY;
+extern const int UNEXPECTED_EXPRESSION;
 }
 
 Block LimitInRangeTransform::transformHeader(
@@ -72,7 +72,7 @@ LimitInRangeTransform::LimitInRangeTransform(
     if (!to_filter_column_name.empty())
         to_filter_column_position = transformed_header.getPositionByName(to_filter_column_name);
 
-    std::cerr << on_totals << '\n';
+    (void)on_totals;
 }
 
 IProcessor::Status LimitInRangeTransform::prepare()
@@ -121,7 +121,7 @@ IProcessor::Status LimitInRangeTransform::prepare()
             else if (!to_filter_column_name.empty() && !to_index_found)
             {
                 throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                    ErrorCodes::UNEXPECTED_EXPRESSION,
                     "The 'TO' condition was not satisfied: 'TO' index was not found in the data");
             }
             return Status::Finished;
