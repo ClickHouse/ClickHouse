@@ -155,7 +155,10 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
         auto check = [&](const IDataType & type)
         {
             if (isDynamic(type) || isVariant(type))
-                throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type Variant/Dynamic is not allowed in key expression");
+                throw Exception(
+                    ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
+                    "Column with type Variant/Dynamic is not allowed in key expression. Consider using a subcolumn with a specific data "
+                    "type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type");
         };
 
         check(*result.data_types.back());
