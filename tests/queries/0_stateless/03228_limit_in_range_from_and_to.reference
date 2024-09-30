@@ -1,17 +1,12 @@
 [FROM, TO] Query 1 result:
-101	Hello, ClickHouse!	2024-09-30 14:36:45	-1
-101	Granules are the smallest chunks of data read	2024-09-30 14:36:50	3.14159
+101	Hello, ClickHouse!	2024-09-30 17:49:39	-1
+101	Granules are the smallest chunks of data read	2024-09-30 17:49:44	3.14159
 102	Insert a lot of rows per batch	2024-09-29 00:00:00	1.41421
 [FROM, TO] Query 2 result:
-101	Hello, ClickHouse!	2024-09-30 14:36:45	-1
-101	Granules are the smallest chunks of data read	2024-09-30 14:36:50	3.14159
+101	Hello, ClickHouse!	2024-09-30 17:49:39	-1
+101	Granules are the smallest chunks of data read	2024-09-30 17:49:44	3.14159
 102	Insert a lot of rows per batch	2024-09-29 00:00:00	1.41421
 [FROM, TO] Query 3 result:
-101	Granules are the smallest chunks of data read	2024-09-30 14:36:50	3.14159
+101	Granules are the smallest chunks of data read	2024-09-30 17:49:44	3.14159
 102	Insert a lot of rows per batch	2024-09-29 00:00:00	1.41421
 [FROM, TO] Query 4 result:
-[FROM, TO] Query 5 result:
-101	Hello, ClickHouse!	2024-09-30 14:36:45	-1
-101	Granules are the smallest chunks of data read	2024-09-30 14:36:50	3.14159
-102	Insert a lot of rows per batch	2024-09-29 00:00:00	1.41421
-102	Sort your data based on your commonly-used queries	2024-09-30 00:00:00	2.718

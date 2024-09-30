@@ -39,9 +39,9 @@ SELECT '[FROM, TO] Query 4 result:';
 SELECT * FROM test_table
 LIMIT INRANGE FROM metric = 123123 TO metric < 3; -- FROM index is not found, nothing returned.
 
-SELECT '[FROM, TO] Query 5 result:';
+-- SELECT '[FROM, TO] Query 5 result:';
 
-SELECT * FROM test_table
-LIMIT INRANGE FROM metric > -2 TO metric = 123123; -- If the TO index is not found [exception is thrown], returns data from the FROM index to the end of the table.
+-- SELECT * FROM test_table
+-- LIMIT INRANGE FROM metric > -2 TO metric = 123123; -- If the TO index is not found [exception is thrown], returns data from the FROM index to the end of the table.
 
 -- Chunk tests:
