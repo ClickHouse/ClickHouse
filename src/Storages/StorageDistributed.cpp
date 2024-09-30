@@ -23,15 +23,15 @@
 
 #include <Columns/ColumnConst.h>
 
-#include <Common/threadPoolCallbackRunner.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Common/formatReadable.h>
-#include <Common/CurrentMetrics.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -40,8 +40,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/parseQuery.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -1003,7 +1004,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers_=*/ true);
+        IAST::FormatSettings ast_format_settings(
+            /*ostr_=*/buf, /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
@@ -1123,7 +1125,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
+        IAST::FormatSettings ast_format_settings(
+            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }

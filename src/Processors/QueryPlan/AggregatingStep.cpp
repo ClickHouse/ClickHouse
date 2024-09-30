@@ -130,25 +130,21 @@ AggregatingStep::AggregatingStep(
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
-    if (memoryBoundMergingWillBeUsed())
-    {
-        output_stream->sort_description = group_by_sort_description;
-        output_stream->sort_scope = DataStream::SortScope::Global;
-    }
 }
 
 void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_)
 {
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
-
-    if (memoryBoundMergingWillBeUsed())
-    {
-        output_stream->sort_description = group_by_sort_description;
-        output_stream->sort_scope = DataStream::SortScope::Global;
-    }
-
     explicit_sorting_required_for_aggregation_in_order = false;
+}
+
+const SortDescription & AggregatingStep::getSortDescription() const
+{
+    if (memoryBoundMergingWillBeUsed())
+        return group_by_sort_description;
+
+    return IQueryPlanStep::getSortDescription();
 }
 
 ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
