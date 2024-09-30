@@ -30,7 +30,7 @@ disable = '''
 
 [tool.isort]
 profile = "black"
-src_paths = ["src", "tests/ci", "tests/sqllogic"]
+src_paths = ["src", "tests/ci", "tests/sqllogic", "tests/queries", "tests/integration"]
 
 [tool.black]
 required-version = 24

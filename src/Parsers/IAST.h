@@ -196,7 +196,7 @@ public:
         WriteBuffer & ostr;
         bool one_line;
         bool hilite;
-        bool always_quote_identifiers;
+        IdentifierQuotingRule identifier_quoting_rule;
         IdentifierQuotingStyle identifier_quoting_style;
         bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
         char nl_or_ws; /// Newline or whitespace.
@@ -207,7 +207,7 @@ public:
             WriteBuffer & ostr_,
             bool one_line_,
             bool hilite_ = false,
-            bool always_quote_identifiers_ = false,
+            IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
@@ -215,7 +215,7 @@ public:
             : ostr(ostr_)
             , one_line(one_line_)
             , hilite(hilite_)
-            , always_quote_identifiers(always_quote_identifiers_)
+            , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
             , show_secrets(show_secrets_)
             , nl_or_ws(one_line ? ' ' : '\n')
@@ -228,7 +228,7 @@ public:
             : ostr(ostr_)
             , one_line(other.one_line)
             , hilite(other.hilite)
-            , always_quote_identifiers(other.always_quote_identifiers)
+            , identifier_quoting_rule(other.identifier_quoting_rule)
             , identifier_quoting_style(other.identifier_quoting_style)
             , show_secrets(other.show_secrets)
             , nl_or_ws(other.nl_or_ws)
@@ -237,10 +237,7 @@ public:
         {
         }
 
-        void writeIdentifier(const String & name) const;
-        // Quote identifier `name` even when `always_quote_identifiers` is false.
-        // If `identifier_quoting_style` is `IdentifierQuotingStyle::None`, quote it with `IdentifierQuotingStyle::Backticks`
-        void quoteIdentifier(const String & name) const;
+        void writeIdentifier(const String & name, bool ambiguous) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -286,7 +283,7 @@ public:
         bool one_line,
         bool show_secrets,
         bool print_pretty_type_names,
-        bool always_quote_identifiers,
+        IdentifierQuotingRule identifier_quoting_rule,
         IdentifierQuotingStyle identifier_quoting_style) const;
 
     /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
@@ -296,12 +293,24 @@ public:
       */
     String formatForLogging(size_t max_length = 0) const
     {
-        return formatWithPossiblyHidingSensitiveData(max_length, true, false, false, false, IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/max_length,
+            /*one_line=*/true,
+            /*show_secrets=*/false,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
     }
 
     String formatForErrorMessage() const
     {
-        return formatWithPossiblyHidingSensitiveData(0, true, false, false, false, IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/0,
+            /*one_line=*/true,
+            /*show_secrets=*/false,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
     }
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
