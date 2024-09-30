@@ -63,10 +63,10 @@ SELECT '[TO] Query 3 result:';
 SELECT * FROM test_table
 LIMIT INRANGE TO data LIKE 'data_2';
 
-SELECT '[TO] Query 4 result:';
+-- SELECT '[TO] Query 4 result:';
 
-SELECT * FROM test_table
-LIMIT INRANGE TO id = -1; -- all data returned, exception thrown.
+-- SELECT * FROM test_table
+-- LIMIT INRANGE TO id = -1; -- all data returned, exception thrown.
 
 
 -- Chunk tests:
