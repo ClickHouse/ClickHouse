@@ -73,7 +73,7 @@ private:
         else
         {
             const auto * default_value_column = arguments[1].column.get();
-            if (!default_value_column || default_value_column->size() != 1)
+            if (!default_value_column || !(isColumnConst(*default_value_column)))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "The 2nd argument of function {} should be a constant with the default value of a setting", String{name});
