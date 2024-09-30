@@ -77,7 +77,14 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 #endif
     catch (const ErrnoException & e)
     {
-        return e.getErrno() == EMFILE;
+        return e.getErrno() == EMFILE
+            || e.getErrno() == ENOMEM
+            || isNotEnoughMemoryErrorCode(e.code())
+            || e.code() == ErrorCodes::NETWORK_ERROR
+            || e.code() == ErrorCodes::SOCKET_TIMEOUT
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
+
     }
     catch (const Coordination::Exception & e)
     {
