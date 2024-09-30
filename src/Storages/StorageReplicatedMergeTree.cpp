@@ -6076,6 +6076,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         /// Object may be added or dropped by alter.
         auto parts_lock = lockParts();
         resetObjectColumnsFromActiveParts(parts_lock);
+        resetSerializationHints(parts_lock);
     }
 
     return true;
