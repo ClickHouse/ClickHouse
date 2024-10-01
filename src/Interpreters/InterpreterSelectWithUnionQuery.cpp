@@ -318,17 +318,17 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     else
     {
         std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-        DataStreams data_streams(num_plans);
+        Headers headers(num_plans);
 
         for (size_t i = 0; i < num_plans; ++i)
         {
             plans[i] = std::make_unique<QueryPlan>();
             nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-            if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+            if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream(), result_header))
             {
                 auto actions_dag = ActionsDAG::makeConvertingActions(
-                        plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                        plans[i]->getCurrentDataStream().getColumnsWithTypeAndName(),
                         result_header.getColumnsWithTypeAndName(),
                         ActionsDAG::MatchColumnsMode::Position);
                 auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
@@ -336,11 +336,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 plans[i]->addStep(std::move(converting_step));
             }
 
-            data_streams[i] = plans[i]->getCurrentDataStream();
+            headers[i] = plans[i]->getCurrentDataStream();
         }
 
         auto max_threads = settings[Setting::max_threads];
-        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), max_threads);
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 

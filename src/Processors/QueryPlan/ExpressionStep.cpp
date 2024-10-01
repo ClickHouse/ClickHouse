@@ -25,10 +25,10 @@ static ITransformingStep::Traits getTraits(const ActionsDAG & actions)
     };
 }
 
-ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAG actions_dag_)
+ExpressionStep::ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_)
     : ITransformingStep(
-        input_stream_,
-        ExpressionTransform::transformHeader(input_stream_.header, actions_dag_),
+        input_header_,
+        ExpressionTransform::transformHeader(input_header_, actions_dag_),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
@@ -43,11 +43,11 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         return std::make_shared<ExpressionTransform>(header, expression);
     });
 
-    if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
+    if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 pipeline.getHeader().getColumnsWithTypeAndName(),
-                output_stream->header.getColumnsWithTypeAndName(),
+                output_header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
@@ -73,11 +73,7 @@ void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void ExpressionStep::updateOutputStream()
 {
-    output_stream = createOutputStream(
-        input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, actions_dag), getDataStreamTraits());
-
-    if (!getDataStreamTraits().preserves_sorting)
-        return;
+    output_header = ExpressionTransform::transformHeader(input_headers.front(), actions_dag);
 }
 
 }

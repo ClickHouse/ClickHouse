@@ -474,7 +474,7 @@ public:
     {
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
-            getOutputStream().header,
+            getOutputHeader(),
             std::move(filter_actions_dag),
             context,
             max_block_size,
@@ -490,7 +490,7 @@ public:
         Block sample_block,
         size_t max_block_size_,
         LoggerPtr log_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
         , max_block_size(max_block_size_)
         , log(log_)

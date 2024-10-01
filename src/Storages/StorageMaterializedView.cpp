@@ -265,7 +265,7 @@ void StorageMaterializedView::read(
     if (query_plan.isInitialized())
     {
         auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
-        auto target_header = query_plan.getCurrentDataStream().header;
+        auto target_header = query_plan.getCurrentDataStream();
 
         /// No need to convert columns that does not exist in MV
         removeNonCommonColumns(mv_header, target_header);

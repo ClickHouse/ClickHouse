@@ -101,7 +101,7 @@ public:
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
         {
-            auto from_header = query_plan.getCurrentDataStream().header;
+            auto from_header = query_plan.getCurrentDataStream();
             auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 

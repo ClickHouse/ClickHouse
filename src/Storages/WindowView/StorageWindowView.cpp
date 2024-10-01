@@ -1171,7 +1171,7 @@ void StorageWindowView::read(
     if (query_plan.isInitialized())
     {
         auto wv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
-        auto target_header = query_plan.getCurrentDataStream().header;
+        auto target_header = query_plan.getCurrentDataStream();
 
         if (!blocksHaveEqualStructure(wv_header, target_header))
         {

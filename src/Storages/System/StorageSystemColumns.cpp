@@ -329,7 +329,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -396,7 +396,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
     Block block_to_filter;
     Storages storages;
     Pipes pipes;
-    auto header = getOutputStream().header;
+    auto header = getOutputHeader();
 
     {
         /// Add `database` column.

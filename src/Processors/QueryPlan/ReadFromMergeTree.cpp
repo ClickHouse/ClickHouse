@@ -213,14 +213,14 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 }
 
 /// build sort description for output stream
-static SortDescription getSortDescriptionForOutputStream(
-    const DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
+static SortDescription getSortDescriptionForOutputHeader(
+    const Header & output_header, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
 {
     /// Updating sort description can be done after PREWHERE actions are applied to the header.
     /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
     /// To mitigate it, we're trying to build original header and use it to deduce sorting description
     /// TODO: this approach is fragile, it'd be more robust to update sorting description for the whole plan during plan optimization
-    Block original_header = output_stream.header.cloneEmpty();
+    Block original_header = output_header.cloneEmpty();
     if (prewhere_info)
     {
         {
@@ -246,7 +246,7 @@ static SortDescription getSortDescriptionForOutputStream(
     }
 
     SortDescription sort_description;
-    const Block & header = output_stream.header;
+    const Block & header = output_header;
     for (const auto & sorting_key : sorting_key_columns)
     {
         const auto it = std::find_if(
@@ -319,9 +319,9 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
     std::optional<MergeTreeReadTaskCallback> read_task_callback_,
     std::optional<size_t> number_of_current_replica_)
-    : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
+    : SourceStepWithFilter(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
-        query_info_.prewhere_info)}, all_column_names_, query_info_, storage_snapshot_, context_)
+        query_info_.prewhere_info), all_column_names_, query_info_, storage_snapshot_, context_)
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
     , mutations_snapshot(std::move(mutations_))
@@ -1791,8 +1791,8 @@ int ReadFromMergeTree::getSortDirection() const
 
 void ReadFromMergeTree::updateSortDescription()
 {
-    result_sort_description = getSortDescriptionForOutputStream(
-        *output_stream,
+    result_sort_description = getSortDescriptionForOutputHeader(
+        *output_header,
         storage_snapshot->metadata->getSortingKeyColumns(),
         getSortDirection(),
         query_info.input_order_info,
@@ -1838,9 +1838,9 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
 
-    output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
+    output_header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        prewhere_info_value)};
+        prewhere_info_value);
 
     updateSortDescription();
 }
@@ -2070,7 +2070,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (result.parts_with_ranges.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
         return;
     }
 
@@ -2091,7 +2091,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (pipe.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
         return;
     }
 
@@ -2123,11 +2123,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     /// Extra columns may be returned (for example, if sampling is used).
     /// Convert pipe to step header structure.
-    if (!isCompatibleHeader(cur_header, getOutputStream().header))
+    if (!isCompatibleHeader(cur_header, getOutputHeader()))
     {
         auto converting = ActionsDAG::makeConvertingActions(
             cur_header.getColumnsWithTypeAndName(),
-            getOutputStream().header.getColumnsWithTypeAndName(),
+            getOutputHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
         append_actions(std::move(converting));
@@ -2144,11 +2144,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     /// Some extra columns could be added by sample/final/in-order/etc
     /// Remove them from header if not needed.
-    if (!blocksHaveEqualStructure(pipe.getHeader(), getOutputStream().header))
+    if (!blocksHaveEqualStructure(pipe.getHeader(), getOutputHeader()))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
-            getOutputStream().header.getColumnsWithTypeAndName(),
+            getOutputHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
             true);
 

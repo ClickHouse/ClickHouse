@@ -1056,7 +1056,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
-    Block right_sample_block = joined_plan->getCurrentDataStream().header;
+    Block right_sample_block = joined_plan->getCurrentDataStream();
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
@@ -1109,7 +1109,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
                 rename_dag.getOutputs()[pos] = &alias;
             }
         }
-        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentDataStream().header);
+        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentDataStream());
         auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
@@ -1197,7 +1197,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
 
-    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {

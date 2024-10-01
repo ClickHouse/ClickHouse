@@ -130,7 +130,7 @@ public:
         const Block & header,
         UInt64 max_block_size_)
         : SourceStepWithFilter(
-            {.header = header},
+            header,
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -197,7 +197,7 @@ void StorageSystemRemoteDataPaths::read(
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
 {
-    const auto & header = getOutputStream().header;
+    const auto & header = getOutputHeader();
     auto source = std::make_shared<SystemRemoteDataPathsSource>(std::move(disks), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);

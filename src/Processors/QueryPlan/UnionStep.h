@@ -9,7 +9,7 @@ class UnionStep : public IQueryPlanStep
 {
 public:
     /// max_threads is used to limit the number of threads for result pipeline.
-    explicit UnionStep(DataStreams input_streams_, size_t max_threads_ = 0);
+    explicit UnionStep(Headers input_headers_, size_t max_threads_ = 0);
 
     String getName() const override { return "Union"; }
 
@@ -24,7 +24,6 @@ public:
 private:
     void updateOutputStream() override;
 
-    Block header;
     size_t max_threads;
 };
 

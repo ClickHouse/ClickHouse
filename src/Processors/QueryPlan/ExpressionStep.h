@@ -13,7 +13,7 @@ class ExpressionStep : public ITransformingStep
 {
 public:
 
-    explicit ExpressionStep(const DataStream & input_stream_, ActionsDAG actions_dag_);
+    explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_);
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;

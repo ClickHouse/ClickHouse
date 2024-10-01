@@ -17,7 +17,7 @@ class AggregatingStep : public ITransformingStep
 {
 public:
     AggregatingStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
@@ -62,10 +62,10 @@ public:
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
-    void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
+    void requestOnlyMergeForAggregateProjection(const Header & input_header);
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
-    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
+    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const Header & input_header) const;
 
     static ActionsDAG makeCreatingMissingKeysForGroupingSetDAG(
         const Block & in_header,
@@ -112,7 +112,7 @@ class AggregatingProjectionStep : public IQueryPlanStep
 {
 public:
     AggregatingProjectionStep(
-        DataStreams input_streams_,
+        Blocks input_headers_,
         Aggregator::Params params_,
         bool final_,
         size_t merge_threads_,

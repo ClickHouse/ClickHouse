@@ -380,7 +380,7 @@ void StorageBuffer::read(
                       * Instead, we rely on the converting actions at the end of this function.
                       */
                     auto actions = addMissingDefaults(
-                            query_plan.getCurrentDataStream().header,
+                            query_plan.getCurrentDataStream(),
                             header_after_adding_defaults.getNamesAndTypesList(),
                             metadata_snapshot->getColumns(),
                             local_context);
@@ -393,7 +393,7 @@ void StorageBuffer::read(
                     query_plan.addStep(std::move(adding_missed));
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
-                            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                            query_plan.getCurrentDataStream().getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
@@ -508,13 +508,13 @@ void StorageBuffer::read(
         return;
     }
 
-    auto result_header = buffers_plan.getCurrentDataStream().header;
+    auto result_header = buffers_plan.getCurrentDataStream();
 
     /// Convert structure from table to structure from buffer.
-    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream(), result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                query_plan.getCurrentDataStream().getColumnsWithTypeAndName(),
                 result_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
@@ -522,16 +522,16 @@ void StorageBuffer::read(
         query_plan.addStep(std::move(converting));
     }
 
-    DataStreams input_streams;
-    input_streams.emplace_back(query_plan.getCurrentDataStream());
-    input_streams.emplace_back(buffers_plan.getCurrentDataStream());
+    Headers input_headers;
+    input_headers.emplace_back(query_plan.getCurrentDataStream());
+    input_headers.emplace_back(buffers_plan.getCurrentDataStream());
 
     std::vector<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
     union_step->setStepDescription("Unite sources from Buffer table");
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }

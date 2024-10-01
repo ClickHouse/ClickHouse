@@ -32,7 +32,7 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
 }
 
 MergingAggregatedStep::MergingAggregatedStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     Aggregator::Params params_,
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
@@ -44,8 +44,8 @@ MergingAggregatedStep::MergingAggregatedStep(
     size_t memory_bound_merging_max_block_bytes_,
     bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
-        input_stream_,
-        MergingAggregatedTransform::appendGroupingIfNeeded(input_stream_.header, params_.getHeader(input_stream_.header, final_)),
+        input_header_,
+        MergingAggregatedTransform::appendGroupingIfNeeded(input_header_, params_.getHeader(input_header_, final_)),
         getTraits(should_produce_results_in_order_of_bucket_number_))
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
@@ -70,7 +70,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 {
     if (memoryBoundMergingWillBeUsed())
     {
-        if (input_streams.front().header.has("__grouping_set") || !grouping_sets_params.empty())
+        if (input_headers.front().has("__grouping_set") || !grouping_sets_params.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                  "Memory bound merging of aggregated results is not supported for grouping sets.");
 
@@ -114,7 +114,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     }
     else
     {
-        if (input_streams.front().header.has("__grouping_set") || !grouping_sets_params.empty())
+        if (input_headers.front().has("__grouping_set") || !grouping_sets_params.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                  "Memory efficient merging of aggregated results is not supported for grouping sets.");
         auto num_merge_threads = memory_efficient_merge_threads
@@ -147,9 +147,8 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void MergingAggregatedStep::updateOutputStream()
 {
-    const auto & in_header = input_streams.front().header;
-    output_stream = createOutputStream(input_streams.front(),
-        MergingAggregatedTransform::appendGroupingIfNeeded(in_header, params.getHeader(in_header, final)), getDataStreamTraits());
+    const auto & in_header = input_headers.front();
+    output_header = MergingAggregatedTransform::appendGroupingIfNeeded(in_header, params.getHeader(in_header, final));
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const

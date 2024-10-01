@@ -129,7 +129,7 @@ namespace DB
             size_t max_block_size_,
             size_t num_streams_)
             : SourceStepWithFilter(
-            DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
+            storage_snapshot_->getSampleBlockForColumns(column_names_),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -155,7 +155,7 @@ namespace DB
         if (pipe.empty())
         {
             assert(output_stream != std::nullopt);
-            pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
+            pipe = Pipe(std::make_shared<NullSource>(*output_header));
         }
 
         pipeline.init(std::move(pipe));

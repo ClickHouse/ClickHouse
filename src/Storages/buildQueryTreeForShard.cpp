@@ -264,13 +264,13 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
 
-    auto sample_block_with_unique_names = query_plan.getCurrentDataStream().header;
+    auto sample_block_with_unique_names = query_plan.getCurrentDataStream();
     makeUniqueColumnNamesInBlock(sample_block_with_unique_names);
 
-    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentDataStream().header))
+    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentDataStream()))
     {
         auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            query_plan.getCurrentDataStream().getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));

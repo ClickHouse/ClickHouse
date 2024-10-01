@@ -384,7 +384,7 @@ void addExpressionStep(QueryPlan & query_plan,
 {
     auto actions = std::move(expression_actions->dag);
     if (expression_actions->project_input)
-        actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+        actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream());
 
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions));
     appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
@@ -399,7 +399,7 @@ void addFilterStep(QueryPlan & query_plan,
 {
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
-        actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+        actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream());
 
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
         std::move(actions),
@@ -605,7 +605,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     {
         actions = std::move(having_analysis_result.filter_actions->dag);
         if (having_analysis_result.filter_actions->project_input)
-            actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+            actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream());
     }
 
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
@@ -761,7 +761,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     if (query_node.hasInterpolate())
     {
         ActionsDAG interpolate_actions_dag;
-        auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+        auto query_plan_columns = query_plan.getCurrentDataStream().getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
@@ -1329,31 +1329,27 @@ void Planner::buildPlanForUnionNode()
         const auto & mapping = query_planner.getQueryNodeToPlanStepMapping();
         query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
-        query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
+        query_plans_headers.push_back(query_node_plan->getCurrentDataStream());
         query_plans.push_back(std::move(query_node_plan));
     }
 
     Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
-    DataStreams query_plans_streams;
-    query_plans_streams.reserve(query_plans.size());
 
-    for (auto & query_node_plan : query_plans)
+    for (size_t i = 0; i < queries_size; ++i)
     {
-        if (blocksHaveEqualStructure(query_node_plan->getCurrentDataStream().header, union_common_header))
-        {
-            query_plans_streams.push_back(query_node_plan->getCurrentDataStream());
+        auto & query_node_plan = query_plans[i];
+        if (blocksHaveEqualStructure(query_node_plan->getCurrentDataStream(), union_common_header))
             continue;
-        }
 
         auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_node_plan->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            query_node_plan->getCurrentDataStream().getColumnsWithTypeAndName(),
             union_common_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentDataStream(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
 
-        query_plans_streams.push_back(query_node_plan->getCurrentDataStream());
+        query_plans_headers[i] = query_node_plan->getCurrentDataStream();
     }
 
     const auto & query_context = planner_context->getQueryContext();
@@ -1365,7 +1361,7 @@ void Planner::buildPlanForUnionNode()
 
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {
-        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_streams), max_threads);
+        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
     else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT
@@ -1383,7 +1379,7 @@ void Planner::buildPlanForUnionNode()
             intersect_or_except_operator = IntersectOrExceptStep::Operator::EXCEPT_DISTINCT;
 
         auto union_step
-            = std::make_unique<IntersectOrExceptStep>(std::move(query_plans_streams), intersect_or_except_operator, max_threads);
+            = std::make_unique<IntersectOrExceptStep>(std::move(query_plans_headers), intersect_or_except_operator, max_threads);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
 
@@ -1396,7 +1392,7 @@ void Planner::buildPlanForUnionNode()
             query_plan.getCurrentDataStream(),
             limits,
             0 /*limit hint*/,
-            query_plan.getCurrentDataStream().header.getNames(),
+            query_plan.getCurrentDataStream().getNames(),
             false /*pre distinct*/);
         query_plan.addStep(std::move(distinct_step));
     }
@@ -1564,7 +1560,7 @@ void Planner::buildPlanForQueryNode()
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
     auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
-        query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+        query_plan.getCurrentDataStream().getColumnsWithTypeAndName(),
         planner_context,
         query_processing_info);
 

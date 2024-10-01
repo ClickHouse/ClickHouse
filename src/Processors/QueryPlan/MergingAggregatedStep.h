@@ -14,7 +14,7 @@ class MergingAggregatedStep : public ITransformingStep
 {
 public:
     MergingAggregatedStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,

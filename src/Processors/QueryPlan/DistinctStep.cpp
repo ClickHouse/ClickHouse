@@ -32,14 +32,14 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
 }
 
 DistinctStep::DistinctStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
     bool pre_distinct_)
     : ITransformingStep(
-            input_stream_,
-            input_stream_.header,
+            input_header_,
+            input_header_,
             getTraits(pre_distinct_))
     , set_size_limits(set_size_limits_)
     , limit_hint(limit_hint_)
@@ -157,10 +157,7 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void DistinctStep::updateOutputStream()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        input_streams.front().header,
-        getTraits(pre_distinct).data_stream_traits);
+    output_header = input_headers.front();
 }
 
 }

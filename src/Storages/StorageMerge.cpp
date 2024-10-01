@@ -407,7 +407,7 @@ ReadFromMerge::ReadFromMerge(
     size_t num_streams,
     StoragePtr storage,
     QueryProcessingStage::Enum processed_stage)
-    : SourceStepWithFilter(DataStream{.header = common_header_}, column_names_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(common_header_, column_names_, query_info_, storage_snapshot_, context_)
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
@@ -420,8 +420,8 @@ ReadFromMerge::ReadFromMerge(
 
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
-    output_stream->header = FilterTransform::transformHeader(
-            output_stream->header,
+    output_header = FilterTransform::transformHeader(
+            *output_header,
             &filter.actions,
             filter.column_name,
             filter.do_remove_column);
@@ -434,7 +434,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     if (selected_tables.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(output_stream->header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(*output_header)));
         return;
     }
 
@@ -468,7 +468,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     if (pipelines.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(output_stream->header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(*output_header)));
         return;
     }
 
@@ -1055,7 +1055,7 @@ void ReadFromMerge::addVirtualColumns(
 
     /// Add virtual columns if we don't already have them.
 
-    Block plan_header = child.plan.getCurrentDataStream().header;
+    Block plan_header = child.plan.getCurrentDataStream();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -1075,7 +1075,7 @@ void ReadFromMerge::addVirtualColumns(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
             child.plan.addStep(std::move(expression_step));
-            plan_header = child.plan.getCurrentDataStream().header;
+            plan_header = child.plan.getCurrentDataStream();
         }
 
         if (has_table_virtual_column && common_header.has(table_column)
@@ -1089,7 +1089,7 @@ void ReadFromMerge::addVirtualColumns(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
             child.plan.addStep(std::move(expression_step));
-            plan_header = child.plan.getCurrentDataStream().header;
+            plan_header = child.plan.getCurrentDataStream();
         }
     }
     else
@@ -1104,7 +1104,7 @@ void ReadFromMerge::addVirtualColumns(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
             child.plan.addStep(std::move(expression_step));
-            plan_header = child.plan.getCurrentDataStream().header;
+            plan_header = child.plan.getCurrentDataStream();
         }
 
         if (has_table_virtual_column && common_header.has("_table") && !plan_header.has("_table"))
@@ -1117,7 +1117,7 @@ void ReadFromMerge::addVirtualColumns(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentDataStream(), std::move(adding_column_dag));
             child.plan.addStep(std::move(expression_step));
-            plan_header = child.plan.getCurrentDataStream().header;
+            plan_header = child.plan.getCurrentDataStream();
         }
     }
 }
@@ -1478,7 +1478,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ContextPtr local_context,
     ChildPlan & child)
 {
-    Block before_block_header = child.plan.getCurrentDataStream().header;
+    Block before_block_header = child.plan.getCurrentDataStream();
 
     auto storage_sample_block = snapshot->metadata->getSampleBlock();
     auto pipe_columns = before_block_header.getNamesAndTypesList();
@@ -1533,7 +1533,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     if (row_policy_data_opt)
         row_policy_data_opt->addFilterTransform(child.plan);
 
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(child.plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(child.plan.getCurrentDataStream().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),
                                                                 convert_actions_match_columns_mode);
 

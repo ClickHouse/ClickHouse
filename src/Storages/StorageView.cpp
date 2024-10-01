@@ -186,7 +186,7 @@ void StorageView::read(
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    ActionsDAG materializing_actions(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    ActionsDAG materializing_actions(query_plan.getCurrentDataStream().getColumnsWithTypeAndName());
     materializing_actions.addMaterializingOutputActions();
 
     auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
@@ -195,7 +195,7 @@ void StorageView::read(
 
     /// And also convert to expected structure.
     const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
-    const auto & header = query_plan.getCurrentDataStream().header;
+    const auto & header = query_plan.getCurrentDataStream();
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
     if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(header, expected_header))

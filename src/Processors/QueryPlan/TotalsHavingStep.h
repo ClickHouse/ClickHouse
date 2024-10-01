@@ -13,7 +13,7 @@ class TotalsHavingStep : public ITransformingStep
 {
 public:
     TotalsHavingStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const AggregateDescriptions & aggregates_,
         bool overflow_row_,
         std::optional<ActionsDAG> actions_dag_,

@@ -11,7 +11,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ArrayJoinStep : public ITransformingStep
 {
 public:
-    ArrayJoinStep(const DataStream & input_stream_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_);
+    ArrayJoinStep(const Header & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_);
     String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

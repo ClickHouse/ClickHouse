@@ -25,14 +25,14 @@ static ITransformingStep::Traits getTraits()
 }
 
 FilterStep::FilterStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     ActionsDAG actions_dag_,
     String filter_column_name_,
     bool remove_filter_column_)
     : ITransformingStep(
-        input_stream_,
+        input_header_,
         FilterTransform::transformHeader(
-            input_stream_.header,
+            input_header_,
             &actions_dag_,
             filter_column_name_,
             remove_filter_column_),
@@ -54,11 +54,11 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
 
-    if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
+    if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 pipeline.getHeader().getColumnsWithTypeAndName(),
-                output_stream->header.getColumnsWithTypeAndName(),
+                output_header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
@@ -93,10 +93,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void FilterStep::updateOutputStream()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        FilterTransform::transformHeader(input_streams.front().header, &actions_dag, filter_column_name, remove_filter_column),
-        getDataStreamTraits());
+    output_header = FilterTransform::transformHeader(input_headers.front(), &actions_dag, filter_column_name, remove_filter_column);
 
     if (!getDataStreamTraits().preserves_sorting)
         return;

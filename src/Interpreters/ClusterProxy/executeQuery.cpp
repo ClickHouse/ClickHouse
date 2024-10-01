@@ -451,12 +451,12 @@ void executeQuery(
         return;
     }
 
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
+    Headers input_headers;
+    input_headers.reserve(plans.size());
     for (auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
+        input_headers.emplace_back(plan->getCurrentDataStream());
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
@@ -653,16 +653,16 @@ void executeQueryWithParallelReplicas(
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
 
-        DataStreams input_streams;
-        input_streams.reserve(2);
-        input_streams.emplace_back(local_plan->getCurrentDataStream());
-        input_streams.emplace_back(remote_plan->getCurrentDataStream());
+        Headers input_headers;
+        input_headers.reserve(2);
+        input_headers.emplace_back(local_plan->getCurrentDataStream());
+        input_headers.emplace_back(remote_plan->getCurrentDataStream());
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
     else
