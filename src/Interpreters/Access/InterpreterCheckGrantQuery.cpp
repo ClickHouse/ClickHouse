@@ -24,20 +24,6 @@
 namespace DB
 {
 
-namespace
-{
-    /// Extracts access rights elements which are going to check grant
-    void collectAccessRightsElementsToGrantOrRevoke(
-        const ASTCheckGrantQuery & query,
-        AccessRightsElements & elements_to_check_grant)
-    {
-        elements_to_check_grant.clear();
-        /// GRANT
-        elements_to_check_grant = query.access_rights_elements;
-    }
-}
-
-
 BlockIO InterpreterCheckGrantQuery::execute()
 {
     auto & query = query_ptr->as<ASTCheckGrantQuery &>();
@@ -46,24 +32,16 @@ BlockIO InterpreterCheckGrantQuery::execute()
     auto current_user_access = getContext()->getAccess();
 
     /// Collect access rights elements which will be checked.
-    AccessRightsElements elements_to_check_grant;
-    collectAccessRightsElementsToGrantOrRevoke(query, elements_to_check_grant);
-
+    AccessRightsElements & elements_to_check_grant = query.access_rights_elements;
 
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
     String current_database = getContext()->getCurrentDatabase();
     elements_to_check_grant.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);
     bool user_is_granted = current_user_access->isGranted(elements_to_check_grant);
-    if (!user_is_granted)
-    {
-        BlockIO res;
-        res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{ColumnUInt8::create(1, 0), std::make_shared<DataTypeUInt8>(), "result"}}));
-        return res;
-    }
     BlockIO res;
     res.pipeline = QueryPipeline(
-        std::make_shared<SourceFromSingleChunk>(Block{{ColumnUInt8::create(1, 1), std::make_shared<DataTypeUInt8>(), "result"}}));
+        std::make_shared<SourceFromSingleChunk>(Block{{ColumnUInt8::create(1, user_is_granted), std::make_shared<DataTypeUInt8>(), "result"}}));
     return res;
 }
 
