@@ -238,7 +238,6 @@ namespace
 
             if (parseValidUntil(pos, expected, auth_data->valid_until))
             {
-                // todo arthur I am still not sure why this has to be done and if it has to be done
                 auth_data->children.push_back(auth_data->valid_until);
             }
 

@@ -262,8 +262,6 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (global_valid_until)
     {
-        // todo arthur: is this correct? Should we actually format it?
-        chassert(authentication_methods.empty());
         formatValidUntil(*global_valid_until, format);
     }
 
