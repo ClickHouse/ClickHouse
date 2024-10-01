@@ -54,6 +54,8 @@ private:
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
 
+    ColumnObject(const ColumnObject & other);
+
     /// Use StringHashForHeterogeneousLookup hash for hash maps to be able to use std::string_view in find() method.
     using PathToColumnMap = std::unordered_map<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
     using PathToDynamicColumnPtrMap = std::unordered_map<String, ColumnDynamic *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
