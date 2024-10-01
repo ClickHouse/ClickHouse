@@ -1,3 +1,5 @@
+SET input_format_values_interpret_expressions = 0;
+
 CREATE TABLE IF NOT EXISTS 03246_range_literal_replacement_works (id UInt8) Engine=Memory;
 
 INSERT INTO 03246_range_literal_replacement_works VALUES (1 BETWEEN 0 AND 2);
