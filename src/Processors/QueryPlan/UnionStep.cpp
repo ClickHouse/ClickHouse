@@ -30,7 +30,7 @@ UnionStep::UnionStep(Headers input_headers_, size_t max_threads_)
     : max_threads(max_threads_)
 {
     updateInputHeaders(std::move(input_headers_));
-    updateOutputHeader();
+    output_header = checkHeaders(input_headers);
 }
 
 void UnionStep::updateOutputHeader()
