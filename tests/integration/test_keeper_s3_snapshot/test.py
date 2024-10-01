@@ -1,12 +1,13 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-from time import sleep
-from retry import retry
 from multiprocessing.dummy import Pool
-import helpers.keeper_utils as keeper_utils
-from minio.deleteobjects import DeleteObject
+from time import sleep
 
+import pytest
 from kazoo.client import KazooClient
+from minio.deleteobjects import DeleteObject
+from retry import retry
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
