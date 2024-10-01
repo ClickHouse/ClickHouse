@@ -28,6 +28,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
@@ -50,8 +55,8 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         serialized_query.data() + serialized_query.size(),
         "after altering table ",
         0,
-        context->getSettingsRef().max_parser_depth,
-        context->getSettingsRef().max_parser_backtracks);
+        context->getSettingsRef()[Setting::max_parser_backtracks],
+        context->getSettingsRef()[Setting::max_parser_depth]);
     const auto & new_query = new_query_raw->as<const ASTCreateQuery &>();
     /// If there are no columns, then there is nothing much we can do
     if (!new_query.columns_list || !new_query.columns_list->columns)
