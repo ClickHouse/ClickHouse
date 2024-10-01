@@ -557,7 +557,7 @@ class CI:
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
-            run_by_labels=[Labels.PR_BUGFIX],
+            run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
             run_command="bugfix_validate_check.py",
             timeout=2400,
             runner_type=Runners.STYLE_CHECKER,
