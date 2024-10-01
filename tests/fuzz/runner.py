@@ -62,7 +62,7 @@ def process_error(error: str):
     report(error_source, error_reason, call_stack, test_unit)
 
 
-def run_fuzzer(fuzzer: str):
+def run_fuzzer(fuzzer: str, timeout: int):
     logging.info("Running fuzzer %s...", fuzzer)
 
     seed_corpus_dir = f"{fuzzer}.in"
@@ -134,6 +134,7 @@ def run_fuzzer(fuzzer: str):
             check=True,
             shell=True,
             errors="replace",
+            timeout=timeout,
         )
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
@@ -148,10 +149,16 @@ def main():
 
     subprocess.check_call("ls -al", shell=True)
 
+    timeout = 30
+
+    match = re.search(r"(^|\s+)-max_total_time=(\d+)($|\s)", FUZZER_ARGS)
+    if match:
+        timeout += match.group(2)
+
     with Path() as current:
         for fuzzer in current.iterdir():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
-                run_fuzzer(fuzzer)
+                run_fuzzer(fuzzer, timeout)
 
 
 if __name__ == "__main__":
