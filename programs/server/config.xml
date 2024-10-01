@@ -202,10 +202,6 @@
       -->
     <interserver_http_port>9009</interserver_http_port>
 
-    <settings>
-        <log_query_settings>1</log_query_settings>
-    </settings>
-
     <!-- Port for communication between replicas with TLS.
          You have to configure certificate to enable this interface.
          See the openSSL section below.
