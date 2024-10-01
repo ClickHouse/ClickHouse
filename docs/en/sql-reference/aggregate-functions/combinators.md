@@ -124,7 +124,7 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 ## -Distinct
 
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
-Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
+Examples: `sum(DISTINCT x)` (or `sumDistinct(x)`), `groupArray(DISTINCT x)` (or `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (or `corrStableDistinct(x, y)`) and so on.
 
 ## -OrDefault
 
