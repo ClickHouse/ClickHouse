@@ -35,7 +35,7 @@ public:
     const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     SizeLimits set_size_limits;
     UInt64 limit_hint;

@@ -19,10 +19,10 @@ public:
 
     size_t getMaxThreads() const { return max_threads; }
 
-    bool canUpdateInputStream() const override { return true; }
+    bool canUpdateInputHeader() const override { return true; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     size_t max_threads;
 };

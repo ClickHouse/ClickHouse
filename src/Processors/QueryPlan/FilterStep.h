@@ -27,7 +27,7 @@ public:
     bool removesFilterColumn() const { return remove_filter_column; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
     String filter_column_name;

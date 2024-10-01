@@ -26,7 +26,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
 };

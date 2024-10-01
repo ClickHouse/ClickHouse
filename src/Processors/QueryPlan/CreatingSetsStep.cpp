@@ -53,7 +53,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(getOutputHeader(), std::move(set_and_key), std::move(external_table), network_transfer_limits, context->getPreparedSetsCache());
 }
 
-void CreatingSetStep::updateOutputStream()
+void CreatingSetStep::updateOutputHeader()
 {
     output_header = Block{};
 }
@@ -127,7 +127,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context)
 {
     Headers input_headers;
-    input_headers.emplace_back(query_plan.getCurrentDataStream());
+    input_headers.emplace_back(query_plan.getCurrentHeader());
 
     std::vector<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
@@ -142,7 +142,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
         if (!plan)
             continue;
 
-        input_headers.emplace_back(plan->getCurrentDataStream());
+        input_headers.emplace_back(plan->getCurrentHeader());
         plans.emplace_back(std::move(plan));
     }
 
@@ -178,7 +178,7 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
         if (!plan)
             continue;
 
-        input_headers.emplace_back(plan->getCurrentDataStream());
+        input_headers.emplace_back(plan->getCurrentHeader());
         pipelines.emplace_back(plan->buildQueryPipeline(plan_settings, pipeline_settings));
     }
 

@@ -46,7 +46,7 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputHeader(),
                                                  std::move(split_actions.first));
     node.step->setStepDescription(description);
-    array_join_step->updateInputStream(node.step->getOutputHeader());
+    array_join_step->updateInputHeader(node.step->getOutputHeader());
 
     if (expression_step)
         parent = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second));

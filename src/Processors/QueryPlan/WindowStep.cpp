@@ -144,7 +144,7 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Functions", std::move(functions_array));
 }
 
-void WindowStep::updateOutputStream()
+void WindowStep::updateOutputHeader()
 {
     output_header = addWindowFunctionResultColumns(input_headers.front(), window_functions);
 

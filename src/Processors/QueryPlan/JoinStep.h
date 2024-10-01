@@ -34,10 +34,10 @@ public:
     void setJoin(JoinPtr join_) { join = std::move(join_); }
     bool allowPushDownToRight() const;
 
-    bool canUpdateInputStream() const override { return true; }
+    bool canUpdateInputHeader() const override { return true; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;
@@ -61,7 +61,7 @@ public:
     const JoinPtr & getJoin() const { return join; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;

@@ -546,7 +546,7 @@ void AggregatingStep::requestOnlyMergeForAggregateProjection(const Header & inpu
     auto output_header = getOutputHeader();
     input_headers.front() = input_header;
     params.only_merge = true;
-    updateOutputStream();
+    updateOutputHeader();
     assertBlocksHaveEqualStructure(output_header, getOutputHeader(), "AggregatingStep");
 }
 
@@ -567,7 +567,7 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     return aggregating_projection;
 }
 
-void AggregatingStep::updateOutputStream()
+void AggregatingStep::updateOutputHeader()
 {
     output_header = appendGroupingColumn(params.getHeader(input_headers.front(), final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls);
 }

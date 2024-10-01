@@ -133,7 +133,7 @@ SortingStep::SortingStep(
     sort_settings.max_block_size = max_block_size_;
 }
 
-void SortingStep::updateOutputStream()
+void SortingStep::updateOutputHeader()
 {
     output_header = input_headers.front();
 }

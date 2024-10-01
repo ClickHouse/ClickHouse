@@ -154,13 +154,13 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     if (auto * transforming_step = dynamic_cast<ITransformingStep *>(child.get()))
     {
-        transforming_step->updateInputStream(node.step->getOutputHeader());
+        transforming_step->updateInputHeader(node.step->getOutputHeader());
     }
     else
     {
         if (auto * join = typeid_cast<JoinStep *>(child.get()))
         {
-            join->updateInputStream(node.step->getOutputHeader(), child_idx);
+            join->updateInputHeader(node.step->getOutputHeader(), child_idx);
         }
         else
             throw Exception(
@@ -180,7 +180,7 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         }
         else
         {
-            filter->updateInputStream(child->getOutputHeader());
+            filter->updateInputHeader(child->getOutputHeader());
         }
     }
 
@@ -397,7 +397,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
         else
         {
-            filter->updateInputStream(child->getOutputHeader());
+            filter->updateInputHeader(child->getOutputHeader());
         }
     }
 

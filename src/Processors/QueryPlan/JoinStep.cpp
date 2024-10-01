@@ -47,7 +47,7 @@ JoinStep::JoinStep(
     bool keep_left_read_in_order_)
     : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
-    updateInputStreams({left_header_, right_header_});
+    updateInputHeaders({left_header_, right_header_});
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -98,7 +98,7 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
 }
 
-void JoinStep::updateOutputStream()
+void JoinStep::updateOutputHeader()
 {
     output_header = JoiningTransform::transformHeader(input_headers.front(), join);
 }
@@ -149,7 +149,7 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     });
 }
 
-void FilledJoinStep::updateOutputStream()
+void FilledJoinStep::updateOutputHeader()
 {
     output_header = JoiningTransform::transformHeader(input_headers.front(), join);
 }

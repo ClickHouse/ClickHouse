@@ -66,7 +66,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
 
-    bool canUpdateInputStream() const override { return true; }
+    bool canUpdateInputHeader() const override { return true; }
 
 protected:
     /// Create output stream from header and traits.

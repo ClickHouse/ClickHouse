@@ -33,7 +33,7 @@ public:
     const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     const AggregateDescriptions aggregates;
 

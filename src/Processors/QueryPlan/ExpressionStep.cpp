@@ -71,7 +71,7 @@ void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Expression", expression->toTree());
 }
 
-void ExpressionStep::updateOutputStream()
+void ExpressionStep::updateOutputHeader()
 {
     output_header = ExpressionTransform::transformHeader(input_headers.front(), actions_dag);
 }

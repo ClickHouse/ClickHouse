@@ -26,7 +26,7 @@ public:
     const WindowDescription & getWindowDescription() const;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;

@@ -82,7 +82,7 @@ const Aggregator::Params & CubeStep::getParams() const
     return params;
 }
 
-void CubeStep::updateOutputStream()
+void CubeStep::updateOutputHeader()
 {
     output_header = generateOutputHeader(params.getHeader(input_headers.front(), final), params.keys, use_nulls);
 }

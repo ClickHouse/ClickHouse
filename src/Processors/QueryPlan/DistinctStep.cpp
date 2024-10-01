@@ -155,7 +155,7 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void DistinctStep::updateOutputStream()
+void DistinctStep::updateOutputHeader()
 {
     output_header = input_headers.front();
 }

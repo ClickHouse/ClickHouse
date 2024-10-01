@@ -380,24 +380,24 @@ void StorageBuffer::read(
                       * Instead, we rely on the converting actions at the end of this function.
                       */
                     auto actions = addMissingDefaults(
-                            query_plan.getCurrentDataStream(),
+                            query_plan.getCurrentHeader(),
                             header_after_adding_defaults.getNamesAndTypesList(),
                             metadata_snapshot->getColumns(),
                             local_context);
 
                     auto adding_missed = std::make_unique<ExpressionStep>(
-                            query_plan.getCurrentDataStream(),
+                            query_plan.getCurrentHeader(),
                             std::move(actions));
 
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
-                            query_plan.getCurrentDataStream().getColumnsWithTypeAndName(),
+                            query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
-                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -508,23 +508,23 @@ void StorageBuffer::read(
         return;
     }
 
-    auto result_header = buffers_plan.getCurrentDataStream();
+    auto result_header = buffers_plan.getCurrentHeader();
 
     /// Convert structure from table to structure from buffer.
-    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream(), result_header))
+    if (!blocksHaveEqualStructure(query_plan.getCurrentHeader(), result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentDataStream().getColumnsWithTypeAndName(),
+                query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
                 result_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
-        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(convert_actions_dag));
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
     }
 
     Headers input_headers;
-    input_headers.emplace_back(query_plan.getCurrentDataStream());
-    input_headers.emplace_back(buffers_plan.getCurrentDataStream());
+    input_headers.emplace_back(query_plan.getCurrentHeader());
+    input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
     std::vector<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));

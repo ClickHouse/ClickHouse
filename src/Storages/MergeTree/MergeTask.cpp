@@ -902,7 +902,7 @@ public:
         pipeline.addTransform(std::move(transform));
     }
 
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
         output_header = input_headers.front();
     }
@@ -963,7 +963,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
         Headers input_headers;
         input_headers.reserve(plans.size());
         for (auto & plan : plans)
-            input_headers.emplace_back(plan->getCurrentDataStream());
+            input_headers.emplace_back(plan->getCurrentHeader());
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         merge_column_query_plan.unitePlans(std::move(union_step), std::move(plans));
@@ -974,7 +974,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
         bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
         const auto data_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
-            merge_column_query_plan.getCurrentDataStream(),
+            merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
             data_settings->merge_max_block_size,
             data_settings->merge_max_block_size_bytes,
@@ -997,7 +997,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             auto indices_expression_dag = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
             indices_expression_dag.addMaterializingOutputActions(); /// Const columns cannot be written without materialization.
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
-                merge_column_query_plan.getCurrentDataStream(),
+                merge_column_query_plan.getCurrentHeader(),
                 std::move(indices_expression_dag));
             merge_column_query_plan.addStep(std::move(calculate_indices_expression_step));
         }
@@ -1473,7 +1473,7 @@ public:
 #endif
     }
 
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
         output_header = input_headers.front();
     }
@@ -1531,7 +1531,7 @@ public:
         pipeline.addTransform(transform);
     }
 
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
         output_header = input_headers.front();
     }
@@ -1623,7 +1623,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         Headers input_headers;
         input_headers.reserve(plans.size());
         for (auto & plan : plans)
-            input_headers.emplace_back(plan->getCurrentDataStream());
+            input_headers.emplace_back(plan->getCurrentHeader());
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         merge_parts_query_plan.unitePlans(std::move(union_step), std::move(plans));
@@ -1634,7 +1634,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// Calculate sorting key expressions so that they are available for merge sorting.
         auto sorting_key_expression_dag = global_ctx->metadata_snapshot->getSortingKey().expression->getActionsDAG().clone();
         auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             std::move(sorting_key_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
@@ -1662,7 +1662,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         auto merge_step = std::make_unique<MergePartsStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             sort_description,
             partition_key_columns,
             global_ctx->merging_params,
@@ -1694,7 +1694,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         }
 
         auto deduplication_step = std::make_unique<DistinctStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             SizeLimits(), 0 /*limit_hint*/,
             global_ctx->deduplicate_by_columns,
             false /*pre_distinct*/);
@@ -1709,7 +1709,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (ctx->need_remove_expired_values)
     {
         auto ttl_step = std::make_unique<TTLStep>(
-            merge_parts_query_plan.getCurrentDataStream(), global_ctx->context, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
+            merge_parts_query_plan.getCurrentHeader(), global_ctx->context, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
         subqueries = ttl_step->getSubqueries();
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
@@ -1721,7 +1721,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         auto indices_expression_dag = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
         indices_expression_dag.addMaterializingOutputActions(); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             std::move(indices_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_indices_expression_step));
     }

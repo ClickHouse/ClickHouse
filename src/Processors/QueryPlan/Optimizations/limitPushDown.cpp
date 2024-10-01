@@ -85,7 +85,7 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         return 0;
 
     /// Input stream for Limit have changed.
-    limit->updateInputStream(transforming->getInputHeaders().front());
+    limit->updateInputHeader(transforming->getInputHeaders().front());
 
     parent.swap(child);
     return 2;

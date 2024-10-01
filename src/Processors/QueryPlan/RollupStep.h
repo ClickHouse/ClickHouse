@@ -22,7 +22,7 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     Aggregator::Params params;
     size_t keys_size;

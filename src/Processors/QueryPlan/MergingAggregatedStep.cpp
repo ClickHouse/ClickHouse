@@ -145,7 +145,7 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Order", dumpSortDescription(group_by_sort_description));
 }
 
-void MergingAggregatedStep::updateOutputStream()
+void MergingAggregatedStep::updateOutputHeader()
 {
     const auto & in_header = input_headers.front();
     output_header = MergingAggregatedTransform::appendGroupingIfNeeded(in_header, params.getHeader(in_header, final));

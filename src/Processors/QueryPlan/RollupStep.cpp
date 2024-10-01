@@ -46,7 +46,7 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     });
 }
 
-void RollupStep::updateOutputStream()
+void RollupStep::updateOutputHeader()
 {
     output_header = generateOutputHeader(params.getHeader(input_headers.front(), final), params.keys, use_nulls);
 }

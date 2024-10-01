@@ -43,7 +43,7 @@ public:
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     Names column_names;
 
