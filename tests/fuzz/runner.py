@@ -153,7 +153,7 @@ def main():
 
     match = re.search(r"(^|\s+)-max_total_time=(\d+)($|\s)", FUZZER_ARGS)
     if match:
-        timeout += match.group(2)
+        timeout += int(match.group(2))
 
     with Path() as current:
         for fuzzer in current.iterdir():
