@@ -28,14 +28,16 @@ public:
     /// Return sum of rows between all ranges
     size_t getRowsCountInRanges(const MarkRanges & ranges) const;
 
-    /// Return amount of marks that contains amount of `number_of_rows` starting from
-    /// `from_mark` and possible some offset_in_rows from `from_mark`
+    /// Return number of marks, starting from `from_marks` that contain `number_of_rows`
+    size_t countMarksForRows(size_t from_mark, size_t number_of_rows) const;
+
+    /// Return number of rows, starting from `from_mark`, that contains amount of `number_of_rows`
+    /// and possible some offset_in_rows from `from_mark`
     ///                                     1    2  <- answer
     /// |-----|---------------------------|----|----|
     ///       ^------------------------^-----------^
     ////  from_mark  offset_in_rows    number_of_rows
-    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const;
-    size_t countMarksForRows(size_t from_mark, size_t number_of_rows) const;
+    size_t countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const;
 
     /// Total marks
     size_t getMarksCount() const;
