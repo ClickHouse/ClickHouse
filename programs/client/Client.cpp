@@ -1002,7 +1002,7 @@ bool Client::chFuzz()
     std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
     chfuzz::QueryOracle qo(std::move(fc));
     chfuzz::StatementGenerator gen;
-    sql_query_grammar::SQLQuery sq1, sq2, sq3;
+    sql_query_grammar::SQLQuery sq1, sq2, sq3, sq4;
 
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -1038,33 +1038,45 @@ bool Client::chFuzz()
                 (void) qo.GenerateCorrectnessTestFirstQuery(rg, gen, sq1);
                 chfuzz::SQLQueryToString(full_query, sq1);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
-                (void) qo.UpdateCorrectnessQueryResult(true, !have_error);
+                (void) qo.ProcessOracleQueryResult(true, !have_error, "Correctness query");
 
                 sq2.Clear();
                 full_query.resize(0);
                 (void) qo.GenerateCorrectnessTestSecondQuery(sq1, sq2);
                 chfuzz::SQLQueryToString(full_query, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
-                (void) qo.UpdateCorrectnessQueryResult(false, !have_error);
+                (void) qo.ProcessOracleQueryResult(false, !have_error, "Correctness query");
             }
             else if (gen.CollectionHas<chfuzz::SQLTable>(gen.attached_tables) && noption < 41)
             {
+                const chfuzz::SQLTable &t = rg.PickRandomlyFromVector(gen.FilterCollection<chfuzz::SQLTable>(gen.attached_tables));
+
                 //test in and out formats
-                (void) qo.GenerateExportQuery(rg, gen, sq1);
-                chfuzz::SQLQueryToString(full_query, sq1);
-                server_up &= ProcessCHFuzzQuery(outf, full_query);
+                full_query2.resize(0);
+                (void) qo.DumpTableContent(rg, t, sq1);
+                chfuzz::SQLQueryToString(full_query2, sq1);
+                server_up &= ProcessCHFuzzQuery(outf, full_query2);
+                (void) qo.ProcessOracleQueryResult(true, !have_error, "Dump and read table");
 
                 sq2.Clear();
-                full_query.resize(0);
-                (void) qo.GenerateClearQuery(sq1, sq2);
+                (void) qo.GenerateExportQuery(rg, t, sq2);
                 chfuzz::SQLQueryToString(full_query, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
 
                 sq3.Clear();
                 full_query.resize(0);
-                (void) qo.GenerateImportQuery(gen, sq1, sq2, sq3);
+                (void) qo.GenerateClearQuery(t, sq3);
                 chfuzz::SQLQueryToString(full_query, sq3);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                sq4.Clear();
+                full_query.resize(0);
+                (void) qo.GenerateImportQuery(t, sq2, sq4);
+                chfuzz::SQLQueryToString(full_query, sq4);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                server_up &= ProcessCHFuzzQuery(outf, full_query2);
+                (void) qo.ProcessOracleQueryResult(false, !have_error, "Dump and read table");
             }
             else if (noption < 71)
             {
@@ -1078,7 +1090,7 @@ bool Client::chFuzz()
                 (void) qo.GenerateSettingQuery(rg, gen, sq2);
                 chfuzz::SQLQueryToString(full_query2, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query2);
-                (void) qo.UpdateSettingQueryResult(true, !have_error);
+                (void) qo.ProcessOracleQueryResult(true, !have_error, "Multi setting query");
 
                 sq3.Clear();
                 full_query.resize(0);
@@ -1087,7 +1099,7 @@ bool Client::chFuzz()
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
 
                 server_up &= ProcessCHFuzzQuery(outf, full_query2);
-                (void) qo.UpdateSettingQueryResult(false, !have_error);
+                (void) qo.ProcessOracleQueryResult(false, !have_error, "Multi setting query");
             }
             else
             {

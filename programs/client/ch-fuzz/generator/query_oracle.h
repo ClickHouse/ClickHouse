@@ -13,7 +13,6 @@ private:
 	const FuzzConfig &fc;
 	MD5 md5_hash;
 	bool first_success = false, second_sucess = false;
-	uint64_t first_result = 0, second_result = 0;
 	uint8_t first_digest[16], second_digest[16];
 	std::string buf, nsetting;
 public:
@@ -22,18 +21,22 @@ public:
 		nsetting.reserve(16);
 	}
 
+	int ProcessOracleQueryResult(const bool first, const bool success, const std::string &oracle_name);
+
+	/* Correctness query oracle */
 	int GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq);
 	int GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
-	int UpdateCorrectnessQueryResult(const bool first, const bool success);
 
-	int GenerateExportQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1);
-	int GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
-	int GenerateImportQuery(StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq3);
+	/* Dump and read table oracle */
+	int DumpTableContent(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq1);
+	int GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq2);
+	int GenerateClearQuery(const SQLTable &t, sql_query_grammar::SQLQuery &sq3);
+	int GenerateImportQuery(const SQLTable &t, const sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq4);
 
+	/* Run query with different settings oracle */
 	int GenerateFirstSetting(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq1);
-	int GenerateSecondSetting(const sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq3);
 	int GenerateSettingQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq2);
-	int UpdateSettingQueryResult(const bool first, const bool success);
+	int GenerateSecondSetting(const sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq3);
 };
 
 }

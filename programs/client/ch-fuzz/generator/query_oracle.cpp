@@ -3,6 +3,9 @@
 namespace chfuzz {
 
 /*
+Correctness query oracle
+*/
+/*
 SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 or
 SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
@@ -76,25 +79,25 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 	return 0;
 }
 
-int QueryOracle::UpdateCorrectnessQueryResult(const bool first, const bool success) {
-	bool &res = first ? first_success : second_sucess;
-
-	if (success) {
-		const std::filesystem::path &qfile = fc.db_file_path / "query.data";
-		std::fstream outfile(qfile.generic_string(), std::ios_base::in);
-
-		outfile >> (first ? first_result : second_result);
-	}
-	res = success;
-	if (!first && first_success && second_sucess && first_result != second_result) {
-		throw std::runtime_error("Correctness query oracle failed");
-	}
-	return 0;
-}
-
 /*
 Dump and read table oracle
 */
+int QueryOracle::DumpTableContent(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq1) {
+	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
+	sql_query_grammar::TopSelect *ts = sq1.mutable_inner_query()->mutable_select();
+	sql_query_grammar::SelectStatementCore *sel = ts->mutable_sel()->mutable_select_core();
+	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+
+	if (std::filesystem::exists(qfile)) {
+		std::filesystem::resize_file(qfile, 0); //truncate the file
+	}
+	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
+	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	ts->mutable_intofile()->set_path(qfile.generic_string());
+	return 0;
+}
+
 static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat> out_in{
 	{sql_query_grammar::OutFormat::OUT_TabSeparated, sql_query_grammar::InFormat::IN_TabSeparated},
 	{sql_query_grammar::OutFormat::OUT_TabSeparatedRaw, sql_query_grammar::InFormat::IN_TabSeparatedRaw},
@@ -146,11 +149,10 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 	{sql_query_grammar::OutFormat::OUT_MsgPack, sql_query_grammar::InFormat::IN_MsgPack}
 };
 
-int QueryOracle::GenerateExportQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1) {
+int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq2) {
 	bool first = true;
 	NestedType *ntp = nullptr;
-	const SQLTable &t = rg.PickRandomlyFromVector(gen.FilterCollection<SQLTable>(gen.attached_tables));
-	sql_query_grammar::Insert *ins = sq1.mutable_inner_query()->mutable_insert();
+	sql_query_grammar::Insert *ins = sq2.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();
 	const std::filesystem::path &nfile = fc.db_file_path / "table.data";
@@ -198,31 +200,23 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, StatementGenerator &ge
 	//Set the table on select
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
-	jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
 	return 0;
 }
 
-int QueryOracle::GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
-	sql_query_grammar::Truncate *trunc = sq2.mutable_inner_query()->mutable_trunc();
-	sql_query_grammar::JoinedTable &jt =
-		const_cast<sql_query_grammar::JoinedTable &>(sq1.inner_query().insert().select().select_core().from().tos().join_clause().tos().joined_table());
-
-	trunc->set_allocated_est(jt.release_est());
+int QueryOracle::GenerateClearQuery(const SQLTable &t, sql_query_grammar::SQLQuery &sq3) {
+	sql_query_grammar::Truncate *trunc = sq3.mutable_inner_query()->mutable_trunc();
+	trunc->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 	return 0;
 }
 
-int QueryOracle::GenerateImportQuery(StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1,
-									 sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq3) {
+int QueryOracle::GenerateImportQuery(const SQLTable &t, const sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq4) {
 	NestedType *ntp = nullptr;
-	sql_query_grammar::Insert *ins = sq3.mutable_inner_query()->mutable_insert();
+	sql_query_grammar::Insert *ins = sq4.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::InsertIntoTable *iit = ins->mutable_itable();
 	sql_query_grammar::InsertFromFile *iff = ins->mutable_ffile();
-	sql_query_grammar::Truncate &trunc = const_cast<sql_query_grammar::Truncate &>(sq2.inner_query().trunc());
-	const sql_query_grammar::FileFunc &ff = sq1.inner_query().insert().tfunction().file();
-	const uint32_t tname = static_cast<uint32_t>(std::stoul(trunc.est().table_name().table().substr(1)));
-	const SQLTable &t = gen.tables[tname];
+	const sql_query_grammar::FileFunc &ff = sq2.inner_query().insert().tfunction().file();
 
-	iit->set_allocated_est(trunc.release_est());
+	iit->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 	for (const auto &entry : t.cols) {
 		if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 			for (const auto &entry2 : ntp->subtypes) {
@@ -359,7 +353,7 @@ int QueryOracle::GenerateSettingQuery(RandomGenerator &rg, StatementGenerator &g
 	return 0;
 }
 
-int QueryOracle::UpdateSettingQueryResult(const bool first, const bool success) {
+int QueryOracle::ProcessOracleQueryResult(const bool first, const bool success, const std::string &oracle_name) {
 	bool &res = first ? first_success : second_sucess;
 
 	if (success) {
@@ -370,7 +364,7 @@ int QueryOracle::UpdateSettingQueryResult(const bool first, const bool success) 
 	res = success;
 	if (!first && first_success && second_sucess &&
 		!std::equal(std::begin(first_digest), std::end(first_digest), std::begin(second_digest))) {
-		throw std::runtime_error("Multi setting query oracle failed");
+		throw std::runtime_error(oracle_name + " oracle failed");
 	}
 	return 0;
 }

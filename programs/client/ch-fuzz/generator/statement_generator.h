@@ -138,6 +138,7 @@ private:
 		}
 	}
 
+public:
 	template<typename T>
 	std::vector<std::reference_wrapper<const T>>& FilterCollection(const std::function<bool (const T&)> func) {
 		const auto &input = GetNextCollection<T>();
@@ -152,6 +153,7 @@ private:
 		return res;
 	}
 
+private:
 	void AddTableRelation(RandomGenerator &rg, const bool allow_internal_cols, const std::string &rel_name, const SQLTable &t);
 	void AppendDecimal(RandomGenerator &rg, std::string &ret, const uint32_t left, const uint32_t right);
 
