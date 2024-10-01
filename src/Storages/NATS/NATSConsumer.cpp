@@ -35,6 +35,9 @@ NATSConsumer::NATSConsumer(
 }
 NATSConsumer::~NATSConsumer()
 {
+    for (const auto & subscription : subscriptions)
+        natsSubscription_Unsubscribe(subscription.get());
+
     LOG_DEBUG(log, "Destroy consumer");
 }
 
@@ -51,9 +54,10 @@ void NATSConsumer::subscribe()
             &ns, connection->getConnection(), subject.c_str(), queue_name.c_str(), onMsg, static_cast<void *>(this));
         if (status == NATS_OK)
         {
-            LOG_DEBUG(log, "Subscribed to subject {}", subject);
-            natsSubscription_SetPendingLimits(ns, -1, -1);
             created_subscriptions.emplace_back(ns, &natsSubscription_Destroy);
+            LOG_DEBUG(log, "Subscribed to subject {}", subject);
+
+            natsSubscription_SetPendingLimits(ns, -1, -1);
         }
         else
         {
@@ -66,6 +70,9 @@ void NATSConsumer::subscribe()
 
 void NATSConsumer::unsubscribe()
 {
+    for (const auto & subscription : subscriptions)
+        natsSubscription_Unsubscribe(subscription.get());
+
     subscriptions.clear();
 }
 
