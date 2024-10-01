@@ -11,8 +11,8 @@ void applyPermutation(std::vector<T> & data, const std::vector<size_t> & permuta
 {
     std::vector<T> res;
     res.reserve(permutation.size());
-    for (size_t i = 0; i < permutation.size(); ++i)
-        res.emplace_back(std::move(data[permutation[i]]));
+    for (size_t i : permutation)
+        res.emplace_back(std::move(data[i]));
     data = std::move(res);
 }
 
