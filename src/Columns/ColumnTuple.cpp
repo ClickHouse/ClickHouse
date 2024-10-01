@@ -141,7 +141,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     const size_t tuple_size = columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.safeGet<Tuple &>();
+    Tuple & res_tuple = res.get<Tuple &>();
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
@@ -169,7 +169,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const auto & tuple = x.safeGet<const Tuple &>();
+    const auto & tuple = x.get<const Tuple &>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -185,7 +185,7 @@ bool ColumnTuple::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Tuple)
         return false;
 
-    const auto & tuple = x.safeGet<const Tuple &>();
+    const auto & tuple = x.get<const Tuple &>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -595,27 +595,6 @@ void ColumnTuple::reserve(size_t n)
         getColumn(i).reserve(n);
 }
 
-size_t ColumnTuple::capacity() const
-{
-    if (columns.empty())
-        return size();
-
-    return getColumn(0).capacity();
-}
-
-void ColumnTuple::prepareForSquashing(const Columns & source_columns)
-{
-    const size_t tuple_size = columns.size();
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        Columns nested_columns;
-        nested_columns.reserve(source_columns.size());
-        for (const auto & source_column : source_columns)
-            nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
-        getColumn(i).prepareForSquashing(nested_columns);
-    }
-}
-
 void ColumnTuple::shrinkToFit()
 {
     const size_t tuple_size = columns.size();
@@ -770,11 +749,9 @@ ColumnPtr ColumnTuple::compress() const
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
         {
-            Columns decompressed;
-            decompressed.reserve(my_compressed.size());
-            for (const auto & column : my_compressed)
-                decompressed.push_back(column->decompress());
-            return ColumnTuple::create(decompressed);
+            for (auto & column : my_compressed)
+                column = column->decompress();
+            return ColumnTuple::create(my_compressed);
         });
 }
 

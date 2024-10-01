@@ -1,10 +1,10 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/CurrentThread.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include <Columns/ColumnSparse.h>
 #include <base/defines.h>
+
 
 namespace DB
 {
@@ -106,18 +106,7 @@ Chunk Squashing::convertToChunk(CurrentData && data) const
 
 Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos)
 {
-    if (input_chunks.size() == 1)
-    {
-        /// this is just optimization, no logic changes
-        Chunk result = std::move(input_chunks.front());
-        infos.appendIfUniq(std::move(result.getChunkInfos()));
-        result.setChunkInfos(infos);
-
-        chassert(result);
-        return result;
-    }
-
-    std::vector<IColumn::MutablePtr> mutable_columns;
+    std::vector<IColumn::MutablePtr> mutable_columns = {};
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
         rows += chunk.getNumRows();
@@ -125,45 +114,20 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     {
         auto & first_chunk = input_chunks[0];
         Columns columns = first_chunk.detachColumns();
-        mutable_columns.reserve(columns.size());
         for (auto & column : columns)
+        {
             mutable_columns.push_back(IColumn::mutate(std::move(column)));
+            mutable_columns.back()->reserve(rows);
+        }
     }
-
-    size_t num_columns = mutable_columns.size();
-
-    /// Collect the list of source columns for each column.
-    std::vector<Columns> source_columns_list(num_columns);
-    std::vector<UInt8> have_same_serialization(num_columns, true);
-
-    for (size_t i = 0; i != num_columns; ++i)
-        source_columns_list[i].reserve(input_chunks.size() - 1);
 
     for (size_t i = 1; i < input_chunks.size(); ++i) // We've already processed the first chunk above
     {
-        auto columns = input_chunks[i].detachColumns();
-        for (size_t j = 0; j != num_columns; ++j)
+        Columns columns = input_chunks[i].detachColumns();
+        for (size_t j = 0, size = mutable_columns.size(); j < size; ++j)
         {
-            have_same_serialization[j] &= ISerialization::getKind(*columns[j]) == ISerialization::getKind(*mutable_columns[j]);
-            source_columns_list[j].emplace_back(std::move(columns[j]));
-        }
-    }
-
-    for (size_t i = 0; i != num_columns; ++i)
-    {
-        if (!have_same_serialization[i])
-        {
-            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->assumeMutable();
-            for (auto & column : source_columns_list[i])
-                column = recursiveRemoveSparse(column);
-        }
-
-        /// We know all the data we will insert in advance and can make all necessary pre-allocations.
-        mutable_columns[i]->prepareForSquashing(source_columns_list[i]);
-        for (auto & source_column : source_columns_list[i])
-        {
-            auto column = std::move(source_column);
-            mutable_columns[i]->insertRangeFrom(*column, 0, column->size());
+            const auto source_column = columns[j];
+            mutable_columns[j]->insertRangeFrom(*source_column, 0, source_column->size());
         }
     }
 

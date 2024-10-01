@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 cluster = ClickHouseCluster(__file__)
 # Version 21.6.3.14 has incompatible partition id for tables with UUID in partition key.

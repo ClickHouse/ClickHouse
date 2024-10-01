@@ -19,7 +19,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>

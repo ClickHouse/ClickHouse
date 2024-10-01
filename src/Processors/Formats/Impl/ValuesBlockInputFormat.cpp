@@ -21,11 +21,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -200,10 +195,7 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
     auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
-    token_iterator.emplace(
-        *tokens,
-        static_cast<unsigned>(context->getSettingsRef()[Setting::max_parser_depth]),
-        static_cast<unsigned>(context->getSettingsRef()[Setting::max_parser_backtracks]));
+    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth), static_cast<unsigned>(context->getSettingsRef().max_parser_backtracks));
     auto const & first = (*token_iterator).get();
     if (first.isError() || first.isEnd())
     {
@@ -341,7 +333,7 @@ namespace
         {
             const DataTypeTuple & type_tuple = static_cast<const DataTypeTuple &>(data_type);
 
-            Tuple & tuple_value = value.safeGet<Tuple>();
+            Tuple & tuple_value = value.get<Tuple>();
 
             size_t src_tuple_size = tuple_value.size();
             size_t dst_tuple_size = type_tuple.getElements().size();
@@ -368,7 +360,7 @@ namespace
             if (element_type.isNullable())
                 return;
 
-            Array & array_value = value.safeGet<Array>();
+            Array & array_value = value.get<Array>();
             size_t array_value_size = array_value.size();
 
             for (size_t i = 0; i < array_value_size; ++i)
@@ -386,12 +378,12 @@ namespace
             const auto & key_type = *type_map.getKeyType();
             const auto & value_type = *type_map.getValueType();
 
-            auto & map = value.safeGet<Map>();
+            auto & map = value.get<Map>();
             size_t map_size = map.size();
 
             for (size_t i = 0; i < map_size; ++i)
             {
-                auto & map_entry = map[i].safeGet<Tuple>();
+                auto & map_entry = map[i].get<Tuple>();
 
                 auto & entry_key = map_entry[0];
                 auto & entry_value = map_entry[1];
@@ -414,7 +406,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
-    const auto & settings = context->getSettingsRef();
+    auto settings = context->getSettingsRef();
 
     /// Advance the token iterator until the start of the column expression
     readUntilTheEndOfRowAndReTokenize(column_idx);
@@ -427,8 +419,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     {
         Expected expected;
         /// Keep a copy to the start of the column tokens to use if later if necessary
-        ti_start = IParser::Pos(
-            *token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -551,7 +542,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
+    Field value = convertFieldToType(expression_value, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
@@ -634,6 +625,8 @@ void ValuesBlockInputFormat::readSuffix()
         skipWhitespaceIfAny(*buf);
         if (buf->hasUnreadData())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
+        if (!format_settings.values.allow_data_after_semicolon && !buf->eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)");
         return;
     }
 
@@ -670,16 +663,6 @@ void ValuesBlockInputFormat::resetReadBuffer()
 {
     buf.reset();
     IInputFormat::resetReadBuffer();
-}
-
-void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)
-{
-    if (parameters == context->getQueryParameters())
-        return;
-
-    auto context_copy = Context::createCopy(context);
-    context_copy->setQueryParameters(parameters);
-    context = std::move(context_copy);
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

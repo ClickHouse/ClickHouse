@@ -215,10 +215,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                /// Skip ephemeral subcolumns that don't store any real data.
-                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                    return;
-
                 auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
 
                 if (!stream_name)
@@ -323,7 +319,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     broken_projections_message += "\n";
 
                 broken_projections_message += fmt::format(
-                    "Part `{}` has broken projection `{}` (error: {})",
+                    "Part {} has a broken projection {} (error: {})",
                     data_part->name, name, exception_message);
             }
 
@@ -391,9 +387,17 @@ IMergeTreeDataPart::Checksums checkDataPart(
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
-                auto remote_paths = data_part_storage.getRemotePaths(file_name);
-                for (const auto & remote_path : remote_paths)
-                    cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                const bool is_projection_part = data_part->isProjectionPart();
+                auto remote_path = data_part_storage.getRemotePath(file_name, /* if_exists */is_projection_part);
+                if (remote_path.empty())
+                {
+                    chassert(is_projection_part);
+                    throw Exception(
+                        ErrorCodes::BROKEN_PROJECTION,
+                        "Remote path for {} does not exist for projection path. Projection {} is broken",
+                        file_name, data_part->name);
+                }
+                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
 

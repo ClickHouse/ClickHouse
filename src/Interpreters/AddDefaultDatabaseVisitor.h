@@ -121,10 +121,7 @@ private:
     {
         if (select.recursive_with)
             for (const auto & child : select.with()->children)
-            {
-                if (typeid_cast<ASTWithElement *>(child.get()))
-                    with_aliases.insert(child->as<ASTWithElement>()->name);
-            }
+                with_aliases.insert(child->as<ASTWithElement>()->name);
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
@@ -213,7 +210,7 @@ private:
                             if (literal_value.getType() != Field::Types::String)
                                 continue;
 
-                            auto dictionary_name = literal_value.safeGet<String>();
+                            auto dictionary_name = literal_value.get<String>();
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
                             literal_value = qualified_dictionary_name.getFullName();
                         }

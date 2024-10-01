@@ -5,6 +5,7 @@ import socketserver
 import sys
 import urllib.parse
 
+
 UPSTREAM_HOST = "minio1:9001"
 random.seed("No delete objects/1.0")
 

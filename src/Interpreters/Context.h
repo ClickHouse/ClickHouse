@@ -1,24 +1,29 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Core/ParallelReplicasMode.h>
+#include <Formats/FormatSettings.h>
+#include <IO/AsyncReadCounters.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Formats/FormatSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 
 #include "config.h"
@@ -29,11 +34,7 @@
 #include <optional>
 
 
-namespace Poco::Net
-{
-class IPAddress;
-class SocketAddress;
-}
+namespace Poco::Net { class IPAddress; }
 namespace zkutil
 {
     class ZooKeeper;
@@ -46,8 +47,6 @@ namespace DB
 {
 
 class ASTSelectQuery;
-
-class SystemLogs;
 
 struct ContextSharedPart;
 class ContextAccess;
@@ -133,11 +132,10 @@ class ICompressionCodec;
 class AccessControl;
 class GSSAcceptorContext;
 struct Settings;
-struct SettingChange;
-class SettingsChanges;
 struct SettingsConstraintsAndProfileIDs;
 class SettingsProfileElements;
 class RemoteHostFilter;
+struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
@@ -152,9 +150,6 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
-class HTTPHeaderFilter;
-struct AsyncReadCounters;
-struct ICgroupsReader;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -495,8 +490,6 @@ public:
 
     KitchenSink kitchen_sink;
 
-    void resetSharedContext();
-
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -534,10 +527,6 @@ protected:
     mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
 
     mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
-
-    mutable std::mutex mutex_shared_context;    /// mutex to avoid accessing destroyed shared context pointer
-                                                /// some Context methods can be called after the shared context is destroyed
-                                                /// example, Context::handleCrash() method - called from signal handler
 };
 
 /** A set of known objects that can be used in the query.
@@ -840,8 +829,7 @@ public:
     void setMacros(std::unique_ptr<Macros> && macros);
 
     bool displaySecretsInShowAndSelect() const;
-    Settings getSettingsCopy() const;
-    const Settings & getSettingsRef() const { return *settings; }
+    Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
@@ -966,6 +954,8 @@ public:
     void makeSessionContext();
     void makeGlobalContext();
 
+    const Settings & getSettingsRef() const { return *settings; }
+
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.
     ProgressCallback getProgressCallback() const;
@@ -1006,8 +996,6 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
-    /// If name == "default", same as getZooKeeper(), otherwise same as getAuxiliaryZooKeeper().
-    std::shared_ptr<zkutil::ZooKeeper> getDefaultOrAuxiliaryZooKeeper(const String & name) const;
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
@@ -1079,7 +1067,7 @@ public:
     void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
-    void clearQueryCache(const std::optional<String> & tag) const;
+    void clearQueryCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -1100,8 +1088,6 @@ public:
     /// in the way that its tasks are - wait for marks to be loaded
     /// and make a prefetch by putting a read task to threadpoolReader.
     size_t getPrefetchThreadpoolSize() const;
-
-    ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -1165,11 +1151,7 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    SystemLogs getSystemLogs() const;
-
-    using Dashboards = std::vector<std::map<String, String>>;
-    std::optional<Dashboards> getDashboards() const;
-    void setDashboardsConfig(const ConfigurationPtr & config);
+    std::vector<ISystemLog *> getSystemLogs() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -1347,6 +1329,15 @@ public:
 
     ClusterPtr getClusterForParallelReplicas() const;
 
+    enum class ParallelReplicasMode : uint8_t
+    {
+        SAMPLE_KEY,
+        CUSTOM_KEY,
+        READ_TASKS,
+    };
+
+    ParallelReplicasMode getParallelReplicasMode() const;
+
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
@@ -1390,6 +1381,8 @@ private:
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> & lock);
+
+    void initGlobal();
 
     void setUserID(const UUID & user_id_);
     void setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user);

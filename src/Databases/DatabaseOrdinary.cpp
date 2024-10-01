@@ -41,15 +41,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_deprecated_database_ordinary;
-    extern const SettingsBool fsync_metadata;
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsSetOperationMode union_default_mode;
-}
 
 namespace ErrorCodes
 {
@@ -64,7 +55,7 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseOrdinary (" + name_ + ")", context_)
+    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }
 
@@ -180,7 +171,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
         out.next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+        if (getContext()->getSettingsRef().fsync_metadata)
             out.sync();
         out.close();
     }
@@ -260,7 +251,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
 
-                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef().union_default_mode};
                 NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
@@ -274,7 +265,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         }
     };
 
-    iterateMetadataFiles(process_metadata);
+    iterateMetadataFiles(local_context, process_metadata);
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
@@ -412,7 +403,7 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
             {
                 /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
                 /// until startup finished.
-                auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+                auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
                 table->startup();
 
                 /// If table is ReplicatedMergeTree after conversion from MergeTree,
@@ -559,8 +550,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         statement.data() + statement.size(),
         "in file " + table_metadata_path,
         0,
-        local_context->getSettingsRef()[Setting::max_parser_depth],
-        local_context->getSettingsRef()[Setting::max_parser_backtracks]);
+        local_context->getSettingsRef().max_parser_depth, local_context->getSettingsRef().max_parser_backtracks);
 
     applyMetadataChangesToCreateQuery(ast, metadata);
 
@@ -569,7 +559,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
         out.next();
-        if (local_context->getSettingsRef()[Setting::fsync_metadata])
+        if (local_context->getSettingsRef().fsync_metadata)
             out.sync();
         out.close();
     }
@@ -600,7 +590,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
-        if (!args.create_query.attach && !args.context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
+        if (!args.create_query.attach && !args.context->getSettingsRef().allow_deprecated_database_ordinary)
             throw Exception(
                 ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                 "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");

@@ -32,11 +32,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -287,12 +282,8 @@ BlockIO InterpreterKillQueryQuery::execute()
                     const auto alter_command = command_col.getDataAt(i).toString();
                     const auto with_round_bracket = alter_command.front() == '(';
                     ParserAlterCommand parser{with_round_bracket};
-                    auto command_ast = parseQuery(
-                        parser,
-                        alter_command,
-                        0,
-                        getContext()->getSettingsRef()[Setting::max_parser_depth],
-                        getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
+                    auto command_ast
+                        = parseQuery(parser, alter_command, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
                         command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
                     if (!access->isGranted(required_access_rights))
@@ -343,7 +334,7 @@ BlockIO InterpreterKillQueryQuery::execute()
         for (size_t i = 0; i < moves_block.rows(); ++i)
         {
             table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
-            auto task_uuid = task_uuid_col[i].safeGet<UUID>();
+            auto task_uuid = task_uuid_col[i].get<UUID>();
 
             CancellationCode code = CancellationCode::Unknown;
 

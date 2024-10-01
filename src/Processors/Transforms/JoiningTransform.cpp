@@ -299,16 +299,12 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
-    auto & input = inputs.front();
-    auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)
         join->setTotals(block);
     else
         stop_reading = !join->addBlockToJoin(block);
-
-    if (input.isFinished())
-        join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }

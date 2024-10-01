@@ -15,7 +15,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <Common/assert_cast.h>
 #include <base/hex.h>
 #include <Core/Types.h>
 #include <base/types.h>
@@ -58,15 +57,8 @@ LocalFileHolder::~LocalFileHolder()
 {
     if (original_readbuffer)
     {
-        try
-        {
-            assert_cast<SeekableReadBuffer *>(original_readbuffer.get())->seek(0, SEEK_SET);
-            file_cache_controller->value().startBackgroundDownload(std::move(original_readbuffer), *thread_pool);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("LocalFileHolder"), "Exception during destructor of LocalFileHolder.");
-        }
+        assert_cast<SeekableReadBuffer *>(original_readbuffer.get())->seek(0, SEEK_SET);
+        file_cache_controller->value().startBackgroundDownload(std::move(original_readbuffer), *thread_pool);
     }
 }
 

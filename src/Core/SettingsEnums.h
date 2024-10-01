@@ -7,11 +7,9 @@
 #include <Core/SchemaInferenceMode.h>
 #include <Core/SettingsFields.h>
 #include <Core/ShortCircuitFunctionEvaluation.h>
-#include <Core/ParallelReplicasMode.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Parsers/ASTSQLSecurity.h>
-#include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
 
@@ -301,27 +299,21 @@ enum class Dialect : uint8_t
 
 DECLARE_SETTING_ENUM(Dialect)
 
+enum class ParallelReplicasCustomKeyFilterType : uint8_t
+{
+    DEFAULT,
+    RANGE,
+};
+
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
 enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
     DROP,
-    REBUILD,
 };
 
 DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
-
-enum class DeduplicateMergeProjectionMode : uint8_t
-{
-    THROW,
-    DROP,
-    REBUILD,
-};
-
-DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
-
-DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 
@@ -348,9 +340,6 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
-
-DECLARE_SETTING_ENUM(IdentifierQuotingRule)
-DECLARE_SETTING_ENUM(IdentifierQuotingStyle)
 
 enum class GroupArrayActionWhenLimitReached : uint8_t
 {

@@ -10,10 +10,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool log_queries;
-}
 
 namespace ErrorCodes
 {
@@ -207,7 +203,7 @@ StoragePtr StorageFactory::get(
     }
 
     if (query.comment)
-        comment = query.comment->as<ASTLiteral &>().value.safeGet<String>();
+        comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{
@@ -236,7 +232,7 @@ StoragePtr StorageFactory::get(
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;

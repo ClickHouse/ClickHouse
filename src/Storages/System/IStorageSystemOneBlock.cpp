@@ -45,7 +45,7 @@ public:
 private:
     std::shared_ptr<IStorageSystemOneBlock> storage;
     std::vector<UInt8> columns_mask;
-    std::optional<ActionsDAG> filter;
+    ActionsDAGPtr filter;
 };
 
 void IStorageSystemOneBlock::read(

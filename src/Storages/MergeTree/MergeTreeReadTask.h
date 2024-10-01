@@ -66,10 +66,8 @@ struct MergeTreeReadTaskInfo
     MergeTreeReadTaskColumns task_columns;
     /// Shared initialized size predictor. It is copied for each new task.
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
-    /// Shared constant fields for virtual columns.
+    /// TODO: comment
     VirtualFields const_virtual_fields;
-    /// The amount of data to read per task based on size of the queried columns.
-    size_t min_marks_per_task = 0;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

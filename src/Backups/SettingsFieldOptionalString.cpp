@@ -19,7 +19,7 @@ SettingFieldOptionalString::SettingFieldOptionalString(const Field & field)
 
     if (field.getType() == Field::Types::String)
     {
-        value = field.safeGet<const String &>();
+        value = field.get<const String &>();
         return;
     }
 

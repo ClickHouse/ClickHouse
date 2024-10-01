@@ -1,4 +1,3 @@
-#include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include "Common/Exception.h"
 
@@ -86,7 +85,6 @@ private:
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    blob.Details.ETag.ToString(),
                     {}}));
         }
 
@@ -119,8 +117,7 @@ AzureObjectStorage::AzureObjectStorage(
 {
 }
 
-ObjectStorageKey
-AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
 }
@@ -187,7 +184,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    blob.Details.ETag.ToString(),
                     {}}));
         }
 
@@ -289,7 +285,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
-        write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
+        buf_size,
         patchSettings(write_settings),
         settings.get(),
         std::move(scheduler));

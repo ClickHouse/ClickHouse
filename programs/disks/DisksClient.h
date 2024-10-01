@@ -5,8 +5,9 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <Client/ReplxxLineReader.h>
 #include <Loggers/Loggers.h>
-#include <Disks/IDisk.h>
+#include "Disks/IDisk.h"
 
 #include <Interpreters/Context.h>
 #include <boost/program_options/options_description.hpp>
