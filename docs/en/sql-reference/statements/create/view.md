@@ -202,7 +202,7 @@ REFRESH EVERY 1 MONTH OFFSET 5 DAY 2 HOUR -- on 6th day of every month, at 2:00 
 REFRESH EVERY 2 WEEK OFFSET 5 DAY 15 HOUR 10 MINUTE -- every other Saturday, at 3:10 pm
 REFRESH EVERY 30 MINUTE -- at 00:00, 00:30, 01:00, 01:30, etc
 REFRESH AFTER 30 MINUTE -- 30 minutes after the previous refresh completes, no alignment with time of day
--- REFRESH AFTER 1 HOUR OFFSET 1 MINUTE -- syntax errror, OFFSET is not allowed with AFTER
+-- REFRESH AFTER 1 HOUR OFFSET 1 MINUTE -- syntax error, OFFSET is not allowed with AFTER
 ```
 
 `RANDOMIZE FOR` randomly adjusts the time of each refresh, e.g.:

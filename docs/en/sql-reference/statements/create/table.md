@@ -429,7 +429,7 @@ DEFLATE_QPL is not available in ClickHouse Cloud.
 
 ### Specialized Codecs
 
-These codecs are designed to make compression more effective by exploiting specific features of the data. Some of these codecs do not compress data themself, they instead preprocess the data such that a second compression stage using a general-purpose codec can achieve a higher data compression rate.
+These codecs are designed to make compression more effective by exploiting specific features of the data. Some of these codecs do not compress data themselves, they instead preprocess the data such that a second compression stage using a general-purpose codec can achieve a higher data compression rate.
 
 #### Delta
 
