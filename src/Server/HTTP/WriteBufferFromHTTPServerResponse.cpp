@@ -257,17 +257,11 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
         {
             data_sent |= (compression_buffer->count() != compression_buffer->offset());
             if (!data_sent)
-            {
-                compression_discarded_data = std::distance(compression_buffer->buffer().begin(), compression_buffer->position());
-                compression_buffer->position() = compression_buffer->buffer().begin();
-            }
+                compression_discarded_data = compression_buffer->rejectDataSafe();
         }
         data_sent |= (count() != offset());
         if (!data_sent)
-        {
-            discarded_data = std::distance(buffer().begin(), position());
-            position() = buffer().begin();
-        }
+            discarded_data = rejectDataSafe();
 
         bool is_response_sent = response.sent();
         // proper senging bad http code

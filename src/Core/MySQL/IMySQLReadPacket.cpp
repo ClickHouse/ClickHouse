@@ -33,13 +33,15 @@ void IMySQLReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
 
 void LimitedReadPacket::readPayload(ReadBuffer &in, uint8_t &sequence_id)
 {
-    LimitReadBuffer limited(in, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
+    LimitReadBuffer limited(in, {.read_no_more = 10000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
+    //10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
     IMySQLReadPacket::readPayload(limited, sequence_id);
 }
 
 void LimitedReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
 {
-    LimitReadBuffer limited(in, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
+    LimitReadBuffer limited(in,{.read_no_more = 10000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
+    // 10000,  /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
     IMySQLReadPacket::readPayloadWithUnpacked(limited);
 }
 

@@ -172,6 +172,39 @@ public:
         next();
     }
 
+    size_t rejectDataSafe()
+    {
+        size_t before = count();
+        if (count() == offset())
+            position() -= offset();
+        return before - count();
+    }
+
+    size_t rejectDataSafe(size_t partial_data_to_reject)
+    {
+        size_t before = count();
+        if (count() == offset() && offset() >= partial_data_to_reject)
+            position() -= partial_data_to_reject;
+        return before - count();
+    }
+
+    bool rejectDataHard()
+    {
+        size_t before = count();
+        position() -= offset();
+        return before - count();
+    }
+
+     size_t rejectDataHard(size_t partial_data_to_reject)
+    {
+        size_t before = count();
+        if (offset() >= partial_data_to_reject)
+        {
+            position() -= partial_data_to_reject;
+        }
+        return before - count();
+    }
+
 protected:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
 

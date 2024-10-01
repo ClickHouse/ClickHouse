@@ -429,7 +429,8 @@ bool BinlogFromFile::tryReadEvent(BinlogEventPtr & to, UInt64 /*ms*/)
         EventHeader event_header;
         event_header.parse(*in);
 
-        LimitReadBuffer limit_read_buffer(*in, event_header.event_size - EVENT_HEADER_LENGTH, /* throw_exception */ false, /* exact_limit */ {});
+        //LimitReadBuffer limit_read_buffer(*in, event_header.event_size - EVENT_HEADER_LENGTH, /* throw_exception */ false, /* exact_limit */ {});
+        LimitReadBuffer limit_read_buffer(*in, {.read_no_more = event_header.event_size - EVENT_HEADER_LENGTH});
         MySQLBinlogEventReadBuffer event_payload(limit_read_buffer, checksum_signature_length);
         parseEvent(event_header, event_payload);
         to = event;

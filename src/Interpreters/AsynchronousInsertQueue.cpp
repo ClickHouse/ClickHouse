@@ -381,9 +381,10 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         LimitReadBuffer limit_buf(
             *read_buf,
-            query_context->getSettingsRef()[Setting::async_insert_max_data_size],
-            /*throw_exception=*/false,
-            /*exact_limit=*/{});
+            {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
+            // query_context->getSettingsRef()[Setting::async_insert_max_data_size],
+            // /*throw_exception=*/false,
+            // /*exact_limit=*/{});
 
         {
             WriteBufferFromString write_buf(bytes);

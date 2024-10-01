@@ -175,7 +175,7 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
             LOG_TEST(log, "{} -> {} Chunk send started. Message {}, size {}",
                     ourAddress().toString(), peerAddress().toString(),
                     static_cast<unsigned int>(*(reinterpret_cast<char *>(chunk_size_ptr) + sizeof(*chunk_size_ptr))),
-                    *chunk_size_ptr);
+                     *chunk_size_ptr);
         }
         else
             LOG_TEST(log, "{} -> {} Chunk send continued. Size {}", ourAddress().toString(), peerAddress().toString(), *chunk_size_ptr);
