@@ -4592,7 +4592,12 @@ class ClickHouseInstance:
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
 
-        if self.randomize_settings and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR:
+        if (
+            self.randomize_settings
+            and self.image == "clickhouse/integration-test"
+            and self.tag == "latest"
+            and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR
+        ):
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
