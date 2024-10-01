@@ -11,8 +11,9 @@
 //Class mostly implemented by ChatGPT
 class MD5 {
 private:
+	static const constexpr size_t in_buffer_size = 8192; // 8 KB buffer
+	uint8_t buffer[64], in_buffer[in_buffer_size];
 	uint32_t state[4], count[2];
-	uint8_t buffer[64];
 
 	void update(const uint8_t* input, size_t length) {
 		size_t index = (count[0] >> 3) & 0x3F;
@@ -45,7 +46,7 @@ private:
 
 		size_t index = (count[0] >> 3) & 0x3F, pad_len = (index < 56) ? (56 - index) : (120 - index);
 
-		static const uint8_t PADDING[64] = { 0x80 };
+		static const constexpr uint8_t PADDING[64] = { 0x80 };
 		update(PADDING, pad_len);
 		update(bits, 8);
 
@@ -88,7 +89,7 @@ private:
 		decode(x, block, 64);
 
 		// Constants for MD5
-		static const uint32_t K[] = {
+		static const constexpr uint32_t K[] = {
 			0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee,
 			0xf57c0faf, 0x4787c62a, 0xa8304613, 0xb00327c8,
 			0xbf597fc7, 0x298e09bb, 0x0fb0a8c4, 0x20004157,
@@ -102,7 +103,7 @@ private:
 			0x0da006f5, 0x90a1e9bc, 0xa62632e7, 0x4fcabc2a,
 			0x304c3c5f, 0x079c3da5, 0x3d5c6f34, 0x5f02f4bc
 		};
-		static const int S[64] = {
+		static const constexpr int S[64] = {
 			7, 12, 17, 22,  // Round 1
 			5, 9, 14, 20,  // Round 2
 			4, 11, 16, 23, // Round 3
@@ -162,8 +163,6 @@ private:
 
 public:
 	void hashFile(const std::string& file_path, uint8_t digest[16]) {
-		const size_t buffer_size = 8192; // 8 KB buffer
-		uint8_t buffer[buffer_size];
 		std::ifstream file(file_path, std::ios::binary);
 
 		if (!file) {
@@ -171,8 +170,8 @@ public:
 		}
 
 		this->reset();
-		while (file.read(reinterpret_cast<char*>(buffer), buffer_size) || file.gcount() > 0) {
-			this->update(buffer, file.gcount());
+		while (file.read(reinterpret_cast<char*>(in_buffer), in_buffer_size) || file.gcount() > 0) {
+			this->update(in_buffer, file.gcount());
 		}
 		this->finalize(digest);
 	}

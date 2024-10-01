@@ -995,7 +995,7 @@ bool Client::ProcessCHFuzzQuery(std::ofstream &outf, const std::string &full_que
 bool Client::chFuzz()
 {
     bool server_up = true;
-    std::string full_query;
+    std::string full_query, full_query2;
     int nsuccessfull = 0, total_create_table_tries = 0;
     chfuzz::FuzzConfig fc(ch_fuzz_options_path);
     chfuzz::RandomGenerator rg(fc.seed);
@@ -1012,6 +1012,7 @@ bool Client::chFuzz()
     ProcessQueryAndLog(outf, "USE s0;");
 
     full_query.reserve(8192);
+    full_query2.reserve(8192);
     while (server_up)
     {
         sq1.Clear();
@@ -1062,6 +1063,29 @@ bool Client::chFuzz()
                 (void) qo.GenerateImportQuery(gen, sq1, sq2, sq3);
                 chfuzz::SQLQueryToString(full_query, sq3);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
+            }
+            else if (noption < 71)
+            {
+                //test running query with different settings
+                (void) qo.GenerateFirstSetting(rg, sq1);
+                chfuzz::SQLQueryToString(full_query, sq1);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                sq2.Clear();
+                full_query2.resize(0);
+                (void) qo.GenerateSettingQuery(rg, gen, sq2);
+                chfuzz::SQLQueryToString(full_query2, sq2);
+                server_up &= ProcessCHFuzzQuery(outf, full_query2);
+                (void) qo.UpdateSettingQueryResult(true, !have_error);
+
+                sq3.Clear();
+                full_query.resize(0);
+                (void) qo.GenerateSecondSetting(sq1, sq3);
+                chfuzz::SQLQueryToString(full_query, sq3);
+                server_up &= ProcessCHFuzzQuery(outf, full_query);
+
+                server_up &= ProcessCHFuzzQuery(outf, full_query2);
+                (void) qo.UpdateSettingQueryResult(false, !have_error);
             }
             else
             {

@@ -120,7 +120,7 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, StatementGenerator &ge
 	sql_query_grammar::Insert *ins = sq1.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();
-	const std::filesystem::path nfile = fc.db_file_path / "table.data";
+	const std::filesystem::path &nfile = fc.db_file_path / "table.data";
 
 	if (std::filesystem::exists(nfile)) {
 		std::filesystem::resize_file(nfile, 0); //truncate the file
@@ -301,8 +301,17 @@ int QueryOracle::GenerateFirstSetting(RandomGenerator &rg, sql_query_grammar::SQ
 	return 0;
 }
 
-int QueryOracle::GenerateFirtSettingQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq2) {
-	const std::filesystem::path qfile = fc.db_file_path / "query.data";
+int QueryOracle::GenerateSecondSetting(const sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq3) {
+	sql_query_grammar::SettingValues *sv = sq3.mutable_inner_query()->mutable_setting_values();
+	sql_query_grammar::SetValue *sett = sv->mutable_set_value();
+
+	sett->set_property(sq1.inner_query().setting_values().set_value().property());
+	sett->set_value(nsetting);
+	return 0;
+}
+
+int QueryOracle::GenerateSettingQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq2) {
+	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq2.mutable_inner_query()->mutable_select();
 
 	if (std::filesystem::exists(qfile)) {
@@ -314,12 +323,19 @@ int QueryOracle::GenerateFirtSettingQuery(RandomGenerator &rg, StatementGenerato
 	return 0;
 }
 
-int QueryOracle::GenerateSecondSetting(const sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq3) {
-	sql_query_grammar::SettingValues *sv = sq3.mutable_inner_query()->mutable_setting_values();
-	sql_query_grammar::SetValue *sett = sv->mutable_set_value();
+int QueryOracle::UpdateSettingQueryResult(const bool first, const bool success) {
+	bool &res = first ? first_success : second_sucess;
 
-	sett->set_property(sq1.inner_query().setting_values().set_value().property());
-	sett->set_value(nsetting);
+	if (success) {
+		const std::filesystem::path &qfile = fc.db_file_path / "query.data";
+
+		md5_hash.hashFile(qfile.generic_string(), first ? first_digest : second_digest);
+	}
+	res = success;
+	if (!first && first_success && second_sucess &&
+		!std::equal(std::begin(first_digest), std::end(first_digest), std::begin(second_digest))) {
+		throw std::runtime_error("Multi setting query oracle failed");
+	}
 	return 0;
 }
 
