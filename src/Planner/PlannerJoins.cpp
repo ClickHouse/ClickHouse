@@ -1,5 +1,8 @@
 #include <Planner/PlannerJoins.h>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/join.hpp>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -45,15 +48,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_join_condition;
-    extern const SettingsBool collect_hash_table_stats_during_joins;
-    extern const SettingsBool join_any_take_last_row;
-    extern const SettingsBool join_use_nulls;
-    extern const SettingsUInt64 max_size_to_preallocate_for_joins;
-    extern const SettingsMaxThreads max_threads;
-}
 
 namespace ErrorCodes
 {
@@ -323,8 +317,8 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
-            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
+            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef().join_use_nulls;
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
             if (support_mixed_join_condition && !join_use_nulls)
             {
@@ -359,8 +353,8 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
-            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
+            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef().join_use_nulls;
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
             if (support_mixed_join_condition && !join_use_nulls)
             {
@@ -500,12 +494,6 @@ JoinClausesAndActions buildJoinClausesAndActions(
             necessary_names.push_back(name);
     };
 
-    bool is_join_with_special_storage = false;
-    if (const auto * right_table_node = join_node.getRightTableExpression()->as<TableNode>())
-    {
-        is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
-    }
-
     for (auto & join_clause : result.join_clauses)
     {
         const auto & left_filter_condition_nodes = join_clause.getLeftFilterConditionNodes();
@@ -573,14 +561,14 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 if (!left_key_node->result_type->equals(*common_type))
                     left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {});
 
-                if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
+                if (!right_key_node->result_type->equals(*common_type))
                     right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
             if (join_clause.isNullsafeCompareKey(i) && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
             {
                 /**
-                  * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
+                  * In case of null-safe comparison (a IS NOT DISTICT FROM b),
                   * we need to wrap keys with a non-nullable type.
                   * The type `tuple` can be used for this purpose,
                   * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
@@ -821,15 +809,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
             const auto & settings = query_context->getSettingsRef();
             StatsCollectingParams params{
                 calculateCacheKey(table_join, right_table_expression),
-                settings[Setting::collect_hash_table_stats_during_joins],
+                settings.collect_hash_table_stats_during_joins,
                 query_context->getServerSettings().max_entries_for_hash_table_stats,
-                settings[Setting::max_size_to_preallocate_for_joins]};
+                settings.max_size_to_preallocate_for_joins};
             return std::make_shared<ConcurrentHashJoin>(
-                query_context, table_join, query_context->getSettingsRef()[Setting::max_threads], right_table_expression_header, params);
+                query_context, table_join, query_context->getSettingsRef().max_threads, right_table_expression_header, params);
         }
 
-        return std::make_shared<HashJoin>(
-            table_join, right_table_expression_header, query_context->getSettingsRef()[Setting::join_any_take_last_row]);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header, query_context->getSettingsRef().join_any_take_last_row);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)

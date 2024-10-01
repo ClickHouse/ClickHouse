@@ -33,11 +33,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool validate_polygons;
-}
-
 namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -65,7 +60,8 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(context->getSettingsRef()[Setting::validate_polygons]);
+        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(
+            context->getSettingsRef().validate_polygons);
     }
 
     String getName() const override

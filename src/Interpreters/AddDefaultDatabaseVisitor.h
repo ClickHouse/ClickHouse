@@ -121,10 +121,7 @@ private:
     {
         if (select.recursive_with)
             for (const auto & child : select.with()->children)
-            {
-                if (typeid_cast<ASTWithElement *>(child.get()))
-                    with_aliases.insert(child->as<ASTWithElement>()->name);
-            }
+                with_aliases.insert(child->as<ASTWithElement>()->name);
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());

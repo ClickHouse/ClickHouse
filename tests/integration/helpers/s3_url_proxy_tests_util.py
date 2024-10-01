@@ -1,6 +1,7 @@
 import os
 import time
 
+
 ALL_HTTP_METHODS = {"POST", "PUT", "GET", "HEAD", "CONNECT"}
 
 

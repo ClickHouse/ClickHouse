@@ -70,7 +70,7 @@ SELECT id, haystack, needle, replacement, replaceRegexpOne('Hello World', needle
 DROP TABLE IF EXISTS test_tab;
 
 
-SELECT 'Check that whether an exception is thrown if the needle is empty';
+SELECT 'Check that an exception is thrown if the needle is empty';
 
 CREATE TABLE test_tab
   (id UInt32, haystack String, needle String, replacement String)
@@ -80,20 +80,20 @@ CREATE TABLE test_tab
 INSERT INTO test_tab VALUES (1, 'Hello World', 'l', 'x') (2, 'Hello World', '', 'y');
 
 -- needle: non-const, replacement: const
-SELECT replaceAll(haystack, needle, 'x') FROM test_tab;
-SELECT replaceOne(haystack, needle, 'x') FROM test_tab;
+SELECT replaceAll(haystack, needle, 'x') FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT replaceOne(haystack, needle, 'x') FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT replaceRegexpAll(haystack, needle, 'x') FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT replaceRegexpOne(haystack, needle, 'x') FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- needle: const, replacement: non-const
-SELECT replaceAll(haystack, '', replacement) FROM test_tab;
-SELECT replaceOne(haystack, '', replacement) FROM test_tab;
+SELECT replaceAll(haystack, '', replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT replaceOne(haystack, '', replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT replaceRegexpAll(haystack, '', replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT replaceRegexpOne(haystack, '', replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- needle: non-const, replacement: non-const
-SELECT replaceAll(haystack, needle, replacement) FROM test_tab;
-SELECT replaceOne(haystack, needle, replacement) FROM test_tab;
+SELECT replaceAll(haystack, needle, replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT replaceOne(haystack, needle, replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT replaceRegexpAll(haystack, needle, replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT replaceRegexpOne(haystack, needle, replacement) FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }
 

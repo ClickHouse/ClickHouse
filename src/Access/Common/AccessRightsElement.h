@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/Common/AccessFlags.h>
-#include <IO/WriteBuffer.h>
 #include <tuple>
 
 
@@ -18,8 +17,10 @@ struct AccessRightsElement
     Strings columns;
     String parameter;
 
-    bool wildcard = false;
-    bool default_database = false;
+    bool any_database = true;
+    bool any_table = true;
+    bool any_column = true;
+    bool any_parameter = false;
 
     bool grant_option = false;
     bool is_partial_revoke = false;
@@ -46,32 +47,28 @@ struct AccessRightsElement
     AccessRightsElement(
         AccessFlags access_flags_, std::string_view database_, std::string_view table_, const Strings & columns_);
 
-    bool empty() const { return !access_flags || (!anyColumn() && columns.empty()); }
+    bool empty() const { return !access_flags || (!any_column && columns.empty()); }
 
-    bool anyDatabase() const { return database.empty() && table.empty() && !default_database; }
-    bool anyTable() const { return table.empty(); }
-    bool anyColumn() const { return columns.empty(); }
-    bool anyParameter() const { return parameter.empty(); }
-
-    auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, wildcard, grant_option, is_partial_revoke); }
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, any_parameter, parameter, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
 
     bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
     {
-        return sameDatabaseAndTable(other) && sameParameter(other) && (wildcard == other.wildcard);
+        return sameDatabaseAndTable(other) && sameParameter(other);
     }
 
     bool sameParameter(const AccessRightsElement & other) const
     {
-        return (parameter == other.parameter) && (anyParameter() == other.anyParameter())
+        return (parameter == other.parameter) && (any_parameter == other.any_parameter)
             && (access_flags.getParameterType() == other.access_flags.getParameterType())
             && (isGlobalWithParameter() == other.isGlobalWithParameter());
     }
 
     bool sameDatabaseAndTable(const AccessRightsElement & other) const
     {
-        return (database == other.database) && (table == other.table) && (anyDatabase() == other.anyDatabase()) && (anyTable() == other.anyTable());
+        return (database == other.database) && (any_database == other.any_database)
+            && (table == other.table) && (any_table == other.any_table);
     }
 
     bool sameOptions(const AccessRightsElement & other) const
@@ -82,7 +79,7 @@ struct AccessRightsElement
     /// Resets flags which cannot be granted.
     void eraseNonGrantable();
 
-    bool isEmptyDatabase() const { return database.empty() and !anyDatabase(); }
+    bool isEmptyDatabase() const { return !any_database && database.empty(); }
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
@@ -92,9 +89,7 @@ struct AccessRightsElement
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-
-    void formatColumnNames(WriteBuffer & buffer) const;
-    void formatONClause(WriteBuffer & buffer, bool hilite = false) const;
+    String toStringForAccessTypeSource() const;
 };
 
 

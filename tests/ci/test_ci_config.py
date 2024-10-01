@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 import copy
-import random
 import unittest
+import random
 
-import ci as CIPY
-from ci_cache import CiCache
 from ci_config import CI
+import ci as CIPY
 from ci_settings import CiSettings
-from ci_utils import Utils
-from pr_info import EventType, PRInfo
+from pr_info import PRInfo, EventType
 from s3_helper import S3Helper
+from ci_cache import CiCache
+from ci_utils import Utils
+
 
 _TEST_EVENT_JSON = {"dummy": "dummy"}
 

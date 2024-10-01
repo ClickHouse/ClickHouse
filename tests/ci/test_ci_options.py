@@ -3,9 +3,8 @@
 # type: ignore
 
 import unittest
-
-from ci_config import CI
 from ci_settings import CiSettings
+from ci_config import CI
 
 _TEST_BODY_1 = """
 #### Run only:

@@ -17,7 +17,7 @@ function wait_with_limit()
     done
 }
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT -nm -q "
     drop table if exists data_01811;
     drop table if exists buffer_01811;
 
@@ -39,9 +39,9 @@ $CLICKHOUSE_CLIENT -m -q "
 # wait for background buffer flush
 wait_with_limit 30 '[[ $($CLICKHOUSE_CLIENT -q "select count() from data_01811") -gt 0 ]]'
 
-$CLICKHOUSE_CLIENT -m -q "select count() from data_01811"
+$CLICKHOUSE_CLIENT -nm -q "select count() from data_01811"
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT -nm -q "
     drop table buffer_01811;
     drop table data_01811;
 "

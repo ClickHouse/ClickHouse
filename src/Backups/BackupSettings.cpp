@@ -37,7 +37,6 @@ namespace ErrorCodes
     M(Bool, check_parts) \
     M(Bool, check_projection_parts) \
     M(Bool, allow_backup_broken_projections) \
-    M(Bool, write_access_entities_dependents) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid)

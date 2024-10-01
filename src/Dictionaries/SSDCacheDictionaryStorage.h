@@ -769,7 +769,7 @@ private:
             if (this == &rhs)
                 return *this;
 
-            [[maybe_unused]] int err = ::close(fd);
+            int err = ::close(fd);
             chassert(!err || errno == EINTR);
 
             fd = rhs.fd;
@@ -780,7 +780,7 @@ private:
         {
             if (fd != -1)
             {
-                [[maybe_unused]] int err = close(fd);
+                int err = close(fd);
                 chassert(!err || errno == EINTR);
             }
         }

@@ -1,10 +1,10 @@
 import random
 import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from typing import Dict, List, Optional
+from typing import Dict, Optional, List
 
-from ci_definitions import *  # pylint:disable=unused-wildcard-import
 from ci_utils import Utils
+from ci_definitions import *
 
 
 class CI:
@@ -17,24 +17,24 @@ class CI:
 
     # reimport types to CI class so that they visible as CI.* and mypy is happy
     # pylint:disable=useless-import-alias,reimported,import-outside-toplevel
-    from ci_definitions import MQ_JOBS as MQ_JOBS
-    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import BuildConfig as BuildConfig
-    from ci_definitions import BuildNames as BuildNames
     from ci_definitions import DigestConfig as DigestConfig
     from ci_definitions import JobConfig as JobConfig
-    from ci_definitions import JobNames as JobNames
-    from ci_definitions import Labels as Labels
-    from ci_definitions import Runners as Runners
-    from ci_definitions import StatusNames as StatusNames
-    from ci_definitions import SyncState as SyncState
     from ci_definitions import Tags as Tags
-    from ci_definitions import WorkFlowNames as WorkFlowNames
+    from ci_definitions import JobNames as JobNames
+    from ci_definitions import BuildNames as BuildNames
+    from ci_definitions import StatusNames as StatusNames
+    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
+    from ci_definitions import SyncState as SyncState
+    from ci_definitions import MQ_JOBS as MQ_JOBS
     from ci_definitions import WorkflowStages as WorkflowStages
-    from ci_utils import GH as GH
+    from ci_definitions import Runners as Runners
     from ci_utils import Envs as Envs
-    from ci_utils import Shell as Shell
     from ci_utils import Utils as Utils
+    from ci_utils import GH as GH
+    from ci_utils import Shell as Shell
+    from ci_definitions import Labels as Labels
+    from ci_definitions import WorkFlowNames as WorkFlowNames
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
@@ -163,7 +163,7 @@ class CI:
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
-            timeout=14400,
+            timeout=10800,
         ),
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -400,10 +400,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], pr_only=True
         ),
         JobNames.INTEGRATION_TEST_ASAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
-            release_only=True,
-            num_batches=4,
-            timeout=10800,
+            required_builds=[BuildNames.PACKAGE_ASAN], release_only=True, num_batches=4
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
@@ -429,7 +426,6 @@ class CI:
             pr_only=True,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
-            timeout=4 * 3600,  # to be able to process many updated tests
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -473,7 +469,7 @@ class CI:
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
-            timeout=3 * 3600,
+            timeout=3600,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),
@@ -542,10 +538,7 @@ class CI:
         JobNames.FAST_TEST: JobConfig(
             pr_only=True,
             digest=DigestConfig(
-                include_paths=[
-                    "./tests/queries/0_stateless/",
-                    "./tests/docker_scripts/",
-                ],
+                include_paths=["./tests/queries/0_stateless/"],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),
@@ -559,7 +552,7 @@ class CI:
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_label="pr-bugfix",
             run_command="bugfix_validate_check.py",
-            timeout=2400,
+            timeout=900,
             runner_type=Runners.STYLE_CHECKER,
         ),
     }

@@ -15,10 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool use_hive_partitioning;
-}
 
 namespace ErrorCodes
 {
@@ -69,7 +65,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context_->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context_);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
@@ -107,7 +103,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     ASTPtr cluster_name_arg = args.front();
     args.erase(args.begin());
-    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
+    configuration->addStructureAndFormatToArgs(args, structure, configuration->format, context);
     args.insert(args.begin(), cluster_name_arg);
 }
 

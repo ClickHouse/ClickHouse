@@ -1,13 +1,15 @@
-import io
-import os
-import pathlib
-import select
-import subprocess
-from typing import Dict, List, Optional, Tuple, Union
+from helpers.cluster import ClickHouseCluster
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+import pathlib
+
+import subprocess
+import select
+import io
+from typing import List, Tuple, Dict, Union, Optional
+
+import os
 
 
 class ClickHouseDisksException(Exception):

@@ -1,9 +1,7 @@
 import socket
-import time
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
+import time
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

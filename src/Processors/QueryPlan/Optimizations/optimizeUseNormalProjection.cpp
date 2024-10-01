@@ -14,14 +14,6 @@
 
 #include <algorithm>
 
-namespace DB
-{
-namespace Setting
-{
-    extern const SettingsString preferred_optimize_projection_name;
-}
-}
-
 namespace DB::QueryPlanOptimizations
 {
 
@@ -123,7 +115,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     auto it = std::find_if(
         normal_projections.begin(),
         normal_projections.end(),
-        [&](const auto * projection) { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
+        [&](const auto * projection) { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
 
     if (it != normal_projections.end())
     {
@@ -207,7 +199,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     auto projection_reading = reader.readFromParts(
         /*parts=*/ {},
-        reading->getMutationsSnapshot()->cloneEmpty(),
+        /*alter_conversions=*/ {},
         required_columns,
         proj_snapshot,
         query_info_copy,

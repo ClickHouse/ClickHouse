@@ -196,31 +196,28 @@ public:
         WriteBuffer & ostr;
         bool one_line;
         bool hilite;
-        IdentifierQuotingRule identifier_quoting_rule;
+        bool always_quote_identifiers;
         IdentifierQuotingStyle identifier_quoting_style;
         bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
         char nl_or_ws; /// Newline or whitespace.
         LiteralEscapingStyle literal_escaping_style;
-        bool print_pretty_type_names;
 
         explicit FormatSettings(
             WriteBuffer & ostr_,
             bool one_line_,
             bool hilite_ = false,
-            IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
+            bool always_quote_identifiers_ = false,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
-            LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
-            bool print_pretty_type_names_ = false)
+            LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular)
             : ostr(ostr_)
             , one_line(one_line_)
             , hilite(hilite_)
-            , identifier_quoting_rule(identifier_quoting_rule_)
+            , always_quote_identifiers(always_quote_identifiers_)
             , identifier_quoting_style(identifier_quoting_style_)
             , show_secrets(show_secrets_)
             , nl_or_ws(one_line ? ' ' : '\n')
             , literal_escaping_style(literal_escaping_style_)
-            , print_pretty_type_names(print_pretty_type_names_)
         {
         }
 
@@ -228,16 +225,15 @@ public:
             : ostr(ostr_)
             , one_line(other.one_line)
             , hilite(other.hilite)
-            , identifier_quoting_rule(other.identifier_quoting_rule)
+            , always_quote_identifiers(other.always_quote_identifiers)
             , identifier_quoting_style(other.identifier_quoting_style)
             , show_secrets(other.show_secrets)
             , nl_or_ws(other.nl_or_ws)
             , literal_escaping_style(other.literal_escaping_style)
-            , print_pretty_type_names(other.print_pretty_type_names)
         {
         }
 
-        void writeIdentifier(const String & name, bool ambiguous) const;
+        void writeIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -255,7 +251,7 @@ public:
     /// The state that is copied when each node is formatted. For example, nesting level.
     struct FormatStateStacked
     {
-        UInt16 indent = 0;
+        UInt8 indent = 0;
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
@@ -278,13 +274,7 @@ public:
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
     /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
-    String formatWithPossiblyHidingSensitiveData(
-        size_t max_length,
-        bool one_line,
-        bool show_secrets,
-        bool print_pretty_type_names,
-        IdentifierQuotingRule identifier_quoting_rule,
-        IdentifierQuotingStyle identifier_quoting_style) const;
+    String formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const;
 
     /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
       * behaviour is due to the fact such functions are called from Client which knows nothing about
@@ -293,24 +283,12 @@ public:
       */
     String formatForLogging(size_t max_length = 0) const
     {
-        return formatWithPossiblyHidingSensitiveData(
-            /*max_length=*/max_length,
-            /*one_line=*/true,
-            /*show_secrets=*/false,
-            /*print_pretty_type_names=*/false,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(max_length, true, false);
     }
 
     String formatForErrorMessage() const
     {
-        return formatWithPossiblyHidingSensitiveData(
-            /*max_length=*/0,
-            /*one_line=*/true,
-            /*show_secrets=*/false,
-            /*print_pretty_type_names=*/false,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(0, true, false);
     }
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }

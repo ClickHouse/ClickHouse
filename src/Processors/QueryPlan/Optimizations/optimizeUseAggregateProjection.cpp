@@ -27,14 +27,6 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Parsers/queryToString.h>
 
-namespace DB
-{
-namespace Setting
-{
-    extern const SettingsString preferred_optimize_projection_name;
-}
-}
-
 namespace DB::QueryPlanOptimizations
 {
 
@@ -521,7 +513,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             agg_projections.begin(),
             agg_projections.end(),
             [&](const auto * projection)
-            { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
+            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
 
         if (it != agg_projections.end())
         {
@@ -765,7 +757,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
         projection_reading = reader.readFromParts(
             /* parts = */ {},
-            reading->getMutationsSnapshot()->cloneEmpty(),
+            /* alter_conversions = */ {},
             best_candidate->dag.getRequiredColumnsNames(),
             proj_snapshot,
             projection_query_info,
