@@ -1442,19 +1442,14 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             {
                 auto rows = condition->calculateApproximateNearestNeighbors(granule);
 
-                std::sort(rows.begin(), rows.end());
-                rows.erase(std::unique(rows.begin(), rows.end()), rows.end()); /// duplicates are in theory not possible but who knows ...
-
-                const MergeTreeIndexGranularity & merge_tree_index_granularity = part->index_granularity;
-
                 for (auto row : rows)
                 {
+                    const MergeTreeIndexGranularity & merge_tree_index_granularity = part->index_granularity;
                     size_t num_marks = merge_tree_index_granularity.countMarksForRows(index_mark * index_granularity, row);
-                    size_t result_mark = (index_mark * index_granularity) + num_marks;
 
                     MarkRange data_range(
-                            std::max(ranges[i].begin, result_mark),
-                            std::min(ranges[i].end, result_mark + 1));
+                        std::max(ranges[i].begin, (index_mark * index_granularity) + num_marks),
+                        std::min(ranges[i].end, (index_mark * index_granularity) + num_marks + 1));
 
                     if (!res.empty() && data_range.end == res.back().end)
                         /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.

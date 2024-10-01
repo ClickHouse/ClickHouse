@@ -85,21 +85,24 @@ size_t MergeTreeIndexGranularity::getRowsCountInRanges(const MarkRanges & ranges
     size_t total = 0;
     for (const auto & range : ranges)
         total += getRowsCountInRange(range);
-
     return total;
 }
 
+size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t number_of_rows) const
+{
+    size_t rows_before_mark = getMarkStartingRow(from_mark);
+    size_t last_row_pos = rows_before_mark + number_of_rows;
+    auto it = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
+    size_t to_mark = it - marks_rows_partial_sums.begin();
+    return to_mark - from_mark;
+}
 
-size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const
+size_t MergeTreeIndexGranularity::countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const
 {
     size_t rows_before_mark = getMarkStartingRow(from_mark);
     size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
-    auto position = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
-    size_t to_mark;
-    if (position == marks_rows_partial_sums.end())
-        to_mark = marks_rows_partial_sums.size();
-    else
-        to_mark = position - marks_rows_partial_sums.begin();
+    auto it = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
+    size_t to_mark = it - marks_rows_partial_sums.begin();
 
     /// This is a heuristic to respect min_marks_to_read which is ignored by MergeTreeReadPool in case of remote disk.
     /// See comment in IMergeTreeSelectAlgorithm.
@@ -118,19 +121,6 @@ size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t num
     }
 
     return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
-}
-
-size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t number_of_rows) const
-{
-    size_t rows_before_mark = getMarkStartingRow(from_mark);
-    size_t last_row_pos = rows_before_mark + number_of_rows;
-    auto position = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
-    size_t to_mark;
-    if (position == marks_rows_partial_sums.end())
-        to_mark = marks_rows_partial_sums.size();
-    else
-        to_mark = position - marks_rows_partial_sums.begin();
-    return to_mark - from_mark;
 }
 
 void MergeTreeIndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_granularity)
