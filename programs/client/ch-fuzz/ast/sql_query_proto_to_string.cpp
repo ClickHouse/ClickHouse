@@ -1999,7 +1999,7 @@ CONV_FN(RefreshableView, rv) {
 }
 
 CONV_FN(CreateView, create_view) {
-  const bool materialized = create_view.materialized();
+  const bool materialized = create_view.materialized(), refreshable = create_view.has_refresh();
 
   ret += create_view.replace() ? "REPLACE" : "CREATE";
   ret += " ";
@@ -2009,7 +2009,7 @@ CONV_FN(CreateView, create_view) {
   ret += "VIEW ";
   ExprSchemaTableToString(ret, create_view.est());
   if (materialized) {
-    if (create_view.has_refresh()) {
+    if (refreshable) {
       ret += " ";
       RefreshableViewToString(ret, create_view.refresh());
     }
@@ -2020,10 +2020,10 @@ CONV_FN(CreateView, create_view) {
     if (create_view.has_engine()) {
       TableEngineToString(ret, create_view.engine());
     }
-    if (create_view.populate()) {
+    if (!refreshable && create_view.populate()) {
       ret += " POPULATE";
     }
-    if (create_view.has_refresh() && create_view.empty()) {
+    if (refreshable && create_view.empty()) {
       ret += " EMPTY";
     }
   }

@@ -552,10 +552,11 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 
 			cv->mutable_to_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 		}
-		cv->set_populate(rg.NextSmallNumber() < 4);
 		if ((next.is_refreshable = rg.NextBool())) {
 			GenerateNextRefreshableView(rg, cv->mutable_refresh());
 			cv->set_empty(rg.NextBool());
+		} else {
+			cv->set_populate(rg.NextSmallNumber() < 4);
 		}
 	}
 	this->levels[this->current_level] = QueryLevel(this->current_level);
@@ -809,8 +810,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 		tab->set_table("t" + std::to_string(t.tname));
 		for (uint32_t i = 0; i < nalters; i++) {
 			const uint32_t alter_order_by = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-						   heavy_delete = 20,
-						   heavy_update = 20,
+						   heavy_delete = 30,
+						   heavy_update = 30,
 						   add_column = 2 * static_cast<uint32_t>(t.cols.size() < 10),
 						   materialize_column = 2,
 						   drop_column = 2 * static_cast<uint32_t>(t.cols.size() > 1),
@@ -1153,24 +1154,24 @@ int StatementGenerator::GenerateDetach(RandomGenerator &rg, sql_query_grammar::D
 int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar::SQLQueryInner *sq) {
 	const uint32_t create_table = 6 * static_cast<uint32_t>(tables.size() < this->max_tables),
 				   create_view = 10 * static_cast<uint32_t>(views.size() < this->max_views),
-				   drop = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
+				   drop = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 													CollectionHas<SQLView>(attached_views)),
-				   insert = 90 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
-				   light_delete = 10 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
-				   truncate = 5 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
+				   insert = 100 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
+				   light_delete = 6 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
+				   truncate = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
 				   optimize_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
 				   check_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
 				   desc_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 														  CollectionHas<SQLView>(attached_views)),
 				   exchange_tables = 1 * static_cast<uint32_t>(CollectionCount<SQLTable>(attached_tables) > 1),
-				   alter_table = 5 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
+				   alter_table = 6 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 														   CollectionHas<SQLView>(attached_views)),
 				   set_values = 5,
-				   attach = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(detached_tables) ||
+				   attach = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(detached_tables) ||
 													  CollectionHas<SQLView>(detached_views)),
-				   dettach = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
+				   dettach = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 													   CollectionHas<SQLView>(attached_views)),
-				   select_query = 250,
+				   select_query = 300,
 				   prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table +
 								check_table + desc_table + exchange_tables + alter_table + set_values + attach +
 								dettach + select_query;

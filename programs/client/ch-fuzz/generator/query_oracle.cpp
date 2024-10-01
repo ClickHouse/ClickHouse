@@ -52,6 +52,9 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 	sql_query_grammar::SQLFuncCall *sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 	sql_query_grammar::SQLFuncCall *sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
+	if (std::filesystem::exists(qfile)) {
+		std::filesystem::resize_file(qfile, 0); //truncate the file
+	}
 	sfc1->set_func(sql_query_grammar::FUNCifNull);
 	sfc1->add_args()->mutable_expr()->mutable_lit_val()->set_special_val(sql_query_grammar::SpecialVal::VAL_ZERO);
 	sfc2->set_func(sql_query_grammar::FUNCsum);
@@ -89,6 +92,9 @@ int QueryOracle::UpdateCorrectnessQueryResult(const bool first, const bool succe
 	return 0;
 }
 
+/*
+Dump and read table oracle
+*/
 static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat> out_in{
 	{sql_query_grammar::OutFormat::OUT_TabSeparated, sql_query_grammar::InFormat::IN_TabSeparated},
 	{sql_query_grammar::OutFormat::OUT_TabSeparatedRaw, sql_query_grammar::InFormat::IN_TabSeparatedRaw},
@@ -123,7 +129,7 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 	{sql_query_grammar::OutFormat::OUT_TSKV, sql_query_grammar::InFormat::IN_TSKV},
 	{sql_query_grammar::OutFormat::OUT_Protobuf, sql_query_grammar::InFormat::IN_Protobuf},
 	{sql_query_grammar::OutFormat::OUT_ProtobufSingle, sql_query_grammar::InFormat::IN_ProtobufSingle},
-	{sql_query_grammar::OutFormat::OUT_ProtobufList, sql_query_grammar::InFormat::IN_ProtobufList},
+	//{sql_query_grammar::OutFormat::OUT_ProtobufList, sql_query_grammar::InFormat::IN_ProtobufList},
 	{sql_query_grammar::OutFormat::OUT_Avro, sql_query_grammar::InFormat::IN_Avro},
 	{sql_query_grammar::OutFormat::OUT_Parquet, sql_query_grammar::InFormat::IN_Parquet},
 	{sql_query_grammar::OutFormat::OUT_Arrow, sql_query_grammar::InFormat::IN_Arrow},
@@ -239,6 +245,9 @@ int QueryOracle::GenerateImportQuery(StatementGenerator &gen, sql_query_grammar:
 	return 0;
 }
 
+/*
+Run query with different settings oracle
+*/
 typedef struct TestSetting {
 	const std::string tsetting, first_value, second_value;
 
