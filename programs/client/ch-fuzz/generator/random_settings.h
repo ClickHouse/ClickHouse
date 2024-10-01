@@ -34,6 +34,9 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"any_join_distinct_right_table_keys", TrueOrFalse},
 	{"async_insert", TrueOrFalse},
 	{"async_insert_deduplicate", TrueOrFalse},
+	{"async_insert_threads", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency()));
+	}},
 	{"async_insert_use_adaptive_busy_timeout", TrueOrFalse},
 	{"cast_keep_nullable", TrueOrFalse},
 	{"check_query_single_value_result", TrueOrFalse},
@@ -52,10 +55,14 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"describe_include_subcolumns", TrueOrFalse},
 	{"distributed_aggregation_memory_efficient", TrueOrFalse},
 	{"distributed_group_by_no_merge", ZeroOneTwo},
+	{"enable_analyzer", TrueOrFalse},
 	{"enable_memory_bound_merging_of_aggregation_results", TrueOrFalse},
 	{"enable_multiple_prewhere_read_steps", TrueOrFalse},
 	{"exact_rows_before_limit", TrueOrFalse},
+	{"input_format_csv_try_infer_numbers_from_strings", TrueOrFalse},
 	{"input_format_import_nested_json", TrueOrFalse},
+	{"input_format_json_empty_as_default", TrueOrFalse},
+	{"input_format_try_infer_variants", TrueOrFalse},
 	{"filesystem_cache_segments_batch_size", [](RandomGenerator &rg, std::string &ret) {
 		std::vector<uint32_t> choices{0, 3, 10, 50};
 		ret += std::to_string(rg.PickRandomlyFromVector(choices));
@@ -151,9 +158,6 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"max_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1, 1048576 * 3));
 	}},
-	{"async_insert_threads", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency()));
-	}},
 	{"max_final_threads", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency()));
 	}},
@@ -218,6 +222,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"optimize_substitute_columns", TrueOrFalse},
 	{"optimize_syntax_fuse_functions", TrueOrFalse},
 	{"optimize_trivial_approximate_count_query", TrueOrFalse},
+	{"optimize_trivial_insert_select", TrueOrFalse},
 	{"output_format_parallel_formatting", TrueOrFalse},
 	{"output_format_pretty_highlight_digit_groups", TrueOrFalse},
 	{"output_format_pretty_row_numbers", TrueOrFalse},
@@ -231,11 +236,16 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += rg.PickRandomlyFromVector(choices);
 	}},
 	{"prefer_localhost_replica", TrueOrFalse},
+	{"prefer_merge_sort_block_bytes", [](RandomGenerator &rg, std::string &ret) {
+		const std::vector<std::string> &choices = {"0", "1", "100000000"};
+		ret += rg.PickRandomlyFromVector(choices);
+	}},
 	{"query_plan_aggregation_in_order", TrueOrFalse},
 	{"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", TrueOrFalse},
 	{"read_in_order_two_level_merge_threshold", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(0, 100));
 	}},
+	{"read_in_order_use_buffering", TrueOrFalse},
 	{"remote_filesystem_read_method", [](RandomGenerator &rg, std::string &ret) {
 		ret += "'";
 		ret += rg.NextBool() ? "read" : "threadpool";
@@ -262,7 +272,8 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"use_page_cache_for_disks_without_file_cache", TrueOrFalse},
 	{"use_skip_indexes", TrueOrFalse},
 	{"use_structure_from_insertion_table_in_table_functions", ZeroOneTwo},
-	{"use_uncompressed_cache", TrueOrFalse}
+	{"use_uncompressed_cache", TrueOrFalse},
+	{"use_variant_as_common_type", TrueOrFalse}
 };
 
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeTableSettings = {
@@ -339,7 +350,8 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.ThresholdGenerator<double>(0.3, 0.5, 0.0, 1.0));
 	}},
 	{"replace_long_file_name_to_hash", TrueOrFalse},
-	{"use_async_block_ids_cache", TrueOrFalse}
+	{"use_async_block_ids_cache", TrueOrFalse},
+	{"use_compact_variant_discriminators_serialization", TrueOrFalse}
 };
 
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeColumnSettings = {

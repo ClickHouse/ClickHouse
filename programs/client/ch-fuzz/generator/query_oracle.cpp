@@ -259,10 +259,13 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("check_query_single_value_result", {"0", "1"}),
 	TestSetting("compile_aggregate_expressions", {"0", "1"}),
 	TestSetting("compile_sort_description", {"0", "1"}),
+	TestSetting("cross_join_min_bytes_to_compress", {"0", "1"}),
+	TestSetting("cross_join_min_rows_to_compress", {"0", "1"}),
 	TestSetting("data_type_default_nullable", {"0", "1"}),
 	TestSetting("deduplicate_blocks_in_dependent_materialized_views", {"0", "1"}),
 	TestSetting("describe_include_subcolumns", {"0", "1"}),
 	TestSetting("distributed_aggregation_memory_efficient", {"0", "1"}),
+	TestSetting("enable_analyzer", {"0", "1"}),
 	TestSetting("enable_memory_bound_merging_of_aggregation_results", {"0", "1"}),
 	TestSetting("enable_multiple_prewhere_read_steps", {"0", "1"}),
 	TestSetting("exact_rows_before_limit", {"0", "1"}),
@@ -314,9 +317,11 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("partial_merge_join_optimizations", {"0", "1"}),
 	TestSetting("precise_float_parsing", {"0", "1"}),
 	TestSetting("prefer_external_sort_block_bytes", {"0", "1"}),
+	TestSetting("prefer_merge_sort_block_bytes", {"0", "1"}),
 	TestSetting("prefer_localhost_replica", {"0", "1"}),
 	TestSetting("query_plan_aggregation_in_order", {"0", "1"}),
 	TestSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", {"0", "1"}),
+	TestSetting("read_in_order_use_buffering", {"0", "1"}),
 	TestSetting("remote_filesystem_read_prefetch", {"0", "1"}),
 	TestSetting("rows_before_aggregation", {"0", "1"}),
 	TestSetting("throw_on_error_from_cache_on_write_operations", {"0", "1"}),
@@ -325,7 +330,8 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("update_insert_deduplication_token_in_dependent_materialized_views", {"0", "1"}),
 	TestSetting("use_page_cache_for_disks_without_file_cache", {"0", "1"}),
 	TestSetting("use_skip_indexes", {"0", "1"}),
-	TestSetting("use_uncompressed_cache", {"0", "1"})
+	TestSetting("use_uncompressed_cache", {"0", "1"}),
+	TestSetting("use_variant_as_common_type", {"0", "1"})
 };
 
 int QueryOracle::GenerateFirstSetting(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq1) {
