@@ -45,6 +45,6 @@ $CLICKHOUSE_CLIENT -q "SELECT \
     obj.key_1.key_2.key_3.key_4.key_5, \
     obj.key_1.key_2.key_3.key_4.key_6, \
     obj.key_1.key_2.key_3.key_4.key_7 \
-FROM t_json_13 ORDER BY obj.id"
+FROM t_json_13 ORDER BY obj.id" --allow_suspicious_types_in_order_by 1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_json_13;"

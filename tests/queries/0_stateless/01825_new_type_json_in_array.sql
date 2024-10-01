@@ -2,6 +2,9 @@
 
 SET allow_experimental_json_type = 1;
 SET allow_experimental_analyzer = 1;
+SET allow_suspicious_types_in_order_by = 1;
+SET allow_suspicious_types_in_order_by = 1;
+
 DROP TABLE IF EXISTS t_json_array;
 
 CREATE TABLE t_json_array (id UInt32, arr Array(JSON)) ENGINE = MergeTree ORDER BY id;
