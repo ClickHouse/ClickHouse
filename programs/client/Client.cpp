@@ -1050,6 +1050,7 @@ bool Client::chFuzz()
             }
             else if (gen.CollectionHas<chfuzz::SQLTable>(gen.attached_tables) && noption < 41)
             {
+                bool second_success = true;
                 const chfuzz::SQLTable &t = rg.PickRandomlyFromVector(gen.FilterCollection<chfuzz::SQLTable>(gen.attached_tables));
 
                 //test in and out formats
@@ -1063,21 +1064,25 @@ bool Client::chFuzz()
                 (void) qo.GenerateExportQuery(rg, t, sq2);
                 chfuzz::SQLQueryToString(full_query, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
+                second_success &= !have_error;
 
                 sq3.Clear();
                 full_query.resize(0);
                 (void) qo.GenerateClearQuery(t, sq3);
                 chfuzz::SQLQueryToString(full_query, sq3);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
+                second_success &= !have_error;
 
                 sq4.Clear();
                 full_query.resize(0);
                 (void) qo.GenerateImportQuery(t, sq2, sq4);
                 chfuzz::SQLQueryToString(full_query, sq4);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
+                second_success &= !have_error;
 
                 server_up &= ProcessCHFuzzQuery(outf, full_query2);
-                (void) qo.ProcessOracleQueryResult(false, !have_error, "Dump and read table");
+                second_success &= !have_error;
+                (void) qo.ProcessOracleQueryResult(false, second_success, "Dump and read table");
             }
             else if (noption < 71)
             {
