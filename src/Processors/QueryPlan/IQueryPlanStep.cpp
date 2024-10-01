@@ -18,6 +18,12 @@ const DataStream & IQueryPlanStep::getOutputStream() const
     return *output_stream;
 }
 
+const SortDescription & IQueryPlanStep::getSortDescription() const
+{
+    static SortDescription empty;
+    return empty;
+}
+
 static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep::FormatSettings & settings)
 {
     String prefix(settings.offset, settings.indent_char);

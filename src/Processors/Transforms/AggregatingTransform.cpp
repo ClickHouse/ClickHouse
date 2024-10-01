@@ -486,7 +486,7 @@ private:
 
     #define M(NAME) \
                 else if (first->type == AggregatedDataVariants::Type::NAME) \
-                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
+                    params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M

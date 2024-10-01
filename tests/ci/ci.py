@@ -14,9 +14,12 @@ from typing import Any, Dict, List, Optional
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
+from ci_buddy import CIBuddy
+from ci_cache import CiCache
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GH, Utils
+from ci_settings import CiSettings
+from ci_utils import GH, Envs, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -30,19 +33,12 @@ from commit_status_helper import (
     RerunHelper,
     format_description,
     get_commit,
+    get_commit_filtered_statuses,
     post_commit_status,
     set_status_comment,
-    get_commit_filtered_statuses,
 )
 from digest_helper import DockerDigester
-from env_helper import (
-    IS_CI,
-    GITHUB_JOB_API_URL,
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_ID,
-    REPO_COPY,
-    TEMP_PATH,
-)
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_ID, IS_CI, REPO_COPY, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
@@ -50,22 +46,20 @@ from github_helper import GitHub
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAIL,
+    GITHUB_JOB_API_URL,
+    JOB_FINISHED_TEST_NAME,
+    JOB_STARTED_TEST_NAME,
+    OK,
     PENDING,
     SUCCESS,
     BuildResult,
     JobReport,
     TestResult,
-    OK,
-    JOB_STARTED_TEST_NAME,
-    JOB_FINISHED_TEST_NAME,
-    FAIL,
 )
 from s3_helper import S3Helper
-from tee_popen import TeePopen
-from ci_cache import CiCache
-from ci_settings import CiSettings
-from ci_buddy import CIBuddy
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -333,11 +327,10 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
             CI.JobNames.BUILD_CHECK,
         ):  # we might want to rerun build report job
             rerun_helper = RerunHelper(commit, _get_ext_check_name(job_name))
-            if (
-                rerun_helper.is_already_finished_by_status()
-                and not Utils.is_job_triggered_manually()
-            ):
-                print("WARNING: Rerunning job with GH status ")
+            if rerun_helper.is_already_finished_by_status():
+                print(
+                    f"WARNING: Rerunning job with GH status, rerun triggered by {Envs.GITHUB_ACTOR}"
+                )
                 status = rerun_helper.get_finished_status()
                 assert status
                 print("::group::Commit Status")
@@ -1002,7 +995,7 @@ def _run_test(job_name: str, run_command: str) -> int:
             jr = JobReport.load()
             if jr.dummy:
                 print(
-                    f"ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
+                    "ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
                 )
                 jr.test_results = [TestResult.create_check_timeout_expired()]
                 jr.duration = stopwatch.duration_seconds
@@ -1312,7 +1305,7 @@ def main() -> int:
         elif job_report.job_skipped:
             print(f"Skipped after rerun check {[args.job_name]} - do nothing")
         else:
-            print(f"ERROR: Job was killed - generate evidence")
+            print("ERROR: Job was killed - generate evidence")
             job_report.update_duration()
             ret_code = os.getenv("JOB_EXIT_CODE", "")
             if ret_code:

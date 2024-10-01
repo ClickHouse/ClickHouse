@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <optional>
 
@@ -269,12 +270,19 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
+    /// Returns true if storage can store columns in sparse serialization.
+    virtual bool supportsSparseSerialization() const { return false; }
+
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
+    /// 'storage_snapshot' may be nullptr.
     virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
     {
         return false;
     }
+
+    /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
+    virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
 private:
     StorageID storage_id;
