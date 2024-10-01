@@ -158,6 +158,18 @@ std::vector<UUID> SettingsProfileElements::findDependencies() const
 }
 
 
+bool SettingsProfileElements::hasDependencies(const std::unordered_set<UUID> & ids) const
+{
+    std::vector<UUID> res;
+    for (const auto & element : *this)
+    {
+        if (element.parent_profile && ids.contains(*element.parent_profile))
+            return true;
+    }
+    return false;
+}
+
+
 void SettingsProfileElements::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     for (auto & element : *this)
@@ -173,6 +185,38 @@ void SettingsProfileElements::replaceDependencies(const std::unordered_map<UUID,
             }
         }
     }
+}
+
+
+void SettingsProfileElements::copyDependenciesFrom(const SettingsProfileElements & src, const std::unordered_set<UUID> & ids)
+{
+    SettingsProfileElements new_elements;
+    for (const auto & element : src)
+    {
+        if (element.parent_profile && ids.contains(*element.parent_profile))
+        {
+            SettingsProfileElement new_element;
+            new_element.parent_profile = *element.parent_profile;
+            new_elements.emplace_back(new_element);
+        }
+    }
+    insert(begin(), new_elements.begin(), new_elements.end());
+}
+
+
+void SettingsProfileElements::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    std::erase_if(
+        *this, [&](const SettingsProfileElement & element) { return element.parent_profile && ids.contains(*element.parent_profile); });
+}
+
+
+void SettingsProfileElements::removeSettingsKeepProfiles()
+{
+    for (auto & element : *this)
+        element.setting_name.clear();
+
+    std::erase_if(*this, [&](const SettingsProfileElement & element) { return element.setting_name.empty() && !element.parent_profile; });
 }
 
 
@@ -249,7 +293,7 @@ bool SettingsProfileElements::isBackupAllowed() const
 bool SettingsProfileElements::isAllowBackupSetting(const String & setting_name)
 {
     static constexpr std::string_view ALLOW_BACKUP_SETTING_NAME = "allow_backup";
-    return Settings::Traits::resolveName(setting_name) == ALLOW_BACKUP_SETTING_NAME;
+    return Settings::resolveName(setting_name) == ALLOW_BACKUP_SETTING_NAME;
 }
 
 }

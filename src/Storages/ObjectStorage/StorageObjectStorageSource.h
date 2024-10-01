@@ -220,6 +220,7 @@ private:
     bool is_finished = false;
     bool first_iteration = true;
     std::mutex next_mutex;
+    const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
 };

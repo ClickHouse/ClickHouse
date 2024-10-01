@@ -19,11 +19,12 @@ from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict, Optional
 
+from ci_utils import kill_ci_runner
 from env_helper import IS_CI
 from integration_test_images import IMAGES
-from tee_popen import TeePopen
 from report import JOB_TIMEOUT_TEST_NAME
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -332,7 +333,9 @@ class ClickhouseIntegrationTestsRunner:
             except subprocess.CalledProcessError as err:
                 logging.info("docker-compose pull failed: %s", str(err))
                 continue
-        logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
+        message = "Pulling images failed for 5 attempts. Will fail the worker."
+        logging.error(message)
+        kill_ci_runner(message)
         # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
         sys.exit(13)
 
@@ -663,7 +666,7 @@ class ClickhouseIntegrationTestsRunner:
                 logging.info("Executing cmd: %s", cmd)
                 # ignore retcode, since it meaningful due to pipe to tee
                 with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as proc:
-                    global runner_subprocess
+                    global runner_subprocess  # pylint:disable=global-statement
                     runner_subprocess = proc
                     proc.wait()
 
@@ -1087,8 +1090,9 @@ runner_subprocess = None  # type:Optional[subprocess.Popen]
 
 
 def handle_sigterm(signum, _frame):
+    # TODO: think on how to process it without globals?
     print(f"WARNING: Received signal {signum}")
-    global timeout_expired
+    global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
     if runner_subprocess:
         runner_subprocess.send_signal(signal.SIGTERM)
