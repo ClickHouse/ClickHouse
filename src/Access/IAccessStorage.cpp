@@ -4,6 +4,10 @@
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/IRestoreCoordination.h>
+#include <Backups/RestoreSettings.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
@@ -12,11 +16,13 @@
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
+#include <base/range.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
-
 
 namespace DB
 {
@@ -65,6 +71,18 @@ std::vector<UUID> IAccessStorage::find(AccessEntityType type, const Strings & na
             ids.push_back(*id);
     }
     return ids;
+}
+
+
+std::vector<UUID> IAccessStorage::findAllImpl() const
+{
+    std::vector<UUID> res;
+    for (auto type : collections::range(AccessEntityType::MAX))
+    {
+        auto ids = findAllImpl(type);
+        res.insert(res.end(), ids.begin(), ids.end());
+    }
+    return res;
 }
 
 
@@ -178,20 +196,20 @@ UUID IAccessStorage::insert(const AccessEntityPtr & entity)
     return *insert(entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
 }
 
-std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     auto id = generateRandomID();
 
-    if (insert(id, entity, replace_if_exists, throw_if_exists))
+    if (insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
         return id;
 
     return std::nullopt;
 }
 
 
-bool IAccessStorage::insert(const DB::UUID & id, const DB::AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool IAccessStorage::insert(const DB::UUID & id, const DB::AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
-    return insertImpl(id, entity, replace_if_exists, throw_if_exists);
+    return insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
 
 
@@ -285,7 +303,7 @@ std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntity
 }
 
 
-bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bool, bool)
+bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bool, bool, UUID *)
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());
@@ -595,28 +613,59 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
     if (!isBackupAllowed())
         throwBackupNotAllowed();
 
-    auto entities = readAllWithIDs(type);
-    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
-
-    if (entities.empty())
+    auto entities_ids = findAll(type);
+    if (entities_ids.empty())
         return;
 
-    auto backup_entry = makeBackupEntryForAccess(
-        entities,
-        data_path_in_backup,
-        backup_entries_collector.getAccessCounter(type),
-        backup_entries_collector.getContext()->getAccessControl());
+    auto backup_entry_with_path = makeBackupEntryForAccessEntities(
+        entities_ids,
+        backup_entries_collector.getAllAccessEntities(),
+        backup_entries_collector.getBackupSettings().write_access_entities_dependents,
+        data_path_in_backup);
 
-    backup_entries_collector.addBackupEntry(backup_entry);
+    if (isReplicated())
+    {
+        auto backup_coordination = backup_entries_collector.getBackupCoordination();
+        auto replication_id = getReplicationID();
+        backup_coordination->addReplicatedAccessFilePath(replication_id, type, backup_entry_with_path.first);
+
+        backup_entries_collector.addPostTask(
+            [backup_entry = backup_entry_with_path.second,
+            replication_id,
+            type,
+            &backup_entries_collector,
+            backup_coordination]
+            {
+                for (const String & path : backup_coordination->getReplicatedAccessFilePaths(replication_id, type))
+                    backup_entries_collector.addBackupEntry(path, backup_entry);
+            });
+    }
+    else
+    {
+        backup_entries_collector.addBackupEntry(backup_entry_with_path);
+    }
 }
 
 
-void IAccessStorage::restoreFromBackup(RestorerFromBackup &)
+void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
     if (!isRestoreAllowed())
         throwRestoreNotAllowed();
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "restoreFromBackup() is not implemented in {}", getStorageType());
+    if (isReplicated())
+    {
+        auto restore_coordination = restorer.getRestoreCoordination();
+        if (!restore_coordination->acquireReplicatedAccessStorage(getReplicationID()))
+            return;
+    }
+
+    restorer.addDataRestoreTask(
+        [this, &restorer, data_path_in_backup]
+        {
+            auto entities_to_restore = restorer.getAccessEntitiesToRestore(data_path_in_backup);
+            const auto & restore_settings = restorer.getRestoreSettings();
+            restoreAccessEntitiesFromBackup(*this, entities_to_restore, restore_settings);
+        });
 }
 
 

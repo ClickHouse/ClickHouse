@@ -28,6 +28,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_sessions_for_user;
+}
 
 namespace ErrorCodes
 {
@@ -538,7 +542,7 @@ ContextMutablePtr Session::makeSessionContext()
     session_tracker_handle = session_context->getSessionTracker().trackSession(
         *user_id,
         {},
-        session_context->getSettingsRef().max_sessions_for_user);
+        session_context->getSettingsRef()[Setting::max_sessions_for_user]);
 
     // Use QUERY source as for SET query for a session
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
@@ -585,7 +589,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     if (!access->tryGetUser())
     {
         new_session_context->setUser(*user_id);
-        max_sessions_for_user = new_session_context->getSettingsRef().max_sessions_for_user;
+        max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
     }
     else
     {
