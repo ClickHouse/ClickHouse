@@ -702,10 +702,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
-                LOG_TRACE(
-                      log,
-                      "merge_tree_skip_index_pk_search : part_index {}, KeyCondition {}",
-                      part_index, key_condition.toString());
                 ranges.ranges = markRangesFromPKRange(
                     part,
                     metadata_snapshot,
@@ -797,6 +793,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
             size_t range_count = 0;
             size_t first_part_for_next_pass = UINT64_MAX;
+
             if (!is_select_query_with_final || !was_any_skip_index_useful || settings[Setting::skip_indexes_in_final_correctness_threshold] == 0)
                 return std::make_tuple(range_count, first_part_for_next_pass, static_cast<KeyConditionPtr>(nullptr));
 
@@ -806,8 +803,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 auto & part = parts[part_index];
                 const auto & index = part->getIndex();
+
                 if (!index->size())
                     continue;
+
                 auto ranges = parts_with_ranges[part_index];
                 auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
                 for (size_t i = 0; i < index->size(); i++)
