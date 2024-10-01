@@ -130,7 +130,7 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_stream != std::nullopt);
+        assert(output_header != std::nullopt);
         pipe = Pipe(std::make_shared<NullSource>(*output_header));
     }
 
