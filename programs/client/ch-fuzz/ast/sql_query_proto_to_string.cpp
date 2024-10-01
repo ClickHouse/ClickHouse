@@ -675,7 +675,7 @@ void BottomTypeNameToString(std::string &ret, const bool quote, const bool lcard
             const sql_query_grammar::Decimal &dec = btn.decimal();
             ret += "Decimal";
             if (dec.has_precision()) {
-              const uint32_t precision = (dec.precision() % 76) + 1;
+              const uint32_t precision = std::max<uint32_t>(1, dec.precision() % 77);
 
               ret += "(";
               ret += std::to_string(precision);
@@ -730,7 +730,7 @@ void BottomTypeNameToString(std::string &ret, const bool quote, const bool lcard
             ret += "Dynamic";
             if (btn.dynamic().has_ntypes()) {
               ret += "(max_types=";
-              ret += std::to_string((btn.dynamic().ntypes() % 255) + 1);
+              ret += std::to_string(std::max<uint32_t>(1, btn.dynamic().ntypes() % 256));
               ret += ")";
             }
             break;

@@ -50,7 +50,6 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		const std::vector<std::string> &choices = {"0", "1", "100000000"};
 		ret += rg.PickRandomlyFromVector(choices);
 	}},
-	{"data_type_default_nullable", TrueOrFalse},
 	{"deduplicate_blocks_in_dependent_materialized_views", TrueOrFalse},
 	{"describe_include_subcolumns", TrueOrFalse},
 	{"distributed_aggregation_memory_efficient", TrueOrFalse},

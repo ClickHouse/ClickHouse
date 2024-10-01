@@ -739,7 +739,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 }
 
 int StatementGenerator::GenerateUptDelWhere(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::Expr *expr) {
-	if (rg.NextSmallNumber() < 8) {
+	if (rg.NextSmallNumber() < 10) {
 		AddTableRelation(rg, true, "", t);
 		this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
 		GenerateWherePredicate(rg, expr);

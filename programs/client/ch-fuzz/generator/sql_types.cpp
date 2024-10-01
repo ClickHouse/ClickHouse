@@ -352,7 +352,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 				std::optional<uint32_t> ntypes = std::nullopt;
 
 				if (rg.NextBool()) {
-					ntypes = std::optional<uint32_t>(rg.NextBool() ? (rg.NextSmallNumber() - 1) : (rg.NextRandomUInt32() % 100));
+					ntypes = std::optional<uint32_t>(rg.NextBool() ? rg.NextSmallNumber() : ((rg.NextRandomUInt32() % 100) + 1));
 					if (dyn) {
 						dyn->set_ntypes(ntypes.value());
 					}
