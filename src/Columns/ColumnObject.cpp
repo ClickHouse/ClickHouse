@@ -87,6 +87,28 @@ ColumnObject::ColumnObject(
     shared_data = ColumnArray::create(ColumnTuple::create(std::move(paths_and_values)));
 }
 
+ColumnObject::ColumnObject(const ColumnObject & other)
+    : typed_paths(other.typed_paths)
+    , dynamic_paths(other.dynamic_paths)
+    , dynamic_paths_ptrs(other.dynamic_paths_ptrs)
+    , shared_data(other.shared_data)
+    , max_dynamic_paths(other.max_dynamic_paths)
+    , global_max_dynamic_paths(other.global_max_dynamic_paths)
+    , max_dynamic_types(other.max_dynamic_types)
+    , statistics(other.statistics)
+{
+    /// We should update string_view in sorted_typed_paths and sorted_dynamic_paths so they
+    /// point to the new strings in typed_paths and dynamic_paths.
+    sorted_typed_paths.clear();
+    for (const auto & [path, _] : typed_paths)
+        sorted_typed_paths.emplace_back(path);
+    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
+
+    sorted_dynamic_paths.clear();
+    for (const auto & [path, _] : dynamic_paths)
+        sorted_dynamic_paths.emplace(path);
+}
+
 ColumnObject::Ptr ColumnObject::create(
     const std::unordered_map<String, ColumnPtr> & typed_paths_,
     const std::unordered_map<String, ColumnPtr> & dynamic_paths_,
