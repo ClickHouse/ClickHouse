@@ -4,9 +4,9 @@ import logging
 import random
 import string
 import time
+import uuid
 
 import pytest
-import uuid
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
