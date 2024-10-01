@@ -1738,7 +1738,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 continue;
             }
 
-            if (!defined_disk_names.contains(disk_name) && disk->existsDirectory(relative_data_path))
+            bool is_disk_defined = defined_disk_names.contains(disk_name);
+
+            if (!is_disk_defined && disk->existsDirectory(relative_data_path))
+            {
+                /// There still a chance that underlying disk is defined in storage policy
+                const auto & delegate = disk->getDelegateDiskIfExists();
+                is_disk_defined = delegate && !delegate->isBroken() && !delegate->isCustomDisk()
+                               && delegate->getPath() == disk->getPath()
+                               && defined_disk_names.contains(delegate->getName());
+            }
+
+            if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
