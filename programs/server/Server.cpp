@@ -97,6 +97,8 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <Server/ServersManager/InterServersManager.h>
+#include <Server/ServersManager/ProtocolServersManager.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -174,6 +176,7 @@ namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
     extern const Event ServerStartupMilliseconds;
+    // TODO: remove everything below after 64599
     extern const Event InterfaceNativeSendBytes;
     extern const Event InterfaceNativeReceiveBytes;
     extern const Event InterfaceHTTPSendBytes;
@@ -248,6 +251,7 @@ static std::string getCanonicalPath(std::string && path)
     return std::move(path);
 }
 
+// TODO: remove after 64599
 Poco::Net::SocketAddress Server::socketBindListen(
     const Poco::Util::AbstractConfiguration & config,
     Poco::Net::ServerSocket & socket,
@@ -269,6 +273,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     return address;
 }
 
+// TODO: remove after 64599
 Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
@@ -280,6 +285,7 @@ Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
     return listen_hosts;
 }
 
+// TODO: remove after 64599
 Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto interserver_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
@@ -290,6 +296,7 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
     return getListenHosts(config);
 }
 
+// TODO: remove after 64599
 bool getListenTry(const Poco::Util::AbstractConfiguration & config)
 {
     bool listen_try = config.getBool("listen_try", false);
@@ -307,7 +314,7 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config)
     return listen_try;
 }
 
-
+// TODO: remove after 64599
 void Server::createServer(
     Poco::Util::AbstractConfiguration & config,
     const std::string & listen_host,
@@ -916,8 +923,8 @@ try
         server_settings.global_profiler_cpu_time_period_ns);
 
     std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+    ProtocolServersManager servers(context(), &logger());
+    InterServersManager servers_to_start_before_tables(context(), &logger());
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
@@ -936,17 +943,12 @@ try
         server_settings.asynchronous_heavy_metrics_update_period_s,
         [&]() -> std::vector<ProtocolServerMetrics>
         {
-            std::vector<ProtocolServerMetrics> metrics;
-
             std::lock_guard lock(servers_lock);
-            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
-
-            for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-
-            for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-            return metrics;
+            std::vector<ProtocolServerMetrics> metrics1 = servers_to_start_before_tables.getMetrics();
+            std::vector<ProtocolServerMetrics> metrics2 = servers.getMetrics();
+            metrics1.reserve(metrics1.size() + metrics2.size());
+            metrics1.insert(metrics1.end(), std::make_move_iterator(metrics2.begin()), std::make_move_iterator(metrics2.end()));
+            return metrics1;
         },
         /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
         /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
@@ -967,32 +969,7 @@ try
 
         LOG_DEBUG(log, "Shut down storages.");
 
-        if (!servers_to_start_before_tables.empty())
-        {
-            LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
-            {
-                std::lock_guard lock(servers_lock);
-                for (auto & server : servers_to_start_before_tables)
-                {
-                    server.stop();
-                    current_connections += server.currentConnections();
-                }
-            }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
-
-            if (current_connections)
-                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
-            else
-                LOG_INFO(log, "Closed connections to servers for tables.");
-        }
+        servers_to_start_before_tables.stopServers(server_settings, servers_lock);
 
         global_context->shutdownKeeperDispatcher();
 
@@ -1747,7 +1724,8 @@ try
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
-                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                    servers.updateServers(*config, *this, servers_lock, server_pool, async_metrics, latest_config);
+                    servers_to_start_before_tables.updateServers(*config, *this, servers_lock, server_pool, async_metrics, latest_config);
                 }
             }
 
@@ -1801,146 +1779,15 @@ try
             latest_config = config;
         });
 
-    const auto listen_hosts = getListenHosts(config());
-    const auto interserver_listen_hosts = getInterserverListenHosts(config());
-    const auto listen_try = getListenTry(config());
-
-    if (config().has("keeper_server.server_id"))
-    {
-#if USE_NURAFT
-        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
-        //// of clickhouse-keeper, so start synchronously.
-        bool can_initialize_keeper_async = false;
-
-        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
-        {
-            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
-            /// synchronously.
-            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
-        }
-        /// Initialize keeper RAFT.
-        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
-        FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
-
-        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
-        {
-            return global_context->getConfigRef();
-        };
-
-        for (const auto & listen_host : listen_hosts)
-        {
-            /// TCP Keeper
-            const char * port_name = "keeper_server.tcp_port";
-            createServer(
-                config(), listen_host, port_name, listen_try, /* start_server: */ false,
-                servers_to_start_before_tables,
-                [&](UInt16 port) -> ProtocolServerAdapter
-                {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(config(), socket, listen_host, port);
-                    socket.setReceiveTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
-                    socket.setSendTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "Keeper (tcp): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(
-                                config_getter,
-                                global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef()[Setting::receive_timeout].totalSeconds(),
-                                global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
-                                false),
-                            server_pool,
-                            socket));
-                });
-
-            const char * secure_port_name = "keeper_server.tcp_port_secure";
-            createServer(
-                config(), listen_host, secure_port_name, listen_try, /* start_server: */ false,
-                servers_to_start_before_tables,
-                [&](UInt16 port) -> ProtocolServerAdapter
-                {
-#if USE_SSL
-                    Poco::Net::SecureServerSocket socket;
-                    auto address = socketBindListen(config(), socket, listen_host, port, /* secure = */ true);
-                    socket.setReceiveTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
-                    socket.setSendTimeout(Poco::Timespan(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        secure_port_name,
-                        "Keeper with secure protocol (tcp_secure): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(
-                                config_getter,
-                                global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef()[Setting::receive_timeout].totalSeconds(),
-                                global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
-                                true),
-                            server_pool,
-                            socket));
-#else
-                    UNUSED(port);
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
-#endif
-                });
-
-            /// HTTP control endpoints
-            port_name = "keeper_server.http_control.port";
-            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-            servers_to_start_before_tables,
-            [&](UInt16 port) -> ProtocolServerAdapter
-            {
-                auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(config(), socket, listen_host, port);
-                socket.setReceiveTimeout(http_context->getReceiveTimeout());
-                socket.setSendTimeout(http_context->getSendTimeout());
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "HTTP Control: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(http_context),
-                        createKeeperHTTPControlMainHandlerFactory(
-                            config_getter(),
-                            global_context->getKeeperDispatcher(),
-                            "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
-            });
-        }
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
-#endif
-
-    }
-
-    {
-        std::lock_guard lock(servers_lock);
-        /// We should start interserver communications before (and more important shutdown after) tables.
-        /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
-        /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
-        /// communicate with zookeeper, execute merges, etc.
-        createInterserverServers(
-            config(),
-            interserver_listen_hosts,
-            listen_try,
-            server_pool,
-            async_metrics,
-            servers_to_start_before_tables,
-            /* start_servers= */ false);
-
-
-        for (auto & server : servers_to_start_before_tables)
-        {
-            server.start();
-            LOG_INFO(log, "Listening for {}", server.getDescription());
-        }
-    }
+    servers_to_start_before_tables.createServers(
+        config(),
+        *this,
+        servers_lock,
+        server_pool,
+        async_metrics,
+        /* start_servers= */ false,
+        ServerType(ServerType::Type::QUERIES_ALL)
+    );
 
     /// Initialize access storages.
     auto & access_control = global_context->getAccessControl();
@@ -1970,19 +1817,18 @@ try
     global_context->setStopServersCallback([&](const ServerType & server_type)
     {
         std::lock_guard lock(servers_lock);
-        stopServers(servers, server_type);
+        servers.stopServers(server_type);
     });
 
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
         std::lock_guard lock(servers_lock);
-        createServers(
+        servers.createServers(
             config(),
-            listen_hosts,
-            listen_try,
+            *this,
+            servers_lock,
             server_pool,
             async_metrics,
-            servers,
             /* start_servers= */ true,
             server_type);
     });
@@ -2158,17 +2004,20 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
+            servers.createServers(
+                config(),
+                *this,
+                servers_lock,
+                server_pool,
+                async_metrics,
+                false,
+                ServerType(ServerType::Type::QUERIES_ALL));
             if (servers.empty())
-                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                                "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
-                                "to configuration file.)");
+                throw Exception(
+                    ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                    "No servers started (add valid listen_host and 'tcp_port' "
+                    "or 'http_port' to configuration file.)");
         }
-
-        if (servers.empty())
-             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                             "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
-                             "to configuration file.)");
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
@@ -2239,12 +2088,7 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            for (auto & server : servers)
-            {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
-            }
-
+            servers.startServers();
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -2285,46 +2129,10 @@ try
             access_control.stopPeriodicReloading();
 
             is_cancelled = true;
-
-            LOG_DEBUG(log, "Waiting for current connections to close.");
-
-            size_t current_connections = 0;
-            {
-                std::lock_guard lock(servers_lock);
-                for (auto & server : servers)
-                {
-                    server.stop();
-                    current_connections += server.currentConnections();
-                }
-            }
-
-            if (current_connections)
-                LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            /// Wait for unfinished backups and restores.
-            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
-            /// (because killAllQueries() will cancel all running backups/restores).
-            if (server_settings.shutdown_wait_backups_and_restores)
-                global_context->waitAllBackupsAndRestores();
-
-            /// Killing remaining queries.
-            if (!server_settings.shutdown_wait_unfinished_queries)
-                global_context->getProcessList().killAllQueries();
-
-            if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
-
-            if (current_connections)
-                LOG_WARNING(log, "Closed connections. But {} remain."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
-            else
-                LOG_INFO(log, "Closed connections.");
-
+            const auto remaining_connections = servers.stopServers(server_settings, servers_lock);
             dns_cache_updater.reset();
 
-            if (current_connections)
+            if (remaining_connections)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
@@ -2357,6 +2165,8 @@ catch (...)
     auto code = getCurrentExceptionCode();
     return code ? code : -1;
 }
+
+// TODO: remove everything below after 64599
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
@@ -2454,7 +2264,6 @@ void Server::createServers(
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
     http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
-    http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings().max_keep_alive_requests));
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);

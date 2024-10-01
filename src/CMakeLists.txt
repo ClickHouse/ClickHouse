@@ -257,6 +257,7 @@ set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPI
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+add_object_library(clickhouse_server_manager Server/ServersManager)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
