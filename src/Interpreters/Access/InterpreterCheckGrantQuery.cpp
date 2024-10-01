@@ -16,7 +16,9 @@
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <Interpreters/DatabaseCatalog.h>
-#include "Databases/IDatabase.h"
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include "Storages/IStorage.h"
 
 namespace DB
@@ -52,54 +54,17 @@ BlockIO InterpreterCheckGrantQuery::execute()
     String current_database = getContext()->getCurrentDatabase();
     elements_to_check_grant.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);
-    auto *logger = &::Poco::Logger::get("CheckGrantQuery");
-
-    /// Check If Table/Columns exist.
-    for (const auto & elem : elements_to_check_grant)
-    {
-        try
-        {
-            DatabasePtr database;
-            database = DatabaseCatalog::instance().getDatabase(elem.database);
-            if (!database->isTableExist(elem.table, getContext()))
-            {
-                /// Table not found.
-                return executeQuery("SELECT 0 AS CHECK_GRANT", getContext(), QueryFlags{.internal = true}).second;
-            }
-            auto table = database->getTable(elem.table, getContext());
-
-            auto column_name_with_sizes = table->getColumnSizes();
-            for (const auto & elem_col : elem.columns)
-            {
-                bool founded = false;
-                for (const auto & col_in_table : column_name_with_sizes)
-                {
-                    if (col_in_table.first == elem_col)
-                    {
-                        founded = true;
-                        break;
-                    }
-                }
-                if (!founded)
-                {
-                    /// Column not found.
-                    return executeQuery("SELECT 0 AS CHECK_GRANT", getContext(), QueryFlags{.internal = true}).second;
-                }
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(logger);
-            return executeQuery("SELECT 0 AS CHECK_GRANT", getContext(), QueryFlags{.internal = true}).second;
-        }
-    }
     bool user_is_granted = current_user_access->isGranted(elements_to_check_grant);
     if (!user_is_granted)
     {
-        return executeQuery("SELECT 0 AS CHECK_GRANT", getContext(), QueryFlags{.internal = true}).second;
+        BlockIO res;
+        res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{ColumnUInt8::create(1, 0), std::make_shared<DataTypeUInt8>(), "result"}}));
+        return res;
     }
-
-    return executeQuery("SELECT 1 AS CHECK_GRANT", getContext(), QueryFlags{.internal = true}).second;
+    BlockIO res;
+    res.pipeline = QueryPipeline(
+        std::make_shared<SourceFromSingleChunk>(Block{{ColumnUInt8::create(1, 1), std::make_shared<DataTypeUInt8>(), "result"}}));
+    return res;
 }
 
 void registerInterpreterCheckGrantQuery(InterpreterFactory & factory)
