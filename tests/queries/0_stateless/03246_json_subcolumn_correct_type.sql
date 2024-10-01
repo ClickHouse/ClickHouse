@@ -1,4 +1,5 @@
 set allow_experimental_json_type=1;
+set enable_analyzer=1;
 drop table if exists test;
 create table test (json JSON(max_dynamic_types=1)) engine=Memory;
 insert into test values ('{"c0" : 1}'), ('{"c0" : 2}');
