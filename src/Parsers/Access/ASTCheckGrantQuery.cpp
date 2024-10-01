@@ -28,12 +28,12 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
         if (element.isGlobalWithParameter())
         {
-            if (element.any_parameter)
+            if (element.anyParameter())
                 settings.ostr << "*";
             else
                 settings.ostr << backQuoteIfNeed(element.parameter);
         }
-        else if (element.any_database)
+        else if (element.anyDatabase())
         {
             settings.ostr << "*.*";
         }
@@ -41,7 +41,7 @@ namespace
         {
             if (!element.database.empty())
                 settings.ostr << backQuoteIfNeed(element.database) << ".";
-            if (element.any_table)
+            if (element.anyDatabase())
                 settings.ostr << "*";
             else
                 settings.ostr << backQuoteIfNeed(element.table);
@@ -56,7 +56,7 @@ namespace
         {
             const auto & element = elements[i];
             auto keywords = element.access_flags.toKeywords();
-            if (keywords.empty() || (!element.any_column && element.columns.empty()))
+            if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
                 continue;
 
             for (const auto & keyword : keywords)
@@ -65,7 +65,7 @@ namespace
                     settings.ostr << ", ";
 
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
-                if (!element.any_column)
+                if (!element.anyColumn())
                     formatColumnNames(element.columns, settings);
             }
 
