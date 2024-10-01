@@ -42,21 +42,17 @@ namespace
         switch (clickhouse_type->getTypeId())
         {
             case TypeIndex::UInt8:
-                return hashInt<int32_t, uint8_t>(field);
             case TypeIndex::UInt16:
-                return hashInt<int32_t, uint16_t>(field);
             case TypeIndex::UInt32:
                 return hashInt<int32_t, uint32_t>(field);
             case TypeIndex::UInt64:
                 return hashInt<int64_t, uint64_t>(field);
             case TypeIndex::Int8:
-                return hashInt<int32_t, int8_t>(field);
             case TypeIndex::Int16:
-                return hashInt<int32_t, uint16_t>(field);
             case TypeIndex::Int32:
-                return hashInt<int32_t, uint32_t>(field);
+                return hashInt<int32_t, int32_t>(field);
             case TypeIndex::Int64:
-                return hashInt<int64_t, uint64_t>(field);
+                return hashInt<int64_t, int64_t>(field);
             case TypeIndex::String:
             case TypeIndex::FixedString:
                 return hashString(field);
@@ -123,9 +119,9 @@ namespace
             return true;
         }
 
-        auto physical_type = column_descriptor->physical_type();
+        const auto physical_type = column_descriptor->physical_type();
         const auto & logical_type = column_descriptor->logical_type();
-        auto converted_type = column_descriptor->converted_type();
+        const auto converted_type = column_descriptor->converted_type();
 
         // there is no logical type over boolean
         if (physical_type == parquet::Type::type::BOOLEAN)
@@ -135,7 +131,6 @@ namespace
 
         if (physical_type == parquet::Type::type::INT32 || physical_type == parquet::Type::type::INT64)
         {
-            // branching with false and true is weird
             if (!isClickHouseTypeCompatibleWithParquetIntegerType(clickhouse_type))
             {
                 return false;
