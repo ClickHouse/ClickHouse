@@ -404,7 +404,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     else
     {
         res = std::make_unique<SubstreamData>(std::make_shared<SerializationDynamic>());
-        res->type = std::make_shared<DataTypeDynamic>();
+        res->type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
     }
 
     /// If column was provided, we should create a column for requested subcolumn.
