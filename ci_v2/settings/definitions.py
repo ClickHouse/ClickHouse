@@ -7,6 +7,7 @@ S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
+    BUILDER = "builder"
 
 
 BASE_BRANCH = "master"
