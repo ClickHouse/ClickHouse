@@ -10,7 +10,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
@@ -3376,10 +3376,13 @@ size_t Context::getPrefetchThreadpoolSize() const
 
 ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
 {
-    callOnce(shared->build_vector_similarity_index_threadpool_initialized, [&] {
+    callOnce(
+        shared->build_vector_similarity_index_threadpool_initialized,
+        [&]
+        {
             size_t pool_size = shared->server_settings.max_build_vector_similarity_index_thread_pool_size > 0
                 ? shared->server_settings.max_build_vector_similarity_index_thread_pool_size
-                : getNumberOfPhysicalCPUCores();
+                : getNumberOfCPUCoresToUse();
             shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
                 CurrentMetrics::BuildVectorSimilarityIndexThreads,
                 CurrentMetrics::BuildVectorSimilarityIndexThreadsActive,
