@@ -603,7 +603,7 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     params.only_merge = false;
 
     assertBlocksHaveEqualStructure(normal_parts_header, projection_parts_header, "AggregatingProjectionStep");
-    input_headers.emplace_back(std::move(normal_parts_header));
+    output_header = std::move(normal_parts_header);
 }
 
 QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
