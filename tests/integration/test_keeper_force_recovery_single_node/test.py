@@ -1,12 +1,12 @@
 import os
-import pytest
 import socket
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import time
 
-
+import pytest
 from kazoo.client import KazooClient, KazooRetry
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 CLUSTER_SIZE = 3
 

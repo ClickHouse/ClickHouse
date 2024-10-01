@@ -28,7 +28,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
@@ -168,7 +168,7 @@ void registerStorageKafka(StorageFactory & factory)
 #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
-        auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+        auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
 
         if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {

@@ -102,7 +102,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction);
+                storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
+                transaction.renameParts();
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");

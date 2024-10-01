@@ -57,7 +57,9 @@ bool needTable(const DatabasePtr & database, const Block & header)
     }
     return false;
 }
+
 }
+
 
 namespace detail
 {

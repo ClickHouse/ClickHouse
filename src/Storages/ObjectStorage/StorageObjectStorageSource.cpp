@@ -377,6 +377,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method,
             need_only_count);
 
+        input_format->setSerializationHints(read_from_format_info.serialization_hints);
+
         if (key_condition_)
             input_format->setKeyCondition(key_condition_);
 
