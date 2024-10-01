@@ -18,7 +18,7 @@ import traceback
 import urllib.parse
 from functools import cache
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Sequence, Tuple, Union
 
 import requests
 import urllib3
@@ -86,7 +86,7 @@ CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
-    logging.debug(f"Env {variables} stored in {path}")
+    logging.debug("Env %s stored in %s", variables, path)
     with open(path, "w") as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
@@ -94,7 +94,7 @@ def _create_env_file(path, variables):
 
 
 def run_and_check(
-    args,
+    args: Union[Sequence[str], str],
     env=None,
     shell=False,
     stdout=subprocess.PIPE,
@@ -103,6 +103,15 @@ def run_and_check(
     nothrow=False,
     detach=False,
 ) -> str:
+    if shell:
+        if isinstance(args, str):
+            shell_args = args
+        else:
+            shell_args = next(a for a in args)
+    else:
+        shell_args = " ".join(args)
+
+    logging.debug("Command:[%s]", shell_args)
     if detach:
         subprocess.Popen(
             args,
@@ -113,7 +122,6 @@ def run_and_check(
         )
         return ""
 
-    logging.debug(f"Command:{args}")
     res = subprocess.run(
         args,
         stdout=stdout,
@@ -127,16 +135,16 @@ def run_and_check(
     err = res.stderr.decode("utf-8", "ignore")
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
-        logging.debug(f"Stdout:{outline}")
+        logging.debug("Stdout:%s", outline)
     for errline in err.splitlines():
-        logging.debug(f"Stderr:{errline}")
+        logging.debug("Stderr:%s", errline)
     if res.returncode != 0:
-        logging.debug(f"Exitcode:{res.returncode}")
+        logging.debug("Exitcode:%s", res.returncode)
         if env:
-            logging.debug(f"Env:{env}")
+            logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
             )
     return out
 
@@ -935,7 +943,7 @@ class ClickHouseCluster:
             logging.debug("Trying to prune unused volumes...")
 
             result = run_and_check(["docker volume ls | wc -l"], shell=True)
-            if int(result > 0):
+            if int(result) > 1:
                 run_and_check(["docker", "volume", "prune", "-f"])
             logging.debug(f"Volumes pruned: {result}")
         except:
