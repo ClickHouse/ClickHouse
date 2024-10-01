@@ -70,6 +70,7 @@ struct MergeTreeReadTaskInfo
     VirtualFields const_virtual_fields;
     /// The amount of data to read per task based on size of the queried columns.
     size_t min_marks_per_task = 0;
+    size_t approx_size_of_mark = 0;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

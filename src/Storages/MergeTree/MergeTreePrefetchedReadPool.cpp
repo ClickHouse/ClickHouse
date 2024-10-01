@@ -336,11 +336,7 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         for (const auto & range : parts_ranges[i].ranges)
             part_stat.sum_marks += range.end - range.begin;
 
-        const auto & columns = settings[Setting::merge_tree_determine_task_size_by_prewhere_columns] && prewhere_info
-            ? prewhere_info->prewhere_actions.getRequiredColumnsNames()
-            : column_names;
-
-        part_stat.approx_size_of_mark = getApproximateSizeOfGranule(*read_info.data_part, columns);
+        part_stat.approx_size_of_mark = read_info.approx_size_of_mark;
 
         auto update_stat_for_column = [&](const auto & column_name)
         {
