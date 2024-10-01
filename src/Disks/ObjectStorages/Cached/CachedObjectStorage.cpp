@@ -72,14 +72,14 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     {
         if (cache->isInitialized())
         {
+            auto cache_key = cache->createKeyForPath(object.remote_path);
+            auto global_context = Context::getGlobalContextInstance();
+            auto modified_read_settings = read_settings.withNestedBuffer();
+
             auto read_buffer_creator = [=, this]()
             {
                 return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
             };
-
-            auto cache_key = cache->createKeyForPath(object.remote_path);
-            auto global_context = Context::getGlobalContextInstance();
-            auto modified_read_settings = read_settings.withNestedBuffer();
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(
                 object.remote_path,
@@ -91,7 +91,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
                 std::string(CurrentThread::getQueryId()),
                 object.bytes_size,
                 /* allow_seeks */!read_settings.remote_read_buffer_restrict_seek,
-                /* use_external_buffer */true,
+                /* use_external_buffer */read_settings.remote_read_buffer_use_external_buffer,
                 /* read_until_position */std::nullopt,
                 global_context->getFilesystemCacheLog());
         }
@@ -100,9 +100,10 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             cache->throwInitExceptionIfNeeded();
         }
     }
+
     /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
     /// former doesn't support seeks.
-    else if (read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
+    if (read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
     {
         auto cache_path_prefix = fmt::format("{}:", magic_enum::enum_name(object_storage->getType()));
         const auto object_namespace = object_storage->getObjectsNamespace();
