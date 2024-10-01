@@ -52,7 +52,8 @@ def golang_container():
     )
     run_and_check(
         [
-            "docker-compose",
+            "docker",
+            "compose",
             "-p",
             cluster.project_name,
             "-f",
@@ -77,7 +78,8 @@ def php_container():
     )
     run_and_check(
         [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             cluster.instances["node"].env_file,
             "-p",
@@ -104,7 +106,8 @@ def nodejs_container():
     )
     run_and_check(
         [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             cluster.instances["node"].env_file,
             "-p",
@@ -131,7 +134,8 @@ def java_container():
     )
     run_and_check(
         [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             cluster.instances["node"].env_file,
             "-p",
