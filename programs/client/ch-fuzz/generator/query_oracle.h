@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include "../third_party/md5.h"
 #include "fuzz_config.h"
 #include "random_generator.h"
@@ -14,11 +13,11 @@ private:
 	MD5 md5_hash;
 	bool first_success = false, second_sucess = false;
 	uint8_t first_digest[16], second_digest[16];
-	std::string buf, nsetting;
+	std::string buf;
+	std::vector<std::string> nsettings;
 public:
 	QueryOracle(const FuzzConfig &ffc) : fc(ffc) {
 		buf.reserve(4096);
-		nsetting.reserve(16);
 	}
 
 	int ProcessOracleQueryResult(const bool first, const bool success, const std::string &oracle_name);
