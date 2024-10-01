@@ -58,12 +58,12 @@ def set_default_configs():
 def clear_workloads_and_resources():
     node.query(
         f"""
-        drop resource if exists io_write;
-        drop resource if exists io_read;
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
         drop workload if exists all;
+        drop resource if exists io_write;
+        drop resource if exists io_read;
     """
     )
     yield
