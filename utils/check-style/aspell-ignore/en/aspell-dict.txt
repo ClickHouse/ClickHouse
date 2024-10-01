@@ -750,6 +750,7 @@ PointDistM
 PointDistRads
 PostHistory
 PostLink
+PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -800,7 +801,6 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
-RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders
@@ -853,6 +853,7 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
+RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -1746,6 +1747,7 @@ getMacro
 getOSKernelVersion
 getServerPort
 getSetting
+getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -1935,7 +1937,6 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
-jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -3050,3 +3051,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+postgres

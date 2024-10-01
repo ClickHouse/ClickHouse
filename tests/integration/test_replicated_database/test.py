@@ -1,13 +1,14 @@
 import os
-import shutil
-import time
 import re
-import pytest
+import shutil
 import threading
+import time
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 
 test_recover_staled_replica_run = 1
 

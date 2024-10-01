@@ -578,7 +578,7 @@ public:
     virtual String getConnectedHostPort() const = 0;
 
     /// Get the xid of current connection.
-    virtual int32_t getConnectionXid() const = 0;
+    virtual int64_t getConnectionXid() const = 0;
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;

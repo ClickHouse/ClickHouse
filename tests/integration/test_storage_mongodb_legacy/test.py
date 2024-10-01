@@ -1,11 +1,11 @@
-import pymongo
+import datetime
 from uuid import UUID
 
+import pymongo
 import pytest
-from helpers.client import QueryRuntimeException
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-import datetime
 
 
 @pytest.fixture(scope="module")
