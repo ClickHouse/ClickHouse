@@ -12,7 +12,7 @@ using ColumnSpecial = enum ColumnSpecial {
 
 struct SQLColumn {
 public:
-	bool nullable = true;
+	std::optional<bool> nullable = std::nullopt;
 	uint32_t cname = 0;
 	SQLType *tp = nullptr;
 	ColumnSpecial special = ColumnSpecial::NONE;

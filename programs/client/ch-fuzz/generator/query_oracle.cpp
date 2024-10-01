@@ -1,5 +1,7 @@
 #include "query_oracle.h"
 
+#include <cstdio>
+
 namespace chfuzz {
 
 /*
@@ -155,7 +157,7 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 	const std::filesystem::path &nfile = fc.db_file_path / "table.data";
 
 	if (std::filesystem::exists(nfile)) {
-		std::filesystem::resize_file(nfile, 0); //truncate the file
+		std::remove(nfile.generic_string().c_str()); //remove the file
 	}
 	ff->set_path(nfile.generic_string());
 	ff->set_outformat(rg.PickKeyRandomlyFromMap(out_in));
@@ -184,7 +186,10 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 			buf += cname;
 			buf += " ";
 			buf += col.second.tp->TypeName(true);
-			buf += !dynamic_cast<Nullable*>(col.second.tp) && !col.second.nullable ? " NOT NULL" : "";
+			if (col.second.nullable.has_value()) {
+				buf += col.second.nullable.value() ? " NOT" : "";
+				buf += " NULL";
+			}
 			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
 			first = false;
 		}
