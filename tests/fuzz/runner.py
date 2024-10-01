@@ -138,8 +138,11 @@ def run_fuzzer(fuzzer: str, timeout: int):
         )
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
-        print("Stderr output:", e.stderr)
+        print("Stderr output: ", e.stderr)
         process_error(e.stderr)
+    except subprocess.TimeoutExpired as e:
+        print("Timeout: ", e.stderr)
+        process_fuzzer_output(e.stderr)
     else:
         process_fuzzer_output(result.stderr)
 
