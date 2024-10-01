@@ -1223,7 +1223,9 @@ def test_sync_replica(started_cluster):
 def test_force_synchronous_settings(started_cluster):
     main_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
     dummy_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
-    snapshotting_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
+    snapshotting_node.query(
+        "DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC"
+    )
     main_node.query(
         "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard1', 'replica1');"
     )
