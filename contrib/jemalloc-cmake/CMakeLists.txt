@@ -164,15 +164,6 @@ target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 # Because our coverage callbacks call malloc, and recursive call of malloc could not work.
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(_jemalloc PRIVATE
-        -DJEMALLOC_DEBUG=1
-        # Usage examples:
-        # - MALLOC_CONF=log:.
-        # - MALLOC_CONF='log:core.malloc.exit|core.sallocx.entry|core.sdallocx.entry'
-        -DJEMALLOC_LOG=1)
-endif ()
-
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
 # jemalloc provides support two unwind flavors:
