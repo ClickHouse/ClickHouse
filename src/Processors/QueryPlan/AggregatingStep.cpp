@@ -534,6 +534,7 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+    // settings.out << prefix << "Memory bound merging: " << memory_bound_merging_of_aggregation_results_enabled << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -736,6 +737,9 @@ void AggregatingStep::serialize(Serialization & ctx) const
     if (!grouping_sets_params.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep with grouping sets is not supported.");
 
+    if (explicit_sorting_required_for_aggregation_in_order)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep explicit_sorting_required_for_aggregation_in_order is not supported.");
+
     /// If you wonder why something is serialized using settings, and other is serialized using flags, considerations are following:
     /// * flags are something that may change data format returning from the step
     /// * settings are something which already was in Settings.h and, usually, is passed to Aggregator unchanged
@@ -753,12 +757,10 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (!grouping_sets_params.empty())
         flags |= 8;
-    if (explicit_sorting_required_for_aggregation_in_order)
-        flags |= 16;
     /// Ideally, key should be calculated from QueryPlan on the follower.
     /// So, let's have a flag to disable sending/reading pre-calculated value.
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
-        flags |= 32;
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
 
@@ -787,15 +789,10 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
     bool overflow_row = bool(flags & 2);
     bool group_by_use_nulls = bool(flags & 4);
     bool has_grouping_sets = bool(flags & 8);
-    bool explicit_sorting_required_for_aggregation_in_order = bool(flags & 16);
-    bool has_stats_key = bool(flags & 32);
+    bool has_stats_key = bool(flags & 16);
 
     if (has_grouping_sets)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep with grouping sets is not supported.");
-
-    SortDescription group_by_sort_description;
-    if (explicit_sorting_required_for_aggregation_in_order)
-        deserializeSortDescription(group_by_sort_description, ctx.in);
 
     UInt64 num_keys;
     readVarUInt(num_keys, ctx.in);
@@ -855,10 +852,10 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         false, // storage_has_evenly_distributed_read, TODO: later
         group_by_use_nulls,
         std::move(sort_description_for_merging),
-        std::move(group_by_sort_description),
+        SortDescription{},
         ctx.settings.aggregation_in_order_memory_bound_merging,
         ctx.settings.aggregation_sort_result_by_bucket_number,
-        explicit_sorting_required_for_aggregation_in_order);
+        false);
 
     return aggregating_step;
 }

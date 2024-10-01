@@ -2,8 +2,10 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -72,7 +74,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
     });
 }
 
-static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, Context & context)
+static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, const ClusterProxy::SelectStreamFactory::Shards * shards, Context & context)
 {
     if (stage != QueryProcessingStage::WithMergeableState)
         throw Exception(
@@ -81,9 +83,30 @@ static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, Context &
             QueryProcessingStage::toString(stage));
 
     context.setSetting("enable_memory_bound_merging_of_aggregation_results", true);
+
+    if (!shards)
+        return;
+
+    for (const auto & shard : *shards)
+    {
+        if (!shard.query_plan)
+            continue;
+
+        auto * aggregating_step = typeid_cast<AggregatingStep *>(shard.query_plan->getRootNode()->step.get());
+        if (!aggregating_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot enable memory bound merging because the last step of remote plan is not Aggregating ({})",
+                shard.query_plan->getRootNode()->step->getName());
+
+        aggregating_step->enableMemoryBoundMerging();
+    }
 }
 
-static void enforceAggregationInOrder(QueryProcessingStage::Enum stage, Context & context)
+static void enforceAggregationInOrder(
+    QueryProcessingStage::Enum stage,
+    const ClusterProxy::SelectStreamFactory::Shards * shards,
+    const SortDescription & sort_description,
+    Context & context)
 {
     if (stage != QueryProcessingStage::WithMergeableState)
         throw Exception(
@@ -93,6 +116,19 @@ static void enforceAggregationInOrder(QueryProcessingStage::Enum stage, Context 
 
     context.setSetting("optimize_aggregation_in_order", true);
     context.setSetting("force_aggregation_in_order", true);
+
+    if (!shards)
+        return;
+
+    for (const auto & shard : *shards)
+    {
+        if (!shard.query_plan)
+            continue;
+
+        auto sorting = std::make_unique<SortingStep>(shard.query_plan->getCurrentDataStream(), sort_description, 0, SortingStep::Settings(context));
+        sorting->setStepDescription("Enforce aggregation in order");
+        shard.query_plan->addStep(std::move(sorting));
+    }
 }
 
 static String formattedAST(const ASTPtr & ast)
@@ -138,12 +174,12 @@ ReadFromRemote::ReadFromRemote(
 
 void ReadFromRemote::enableMemoryBoundMerging()
 {
-    DB::enableMemoryBoundMerging(stage, *context);
+    DB::enableMemoryBoundMerging(stage, &shards, *context);
 }
 
-void ReadFromRemote::enforceAggregationInOrder()
+void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_description)
 {
-    DB::enforceAggregationInOrder(stage, *context);
+    DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
 void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard)
@@ -371,6 +407,16 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 }
 
 
+bool ReadFromRemote::hasSerializedPlan() const
+{
+    for (const auto & shard : shards)
+        if (shard.query_plan)
+            return true;
+
+    return false;
+}
+
+
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
     ClusterPtr cluster_,
@@ -420,12 +466,12 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
 {
-    DB::enableMemoryBoundMerging(stage, *context);
+    DB::enableMemoryBoundMerging(stage, nullptr, *context);
 }
 
-void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
+void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDescription & sort_description)
 {
-    DB::enforceAggregationInOrder(stage, *context);
+    DB::enforceAggregationInOrder(stage, nullptr, sort_description, *context);
 }
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
