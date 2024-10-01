@@ -7,10 +7,15 @@ SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 or
 SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 */
-int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq) {
-	sql_query_grammar::SelectStatementCore *ssc = sq.mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
-	const uint32_t combination = rg.NextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
+int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1) {
+	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
+	sql_query_grammar::TopSelect *ts = sq1.mutable_inner_query()->mutable_select();
+	sql_query_grammar::SelectStatementCore *ssc = ts->mutable_sel()->mutable_select_core();
+	const uint32_t combination = 0;//TODO fix this rg.NextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
+	if (std::filesystem::exists(qfile)) {
+		std::filesystem::resize_file(qfile, 0); //truncate the file
+	}
 	gen.levels[gen.current_level] = QueryLevel(gen.current_level);
 	gen.GenerateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
@@ -28,6 +33,8 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 
 	ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->set_func(sql_query_grammar::FUNCcount);
 	gen.levels.erase(gen.current_level);
+	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	ts->mutable_intofile()->set_path(qfile.generic_string());
 	return 0;
 }
 
@@ -37,9 +44,11 @@ or
 SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 */
 int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
+	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
+	sql_query_grammar::TopSelect *ts = sq2.mutable_inner_query()->mutable_select();
 	sql_query_grammar::SelectStatementCore &ssc1 =
 		const_cast<sql_query_grammar::SelectStatementCore &>(sq1.inner_query().select().sel().select_core());
-	sql_query_grammar::SelectStatementCore *ssc2 = sq2.mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+	sql_query_grammar::SelectStatementCore *ssc2 = ts->mutable_sel()->mutable_select_core();
 	sql_query_grammar::SQLFuncCall *sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 	sql_query_grammar::SQLFuncCall *sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
@@ -58,6 +67,24 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 		sql_query_grammar::ExprComparisonHighProbability &expr = const_cast<sql_query_grammar::ExprComparisonHighProbability &>(ssc1.where().expr());
 
 		sfc2->add_args()->set_allocated_expr(expr.release_expr());
+	}
+	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	ts->mutable_intofile()->set_path(qfile.generic_string());
+	return 0;
+}
+
+int QueryOracle::UpdateCorrectnessQueryResult(const bool first, const bool success) {
+	bool &res = first ? first_success : second_sucess;
+
+	if (success) {
+		const std::filesystem::path &qfile = fc.db_file_path / "query.data";
+		std::fstream outfile(qfile.generic_string(), std::ios_base::in);
+
+		outfile >> (first ? first_result : second_result);
+	}
+	res = success;
+	if (!first && first_success && second_sucess && first_result != second_result) {
+		throw std::runtime_error("Correctness query oracle failed");
 	}
 	return 0;
 }

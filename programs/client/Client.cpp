@@ -1038,12 +1038,14 @@ bool Client::chFuzz()
                 (void) qo.GenerateCorrectnessTestFirstQuery(rg, gen, sq1);
                 chfuzz::SQLQueryToString(full_query, sq1);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
+                (void) qo.UpdateCorrectnessQueryResult(true, !have_error);
 
                 sq2.Clear();
                 full_query.resize(0);
                 (void) qo.GenerateCorrectnessTestSecondQuery(sq1, sq2);
                 chfuzz::SQLQueryToString(full_query, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
+                (void) qo.UpdateCorrectnessQueryResult(false, !have_error);
             }
             else if (gen.CollectionHas<chfuzz::SQLTable>(gen.attached_tables) && noption < 41)
             {

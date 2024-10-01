@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include "../third_party/md5.h"
 #include "fuzz_config.h"
 #include "random_generator.h"
@@ -12,6 +13,7 @@ private:
 	const FuzzConfig &fc;
 	MD5 md5_hash;
 	bool first_success = false, second_sucess = false;
+	uint64_t first_result = 0, second_result = 0;
 	uint8_t first_digest[16], second_digest[16];
 	std::string buf, nsetting;
 public:
@@ -22,6 +24,7 @@ public:
 
 	int GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq);
 	int GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
+	int UpdateCorrectnessQueryResult(const bool first, const bool success);
 
 	int GenerateExportQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1);
 	int GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
