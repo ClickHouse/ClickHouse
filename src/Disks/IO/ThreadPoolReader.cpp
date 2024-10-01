@@ -15,6 +15,7 @@
 #include <future>
 #include <unistd.h>
 #include <fcntl.h>
+#include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
 
@@ -158,6 +159,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
             if (-1 == res)
             {
+                LOG_INFO(getLogger("HELP"), "Errno for preadv2 is {} ({})", errnoToString(errno), errno);
+
                 if (errno == ENOSYS || errno == EOPNOTSUPP)
                 {
                     /// No support for the syscall or the flag in the Linux kernel.
