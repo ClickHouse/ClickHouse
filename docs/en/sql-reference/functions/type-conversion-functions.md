@@ -7211,6 +7211,40 @@ Result:
 └─────────────────────────────┘
 ```
 
+## toTypeName
+
+Converts the specific value to the current type name.
+
+**Syntax**
+
+```sql
+toTypeName(value)
+```
+
+**Arguments**
+
+- `value` — The value with any arbitrary.
+
+**Returned value**
+
+- `value` converted to the current data type name. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT toTypeName(123);
+```
+
+Result:
+
+```response
+┌─toTypeName(123)─┐
+│ UInt8           │
+└─────────────────┘
+```
+
 ## fromUnixTimestamp64Milli
 
 Converts an `Int64` to a `DateTime64` value with fixed millisecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
