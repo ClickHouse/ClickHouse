@@ -83,7 +83,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
-    extern const SettingsUInt64 use_skip_indexes_if_final;
+    extern const SettingsUInt64 skip_indexes_in_final_correctness_threshold;
 }
 
 namespace ErrorCodes
@@ -797,7 +797,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
             size_t range_count = 0;
             size_t first_part_for_next_pass = UINT64_MAX;
-            if (!is_select_query_with_final || !was_any_skip_index_useful || settings[Setting::use_skip_indexes_if_final] <= 1)
+            if (!is_select_query_with_final || !was_any_skip_index_useful || settings[Setting::skip_indexes_in_final_correctness_threshold] == 0)
                 return std::make_tuple(range_count, first_part_for_next_pass, static_cast<KeyConditionPtr>(nullptr));
 
             const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -806,6 +806,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 auto & part = parts[part_index];
                 const auto & index = part->getIndex();
+                if (!index->size())
+                    continue;
                 auto ranges = parts_with_ranges[part_index];
                 auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
                 for (size_t i = 0; i < index->size(); i++)
@@ -829,7 +831,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                           kc->addAnOR();
                     }
                     if (first_part_for_next_pass == UINT64_MAX)
-                        first_part_for_next_pass = part_index + 1;
+                        first_part_for_next_pass = part_index + 1; /// TODO : this or check part_info.level?
+                }
+                if (settings[Setting::skip_indexes_in_final_correctness_threshold] > 1 &&
+                    range_count > settings[Setting::skip_indexes_in_final_correctness_threshold])
+                {
+                    /// degrade to full scan - KeyCondition is initialized to alwaysUnknownOrTrue() 
+                    kc = make_shared<KeyCondition>(nullptr, context, primary_key.column_names, primary_key.expression);
+                    break;
                 }
             }
             LOG_TRACE(

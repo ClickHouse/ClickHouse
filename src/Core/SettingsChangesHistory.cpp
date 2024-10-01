@@ -70,6 +70,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
             {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
             {"parallel_replicas_mode", "read_tasks", "read_tasks", "This setting was introduced as a part of making parallel replicas feature Beta"},
+            {"skip_indexes_in_final_correctness_threshold", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
         }
     },
     {"24.9",
