@@ -1915,7 +1915,7 @@ def test_upgrade_2(started_cluster):
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
