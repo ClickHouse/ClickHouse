@@ -51,9 +51,7 @@ def golang_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_golang_client.yml"
     )
     run_and_check(
-        [
-            "docker",
-            "compose",
+        cluster.compose_cmd(
             "-p",
             cluster.project_name,
             "-f",
@@ -62,13 +60,13 @@ def golang_container():
             "--force-recreate",
             "-d",
             "--no-build",
-        ]
+        )
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.project_name + "_golang1_1")
+    ).containers.get(cluster.get_instance_docker_id("golang1"))
 
 
 @pytest.fixture(scope="module")
@@ -77,26 +75,22 @@ def php_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_php_client.yml"
     )
     run_and_check(
-        [
-            "docker",
-            "compose",
+        cluster.compose_cmd(
             "--env-file",
             cluster.instances["node"].env_file,
-            "-p",
-            cluster.project_name,
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        ]
+        )
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.project_name + "_php1_1")
+    ).containers.get(cluster.get_instance_docker_id("php1"))
 
 
 @pytest.fixture(scope="module")
@@ -105,26 +99,22 @@ def nodejs_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_js_client.yml"
     )
     run_and_check(
-        [
-            "docker",
-            "compose",
+        cluster.compose_cmd(
             "--env-file",
             cluster.instances["node"].env_file,
-            "-p",
-            cluster.project_name,
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        ]
+        )
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.project_name + "_mysqljs1_1")
+    ).containers.get(cluster.get_instance_docker_id("mysqljs1"))
 
 
 @pytest.fixture(scope="module")
@@ -133,26 +123,22 @@ def java_container():
         DOCKER_COMPOSE_PATH, "docker_compose_mysql_java_client.yml"
     )
     run_and_check(
-        [
-            "docker",
-            "compose",
+        cluster.compose_cmd(
             "--env-file",
             cluster.instances["node"].env_file,
-            "-p",
-            cluster.project_name,
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        ]
+        )
     )
     yield docker.DockerClient(
         base_url="unix:///var/run/docker.sock",
         version=cluster.docker_api_version,
         timeout=600,
-    ).containers.get(cluster.project_name + "_java1_1")
+    ).containers.get(cluster.get_instance_docker_id("java1"))
 
 
 def test_mysql_client(started_cluster):
