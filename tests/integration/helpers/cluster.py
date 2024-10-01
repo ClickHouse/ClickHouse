@@ -1748,13 +1748,15 @@ class ClickHouseCluster:
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
+        docker_compose_net = p.join(docker_compose_yml_dir, "docker_compose_net.yml")
 
         self.instances[name] = instance
-        if ipv4_address is not None or ipv6_address is not None:
+        if not self.with_net_trics and (
+            ipv4_address is not None or ipv6_address is not None
+        ):
+            # docker compose v2 does not accept more than one argument `-f net.yml`
             self.with_net_trics = True
-            self.base_cmd.extend(
-                ["--file", p.join(docker_compose_yml_dir, "docker_compose_net.yml")]
-            )
+            self.base_cmd.extend(["--file", docker_compose_net])
 
         self.base_cmd.extend(["--file", instance.docker_compose_path])
 
@@ -1893,12 +1895,6 @@ class ClickHouseCluster:
                 self.setup_coredns_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if self.with_net_trics:
-            for cmd in cmds:
-                cmd.extend(
-                    ["--file", p.join(docker_compose_yml_dir, "docker_compose_net.yml")]
-                )
-
         if with_redis and not self.with_redis:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -1960,6 +1956,13 @@ class ClickHouseCluster:
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
+
+        ### !!!! This is the last step after combining all cmds, don't put anything after
+        if self.with_net_trics:
+            for cmd in cmds:
+                # Again, adding it only once
+                if docker_compose_net not in cmd:
+                    cmd.extend(["--file", docker_compose_net])
 
         logging.debug(
             "Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
@@ -3243,8 +3246,7 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
 
-DOCKER_COMPOSE_TEMPLATE = """
-version: '2.3'
+DOCKER_COMPOSE_TEMPLATE = """---
 services:
     {name}:
         image: {image}:{tag}
