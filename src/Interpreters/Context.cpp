@@ -10,7 +10,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
@@ -220,6 +220,7 @@ namespace Setting
     extern const SettingsUInt64 min_bytes_to_use_direct_io;
     extern const SettingsUInt64 min_bytes_to_use_mmap_io;
     extern const SettingsBool page_cache_inject_eviction;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
@@ -251,13 +252,13 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
-    extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -2301,12 +2302,21 @@ StoragePtr Context::buildParametrizedViewStorage(const String & database_name, c
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
 
-    auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+    auto original_view_metadata = original_view->getInMemoryMetadataPtr();
+    auto query = original_view_metadata->getSelectQuery().inner_query->clone();
     StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, shared_from_this());
+
+    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    sql_security->type = original_view_metadata->sql_security_type;
+    if (original_view_metadata->definer)
+        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
+    create.sql_security = sql_security;
+
+    auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
                                                 ColumnsDescription(sample_block.getNamesAndTypesList()),
@@ -3366,10 +3376,13 @@ size_t Context::getPrefetchThreadpoolSize() const
 
 ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
 {
-    callOnce(shared->build_vector_similarity_index_threadpool_initialized, [&] {
+    callOnce(
+        shared->build_vector_similarity_index_threadpool_initialized,
+        [&]
+        {
             size_t pool_size = shared->server_settings.max_build_vector_similarity_index_thread_pool_size > 0
                 ? shared->server_settings.max_build_vector_similarity_index_thread_pool_size
-                : getNumberOfPhysicalCPUCores();
+                : getNumberOfCPUCoresToUse();
             shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
                 CurrentMetrics::BuildVectorSimilarityIndexThreads,
                 CurrentMetrics::BuildVectorSimilarityIndexThreadsActive,
@@ -5697,24 +5710,13 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
-Context::ParallelReplicasMode Context::getParallelReplicasMode() const
-{
-    const auto & settings_ref = getSettingsRef();
-
-    using enum Context::ParallelReplicasMode;
-    if (!settings_ref[Setting::parallel_replicas_custom_key].value.empty())
-        return CUSTOM_KEY;
-
-    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
-        return READ_TASKS;
-
-    return SAMPLE_KEY;
-}
-
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref[Setting::max_parallel_replicas] > 1;
+
+    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && settings_ref[Setting::max_parallel_replicas] > 1;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
@@ -5729,7 +5731,15 @@ bool Context::canUseParallelReplicasOnFollower() const
 
 bool Context::canUseParallelReplicasCustomKey() const
 {
-    return getSettingsRef()[Setting::max_parallel_replicas] > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+    const auto & settings_ref = getSettingsRef();
+
+    const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
+    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
+    const bool is_parallel_replicas_with_custom_key =
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
+
+    return has_enough_servers && parallel_replicas_enabled && is_parallel_replicas_with_custom_key;
 }
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
@@ -5739,8 +5749,23 @@ bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster)
 
 bool Context::canUseOffsetParallelReplicas() const
 {
-    return offset_parallel_replicas_enabled && getSettingsRef()[Setting::max_parallel_replicas] > 1
-        && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
+    const auto & settings_ref = getSettingsRef();
+
+    /**
+     * Offset parallel replicas algorithm is not only the one which relies on native SAMPLING KEY,
+     * but also those which rely on customer-provided "custom" key.
+     * We combine them together into one group for convenience.
+     */
+    const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
+    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
+    const bool is_parallel_replicas_with_custom_key_or_native_sampling_key =
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
+    return offset_parallel_replicas_enabled &&
+           has_enough_servers &&
+           parallel_replicas_enabled &&
+           is_parallel_replicas_with_custom_key_or_native_sampling_key;
 }
 
 void Context::disableOffsetParallelReplicas()
