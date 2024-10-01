@@ -1782,6 +1782,14 @@ CONV_FN(TableEngine, te) {
   }
 }
 
+CONV_FN(CreateTableAs, create_table) {
+  if (create_table.clone()) {
+    ret += "CLONE ";
+  }
+  ret += "AS ";
+  ExprSchemaTableToString(ret, create_table.est());
+}
+
 CONV_FN(CreateTable, create_table) {
   ret += create_table.replace() ? "REPLACE" : "CREATE";
   ret += " ";
@@ -1798,9 +1806,9 @@ CONV_FN(CreateTable, create_table) {
     ret += "(";
     TableDefToString(ret, create_table.table_def());
     ret += ")";
-  } else if (create_table.has_table_like()) {
-    ret += "AS ";
-    ExprSchemaTableToString(ret, create_table.table_like());
+  } else if (create_table.has_table_as()) {
+    ret += " ";
+    CreateTableAsToString(ret, create_table.table_as());
   }
   TableEngineToString(ret, create_table.engine());
   if (create_table.has_settings()) {

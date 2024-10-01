@@ -448,14 +448,16 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			GenerateSelect(rg, true, static_cast<uint32_t>(next.RealNumberOfColumns()), std::numeric_limits<uint32_t>::max(), ct->mutable_as_select_stmt());
 		}
 	} else {
-		//create table like
+		//create table as
+		sql_query_grammar::CreateTableAs *cta = ct->mutable_table_as();
 		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 		std::uniform_int_distribution<size_t> table_engine(0, like_engs.size() - 1);
 		sql_query_grammar::TableEngineValues val = like_engs[table_engine(rg.gen)];
 
 		next.teng = val;
 		te->set_engine(val);
-		ct->mutable_table_like()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+		cta->set_clone(rg.NextBool());
+		cta->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 		for (const auto &col : t.cols) {
 			next.cols[col.first] = col.second;
 		}

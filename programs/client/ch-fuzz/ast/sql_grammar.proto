@@ -2581,6 +2581,11 @@ message TableEngine {
   optional TableKey primary_key = 5;
 }
 
+message CreateTableAs {
+  optional bool clone = 1;
+  required ExprSchemaTable est = 2;
+}
+
 message CreateTable {
   optional bool replace = 1;
   optional bool is_temp = 2;
@@ -2588,7 +2593,7 @@ message CreateTable {
   required ExprSchemaTable est = 4;
   oneof create_table_oneof {
     TableDef table_def = 5;
-    ExprSchemaTable table_like = 6;
+    CreateTableAs table_as = 6;
   }
   required TableEngine engine = 7;
   optional SettingValues settings = 8;
