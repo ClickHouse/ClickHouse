@@ -427,15 +427,19 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     const auto & object_size = object_info.metadata->size_bytes;
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
-    read_settings.enable_filesystem_cache = false;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
+    /// User's object may change, don't cache it.
+    read_settings.enable_filesystem_cache = false;
+    read_settings.use_page_cache_for_disks_without_file_cache = false;
 
     const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
-    const bool use_prefetch = object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-    read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
-    /// User's object may change, don't cache it.
-    read_settings.use_page_cache_for_disks_without_file_cache = false;
+    const bool use_prefetch = object_too_small
+        && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
+        && read_settings.remote_fs_prefetch;
+
+    if (use_prefetch)
+        read_settings = read_settings.withNestedBuffer();
 
     auto impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
 
@@ -445,18 +449,16 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     if (!use_prefetch)
         return impl;
 
+    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
         std::move(impl), reader, read_settings,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
-    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
-
     impl->setReadUntilEnd();
-    if (read_settings.remote_fs_prefetch)
-        impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
-
+    impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
     return impl;
 }
 
