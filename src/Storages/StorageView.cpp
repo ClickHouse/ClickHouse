@@ -187,7 +187,7 @@ void StorageView::read(
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
     ActionsDAG materializing_actions(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
-    materializing_actions.addMaterializingOutputActions();
+    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
 
     auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
     materializing->setStepDescription("Materialize constants after VIEW subquery");
