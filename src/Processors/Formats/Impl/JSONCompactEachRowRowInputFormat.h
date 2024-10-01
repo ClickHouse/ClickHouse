@@ -11,7 +11,7 @@ namespace DB
 {
 
 class ReadBuffer;
-
+class JSONCompactEachRowFormatReader;
 
 /** A stream for reading data in a bunch of formats:
  *  - JSONCompactEachRow
@@ -20,7 +20,7 @@ class ReadBuffer;
  *  - JSONCompactStringsEachRowWithNamesAndTypes
  *
 */
-class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes<JSONCompactEachRowFormatReader>
 {
 public:
     JSONCompactEachRowRowInputFormat(

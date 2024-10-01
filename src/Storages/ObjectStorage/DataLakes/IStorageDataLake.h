@@ -2,9 +2,8 @@
 
 #include "config.h"
 
-#if USE_AWS_S3 && USE_AVRO
+#if USE_AVRO
 
-#include <Formats/FormatFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -145,7 +144,7 @@ private:
         bool supports_subset_of_columns,
         ContextPtr local_context) override
     {
-        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
         if (!current_metadata)
         {
             Storage::updateConfiguration(local_context);

@@ -66,6 +66,9 @@ public:
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , rows_to_add(left_block.rows())
+        , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
+        , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
+        , join_data_sorted(join.getJoinedData()->sorted)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -113,8 +116,6 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
-        join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
-        output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
     }
 
     size_t size() const { return columns.size(); }
@@ -149,6 +150,7 @@ public:
     bool output_by_row_list = false;
     size_t join_data_avg_perkey_rows = 0;
     size_t output_by_row_list_threshold = 0;
+    bool join_data_sorted = false;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
