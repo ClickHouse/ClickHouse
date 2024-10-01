@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-import subprocess
 import logging
-
+import subprocess
 from pathlib import Path
 from typing import Optional
-
 
 PIGZ = Path("/usr/bin/pigz")
 SUFFIX = ".zst"
@@ -58,14 +56,14 @@ def decompress_fast(archive_path: Path, result_path: Optional[Path] = None) -> N
             archive_path,
             result_path,
         )
-        program_part = "--use-compress-program='zstd --threads=0'"
+        program_part = "--use-compress-program='zstd --threads=0 -d'"
     elif PIGZ.exists():
         logging.info(
             "pigz found, will compress and decompress faster ('%s' -> '%s')",
             archive_path,
             result_path,
         )
-        program_part = "--use-compress-program='pigz'"
+        program_part = "--use-compress-program='pigz -d'"
     else:
         program_part = "-z"
         logging.info(

@@ -3,9 +3,7 @@
 
 #include "config.h"
 
-#include <chrono>
-#include <mutex>
-#include <string>
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -28,7 +26,21 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+
+#if USE_SSL
+#    include <Server/CertificateReloader.h>
+#    include <openssl/ssl.h>
+#    include <Poco/Crypto/EVPPKey.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/SSLManager.h>
+#    include <Poco/Net/Utility.h>
+#    include <Poco/StringTokenizer.h>
+#endif
+
+#include <chrono>
+#include <mutex>
+#include <string>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
@@ -46,6 +58,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 using namespace std::chrono_literals;
@@ -54,6 +67,16 @@ namespace
 {
 
 #if USE_SSL
+
+int callSetCertificate(SSL * ssl, void * arg)
+{
+    if (!arg)
+        return -1;
+
+    const CertificateReloader::Data * data = reinterpret_cast<CertificateReloader::Data *>(arg);
+    return setCertificateCallback(ssl, data, getLogger("SSLContext"));
+}
+
 void setSSLParams(nuraft::asio_service::options & asio_opts)
 {
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
@@ -67,18 +90,55 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     if (!config.has(private_key_file_property))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
-    asio_opts.enable_ssl_ = true;
-    asio_opts.server_cert_file_ = config.getString(certificate_file_property);
-    asio_opts.server_key_file_ = config.getString(private_key_file_property);
+    Poco::Net::Context::Params params;
+    params.certificateFile = config.getString(certificate_file_property);
+    if (params.certificateFile.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server certificate file in config '{}' is empty", certificate_file_property);
+
+    params.privateKeyFile = config.getString(private_key_file_property);
+    if (params.privateKeyFile.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server key file in config '{}' is empty", private_key_file_property);
+
+    auto pass_phrase = config.getString("openSSL.server.privateKeyPassphraseHandler.options.password", "");
+    auto certificate_data = std::make_shared<CertificateReloader::Data>(params.certificateFile, params.privateKeyFile, pass_phrase);
 
     if (config.has(root_ca_file_property))
-        asio_opts.root_cert_file_ = config.getString(root_ca_file_property);
+        params.caLocation = config.getString(root_ca_file_property);
 
-    if (config.getBool("openSSL.server.loadDefaultCAFile", false))
-        asio_opts.load_default_ca_file_ = true;
+    params.loadDefaultCAs = config.getBool("openSSL.server.loadDefaultCAFile", false);
+    params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString("openSSL.server.verificationMode", "none"));
 
-    if (config.getString("openSSL.server.verificationMode", "none") == "none")
-        asio_opts.skip_verification_ = true;
+    std::string disabled_protocols_list = config.getString("openSSL.server.disableProtocols", "");
+    Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
+    int disabled_protocols = 0;
+    for (const auto & token : dp_tok)
+    {
+        if (token == "sslv2")
+            disabled_protocols |= Poco::Net::Context::PROTO_SSLV2;
+        else if (token == "sslv3")
+            disabled_protocols |= Poco::Net::Context::PROTO_SSLV3;
+        else if (token == "tlsv1")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1;
+        else if (token == "tlsv1_1")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
+        else if (token == "tlsv1_2")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
+    }
+
+    asio_opts.ssl_context_provider_server_ = [params, certificate_data, disabled_protocols]
+    {
+        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_SERVER_USE, params);
+        context.disableProtocols(disabled_protocols);
+        SSL_CTX * ssl_ctx = context.takeSslContext();
+        SSL_CTX_set_cert_cb(ssl_ctx, callSetCertificate, reinterpret_cast<void *>(certificate_data.get()));
+        return ssl_ctx;
+    };
+
+    asio_opts.ssl_context_provider_client_ = [ctx_params = std::move(params)]
+    {
+        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_CLIENT_USE, ctx_params);
+        return context.takeSslContext();
+    };
 }
 #endif
 
@@ -121,7 +181,7 @@ KeeperServer::KeeperServer(
     SnapshotsQueue & snapshots_queue_,
     KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
-    KeeperStateMachine::CommitCallback commit_callback)
+    IKeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
@@ -132,13 +192,28 @@ KeeperServer::KeeperServer(
     if (keeper_context->getCoordinationSettings()->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
-    state_machine = nuraft::cs_new<KeeperStateMachine>(
-        responses_queue_,
-        snapshots_queue_,
-        keeper_context,
-        config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
-        commit_callback,
-        checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+#if USE_ROCKSDB
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    if (coordination_settings->experimental_use_rocksdb)
+    {
+        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
+            responses_queue_,
+            snapshots_queue_,
+            keeper_context,
+            config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
+            commit_callback,
+            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+        LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
+    }
+    else
+#endif
+        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperMemoryStorage>>(
+            responses_queue_,
+            snapshots_queue_,
+            keeper_context,
+            config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
+            commit_callback,
+            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
@@ -366,7 +441,10 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         LockMemoryExceptionInThread::removeUniqueLock();
     };
 
-    asio_opts.thread_pool_size_ = getNumberOfPhysicalCPUCores();
+    /// At least 16 threads for network communication in asio.
+    /// asio is async framework, so even with 1 thread it should be ok, but
+    /// still as safeguard it's better to have some redundant capacity here
+    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
 
     if (state_manager->isSecure())
     {
@@ -519,24 +597,10 @@ void KeeperServer::shutdown()
 namespace
 {
 
-// Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestForSession & request_for_session)
-{
-    DB::WriteBufferFromNuraftBuffer write_buf;
-    DB::writeIntBinary(request_for_session.session_id, write_buf);
-    request_for_session.request->write(write_buf);
-    DB::writeIntBinary(request_for_session.time, write_buf);
-    /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
-    DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
-    DB::writeIntBinary(KeeperStorage::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
-    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
-    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
-    return write_buf.getBuffer();
-}
 
 }
 
-void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & request_for_session)
+void KeeperServer::putLocalReadRequest(const KeeperStorageBase::RequestForSession & request_for_session)
 {
     if (!request_for_session.request->isReadRequest())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
@@ -544,12 +608,12 @@ void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & 
     state_machine->processReadRequest(request_for_session);
 }
 
-RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
+RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorageBase::RequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
     for (const auto & request_for_session : requests_for_sessions)
-        entries.push_back(getZooKeeperLogEntry(request_for_session));
+        entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
     std::lock_guard lock{server_write_mutex};
     if (is_recovering)
@@ -582,7 +646,7 @@ bool KeeperServer::isLeaderAlive() const
 bool KeeperServer::isExceedingMemorySoftLimit() const
 {
     Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-    return mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit;
+    return mem_soft_limit > 0 && std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) >= mem_soft_limit;
 }
 
 /// TODO test whether taking failed peer in count
@@ -787,7 +851,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto entry_buf = entry->get_buf_ptr();
 
-                KeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
+                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version);
                 request_for_session->zxid = next_zxid;
                 if (!state_machine->preprocess(*request_for_session))
@@ -797,11 +861,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 /// older versions of Keeper can send logs that are missing some fields
                 size_t bytes_missing = 0;
-                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     bytes_missing += sizeof(request_for_session->time);
 
-                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
+                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
+
+                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_XID_64)
+                    bytes_missing += sizeof(uint32_t);
 
                 if (bytes_missing != 0)
                 {
@@ -811,22 +878,22 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), entry_buf, entry->get_val_type());
                 }
 
-                size_t write_buffer_header_size
-                    = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
+                size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
+                    + sizeof(request_for_session->digest->value) + sizeof(uint32_t);
 
-                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
 
                 auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
 
                 WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
-                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     writeIntBinary(request_for_session->time, write_buf);
 
                 writeIntBinary(request_for_session->zxid, write_buf);
                 writeIntBinary(request_for_session->digest->version, write_buf);
-                if (request_for_session->digest->version != KeeperStorage::NO_DIGEST)
+                if (request_for_session->digest->version != KeeperStorageBase::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
 
                 write_buf.finalize();
@@ -1129,8 +1196,6 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
         result.synced_follower_count = getSyncedFollowerCount();
     }
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
-    result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
-    result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;
 }
 

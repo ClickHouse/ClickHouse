@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
@@ -84,11 +85,11 @@ MergeTreeDataPartWriterOnDisk::Stream<false>::Stream(
     marks_file_extension{marks_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
     marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
     marks_hashing(*marks_file),
-    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
+    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)
 {
@@ -107,7 +108,7 @@ MergeTreeDataPartWriterOnDisk::Stream<true>::Stream(
     data_file_extension{data_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
     compress_marks(false)
 {
@@ -330,9 +331,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     if (!metadata_snapshot->hasPrimaryKey())
         return;
 
-    if (index_columns.empty())
-        index_columns = primary_index_block.cloneEmptyColumns();
-
     {
         /** While filling index (index_columns), disable memory tracker.
          * Because memory is allocated here (maybe in context of INSERT query),
@@ -341,6 +339,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          *  (observed in long INSERT SELECTs)
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+        if (index_columns.empty())
+            index_columns = primary_index_block.cloneEmptyColumns();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (const auto & granule : granules_to_write)
@@ -361,7 +362,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
     {
         const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->update(block.getByName(stat_ptr->columnName()).column);
+        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
         execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }
@@ -433,8 +434,9 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
-            last_index_block.clear();
         }
+
+        last_index_block.clear();
 
         if (compress_primary_key)
         {

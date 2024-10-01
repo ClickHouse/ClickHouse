@@ -33,13 +33,13 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -98,9 +98,10 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
-    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
+    ObjectStorageKey
+    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
 

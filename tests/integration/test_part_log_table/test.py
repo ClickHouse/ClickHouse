@@ -1,5 +1,6 @@
-import pytest
 import fnmatch
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 

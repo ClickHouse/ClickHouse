@@ -3,6 +3,7 @@
 #include <Access/AccessControl.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -23,7 +24,12 @@
 
 namespace DB
 {
-
+namespace Setting
+{
+    extern const SettingsBool ignore_on_cluster_for_replicated_named_collections_queries;
+    extern const SettingsBool ignore_on_cluster_for_replicated_access_entities_queries;
+    extern const SettingsBool ignore_on_cluster_for_replicated_udf_queries;
+}
 
 static bool isUserDefinedFunctionQuery(const ASTPtr & query)
 {
@@ -57,13 +63,13 @@ ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, c
         return query;
 
     if ((isUserDefinedFunctionQuery(query)
-         && context->getSettings().ignore_on_cluster_for_replicated_udf_queries
+         && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_udf_queries]
          && context->getUserDefinedSQLObjectsStorage().isReplicated())
         || (isAccessControlQuery(query)
-            && context->getSettings().ignore_on_cluster_for_replicated_access_entities_queries
+            && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_access_entities_queries]
             && context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE))
         || (isNamedCollectionQuery(query)
-            && context->getSettings().ignore_on_cluster_for_replicated_named_collections_queries
+            && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_named_collections_queries]
             && NamedCollectionFactory::instance().usesReplicatedStorage()))
     {
         LOG_DEBUG(getLogger("removeOnClusterClauseIfNeeded"), "ON CLUSTER clause was ignored for query {}", query->getID());

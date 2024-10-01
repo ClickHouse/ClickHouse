@@ -1,12 +1,18 @@
 #include <IO/S3Settings.h>
 
+#include <Core/Settings.h>
 #include <IO/S3Common.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool s3_validate_request_settings;
+}
 
 void S3Settings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
@@ -48,7 +54,7 @@ void S3SettingsByEndpoint::loadFromConfig(
             auth_settings.updateIfChanged(S3::AuthSettings(config, settings, key_path));
 
             auto request_settings{default_request_settings};
-            request_settings.updateIfChanged(S3::RequestSettings(config, settings, key_path, "", settings.s3_validate_request_settings));
+            request_settings.updateIfChanged(S3::RequestSettings(config, settings, key_path, "", settings[Setting::s3_validate_request_settings]));
 
             s3_settings.emplace(
                 config.getString(endpoint_path),

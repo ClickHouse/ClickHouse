@@ -72,7 +72,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = res.get<Map &>();
+    auto & map = res.safeGet<Map &>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -96,7 +96,7 @@ void ColumnMap::insertData(const char *, size_t)
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = x.get<const Map &>();
+    const auto & map = x.safeGet<const Map &>();
     nested->insert(Array(map.begin(), map.end()));
 }
 
@@ -105,7 +105,7 @@ bool ColumnMap::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Map)
         return false;
 
-    const auto & map = x.get<const Map &>();
+    const auto & map = x.safeGet<const Map &>();
     return nested->tryInsert(Array(map.begin(), map.end()));
 }
 
@@ -143,9 +143,9 @@ void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
     nested->updateHashWithValue(n, hash);
 }
 
-void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnMap::getWeakHash32() const
 {
-    nested->updateWeakHash32(hash);
+    return nested->getWeakHash32();
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const
@@ -153,7 +153,7 @@ void ColumnMap::updateHashFast(SipHash & hash) const
     nested->updateHashFast(hash);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnMap::insertFrom(const IColumn & src, size_t n)
 #else
 void ColumnMap::doInsertFrom(const IColumn & src, size_t n)
@@ -162,7 +162,7 @@ void ColumnMap::doInsertFrom(const IColumn & src, size_t n)
     nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnMap::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
 void ColumnMap::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -171,7 +171,7 @@ void ColumnMap::doInsertManyFrom(const IColumn & src, size_t position, size_t le
     assert_cast<ColumnArray &>(*nested).insertManyFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), position, length);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnMap::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -222,7 +222,7 @@ MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & sele
     return res;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
 int ColumnMap::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
@@ -247,6 +247,20 @@ void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, I
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+size_t ColumnMap::capacity() const
+{
+    return nested->capacity();
+}
+
+void ColumnMap::prepareForSquashing(const Columns & source_columns)
+{
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
+    nested->prepareForSquashing(nested_source_columns);
 }
 
 void ColumnMap::shrinkToFit()
@@ -288,8 +302,8 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 
-    Array nested_min_value = nested_min.get<Array>();
-    Array nested_max_value = nested_max.get<Array>();
+    Array nested_min_value = nested_min.safeGet<Array>();
+    Array nested_max_value = nested_max.safeGet<Array>();
 
     Map map_min_value(nested_min_value.begin(), nested_min_value.end());
     Map map_max_value(nested_max_value.begin(), nested_max_value.end());

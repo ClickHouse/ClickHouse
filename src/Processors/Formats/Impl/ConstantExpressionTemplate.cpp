@@ -2,6 +2,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -31,6 +32,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -207,20 +213,20 @@ private:
             /// Do not replace empty array and array of NULLs
             if (literal->value.getType() == Field::Types::Array)
             {
-                const Array & array = literal->value.get<Array>();
+                const Array & array = literal->value.safeGet<Array>();
                 auto not_null = std::find_if_not(array.begin(), array.end(), [](const auto & elem) { return elem.isNull(); });
                 if (not_null == array.end())
                     return true;
             }
             else if (literal->value.getType() == Field::Types::Map)
             {
-                const Map & map = literal->value.get<Map>();
+                const Map & map = literal->value.safeGet<Map>();
                 if (map.size() % 2)
                     return false;
             }
             else if (literal->value.getType() == Field::Types::Tuple)
             {
-                const Tuple & tuple = literal->value.get<Tuple>();
+                const Tuple & tuple = literal->value.safeGet<Tuple>();
 
                 for (const auto & value : tuple)
                     if (value.isNull())
@@ -325,9 +331,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     for (size_t i = 0; i < replaced_literals.size(); ++i)
     {
         const LiteralInfo & info = replaced_literals[i];
-        if (info.literal->begin.value() < prev_end)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace literals");
-
         while (prev_end < info.literal->begin.value())
         {
             tokens.emplace_back(prev_end->begin, prev_end->size());
@@ -542,7 +545,8 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
+        IParser::Pos iterator(
+            token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;

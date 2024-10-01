@@ -71,12 +71,12 @@ std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const Quer
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
     size_t table_function_node_arguments_size = table_function_node_arguments.size();
 
-    if (table_function_node_arguments_size <= 2)
+    if (table_function_node_arguments_size <= 3)
         return {};
 
     std::vector<size_t> result_indexes;
-    result_indexes.reserve(table_function_node_arguments_size - 2);
-    for (size_t i = 2; i < table_function_node_arguments_size; ++i)
+    result_indexes.reserve(table_function_node_arguments_size - 3);
+    for (size_t i = 3; i < table_function_node_arguments_size; ++i)
         result_indexes.push_back(i);
 
     return result_indexes;
@@ -103,10 +103,11 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         if (!args[i]->as<ASTIdentifier>() &&
             !args[i]->as<ASTLiteral>() &&
             !args[i]->as<ASTQueryParameter>() &&
-            !args[i]->as<ASTSubquery>())
+            !args[i]->as<ASTSubquery>() &&
+            !args[i]->as<ASTFunction>())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal",
-                argument_name, getName());
+                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal, but got: {}",
+                argument_name, getName(), args[i]->formatForErrorMessage());
     };
 
     check_argument(0, "script_name");
@@ -170,7 +171,14 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     if (settings_query != nullptr)
         settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
 
-    auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context, is_insert_query), ConstraintsDescription{});
+    auto storage = std::make_shared<StorageExecutable>(
+        storage_id,
+        format,
+        settings,
+        input_queries,
+        getActualTableStructure(context, is_insert_query),
+        ConstraintsDescription{},
+        /* comment = */ "");
     storage->startup();
     return storage;
 }

@@ -14,20 +14,19 @@ from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
 
+from ci_config import CI
 from commit_status_helper import (
-    get_commit_filtered_statuses,
     get_commit,
+    get_commit_filtered_statuses,
     trigger_mergeable_check,
     update_upstream_sync_status,
 )
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-from report import SUCCESS, FAILURE
-from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
+from report import SUCCESS
 from synchronizer_utils import SYNC_BRANCH_PREFIX
-from ci_config import CI
-from ci_utils import Utils
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -249,63 +248,29 @@ def main():
     repo = gh.get_repo(args.repo)
 
     if args.set_ci_status:
-        assert args.wf_status in (FAILURE, SUCCESS)
-        # set mergeable check status and exit
+        CI.GH.print_workflow_results()
+        # set Mergeable check status and exit
         commit = get_commit(gh, args.pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
 
-        max_failed_tests_per_job = 0
-        job_name_with_max_failures = None
-        total_failed_tests = 0
-        failed_to_get_info = False
         has_failed_statuses = False
         for status in statuses:
-            if not CI.is_required(status.context):
-                continue
-            if status.state == FAILURE:
-                has_failed_statuses = True
-                failed_cnt = Utils.get_failed_tests_number(status.description)
-                if failed_cnt is None:
-                    failed_to_get_info = True
-                else:
-                    if failed_cnt > max_failed_tests_per_job:
-                        job_name_with_max_failures = status.context
-                        max_failed_tests_per_job = failed_cnt
-                    total_failed_tests += failed_cnt
-            elif status.state != SUCCESS and status.context not in (
-                CI.StatusNames.SYNC,
-                CI.StatusNames.PR_CHECK,
+            print(f"Check status [{status.context}], [{status.state}]")
+            if (
+                CI.is_required(status.context)
+                and status.state != SUCCESS
+                and status.context != CI.StatusNames.SYNC
             ):
-                # do not block CI on failures in (CI.StatusNames.SYNC, CI.StatusNames.PR_CHECK)
-                has_failed_statuses = True
                 print(
-                    f"Unexpected status for [{status.context}]: [{status.state}] - block further testing"
+                    f"WARNING: Not success status [{status.context}], [{status.state}]"
                 )
-                failed_to_get_info = True
+                has_failed_statuses = True
 
-        can_continue = True
-        if total_failed_tests > CI.MAX_TOTAL_FAILURES_BEFORE_BLOCKING_CI:
-            print(
-                f"Required check has [{total_failed_tests}] failed - block further testing"
-            )
-            can_continue = False
-        if max_failed_tests_per_job > CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI:
-            print(
-                f"Job [{job_name_with_max_failures}] has [{max_failed_tests_per_job}] failures - block further testing"
-            )
-            can_continue = False
-        if failed_to_get_info:
-            print("Unexpected commit status state - block further testing")
-            can_continue = False
-        if args.wf_status != SUCCESS and not has_failed_statuses:
-            # workflow failed but reason is unknown as no failed statuses present
-            can_continue = False
-            print(
-                "WARNING: Either the runner is faulty or the operating status is unknown. The first is self-healing, the second requires investigation."
-            )
-
-        if args.wf_status == SUCCESS or has_failed_statuses:
-            # do not set mergeable check status if args.wf_status == failure, apparently it has died runners and is to be restarted
+        workflow_ok = CI.is_workflow_ok()
+        if workflow_ok or has_failed_statuses:
+            # set Mergeable Check if workflow is successful (green)
+            # or if we have GH statuses with failures (red)
+            #    to avoid false-green on a died runner
             state = trigger_mergeable_check(
                 commit,
                 statuses,
@@ -322,10 +287,10 @@ def main():
             print(
                 "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"
             )
-
-        if not can_continue:
+        if workflow_ok and not has_failed_statuses:
+            sys.exit(0)
+        else:
             sys.exit(1)
-        sys.exit(0)
 
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710

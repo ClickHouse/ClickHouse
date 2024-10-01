@@ -9,11 +9,17 @@
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool check_referential_table_dependencies;
+}
 
 namespace ErrorCodes
 {
@@ -141,8 +147,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             else
             {
                 DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id);
-                bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
+                bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 std::tie(from_ref_dependencies, from_loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
             }
 

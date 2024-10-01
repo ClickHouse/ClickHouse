@@ -248,6 +248,23 @@ struct RemoveResponse : virtual Response
 {
 };
 
+struct RemoveRecursiveRequest : virtual Request
+{
+    String path;
+
+    /// strict limit for number of deleted nodes
+    uint32_t remove_nodes_limit = 1;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+
+    size_t bytesSize() const override { return path.size() + sizeof(remove_nodes_limit); }
+};
+
+struct RemoveRecursiveResponse : virtual Response
+{
+};
+
 struct ExistsRequest : virtual Request
 {
     String path;
@@ -391,11 +408,17 @@ struct ReconfigResponse : virtual Response
     size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
+template <typename T>
 struct MultiRequest : virtual Request
 {
-    Requests requests;
+    std::vector<T> requests;
 
-    void addRootPath(const String & root_path) override;
+    void addRootPath(const String & root_path) override
+    {
+        for (auto & request : requests)
+            request->addRootPath(root_path);
+    }
+
     String getPath() const override { return {}; }
 
     size_t bytesSize() const override
@@ -430,6 +453,7 @@ struct ErrorResponse : virtual Response
 
 using CreateCallback = std::function<void(const CreateResponse &)>;
 using RemoveCallback = std::function<void(const RemoveResponse &)>;
+using RemoveRecursiveCallback = std::function<void(const RemoveRecursiveResponse &)>;
 using ExistsCallback = std::function<void(const ExistsResponse &)>;
 using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
@@ -548,13 +572,13 @@ public:
     virtual bool isExpired() const = 0;
 
     /// Get the current connected node idx.
-    virtual Int8 getConnectedNodeIdx() const = 0;
+    virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
 
     /// Get the current connected host and port.
     virtual String getConnectedHostPort() const = 0;
 
     /// Get the xid of current connection.
-    virtual int32_t getConnectionXid() const = 0;
+    virtual int64_t getConnectionXid() const = 0;
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
@@ -586,6 +610,11 @@ public:
         const String & path,
         int32_t version,
         RemoveCallback callback) = 0;
+
+    virtual void removeRecursive(
+        const String & path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) = 0;
 
     virtual void exists(
         const String & path,

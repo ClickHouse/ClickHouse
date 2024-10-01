@@ -10,8 +10,14 @@
 
 #include <Interpreters/Context.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
     : IQueryTreeNode(children_size)
@@ -27,9 +33,10 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
 }
 
 TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
-    : TableNode(storage_,
-        storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout),
-        storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
+    : TableNode(
+          storage_,
+          storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]),
+          storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
 {
 }
 
@@ -37,7 +44,7 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
 {
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
 }
 

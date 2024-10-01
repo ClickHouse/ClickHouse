@@ -11,6 +11,7 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -31,6 +32,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -534,7 +539,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
-            args.context->getSettingsRef().postgresql_connection_attempt_timeout);
+            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)
@@ -545,7 +550,11 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };
-    factory.registerDatabase("MaterializedPostgreSQL", create_fn);
+    factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
+        .supports_arguments = true,
+        .supports_settings = true,
+        .supports_table_overrides = true,
+    });
 }
 }
 

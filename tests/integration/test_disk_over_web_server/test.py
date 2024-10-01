@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 uuids = []
 
@@ -311,7 +311,8 @@ def test_replicated_database(cluster):
         SETTINGS storage_policy = 'web';
     """.format(
             uuids[0]
-        )
+        ),
+        settings={"database_replicated_allow_explicit_uuid": 3},
     )
 
     node2 = cluster.instances["node2"]

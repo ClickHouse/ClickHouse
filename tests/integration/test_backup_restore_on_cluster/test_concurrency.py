@@ -1,11 +1,12 @@
-from random import random, randint
-import pytest
+import concurrent
 import os.path
 import time
-import concurrent
+from random import randint, random
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -276,15 +277,10 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     for node in nodes:
         assert_eq_with_retry(
             node,
-            f"SELECT status from system.backups WHERE id IN {ids_list} AND (status == 'CREATING_BACKUP')",
+            f"SELECT status, error from system.backups "
+            f"WHERE id IN {ids_list} AND ((status == 'CREATING_BACKUP') OR (status == 'BACKUP_FAILED'))",
             "",
-        )
-
-    for node in nodes:
-        assert_eq_with_retry(
-            node,
-            f"SELECT status, error from system.backups WHERE id IN {ids_list} AND (status == 'BACKUP_FAILED')",
-            "",
+            retry_count=100,
         )
 
     backup_names = {}

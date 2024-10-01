@@ -178,7 +178,7 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Temporary:
+        case FileSegmentKind::Ephemeral:
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
@@ -198,13 +198,13 @@ String CacheMetadata::getFileSegmentPath(
 
 String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
 {
+    const auto key_str = key.toString();
     if (write_cache_per_user_directory)
     {
-        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key.toString();
+        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
     }
     else
     {
-        const auto key_str = key.toString();
         return fs::path(path) / key_str.substr(0, 3) / key_str;
     }
 }
@@ -423,6 +423,8 @@ CacheMetadata::removeEmptyKey(
             fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
         }
+
+        /// TODO: Remove empty user directories.
     }
     catch (...)
     {
@@ -705,7 +707,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     {
         auto size = reader->available();
 
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds))
+        std::string failure_reason;
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "
@@ -846,7 +849,7 @@ LockedKey::~LockedKey()
     /// See comment near cleanupThreadFunc() for more details.
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_TRACE(key_metadata->logger(), "Submitting key {} for removal", getKey());
+    LOG_TEST(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 
@@ -963,7 +966,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
         }
         else if (!can_be_broken)
         {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 #else
             LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",
