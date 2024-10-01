@@ -1089,10 +1089,10 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     executeImpl(query_plan, std::move(input_pipe));
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream(), result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            query_plan.getCurrentDataStream().getColumnsWithTypeAndName(),
             result_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
             true);
@@ -1860,8 +1860,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /// It doesn't hold such a guarantee for streams with const keys.
                         /// Note: it's also doesn't work with the read-in-order optimization.
                         /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-                        bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream().header, join_clause.key_names_left)
-                            && has_non_const(joined_plan->getCurrentDataStream().header, join_clause.key_names_right);
+                        bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream(), join_clause.key_names_left)
+                            && has_non_const(joined_plan->getCurrentDataStream(), join_clause.key_names_right);
 
                         if (settings[Setting::max_rows_in_set_to_optimize_join] > 0 && join_type_allows_filtering && has_non_const_keys)
                         {
@@ -2724,7 +2724,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsA
 {
     auto dag = expression->dag.clone();
     if (expression->project_input)
-        dag.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+        dag.appendInputsForUnusedColumns(query_plan.getCurrentDataStream());
 
     auto where_step = std::make_unique<FilterStep>(
         query_plan.getCurrentDataStream(), std::move(dag), getSelectQuery().where()->getColumnName(), remove_filter);
@@ -2874,7 +2874,7 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
 {
     auto dag = expression->dag.clone();
     if (expression->project_input)
-        dag.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+        dag.appendInputsForUnusedColumns(query_plan.getCurrentDataStream());
 
     auto having_step
         = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), std::move(dag), getSelectQuery().having()->getColumnName(), remove_filter);
@@ -2897,7 +2897,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
     {
         dag = expression->dag.clone();
         if (expression->project_input)
-            dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+            dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream());
     }
 
     const Settings & settings = context->getSettingsRef();
@@ -2946,7 +2946,7 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
 
     auto dag = expression->dag.clone();
     if (expression->project_input)
-        dag.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+        dag.appendInputsForUnusedColumns(query_plan.getCurrentDataStream());
 
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(dag));
 

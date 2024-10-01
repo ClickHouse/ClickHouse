@@ -33,7 +33,7 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block main_header)
+static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block & main_header)
 {
     /// Materialize constants in case we don't have it in output header.
     /// This may happen e.g. if we have PREWHERE.
@@ -249,14 +249,14 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         if (query.filter_node)
         {
             expr_or_filter_node.step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputStream(),
+                projection_reading_node.step->getOutputHeader(),
                 std::move(*query.dag),
                 query.filter_node->result_name,
                 true);
         }
         else
             expr_or_filter_node.step = std::make_unique<ExpressionStep>(
-                projection_reading_node.step->getOutputStream(),
+                projection_reading_node.step->getOutputHeader(),
                 std::move(*query.dag));
 
         expr_or_filter_node.children.push_back(&projection_reading_node);
@@ -270,13 +270,13 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     }
     else
     {
-        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputStream();
-        const auto * proj_stream = &next_node->step->getOutputStream();
+        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
+        const auto * proj_stream = &next_node->step->getOutputHeader();
 
-        if (auto materializing = makeMaterializingDAG(proj_stream->header, main_stream.header))
+        if (auto materializing = makeMaterializingDAG(*proj_stream, main_stream))
         {
             auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
-            proj_stream = &converting->getOutputStream();
+            proj_stream = &converting->getOutputHeader();
             auto & expr_node = nodes.emplace_back();
             expr_node.step = std::move(converting);
             expr_node.children.push_back(next_node);
@@ -284,8 +284,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         }
 
         auto & union_node = nodes.emplace_back();
-        DataStreams input_streams = {main_stream, *proj_stream};
-        union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
+        Headers input_headers = {main_stream, *proj_stream};
+        union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
         union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
     }

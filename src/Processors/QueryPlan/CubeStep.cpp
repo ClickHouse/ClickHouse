@@ -25,8 +25,8 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_, bool use_nulls_)
-    : ITransformingStep(input_stream_, generateOutputHeader(params_.getHeader(input_stream_.header, final_), params_.keys, use_nulls_), getTraits())
+CubeStep::CubeStep(const Header & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
+    : ITransformingStep(input_header_, generateOutputHeader(params_.getHeader(input_header_, final_), params_.keys, use_nulls_), getTraits())
     , keys_size(params_.keys_size)
     , params(std::move(params_))
     , final(final_)
@@ -84,7 +84,6 @@ const Aggregator::Params & CubeStep::getParams() const
 
 void CubeStep::updateOutputStream()
 {
-    output_stream = createOutputStream(
-        input_streams.front(), generateOutputHeader(params.getHeader(input_streams.front().header, final), params.keys, use_nulls), getDataStreamTraits());
+    output_header = generateOutputHeader(params.getHeader(input_headers.front(), final), params.keys, use_nulls);
 }
 }

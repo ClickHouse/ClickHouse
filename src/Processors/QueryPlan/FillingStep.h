@@ -11,7 +11,7 @@ class FillingStep : public ITransformingStep
 {
 public:
     FillingStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         SortDescription sort_description_,
         SortDescription fill_description_,
         InterpolateDescriptionPtr interpolate_description_,

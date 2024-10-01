@@ -24,10 +24,10 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
+ArrayJoinStep::ArrayJoinStep(const Header & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
     : ITransformingStep(
-        input_stream_,
-        ArrayJoinTransform::transformHeader(input_stream_.header, array_join_.columns),
+        input_header_,
+        ArrayJoinTransform::transformHeader(input_header_, array_join_.columns),
         getTraits())
     , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
@@ -37,8 +37,7 @@ ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, ArrayJoin array_j
 
 void ArrayJoinStep::updateOutputStream()
 {
-    output_stream = createOutputStream(
-        input_streams.front(), ArrayJoinTransform::transformHeader(input_streams.front().header, array_join.columns), getDataStreamTraits());
+    output_header = ArrayJoinTransform::transformHeader(input_headers.front(), array_join.columns);
 }
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

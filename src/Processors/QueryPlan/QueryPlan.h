@@ -12,7 +12,8 @@
 namespace DB
 {
 
-class DataStream;
+class Block;
+using Header = Block;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -52,7 +53,7 @@ public:
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
+    const Header & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 

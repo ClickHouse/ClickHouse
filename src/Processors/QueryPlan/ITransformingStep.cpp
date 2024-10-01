@@ -4,26 +4,14 @@
 namespace DB
 {
 
-ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_)
+ITransformingStep::ITransformingStep(Block input_header, Block output_header_, Traits traits, bool collect_processors_)
     : transform_traits(std::move(traits.transform_traits))
     , collect_processors(collect_processors_)
     , data_stream_traits(std::move(traits.data_stream_traits))
 {
-    input_streams.emplace_back(std::move(input_stream));
-    output_stream = createOutputStream(input_streams.front(), std::move(output_header), data_stream_traits);
+    input_headers.emplace_back(std::move(input_header));
+    output_header = (std::move(output_header_));
 }
-
-/// TODO: cleanup in the following PR.
-DataStream ITransformingStep::createOutputStream(
-    [[maybe_unused]] const DataStream & input_stream,
-    Block output_header,
-    [[maybe_unused]] const DataStreamTraits & stream_traits)
-{
-    DataStream output_stream{.header = std::move(output_header)};
-
-    return output_stream;
-}
-
 
 QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {

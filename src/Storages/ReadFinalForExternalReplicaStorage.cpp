@@ -78,7 +78,7 @@ void readFinalFromNestedStorage(
 
     if (!expressions->children.empty())
     {
-        const auto & header = query_plan.getCurrentDataStream().header;
+        const auto & header = query_plan.getCurrentDataStream();
         auto syntax = TreeRewriter(context).analyze(expressions, header.getNamesAndTypesList());
         auto actions = ExpressionAnalyzer(expressions, syntax, context).getActionsDAG(true /* add_aliases */, false /* project_result */);
 

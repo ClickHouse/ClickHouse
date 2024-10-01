@@ -112,7 +112,7 @@ ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
     const size_t num_streams_,
     const bool delay_read_for_global_sub_queries_)
     : SourceStepWithFilter(
-        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)},
+        storage_snapshot_->getSampleBlockForColumns(columns_to_read_),
         columns_to_read_,
         query_info_,
         storage_snapshot_,
@@ -131,7 +131,7 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     if (pipe.empty())
     {
         assert(output_stream != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
+        pipe = Pipe(std::make_shared<NullSource>(*output_header));
     }
 
     pipeline.init(std::move(pipe));

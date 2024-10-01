@@ -867,12 +867,12 @@ class ColumnGathererStep : public ITransformingStep
 {
 public:
     ColumnGathererStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const String & rows_sources_temporary_file_name_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
         bool is_result_sparse_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
@@ -904,7 +904,7 @@ public:
 
     void updateOutputStream() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
 private:
@@ -960,12 +960,12 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
 
     /// Union of all parts streams
     {
-        DataStreams input_streams;
-        input_streams.reserve(plans.size());
+        Headers input_headers;
+        input_headers.reserve(plans.size());
         for (auto & plan : plans)
-            input_streams.emplace_back(plan->getCurrentDataStream());
+            input_headers.emplace_back(plan->getCurrentDataStream());
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         merge_column_query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
 
@@ -1366,7 +1366,7 @@ class MergePartsStep : public ITransformingStep
 {
 public:
     MergePartsStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const SortDescription & sort_description_,
         const Names partition_key_columns_,
         const MergeTreeData::MergingParams & merging_params_,
@@ -1376,7 +1376,7 @@ public:
         bool blocks_are_granules_size_,
         bool cleanup_,
         time_t time_of_merge_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
         , sort_description(sort_description_)
         , partition_key_columns(partition_key_columns_)
         , merging_params(merging_params_)
@@ -1475,7 +1475,7 @@ public:
 
     void updateOutputStream() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
 private:
@@ -1509,16 +1509,16 @@ class TTLStep : public ITransformingStep
 {
 public:
     TTLStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const ContextPtr & context_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
         time_t current_time,
         bool force_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
     {
-        transform = std::make_shared<TTLTransform>(context_, input_stream_.header, storage_, metadata_snapshot_, data_part_, current_time, force_);
+        transform = std::make_shared<TTLTransform>(context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_);
         subqueries_for_sets = transform->getSubqueries();
     }
 
@@ -1533,7 +1533,7 @@ public:
 
     void updateOutputStream() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
 private:
@@ -1620,12 +1620,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     /// Union of all parts streams
     {
-        DataStreams input_streams;
-        input_streams.reserve(plans.size());
+        Headers input_headers;
+        input_headers.reserve(plans.size());
         for (auto & plan : plans)
-            input_streams.emplace_back(plan->getCurrentDataStream());
+            input_headers.emplace_back(plan->getCurrentDataStream());
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         merge_parts_query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
 

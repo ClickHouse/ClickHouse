@@ -10,12 +10,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-const DataStream & IQueryPlanStep::getOutputStream() const
+const Header & IQueryPlanStep::getOutputHeader() const
 {
-    if (!hasOutputStream())
+    if (!hasOutputHeader())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
-    return *output_stream;
+    return *output_header;
 }
 
 const SortDescription & IQueryPlanStep::getSortDescription() const

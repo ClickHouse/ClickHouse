@@ -10,7 +10,7 @@ class DistinctStep : public ITransformingStep
 {
 public:
     DistinctStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,

@@ -182,7 +182,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
+    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);

@@ -41,8 +41,8 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     const auto & filter_dag = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
-    const auto & left_stream_input_header = join->getInputStreams().front().header;
-    const auto & right_stream_input_header = join->getInputStreams().back().header;
+    const auto & left_stream_input_header = join->getInputHeaders().front();
+    const auto & right_stream_input_header = join->getInputHeaders().back();
 
     bool left_stream_safe = true;
     bool right_stream_safe = true;

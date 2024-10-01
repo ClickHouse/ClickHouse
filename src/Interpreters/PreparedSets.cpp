@@ -119,7 +119,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     set_and_key->set
         = std::make_shared<Set>(size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values], settings[Setting::transform_null_in]);
-    set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentDataStream().getColumnsWithTypeAndName());
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
@@ -149,7 +149,7 @@ SetPtr FutureSetFromSubquery::get() const
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
-    set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentDataStream().getColumnsWithTypeAndName());
 }
 
 DataTypes FutureSetFromSubquery::getTypes() const

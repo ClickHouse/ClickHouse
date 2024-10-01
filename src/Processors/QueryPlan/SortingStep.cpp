@@ -77,11 +77,11 @@ static ITransformingStep::Traits getTraits(size_t limit)
 }
 
 SortingStep::SortingStep(
-    const DataStream & input_stream,
+    const Header & input_header,
     SortDescription description_,
     UInt64 limit_,
     const Settings & settings_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
     , limit(limit_)
@@ -92,23 +92,23 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
         const Settings & settings_)
-    : SortingStep(input_stream, description_, limit_, settings_)
+    : SortingStep(input_header, description_, limit_, settings_)
 {
     partition_by_description = partition_by_description_;
 }
 
 SortingStep::SortingStep(
-    const DataStream & input_stream_,
+    const Header & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
+    : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
@@ -118,12 +118,12 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-    const DataStream & input_stream,
+    const Header & input_header,
     SortDescription sort_description_,
     size_t max_block_size_,
     UInt64 limit_,
     bool always_read_till_end_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
@@ -135,7 +135,7 @@ SortingStep::SortingStep(
 
 void SortingStep::updateOutputStream()
 {
-    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    output_header = input_headers.front();
 }
 
 void SortingStep::updateLimit(size_t limit_)
