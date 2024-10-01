@@ -478,7 +478,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     String query_string = formattedAST(query_ast);
 
     assert(stage != QueryProcessingStage::Complete);
-    assert(output_stream);
+    assert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
