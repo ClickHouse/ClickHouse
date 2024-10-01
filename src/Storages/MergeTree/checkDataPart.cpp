@@ -425,6 +425,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
         read_settings.remote_fs_prefetch = false;
         read_settings.page_cache_inject_eviction = false;
         read_settings.use_page_cache_for_disks_without_file_cache = false;
+        read_settings.remote_fs_method = RemoteFSReadMethod::read;
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
 
         try
         {
@@ -448,6 +450,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
                     getLogger("checkDataPart"),
                     "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
 
+                /// We were unable to check data part because of some temporary exception
+                /// like Memory limit exceeded. If part is actually broken we will retry check
+                /// with the next read attempt of this data part.
                 return IMergeTreeDataPart::Checksums{};
             }
             throw;
@@ -478,6 +483,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 getLogger("checkDataPart"),
                 "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
 
+            /// We were unable to check data part because of some temporary exception
+            /// like Memory limit exceeded. If part is actually broken we will retry check
+            /// with the next read attempt of this data part.
             return {};
         }
         return drop_cache_and_check();
