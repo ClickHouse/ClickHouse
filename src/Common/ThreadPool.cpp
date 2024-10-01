@@ -53,7 +53,7 @@ namespace
     {
         std::optional<std::reference_wrapper<std::atomic<int64_t>>> atomic_var;
 
-        // Delete copy constructor and copy assignment operator
+        // Deleted copy constructor and copy assignment operator
         ScopedDecrement(const ScopedDecrement&) = delete;
         ScopedDecrement& operator=(const ScopedDecrement&) = delete;
 
@@ -105,11 +105,11 @@ public:
     bool enable_job_stack_trace = false;
     Stopwatch job_create_time;
 
-    // Delete copy constructor and copy assignment operator
+    // Deleted copy constructor and copy assignment operator
     JobWithPriority(const JobWithPriority&) = delete;
     JobWithPriority& operator=(const JobWithPriority&) = delete;
 
-    // Define move constructor and move assignment operator
+    // Move constructor and move assignment operator
     JobWithPriority(JobWithPriority&&) noexcept = default;
     JobWithPriority& operator=(JobWithPriority&&) noexcept = default;
 
@@ -175,8 +175,8 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
 {
-    chassert(max_threads <= MAX_THEORETICAL_THREAD_COUNT);
-    chassert(max_free_threads <= MAX_THEORETICAL_THREAD_COUNT);
+    max_threads = std::min(max_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
+    max_free_threads = std::min(max_free_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
     available_threads.store(0, std::memory_order_relaxed);
 }
@@ -184,7 +184,7 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
 template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
-    chassert(value <= MAX_THEORETICAL_THREAD_COUNT);
+    value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
     remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
 
@@ -220,7 +220,7 @@ size_t ThreadPoolImpl<Thread>::getMaxThreads() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 {
-    chassert(value <= MAX_THEORETICAL_THREAD_COUNT);
+    value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
     bool need_finish_free_threads = (value < max_free_threads);
 
@@ -275,7 +275,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
 
-    // Try to create a new thread if all existing threads are busy and there is capacity.
     while (currently_available_threads <= 0 && capacity > 0)
     {
         if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1, std::memory_order_relaxed))
@@ -293,11 +292,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 return on_error("failed to start the thread");
             }
         }
-        else
-        {
-            capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-            currently_available_threads = available_threads.load(std::memory_order_relaxed);
-        }
+        // capacity gets reloaded by (unsuccessful) compare_exchange_weak
+        currently_available_threads = available_threads.load(std::memory_order_relaxed);
     }
 
     bool inject_fault = CannotAllocateThreadFaultInjector::injectFault();
@@ -356,8 +352,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         {
             try
             {
-                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
                 remaining_pool_capacity.fetch_sub(1, std::memory_order_relaxed);
+                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
             }
             catch (...)
             {
@@ -381,7 +377,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 return on_error("cannot emplace the thread in the pool");
             }
         }
-        else // we have a thread but there is not space for that in the pool.
+        else // we have a thread but there is no space for that in the pool.
         {
             new_thread.reset();
         }
@@ -431,31 +427,23 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
     {
         std::unique_ptr<ThreadFromThreadPool> new_thread;
 
-        while (true)
+        int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+
+        while (capacity > 0)
         {
-            int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-
-            if (capacity == 0)
-                break;
-
             if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1, std::memory_order_relaxed))
             {
                 try
                 {
                     // Successfully decremented, attempt to create a new thread
                     new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                    break;  // Exit loop if thread creation succeeds
                 }
                 catch (...)
                 {
                     // Failed to create the thread, restore capacity
                     remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                    break;
                 }
-            }
-            else
-            {
-                capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+                break;  // Exit loop whether thread creation succeeded or not
             }
         }
 
@@ -463,7 +451,6 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
             break; /// failed to start more threads
 
         typename ThreadFromThreadPool::ThreadList::iterator thread_slot;
-
 
         try
         {
@@ -629,7 +616,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::it
     /// no parallelism is expected here. So the only valid transition for the start method is Preparing to Running.
     chassert(thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing);
     thread_it = it;
-    thread_state.store(ThreadState::Running); /// if worker was waiting for finishing the initialization - let it finish.
+    thread_state.store(ThreadState::Running, std::memory_order_relaxed); /// now worker can start executing the main loop
 }
 
 template <typename Thread>
@@ -652,17 +639,21 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::removeSelfFromPoolNoPoolLock(
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 {
-    // the thread destructed, so the capacity grows
     parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
+
+    // The thread is being destructed, so the remaining pool capacity increases
     parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
 
-    thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
+    // If the worker was still waiting in the loop for thread initialization,
+    // signal it to terminate and be destroyed now.
+    thread_state.store(ThreadState::Destructing, std::memory_order_relaxed);
 
     join();
 
     ProfileEvents::increment(
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
 }
+
 
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
