@@ -1623,6 +1623,7 @@ If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Mo
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
+Aliases: `time_bucket`, `date_bin`.
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function, e.g.
 
@@ -1630,15 +1631,13 @@ The second overload emulates TimescaleDB's `time_bucket()` function, respectivel
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));
 ```
 
-result:
+Result:
 
 ``` reference
 ┌───toStartOfInterval(...)─┐
 │      2023-01-01 14:44:30 │
 └──────────────────────────┘
 ```
-
-Aliases: `time_bucket`, `date_bin`.
 
 **See Also**
 - [date_trunc](#date_trunc)
