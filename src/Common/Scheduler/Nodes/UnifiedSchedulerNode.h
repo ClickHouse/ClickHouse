@@ -87,6 +87,8 @@ private:
         SchedulerNodePtr root; /// FairPolicy node is used if multiple children with the same priority are attached
         std::unordered_map<String, UnifiedSchedulerNodePtr> children; // basename -> child
 
+        bool empty() const { return children.empty(); }
+
         SchedulerNodePtr getRoot()
         {
             chassert(!children.empty());
@@ -122,6 +124,29 @@ private:
                 reparent(child, root);
             return {}; // Root is the same
         }
+
+        /// Detaches a child.
+        /// Returns root node if it has been changed to a different node, otherwise returns null.
+        /// NOTE: It could also return null if `empty()` after detaching
+        [[nodiscard]] SchedulerNodePtr detachUnifiedChild(EventQueue *, const UnifiedSchedulerNodePtr & child)
+        {
+            auto it = children.find(child->basename);
+            if (it == children.end())
+                return {}; // unknown child
+
+            children.erase(it);
+            if (children.size() == 1)
+            {
+                // Remove fair if the only child has left
+                chassert(root);
+                root.reset(); // it will be still alive because it is attached to hierarchy for now
+                return children.begin()->second; // The last child is a new root now
+            }
+            else if (children.empty())
+                return {}; // We have detached the last child
+            else
+                return {}; // Root is the same (two or more children have left)
+        }
     };
 
     /// Handles all the children nodes with intermediate fair and/or priority nodes
@@ -129,6 +154,9 @@ private:
     {
         SchedulerNodePtr root; /// PriorityPolicy node is used if multiple children with different priority are attached
         std::unordered_map<Priority::Value, FairnessBranch> branches; /// Branches for different priority values
+
+        // Returns true iff there are no unified children attached
+        bool empty() const { return branches.empty(); }
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
@@ -169,6 +197,42 @@ private:
                 return {}; // Root is the same
             }
         }
+
+        /// Detaches a child.
+        /// Returns root node if it has been changed to a different node, otherwise returns null.
+        /// NOTE: It could also return null if `empty()` after detaching
+        [[nodiscard]] SchedulerNodePtr detachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
+        {
+            auto it = branches.find(child->info.priority);
+            if (it == branches.end())
+                return {}; // unknown child
+
+            auto & child_branch = it->second;
+            auto branch_root = child_branch.detachUnifiedChild(event_queue_, child);
+            if (child_branch.empty())
+            {
+                branches.erase(it);
+                if (branches.size() == 1)
+                {
+                    // Remove priority node if the only child-branch has left
+                    chassert(root);
+                    root.reset(); // it will be still alive because it is attached to hierarchy for now
+                    return branches.begin()->second.getRoot(); // The last child-branch is a new root now
+                }
+                else if (branches.empty())
+                    return {}; // We have detached the last child
+                else
+                    return {}; // Root is the same (two or more children-branches have left)
+            }
+            if (branch_root)
+            {
+                if (root)
+                    reparent(branch_root, root);
+                else
+                    return branch_root;
+            }
+            return {}; // Root is the same
+        }
     };
 
     /// Handles degenerate case of zero children (a fifo queue) or delegate to `ChildrenBranch`.
@@ -191,6 +255,21 @@ private:
             if (queue)
                 removeQueue();
             return branch.attachUnifiedChild(event_queue_, child);
+        }
+
+        /// Detaches a child.
+        /// Returns root node if it has been changed to a different node, otherwise returns null.
+        [[nodiscard]] SchedulerNodePtr detachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
+        {
+            if (queue)
+                return {}; // No-op, it already has no children
+            auto branch_root = branch.detachUnifiedChild(event_queue_, child);
+            if (branch.empty())
+            {
+                createQueue(event_queue_);
+                return queue;
+            }
+            return branch_root;
         }
 
     private:
@@ -256,6 +335,22 @@ private:
             }
             return {};
         }
+
+        /// Detaches a child.
+        /// Returns root node if it has been changed to a different node, otherwise returns null.
+        [[nodiscard]] SchedulerNodePtr detachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
+        {
+            if (auto branch_root = branch.detachUnifiedChild(event_queue_, child))
+            {
+                if (semaphore)
+                    reparent(branch_root, semaphore);
+                else if (throttler)
+                    reparent(branch_root, throttler);
+                else
+                    return branch_root;
+            }
+            return {};
+        }
     };
 
 public:
@@ -279,7 +374,8 @@ public:
     /// NOTE: Do not confuse with `removeChild()` which is used only for immediate children
     void detachUnifiedChild(const UnifiedSchedulerNodePtr & child)
     {
-        UNUSED(child); // TODO(serxa): implement detachUnifiedChild()
+        if (auto new_child = impl.detachUnifiedChild(event_queue, child))
+            reparent(new_child, this);
     }
 
     /// Updates intermediate nodes subtree according with new priority (priority is set by the caller beforehand)
