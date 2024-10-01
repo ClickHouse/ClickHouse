@@ -207,7 +207,31 @@ If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which c
 **Syntax**
 
 ```sql
-toTypeName(x)
+toTypeName(value)
+```
+
+**Arguments**
+
+- `value` — The value with any arbitrary.
+
+**Returned value**
+
+- `value` converted to the current data type name. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT toTypeName(123);
+```
+
+Result:
+
+```response
+┌─toTypeName(123)─┐
+│ UInt8           │
+└─────────────────┘
 ```
 
 ## blockSize {#blockSize}
