@@ -439,7 +439,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
         && read_settings.remote_fs_prefetch;
 
     if (use_prefetch)
-        read_settings = read_settings.withNestedBuffer();
+        read_settings.remote_read_buffer_use_external_buffer = true;
 
     auto impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
 

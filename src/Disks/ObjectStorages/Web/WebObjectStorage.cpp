@@ -244,7 +244,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
         getContext(),
         object.bytes_size,
         read_settings,
-        /* use_external_buffer */true);
+        read_settings.remote_read_buffer_use_external_buffer);
 }
 
 void WebObjectStorage::throwNotAllowed()
