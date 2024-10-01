@@ -252,13 +252,13 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
-    extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -2302,12 +2302,21 @@ StoragePtr Context::buildParametrizedViewStorage(const String & database_name, c
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
 
-    auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+    auto original_view_metadata = original_view->getInMemoryMetadataPtr();
+    auto query = original_view_metadata->getSelectQuery().inner_query->clone();
     StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, shared_from_this());
+
+    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    sql_security->type = original_view_metadata->sql_security_type;
+    if (original_view_metadata->definer)
+        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
+    create.sql_security = sql_security;
+
+    auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
                                                 ColumnsDescription(sample_block.getNamesAndTypesList()),

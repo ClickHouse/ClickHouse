@@ -349,6 +349,7 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateT
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
+DECLARE_SETTING_ENUM(IdentifierQuotingRule)
 DECLARE_SETTING_ENUM(IdentifierQuotingStyle)
 
 enum class GroupArrayActionWhenLimitReached : uint8_t
