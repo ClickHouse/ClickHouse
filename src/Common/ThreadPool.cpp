@@ -51,17 +51,39 @@ namespace
 {
     struct ScopedDecrement
     {
-        std::atomic<int64_t>& atomic_var;
+        std::optional<std::reference_wrapper<std::atomic<int64_t>>> atomic_var;
+
+        // Delete copy constructor and copy assignment operator
+        ScopedDecrement(const ScopedDecrement&) = delete;
+        ScopedDecrement& operator=(const ScopedDecrement&) = delete;
+
+        // Move constructor
+        ScopedDecrement(ScopedDecrement&& other) noexcept
+            : atomic_var(std::move(other.atomic_var))
+        {
+            other.atomic_var.reset();
+        }
+
+        // Move assignment operator
+        ScopedDecrement& operator=(ScopedDecrement&& other) noexcept
+        {
+            if (this != &other)
+            {
+                atomic_var.swap(other.atomic_var);
+            }
+            return *this;
+        }
 
         explicit ScopedDecrement(std::atomic<int64_t>& var)
             : atomic_var(var)
         {
-            atomic_var.fetch_sub(1, std::memory_order_relaxed);
+            atomic_var->get().fetch_sub(1, std::memory_order_relaxed);
         }
 
         ~ScopedDecrement()
         {
-            atomic_var.fetch_add(1, std::memory_order_relaxed);
+            if (atomic_var)
+                atomic_var->get().fetch_add(1, std::memory_order_relaxed);
         }
     };
 }
@@ -74,7 +96,7 @@ public:
     Job job;
     Priority priority;
     CurrentMetrics::Increment metric_increment;
-    std::unique_ptr<ScopedDecrement> available_threads_decrement;
+    ScopedDecrement available_threads_decrement;
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
@@ -83,10 +105,18 @@ public:
     bool enable_job_stack_trace = false;
     Stopwatch job_create_time;
 
+    // Delete copy constructor and copy assignment operator
+    JobWithPriority(const JobWithPriority&) = delete;
+    JobWithPriority& operator=(const JobWithPriority&) = delete;
+
+    // Define move constructor and move assignment operator
+    JobWithPriority(JobWithPriority&&) noexcept = default;
+    JobWithPriority& operator=(JobWithPriority&&) noexcept = default;
+
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-        bool capture_frame_pointers, std::unique_ptr<ScopedDecrement> available_threads_decrement_)
+        bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
         : job(job_), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
         thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
@@ -237,7 +267,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     // Decrement available_threads, scoped to the job lifecycle.
     // This ensures that available_threads decreases when a new job starts
     // and automatically increments when the job completes or goes out of scope.
-    auto available_threads_decrement = std::make_unique<ScopedDecrement>(available_threads);
+    ScopedDecrement available_threads_decrement(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
 
