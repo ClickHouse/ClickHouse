@@ -241,6 +241,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += rg.PickRandomlyFromVector(choices);
 	}},
 	{"query_plan_aggregation_in_order", TrueOrFalse},
+	{"query_plan_enable_optimizations", TrueOrFalse},
 	{"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", TrueOrFalse},
 	{"read_in_order_two_level_merge_threshold", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(0, 100));
