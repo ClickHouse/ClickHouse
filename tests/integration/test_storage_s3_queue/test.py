@@ -6,6 +6,7 @@ import string
 import time
 
 import pytest
+import uuid
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -1915,7 +1916,7 @@ def test_upgrade_2(started_cluster):
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
@@ -1956,9 +1957,9 @@ def test_replicated(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
-    table_name = f"test_replicated"
+    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 1000
 
