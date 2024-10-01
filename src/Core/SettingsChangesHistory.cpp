@@ -72,6 +72,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"parallel_replicas_mode", "read_tasks", "read_tasks", "This setting was introduced as a part of making parallel replicas feature Beta"},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
+            {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
+            {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
         }
     },
     {"24.9",
