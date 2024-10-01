@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-from helpers.cluster import ClickHouseCluster
-import pytest
 import random
+import statistics
 import string
-from helpers.network import NetThroughput
 import subprocess
 import time
-import statistics
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.network import NetThroughput
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
