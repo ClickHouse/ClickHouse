@@ -62,7 +62,7 @@ private:
 	std::uniform_int_distribution<uint32_t>(1, 31)
 	};
 
-	std::vector<std::string> common_english{"is","was","are","be","have","had","were","can","said","use",
+	const std::vector<std::string> common_english{"is","was","are","be","have","had","were","can","said","use",
 		"do","will","would","make","like","has","look","write","go","see",
 		"could","been","call","am","find","did","get","come","made","may",
 		"take","know","live","give","think","say","help","tell","follow","came",
@@ -73,10 +73,14 @@ private:
 		"watch","let","cut","talk","being","leave", "water","day","part","sound","work",
 		"place","year","back","thing","name", "sentence","man","line","boy"};
 
-	std::vector<std::string> common_chinese{"认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人",
+	const std::vector<std::string> common_chinese{"认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人",
 		"爸爸", "兄弟姐妹", "漂亮", "照片"};
 
-	std::vector<std::string> json_cols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+	const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "", "😉",
+		"\"", "\\'", "\\t", "\\n", " ", "--", "{", "}", "[", "]", ",", ".",
+		";", ":", "\\\\", "/", "_", "%", "*"};
+
+	const std::vector<std::string> json_cols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
 	std::mt19937 gen;
@@ -345,7 +349,8 @@ public:
 	}
 
 	void NextString(std::string &ret, const uint32_t limit) {
-		const std::string &pick = PickRandomlyFromVector(this->NextBool() ? common_english : common_chinese);
+		const std::string &pick = PickRandomlyFromVector(
+			this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese));
 
 		if (pick.length() < limit) {
 			ret += pick;
