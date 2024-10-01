@@ -50,7 +50,7 @@ bool QueryPlan::isCompleted() const
     return isInitialized() && !root->step->hasOutputHeader();
 }
 
-const Header & QueryPlan::getCurrentDataStream() const
+const Header & QueryPlan::getCurrentHeader() const
 {
     checkInitialized();
     checkNotCompleted();
@@ -75,7 +75,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & step_header = inputs[i];
-        const auto & plan_header = plans[i]->getCurrentDataStream();
+        const auto & plan_header = plans[i]->getCurrentHeader();
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -469,7 +469,7 @@ static void updateDataStreams(QueryPlan::Node & root)
         static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * /*parent_node*/)
         {
             auto & current_step = *current_node->step;
-            if (!current_step.canUpdateInputStream() || current_node->children.empty())
+            if (!current_step.canUpdateInputHeader() || current_node->children.empty())
                 return;
 
             for (const auto * child : current_node->children)
@@ -483,7 +483,7 @@ static void updateDataStreams(QueryPlan::Node & root)
             for (const auto * child : current_node->children)
                 headers.emplace_back(child->step->getOutputHeader());
 
-            current_step.updateInputStreams(std::move(headers));
+            current_step.updateInputHeaders(std::move(headers));
         }
     };
 

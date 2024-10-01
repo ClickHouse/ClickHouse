@@ -87,7 +87,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     std::swap(parent_step, child_step);
     // so far the origin Expression (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
-    sorting_step->updateInputStream(getChildOutputHeader(*child_node));
+    sorting_step->updateInputHeader(getChildOutputHeader(*child_node));
 
     auto description = parent_step->getStepDescription();
     parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));

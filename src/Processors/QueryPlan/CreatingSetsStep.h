@@ -27,7 +27,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;

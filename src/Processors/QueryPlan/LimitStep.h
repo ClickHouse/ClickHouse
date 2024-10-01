@@ -34,7 +34,7 @@ public:
     bool withTies() const { return with_ties; }
 
 private:
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
         output_header = input_headers.front();
     }

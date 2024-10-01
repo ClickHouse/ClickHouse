@@ -95,7 +95,7 @@ public:
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,

@@ -191,7 +191,7 @@ void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) 
     settings.out << '\n';
 }
 
-void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
+void CreateSetAndFilterOnTheFlyStep::updateOutputHeader()
 {
     if (input_headers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_headers.size());

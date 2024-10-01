@@ -129,7 +129,7 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void TotalsHavingStep::updateOutputStream()
+void TotalsHavingStep::updateOutputHeader()
 {
     output_header =
         TotalsHavingTransform::transformHeader(

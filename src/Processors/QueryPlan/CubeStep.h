@@ -21,7 +21,7 @@ public:
 
     const Aggregator::Params & getParams() const;
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     size_t keys_size;
     Aggregator::Params params;

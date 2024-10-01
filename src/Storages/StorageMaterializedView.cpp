@@ -265,7 +265,7 @@ void StorageMaterializedView::read(
     if (query_plan.isInitialized())
     {
         auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
-        auto target_header = query_plan.getCurrentDataStream();
+        auto target_header = query_plan.getCurrentHeader();
 
         /// No need to convert columns that does not exist in MV
         removeNonCommonColumns(mv_header, target_header);
@@ -287,7 +287,7 @@ void StorageMaterializedView::read(
              * In that case underlying table returns joined columns as well.
              */
             converting_actions.removeUnusedActions();
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting_actions));
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting_actions));
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
         }

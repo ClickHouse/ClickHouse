@@ -75,7 +75,7 @@ public:
         bool group_by_use_nulls);
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;

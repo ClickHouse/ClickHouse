@@ -14,7 +14,7 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
         output_header = input_headers.front();
     }

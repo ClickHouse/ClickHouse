@@ -119,7 +119,7 @@ private:
                 break;
             }
 
-            trans->updateInputStream(*input_header);
+            trans->updateInputHeader(*input_header);
             input_header = &trans->getOutputHeader();
 
             /// update sorting properties though stack until reach node which affects order (inclusive)

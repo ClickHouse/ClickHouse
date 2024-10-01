@@ -23,7 +23,7 @@ public:
     bool isLeft() const { return array_join.is_left; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     ArrayJoin array_join;
     bool is_unaligned = false;

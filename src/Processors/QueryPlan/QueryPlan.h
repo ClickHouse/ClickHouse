@@ -53,7 +53,7 @@ public:
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const Header & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
+    const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 

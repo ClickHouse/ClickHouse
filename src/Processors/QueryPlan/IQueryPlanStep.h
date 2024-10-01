@@ -83,26 +83,26 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     /// (e.g. you update data stream traits or correctly remove / add columns).
-    void updateInputStreams(Headers input_headers_)
+    void updateInputHeaders(Headers input_headers_)
     {
-        chassert(canUpdateInputStream());
+        chassert(canUpdateInputHeader());
         input_headers = std::move(input_headers_);
-        updateOutputStream();
+        updateOutputHeader();
     }
 
-    void updateInputStream(Header input_header) { updateInputStreams(Headers{input_header}); }
+    void updateInputHeader(Header input_header) { updateInputHeaders(Headers{input_header}); }
 
-    void updateInputStream(Header input_header, size_t idx)
+    void updateInputHeader(Header input_header, size_t idx)
     {
-        chassert(canUpdateInputStream() && idx < input_headers.size());
+        chassert(canUpdateInputHeader() && idx < input_headers.size());
         input_headers[idx] = input_header;
-        updateOutputStream();
+        updateOutputHeader();
     }
 
-    virtual bool canUpdateInputStream() const { return false; }
+    virtual bool canUpdateInputHeader() const { return false; }
 
 protected:
-    virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+    virtual void updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 
     Headers input_headers;
     std::optional<Header> output_header;

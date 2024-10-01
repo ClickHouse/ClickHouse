@@ -41,7 +41,7 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
 
     Aggregator::Params params;

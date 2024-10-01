@@ -29,11 +29,11 @@ static Block checkHeaders(const Headers & input_headers)
 UnionStep::UnionStep(Headers input_headers_, size_t max_threads_)
     : max_threads(max_threads_)
 {
-    updateInputStreams(std::move(input_headers_));
-    updateOutputStream();
+    updateInputHeaders(std::move(input_headers_));
+    updateOutputHeader();
 }
 
-void UnionStep::updateOutputStream()
+void UnionStep::updateOutputHeader()
 {
     output_header = checkHeaders(input_headers);
 }

@@ -27,7 +27,7 @@ public:
     const SortDescription & getSortDescription() const override { return sort_description; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     SortDescription sort_description;
     SortDescription fill_description;

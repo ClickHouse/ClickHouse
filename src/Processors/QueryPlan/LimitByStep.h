@@ -20,7 +20,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
         output_header = input_headers.front();
     }

@@ -78,12 +78,12 @@ void readFinalFromNestedStorage(
 
     if (!expressions->children.empty())
     {
-        const auto & header = query_plan.getCurrentDataStream();
+        const auto & header = query_plan.getCurrentHeader();
         auto syntax = TreeRewriter(context).analyze(expressions, header.getNamesAndTypesList());
         auto actions = ExpressionAnalyzer(expressions, syntax, context).getActionsDAG(true /* add_aliases */, false /* project_result */);
 
         auto step = std::make_unique<FilterStep>(
-            query_plan.getCurrentDataStream(),
+            query_plan.getCurrentHeader(),
             std::move(actions),
             filter_column_name,
             false);

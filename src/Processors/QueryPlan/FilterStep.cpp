@@ -91,7 +91,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Expression", expression->toTree());
 }
 
-void FilterStep::updateOutputStream()
+void FilterStep::updateOutputHeader()
 {
     output_header = FilterTransform::transformHeader(input_headers.front(), &actions_dag, filter_column_name, remove_filter_column);
 

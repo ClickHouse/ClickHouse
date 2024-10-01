@@ -80,7 +80,7 @@ void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void FillingStep::updateOutputStream()
+void FillingStep::updateOutputHeader()
 {
     output_header = FillingTransform::transformHeader(input_headers.front(), sort_description);
 }

@@ -35,7 +35,7 @@ ArrayJoinStep::ArrayJoinStep(const Header & input_header_, ArrayJoin array_join_
 {
 }
 
-void ArrayJoinStep::updateOutputStream()
+void ArrayJoinStep::updateOutputHeader()
 {
     output_header = ArrayJoinTransform::transformHeader(input_headers.front(), array_join.columns);
 }

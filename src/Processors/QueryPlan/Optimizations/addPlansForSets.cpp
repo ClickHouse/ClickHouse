@@ -21,7 +21,7 @@ bool addPlansForSets(QueryPlan & root_plan, QueryPlan::Node & node, QueryPlan::N
 
     for (const auto & plan : plans)
     {
-        input_headers.push_back(plan->getCurrentDataStream());
+        input_headers.push_back(plan->getCurrentHeader());
         node.children.push_back(plan->getRootNode());
         auto [add_nodes, add_resources] = QueryPlan::detachNodesAndResources(std::move(*plan));
         nodes.splice(nodes.end(), std::move(add_nodes));
