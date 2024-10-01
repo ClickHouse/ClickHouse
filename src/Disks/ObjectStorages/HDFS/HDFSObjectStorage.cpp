@@ -82,7 +82,12 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
     return std::make_unique<ReadBufferFromHDFS>(
-        fs::path(url_without_path) / "", fs::path(data_directory) / path, config, patchSettings(read_settings));
+        fs::path(url_without_path) / "",
+        fs::path(data_directory) / path,
+        config,
+        patchSettings(read_settings),
+        /* read_until_position */0,
+        read_settings.remote_read_buffer_use_external_buffer);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
