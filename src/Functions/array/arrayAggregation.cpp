@@ -154,7 +154,7 @@ struct ArrayAggregateImpl
 
     template <AggregateOperation op = aggregate_operation>
     requires(op == AggregateOperation::min || op == AggregateOperation::max)
-    static bool executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
         const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(&*mapped);
         if (const_column)
@@ -162,60 +162,45 @@ struct ArrayAggregateImpl
             MutableColumnPtr res_column = const_column->getDataColumn().cloneEmpty();
             res_column->insertMany(const_column->getField(), offsets.size());
             res_ptr = std::move(res_column);
-            return true;
+            return;
         }
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
         static constexpr int nan_null_direction_hint = aggregate_operation == AggregateOperation::min ? 1 : -1;
 
-        if (offsets.size() == 1 && offsets[0] != 0)
+        /// TODO: Introduce row_begin and row_end to getPermutation or an equivalent function to use that instead
+        /// (same use case as SingleValueDataBase::getSmallestIndex)
+        size_t start = 0;
+        for (size_t offset = 0; offset < offsets.size(); ++offset)
         {
-            /// Fast path: Use permutation (which in some cases is optimized) to find the extreme value
-            constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
-            constexpr IColumn::PermutationSortDirection direction = aggregate_operation == AggregateOperation::min
-                ? IColumn::PermutationSortDirection::Ascending
-                : IColumn::PermutationSortDirection::Descending;
-            IColumn::Permutation permutation;
-            constexpr UInt64 limit = 1;
-            mapped->getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
-            res_column->insertFrom(*mapped, permutation[0]);
-        }
-        else
-        {
-            /// TODO: Introduce row_begin and row_end to getPermutation (same case as SingleValueDataBase::getSmallestIndex)
-            size_t start = 0;
-            for (size_t offset = 0; offset < offsets.size(); ++offset)
+            /// Array is empty
+            if (offsets[offset] == start)
             {
-                /// Array is empty
-                if (offsets[offset] == start)
-                {
-                    res_column->insertDefault();
-                    continue;
-                }
-
-                size_t index = start;
-                for (size_t i = index + 1; i < offsets[offset]; i++)
-                {
-                    if constexpr (aggregate_operation == AggregateOperation::min)
-                    {
-                        if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) < 0))
-                            index = i;
-                    }
-                    else
-                    {
-                        if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) > 0))
-                            index = i;
-                    }
-                }
-
-                res_column->insertFrom(*mapped, index);
-                start = offsets[offset];
+                res_column->insertDefault();
+                continue;
             }
+
+            size_t index = start;
+            for (size_t i = index + 1; i < offsets[offset]; i++)
+            {
+                if constexpr (aggregate_operation == AggregateOperation::min)
+                {
+                    if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) < 0))
+                        index = i;
+                }
+                else
+                {
+                    if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) > 0))
+                        index = i;
+                }
+            }
+
+            res_column->insertFrom(*mapped, index);
+            start = offsets[offset];
         }
 
         chassert(res_column->size() == offsets.size());
         res_ptr = std::move(res_column);
-        return true;
     }
 
     template <typename Element>
@@ -414,8 +399,8 @@ struct ArrayAggregateImpl
 
         if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
         {
-            if (executeMinOrMax(mapped, offsets, res))
-                return res;
+            executeMinOrMax(mapped, offsets, res);
+            return res;
         }
         else
         {
