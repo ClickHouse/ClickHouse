@@ -100,6 +100,7 @@ BlockWriteBytes
 BlockWriteMerges
 BlockWriteOps
 BlockWriteTime
+Boncz
 Bool
 BrokenDistributedFilesToInsert
 Bugfix
@@ -248,6 +249,7 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
+Dresseler
 Durre
 ECMA
 ETag
@@ -486,6 +488,7 @@ Kubernetes
 LDAP
 LGPL
 LIMITs
+LINEITEM
 LLDB
 LLVM's
 LOCALTIME
@@ -612,6 +615,7 @@ NVMe
 NYPD
 NaNs
 Nagios
+Nambiar
 Namenode
 NamesAndTypesList
 Nano
@@ -740,6 +744,7 @@ PendingAsyncInsert
 Percona
 PhpStorm
 PlantUML
+Poess
 PointDistKm
 PointDistM
 PointDistRads
@@ -795,7 +800,6 @@ QuoteMeta
 RBAC
 RClickHouse
 RHEL
-RIPEMD
 ROLLUP
 RWLock
 RWLockActiveReaders
@@ -848,6 +852,7 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
+RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -1930,7 +1935,6 @@ jsoncompactstrings
 jsoncompactstringseachrow
 jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
-jsoncompactwithprogress
 jsoneachrow
 jsoneachrowwithprogress
 jsonobjecteachrow
@@ -2006,6 +2010,7 @@ linearizable
 linearized
 lineasstring
 linefeeds
+lineitem
 lineorder
 linestring
 linux
@@ -2859,6 +2864,8 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+tpcds
+tpch
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
@@ -3042,3 +3049,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+postgres
