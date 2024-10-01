@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>praktika report</title>
+    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">
+    <style>
+        #footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #1F1F1C;
+            color: white;
+            padding: 15px 20px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between; /* Align left and right parts */
+            align-items: center;
+            z-index: 1000;
+            box-shadow: 0px -2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        #footer .left a::before {
+            content: none;
+        }
+
+        /* make some space around '/' in the navigation line */
+        #footer .left span.separator {
+            margin-left: 5px;
+            margin-right: 5px;
+        }
+
+        #footer .right {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        #footer a {
+            color: white;
+            text-decoration: none;
+        }
+
+        #footer .right a::before {
+            content: "#";
+            margin-left: 10px;
+            color: #e0e0e0;
+        }
+
+        #footer a:hover {
+            text-decoration: underline;
+        }
+
+        #title {
+            margin: 0;
+            padding: 0;
+            display: block;
+            font-size: 14px;
+            color: black;
+            text-align: center;
+        }
+
+        body {
+            font-family: monospace, sans-serif;
+            padding: 20px;
+            max-width: 100%; /* Ensure the layout spans the full width of the page */
+            margin: auto;
+            padding-bottom: 60px;
+            background-color: white;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+
+        #layout-container {
+            display: flex;
+            align-items: flex-start; /* Align the content/links and table at the top */
+        }
+
+        #left-side {
+            display: flex;
+            flex-direction: column;
+            width: 300px; /* Fixed width for the left side */
+            flex-shrink: 0; /* Prevent the left side from shrinking */
+        }
+
+        #content {
+            padding: 10px;
+            margin-top: 15px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+
+        #links {
+            margin-top: 10px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        #links a {
+            display: block;
+            margin-bottom: 5px;
+            padding: 5px 10px;
+            background-color: #D5D5D5;
+            color: black;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+
+        #links a:hover {
+            background-color: #D5D5D5;
+        }
+
+        #results-table-container {
+            flex-grow: 1; /* Allow the table to take remaining space */
+            margin-left: 20px;
+            padding: 15px;
+            margin-top: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0;
+        }
+
+        th.name-column, td.name-column {
+            max-width: 400px;  /* Set the maximum width for the column */
+            white-space: nowrap;  /* Prevent text from wrapping */
+            overflow: hidden;  /* Hide the overflowed text */
+            text-overflow: ellipsis;  /* Show ellipsis (...) for overflowed text */
+        }
+
+        th.info-column, td.info-column {
+            max-width: 400px;  /* Set the maximum width for the column */
+            white-space: nowrap;  /* Prevent text from wrapping */
+            overflow: hidden;  /* Hide the overflowed text */
+            text-overflow: ellipsis;  /* Show ellipsis (...) for overflowed text */
+        }
+
+        th, td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f4f4f4;
+        }
+
+        .status-success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .status-fail {
+            color: red;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            color: #d4a017;
+            font-weight: bold;
+        }
+
+        .status-broken {
+            color: purple;
+            font-weight: bold;
+        }
+
+        .status-run {
+            color: blue;
+            font-weight: bold;
+        }
+
+        .status-error {
+            color: darkred;
+            font-weight: bold;
+        }
+
+        .status-other {
+            color: grey;
+            font-weight: bold;
+        }
+
+        .json-key {
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .json-value {
+            margin-left: 20px;
+        }
+
+        .json-value a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .json-value a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+<h1 id="title">Loading...</h1>
+<div id="layout-container">
+    <div id="left-side">
+        <div id="content"></div>
+        <div id="links"></div>
+    </div>
+    <div id="results-table-container">
+        <div id="results-table"></div>
+    </div>
+</div>
+<footer id="footer">
+    <div class="left"></div>
+    <div class="right">|</div>
+</footer>
+
+<script>
+    // Function to format timestamp to "DD-mmm-YYYY HH:MM:SS.MM"
+    function formatTimestamp(timestamp, showDate = true) {
+        const date = new Date(timestamp * 1000);
+        const day = String(date.getDate()).padStart(2, '0');
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const month = monthNames[date.getMonth()];
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        const milliseconds = String(date.getMilliseconds()).padStart(2, '0');
+
+        // If showDate is true, return date and time, otherwise return only time
+        return showDate
+            ? `${day}-${month}-${year} ${hours}:${minutes}:${seconds}.${milliseconds}`
+            : `${hours}:${minutes}:${seconds}.${milliseconds}`;
+    }
+
+    // Function to determine status class based on value
+    function getStatusClass(status) {
+        const lowerStatus = status.toLowerCase();
+        if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
+        if (lowerStatus.includes('fail')) return 'status-fail';
+        if (lowerStatus.includes('pending')) return 'status-pending';
+        if (lowerStatus.includes('broken')) return 'status-broken';
+        if (lowerStatus.includes('run')) return 'status-run';
+        if (lowerStatus.includes('error')) return 'status-error';
+        return 'status-other';
+    }
+
+    // Function to format duration from seconds to "HH:MM:SS"
+    function formatDuration(durationInSeconds) {
+        // Check if the duration is empty, null, or not a number
+        if (!durationInSeconds || isNaN(durationInSeconds)) {
+            return '';
+        }
+
+        // Ensure duration is a floating-point number
+        const duration = parseFloat(durationInSeconds);
+
+        // Calculate hours, minutes, seconds, and milliseconds
+        const hours = Math.floor(duration / 3600);
+        const minutes = Math.floor((duration % 3600) / 60);
+        const seconds = Math.floor(duration % 60);
+        const milliseconds = Math.floor((duration % 1) * 100); // Get first two digits of milliseconds
+
+        // Format hours, minutes, and seconds with leading zeros
+        const formattedHours = String(hours).padStart(2, '0');
+        const formattedMinutes = String(minutes).padStart(2, '0');
+        const formattedSeconds = String(seconds).padStart(2, '0');
+        const formattedMilliseconds = String(milliseconds).padStart(2, '0');
+
+        // Return the formatted duration
+        return `${formattedHours}:${formattedMinutes}:${formattedSeconds}.${formattedMilliseconds}`;
+    }
+
+    // Function to create key-value elements with formatting
+    function createKeyValueElements(key, value, parentElement) {
+        // Define fields to exclude
+        const excludedFields = ['html_link', 'files'];
+
+        // Skip processing if the key is in the excluded fields
+        if (excludedFields.includes(key)) {
+            return;
+        }
+
+        const keyElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        keyElement.textContent = key + ':';
+
+        const valueElement = document.createElement('div');
+        valueElement.className = 'json-value';
+
+        if (key === 'duration') {
+            if (value === null) {
+                // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
+                valueElement.textContent = '00:00:00';
+                valueElement.setAttribute('id', 'duration-value');
+            } else {
+                // Format the duration if it's a valid number
+                valueElement.textContent = formatDuration(value);
+            }
+        } else if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
+            const link = document.createElement('a');
+            link.href = value;
+            link.textContent = value.split('/').pop();
+            link.target = '_blank'; // Open in new tab
+            valueElement.appendChild(link);
+        } else if (typeof value === 'number' && key.toLowerCase().includes('time')) {
+            // Convert timestamp to formatted date if key contains 'time'
+            const formattedDate = formatTimestamp(value);
+            valueElement.textContent = formattedDate;
+        } else if (typeof value === 'string' && key.toLowerCase().includes('status')) {
+            // Add status formatting based on value
+            valueElement.classList.add('status-value');
+            valueElement.classList.add(getStatusClass(value));
+            valueElement.textContent = value;
+        } else if (typeof value === 'string' && value.includes('\n')) {
+            // Handle multiline strings by converting '\n' to <br> elements
+            const lines = value.split('\n');
+            lines.forEach((line, index) => {
+                valueElement.appendChild(document.createTextNode(line));
+                if (index < lines.length - 1) {
+                    valueElement.appendChild(document.createElement('br'));
+                }
+            });
+        } else if (typeof value === 'object' && !Array.isArray(value)) {
+            // Handle nested objects
+            const nestedContainer = document.createElement('div');
+            nestedContainer.className = 'json-container';
+            for (const nestedKey in value) {
+                if (value.hasOwnProperty(nestedKey)) {
+                    createKeyValueElements(nestedKey, value[nestedKey], nestedContainer);
+                }
+            }
+            valueElement.appendChild(nestedContainer);
+        } else {
+            valueElement.textContent = value;
+        }
+
+        parentElement.appendChild(keyElement);
+        parentElement.appendChild(valueElement);
+    }
+
+    function navigatePath(jsonObj, nameArray) {
+        let baseParams = new URLSearchParams(window.location.search);
+        let keysToDelete = [];
+        baseParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                keysToDelete.push(key); // Collect the keys to delete
+            }
+        });
+        keysToDelete.forEach((key) => baseParams.delete(key));
+        let pathNames = [];
+        let pathLinks = [];
+        let currentObj = jsonObj;
+
+        // Add the first entry (root level)
+        baseParams.set(`name_0`, currentObj.name);
+        pathNames.push(currentObj.name);
+        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${currentObj.name}</a>`);
+        // Iterate through the nameArray starting at index 0
+        for (const [index, name] of nameArray.entries()) {
+            if (index === 0) continue;
+            if (currentObj && Array.isArray(currentObj.results)) {
+                const nextResult = currentObj.results.find(result => result.name === name);
+                if (nextResult) {
+                    baseParams.set(`name_${index}`, nextResult.name);
+                    pathNames.push(nextResult.name);  // Correctly push nextResult name, not currentObj.name
+                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nextResult.name}</a>`);
+                    currentObj = nextResult; // Move to the next object in the hierarchy
+                } else {
+                    console.error(`Name "${name}" not found in results array.`);
+                    return null; // Name not found in results array
+                }
+            } else {
+                console.error(`Current object is not structured as expected.`);
+                return null; // Current object is not structured as expected
+            }
+        }
+        const footerLeft = document.querySelector('#footer .left');
+        footerLeft.innerHTML = pathLinks.join('');
+
+        return currentObj;
+    }
+
+    // Define the fixed columns globally, so both functions can use it
+    const columns = ['name', 'status', 'start_time', 'duration', 'info'];
+
+    function createResultsTable(results, nest_level) {
+        if (results && Array.isArray(results) && results.length > 0) {
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+            // Get the current URL parameters
+            const currentUrl = new URL(window.location.href);
+
+            // Create table headers based on the fixed columns
+            const headerRow = document.createElement('tr');
+            columns.forEach(column => {
+                const th = document.createElement('th');
+                th.textContent = column;
+                th.style.cursor = 'pointer'; // Make headers clickable
+                th.addEventListener('click', () => sortTable(results, column, tbody, nest_level)); // Add click event to sort the table
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            // Create table rows
+            populateTableRows(tbody, results, columns, nest_level);
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+
+            return table;
+        }
+        return null;
+    }
+
+    function populateTableRows(tbody, results, columns, nest_level) {
+        const currentUrl = new URL(window.location.href);  // Get the current URL
+
+        // Clear existing rows if re-rendering (used in sorting)
+        tbody.innerHTML = '';
+
+        results.forEach((result, index) => {
+            const row = document.createElement('tr');
+
+            columns.forEach(column => {
+                const td = document.createElement('td');
+                const value = result[column];
+
+                if (column === 'name') {
+                    // Create a link for the name field, using name_X
+                    const link = document.createElement('a');
+                    const newUrl = new URL(currentUrl); // Create a fresh copy of the URL for each row
+                    newUrl.searchParams.set(`name_${nest_level}`, value); // Use backticks for string interpolation
+                    link.href = newUrl.toString();
+                    link.textContent = value;
+                    td.classList.add('name-column');
+                    td.appendChild(link);
+                } else if (column === 'status') {
+                    // Apply status formatting
+                    const span = document.createElement('span');
+                    span.className = getStatusClass(value);
+                    span.textContent = value;
+                    td.appendChild(span);
+                } else if (column === 'start_time') {
+                    // Format and display the start_time as a timestamp
+                    td.textContent = value ? formatTimestamp(value, false) : '';
+                } else if (column === 'duration') {
+                    // Format and display the duration
+                    td.textContent = value ? formatDuration(value) : '';
+                } else if (column === 'info') {
+                    // For info and other columns, just display the value
+                    td.textContent = value || '';
+                    td.classList.add('info-column');
+                }
+
+                row.appendChild(td);
+            });
+
+            tbody.appendChild(row);
+        });
+    }
+
+    function sortTable(results, key, tbody, nest_level) {
+        // Find the table header element for the given key
+        let th = null;
+        const tableHeaders = document.querySelectorAll('th'); // Select all table headers
+        tableHeaders.forEach(header => {
+            if (header.textContent.trim().toLowerCase() === key.toLowerCase()) {
+                th = header;
+            }
+        });
+
+        if (!th) {
+            console.error(`No table header found for key: ${key}`);
+            return;
+        }
+
+        // Determine the current sort direction
+        let ascending = th.getAttribute('data-sort-direction') === 'asc' ? false : true;
+
+        // Toggle the sort direction for the next click
+        th.setAttribute('data-sort-direction', ascending ? 'asc' : 'desc');
+
+        // Sort the results array by the given key
+        results.sort((a, b) => {
+            if (a[key] < b[key]) return ascending ? -1 : 1;
+            if (a[key] > b[key]) return ascending ? 1 : -1;
+            return 0;
+        });
+
+        // Re-populate the table with sorted data
+        populateTableRows(tbody, results, columns, nest_level);
+    }
+
+    function loadJSON(PR, sha, nameParams) {
+        const titleElement = document.getElementById('title');
+        let lastModifiedTime = null;
+        const task = nameParams[0].toLowerCase();
+
+        // Construct the URL dynamically based on PR, sha, and name_X
+        const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
+        const path = `${baseUrl}/${encodeURIComponent(PR)}/${encodeURIComponent(sha)}/result_${task}.json`;
+
+        fetch(path, { cache: "no-cache" })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                lastModifiedTime = response.headers.get('Last-Modified');
+                return response.json();
+            })
+            .then(data => {
+                const contentDiv = document.getElementById('content');
+                const linksDiv = document.getElementById('links');
+                const resultsDiv = document.getElementById('results-table');
+                const footerRight = document.querySelector('#footer .right');
+
+                let targetData = navigatePath(data, nameParams);
+                let nest_level = nameParams.length;
+
+                if (targetData) {
+                    titleElement.style.display = 'none';
+
+                    // Handle links
+                    if (Array.isArray(targetData.links) && targetData.links.length > 0) {
+                        targetData.links.forEach(link => {
+                            const a = document.createElement('a');
+                            a.href = link;
+                            a.textContent = link.split('/').pop();
+                            a.target = '_blank';
+                            linksDiv.appendChild(a);
+                        });
+                    }
+
+                    // Handle footer links if present
+                    if (Array.isArray(data.aux_links) && data.aux_links.length > 0) {
+                        data.aux_links.forEach(link => {
+                            const a = document.createElement('a');
+                            a.href = link;
+                            a.textContent = link.split('/').pop();
+                            a.target = '_blank';
+                            footerRight.appendChild(a);
+                        });
+                    }
+
+                    // Remove 'name', 'links', and 'results' from main data to display
+                    const mainData = { ...targetData };
+                    delete mainData.name;
+                    delete mainData.links;
+                    delete mainData.aux_links;
+                    const resultsData = mainData.results;
+                    delete mainData.results;
+
+                    // Display main content and check if duration is null
+                    for (const [key, value] of Object.entries(mainData)) {
+                        createKeyValueElements(key, value, contentDiv);
+                    }
+
+                    // Handle duration update if duration is null and start_time exists
+                    if (mainData.duration === null && mainData.start_time) {
+                        let duration = Math.floor(Date.now() / 1000 - mainData.start_time);
+                        const durationElement = document.getElementById('duration-value');
+
+                        const intervalId = setInterval(() => {
+                            duration++;
+                            durationElement.textContent = formatDuration(duration);
+                        }, 1000);
+                    }
+
+                    // If 'results' exists and is non-empty, create the table
+                    if (Array.isArray(resultsData) && resultsData.length > 0) {
+                        const table = createResultsTable(resultsData, nest_level);
+                        if (table) {
+                            resultsDiv.appendChild(table);
+                        }
+                    }
+                } else {
+                    titleElement.textContent = 'Object Not Found';
+                    titleElement.style.display = 'block';
+                }
+
+                // Set up auto-reload if Last-Modified header is present
+                if (lastModifiedTime) {
+                    setInterval(() => {
+                        checkForUpdate(path, lastModifiedTime);
+                    }, 30000); // 30000 milliseconds = 30 seconds
+                }
+            })
+            .catch(error => {
+                console.error('Error loading JSON:', error);
+                titleElement.textContent = 'Error loading data';
+                titleElement.style.display = 'block';
+            });
+    }
+
+    // Function to check if the JSON file is updated
+    function checkForUpdate(path, lastModifiedTime) {
+        fetch(path, { method: 'HEAD' })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const newLastModifiedTime = response.headers.get('Last-Modified');
+                if (newLastModifiedTime && new Date(newLastModifiedTime) > new Date(lastModifiedTime)) {
+                    // If the JSON file has been updated, reload the page
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error checking for update:', error);
+            });
+    }
+
+    // Initialize the page and load JSON from URL parameter
+    function init() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const PR = urlParams.get('PR');
+        const sha = urlParams.get('sha');
+        const root_name = urlParams.get('name_0');
+        const nameParams = [];
+
+        urlParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                const index = parseInt(key.split('_')[1], 10);
+                nameParams[index] = value;
+            }
+        });
+
+        if (PR && sha && root_name) {
+            loadJSON(PR, sha, nameParams);
+        } else {
+            document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
+        }
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
