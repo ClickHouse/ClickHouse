@@ -67,6 +67,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
         }
     },
     {"24.9",
