@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -11,13 +12,14 @@ namespace ErrorCodes
 }
 
 
-Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
 {
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        const auto & name = names[i];
-        result.insert(i, block.getByName(name));
+        auto src_column = block.getByName(names[i]);
+        src_column.column = recursiveRemoveSparse(src_column.column);
+        result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
