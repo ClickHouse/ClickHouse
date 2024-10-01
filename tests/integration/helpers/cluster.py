@@ -18,6 +18,7 @@ import traceback
 import urllib.parse
 from functools import cache
 from pathlib import Path
+from typing import List, Tuple
 
 import requests
 import urllib3
@@ -101,7 +102,7 @@ def run_and_check(
     timeout=300,
     nothrow=False,
     detach=False,
-):
+) -> str:
     if detach:
         subprocess.Popen(
             args,
@@ -110,11 +111,17 @@ def run_and_check(
             env=env,
             shell=shell,
         )
-        return
+        return ""
 
     logging.debug(f"Command:{args}")
     res = subprocess.run(
-        args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout
+        args,
+        stdout=stdout,
+        stderr=stderr,
+        env=env,
+        shell=shell,
+        timeout=timeout,
+        check=False,
     )
     out = res.stdout.decode("utf-8", "ignore")
     err = res.stderr.decode("utf-8", "ignore")
