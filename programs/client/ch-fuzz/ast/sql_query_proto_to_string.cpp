@@ -1807,7 +1807,6 @@ CONV_FN(CreateTable, create_table) {
     TableDefToString(ret, create_table.table_def());
     ret += ")";
   } else if (create_table.has_table_as()) {
-    ret += " ";
     CreateTableAsToString(ret, create_table.table_as());
   }
   TableEngineToString(ret, create_table.engine());
@@ -2263,6 +2262,13 @@ CONV_FN(SelectIntoFile, intofile) {
   ret += "INTO OUTFILE '";
   ret += intofile.path();
   ret += "'";
+  if (intofile.tstdout()) {
+    ret += " AND STDOUT";
+  }
+  if (intofile.step()) {
+    ret += " ";
+    ret += SelectIntoFile_SelectIntoFileStep_Name(intofile.step());
+  }
   if (intofile.has_compression()) {
     ret += " COMPRESSION '";
     if (intofile.has_level()) {

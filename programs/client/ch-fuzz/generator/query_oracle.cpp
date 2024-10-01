@@ -13,12 +13,10 @@ SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVI
 int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1) {
 	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq1.mutable_inner_query()->mutable_select();
+	sql_query_grammar::SelectIntoFile *sif = ts->mutable_intofile();
 	sql_query_grammar::SelectStatementCore *ssc = ts->mutable_sel()->mutable_select_core();
 	const uint32_t combination = 0;//TODO fix this rg.NextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
-	if (std::filesystem::exists(qfile)) {
-		std::filesystem::resize_file(qfile, 0); //truncate the file
-	}
 	gen.levels[gen.current_level] = QueryLevel(gen.current_level);
 	gen.GenerateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
@@ -37,7 +35,8 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 	ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->set_func(sql_query_grammar::FUNCcount);
 	gen.levels.erase(gen.current_level);
 	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
-	ts->mutable_intofile()->set_path(qfile.generic_string());
+	sif->set_path(qfile.generic_string());
+	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
 }
 
@@ -49,15 +48,13 @@ SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY 
 int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
 	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq2.mutable_inner_query()->mutable_select();
+	sql_query_grammar::SelectIntoFile *sif = ts->mutable_intofile();
 	sql_query_grammar::SelectStatementCore &ssc1 =
 		const_cast<sql_query_grammar::SelectStatementCore &>(sq1.inner_query().select().sel().select_core());
 	sql_query_grammar::SelectStatementCore *ssc2 = ts->mutable_sel()->mutable_select_core();
 	sql_query_grammar::SQLFuncCall *sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 	sql_query_grammar::SQLFuncCall *sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
-	if (std::filesystem::exists(qfile)) {
-		std::filesystem::resize_file(qfile, 0); //truncate the file
-	}
 	sfc1->set_func(sql_query_grammar::FUNCifNull);
 	sfc1->add_args()->mutable_expr()->mutable_lit_val()->set_special_val(sql_query_grammar::SpecialVal::VAL_ZERO);
 	sfc2->set_func(sql_query_grammar::FUNCsum);
@@ -75,7 +72,8 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 		sfc2->add_args()->set_allocated_expr(expr.release_expr());
 	}
 	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
-	ts->mutable_intofile()->set_path(qfile.generic_string());
+	sif->set_path(qfile.generic_string());
+	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
 }
 
@@ -85,16 +83,15 @@ Dump and read table oracle
 int QueryOracle::DumpTableContent(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq1) {
 	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq1.mutable_inner_query()->mutable_select();
+	sql_query_grammar::SelectIntoFile *sif = ts->mutable_intofile();
 	sql_query_grammar::SelectStatementCore *sel = ts->mutable_sel()->mutable_select_core();
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
-	if (std::filesystem::exists(qfile)) {
-		std::filesystem::resize_file(qfile, 0); //truncate the file
-	}
 	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 	jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
 	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
-	ts->mutable_intofile()->set_path(qfile.generic_string());
+	sif->set_path(qfile.generic_string());
+	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
 }
 
@@ -377,13 +374,12 @@ int QueryOracle::GenerateSecondSetting(const sql_query_grammar::SQLQuery &sq1, s
 int QueryOracle::GenerateSettingQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq2) {
 	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq2.mutable_inner_query()->mutable_select();
+	sql_query_grammar::SelectIntoFile *sif = ts->mutable_intofile();
 
-	if (std::filesystem::exists(qfile)) {
-		std::filesystem::resize_file(qfile, 0); //truncate the file
-	}
 	gen.GenerateTopSelect(rg, ts);
 	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
-	ts->mutable_intofile()->set_path(qfile.generic_string());
+	sif->set_path(qfile.generic_string());
+	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
 }
 

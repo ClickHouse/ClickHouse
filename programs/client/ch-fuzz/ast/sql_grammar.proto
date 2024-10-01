@@ -2684,9 +2684,15 @@ message ExplainOption {
 }
 
 message SelectIntoFile {
+  enum SelectIntoFileStep {
+    APPEND = 1;
+    TRUNCATE = 2;
+  }
   required string path = 1;
-  optional FileCompression compression = 2;
-  optional uint32 level = 3;
+  optional bool tstdout = 2;
+  optional SelectIntoFileStep step = 3;
+  optional FileCompression compression = 4;
+  optional uint32 level = 5;
 }
 
 message TopSelect {
