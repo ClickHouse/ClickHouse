@@ -51,7 +51,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     fillPerPartInfos(context_->getSettingsRef());
 }
 
-static size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & columns_to_read)
+static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
     ColumnSize columns_size{};
     for (const auto & col_name : columns_to_read)
@@ -60,10 +60,33 @@ static size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names &
     return columns_size.data_compressed ? columns_size.data_compressed : part.getBytesOnDisk();
 }
 
+static Names
+getFattestSetOfColumnsAmongPrewhereSteps(const IMergeTreeDataPart & part, const std::vector<NamesAndTypesList> & prewhere_steps_columns)
+{
+    size_t max_columns_size = 0;
+    size_t max_columns_idx = 0;
+    for (size_t i = 0; i < prewhere_steps_columns.size(); ++i)
+    {
+        const auto & step_columns = prewhere_steps_columns[i];
+        const size_t columns_size = getSizeOfColumns(part, step_columns.getNames());
+        LOG_DEBUG(
+            &Poco::Logger::get("MergeTreeReadPoolBase"),
+            "step_columns.getNames()={}, columns_size={}",
+            fmt::join(step_columns.getNames(), ", "),
+            columns_size);
+        if (columns_size > max_columns_size)
+        {
+            max_columns_size = columns_size;
+            max_columns_idx = i;
+        }
+    }
+    return prewhere_steps_columns[max_columns_idx].getNames();
+}
+
 static size_t calculateMinMarksPerTask(
     const RangesInDataPart & part,
     const Names & columns_to_read,
-    PrewhereInfoPtr prewhere_info,
+    const std::vector<NamesAndTypesList> & prewhere_steps_columns,
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     const Settings & settings)
 {
@@ -75,10 +98,11 @@ static size_t calculateMinMarksPerTask(
         /// We assume that most of the time prewhere does it's job good meaning that lion's share of the rows is filtered out.
         /// Which means in turn that for most of the rows we will read only the columns from prewhere clause.
         /// So it makes sense to use only them for the estimation.
-        const auto & columns = settings[Setting::merge_tree_determine_task_size_by_prewhere_columns] && prewhere_info
-            ? prewhere_info->prewhere_actions.getRequiredColumnsNames()
+        const auto & columns = settings[Setting::merge_tree_determine_task_size_by_prewhere_columns] && !prewhere_steps_columns.empty()
+            ? getFattestSetOfColumnsAmongPrewhereSteps(*part.data_part, prewhere_steps_columns)
             : columns_to_read;
-        const size_t part_compressed_bytes = getApproxSizeOfPart(*part.data_part, columns);
+        LOG_DEBUG(&Poco::Logger::get("MergeTreeReadPoolBase"), "columns={}", fmt::join(columns, ", "));
+        const size_t part_compressed_bytes = getSizeOfColumns(*part.data_part, columns);
 
         const auto avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
         const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
@@ -166,7 +190,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         read_task_info.min_marks_per_task
-            = calculateMinMarksPerTask(part_with_ranges, column_names, prewhere_info, pool_settings, settings);
+            = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, settings);
         per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 }
