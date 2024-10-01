@@ -92,6 +92,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
+        input_format->setSerializationHints(serialization_hints);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
