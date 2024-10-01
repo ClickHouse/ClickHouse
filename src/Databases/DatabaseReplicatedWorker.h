@@ -36,8 +36,6 @@ public:
                                    DatabaseReplicated * const database, bool committed = false); /// NOLINT
 
     UInt32 getLogPointer() const;
-
-    UInt64 getCurrentInitializationDurationMs() const;
 private:
     bool initializeMainThread() override;
     void initializeReplication();
@@ -58,9 +56,6 @@ private:
     ZooKeeperPtr active_node_holder_zookeeper;
     /// It will remove "active" node when database is detached
     zkutil::EphemeralNodeHolderPtr active_node_holder;
-
-    std::optional<Stopwatch> initialization_duration_timer;
-    mutable std::mutex initialization_duration_timer_mutex;
 };
 
 }

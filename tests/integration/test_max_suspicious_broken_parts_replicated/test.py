@@ -4,10 +4,9 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import os
-
 import pytest
 
+import os
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -224,4 +223,4 @@ def test_corrupted_unexpected_part_ultimate():
         == "1\n"
     )
 
-    assert node.query("SELECT sum(key) FROM broken_table_3") == "145\n"
+    assert node.query("SELECT sum(key) FROM broken_table_3") == "190\n"

@@ -1,7 +1,6 @@
 #include "DirectDictionary.h"
 
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -20,10 +19,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_use_async_executor;
-}
 
 namespace ErrorCodes
 {
@@ -179,8 +174,6 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
                 {
                     if (!mask_filled)
                         (*default_mask)[requested_key_index] = 1;
-
-                    result_column->insertDefault();
                 }
                 else
                 {
@@ -418,7 +411,7 @@ void DirectDictionary<dictionary_key_type>::applySettings(const Settings & setti
     if (const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get()))
     {
         /// Only applicable for CLICKHOUSE dictionary source.
-        use_async_executor = settings[Setting::dictionary_use_async_executor] && clickhouse_source->isLocal();
+        use_async_executor = settings.dictionary_use_async_executor && clickhouse_source->isLocal();
     }
 }
 

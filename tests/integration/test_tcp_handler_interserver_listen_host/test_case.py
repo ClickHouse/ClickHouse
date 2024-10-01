@@ -1,13 +1,10 @@
 """Test Interserver responses on configured IP."""
-
+from pathlib import Path
+import pytest
+from helpers.cluster import ClickHouseCluster
+import requests
 import socket
 import time
-from pathlib import Path
-
-import pytest
-import requests
-
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

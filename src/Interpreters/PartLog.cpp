@@ -90,8 +90,6 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         }
     );
 
-    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return ColumnsDescription
@@ -103,7 +101,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "Can have one of the following values: "
             "NewPart — Inserting of a new data part, "
             "MergeParts — Merging of data parts, "
-            "DownloadPart — Downloading a data part, "
+            "DownloadParts — Downloading a data part, "
             "RemovePart — Removing or detaching a data part using DETACH PARTITION, "
             "MutatePart — Mutating of a data part, "
             "MovePart — Moving the data part from the one disk to another one."},
@@ -144,7 +142,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
 
-        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
 }
 

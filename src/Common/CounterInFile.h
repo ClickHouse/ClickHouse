@@ -37,7 +37,7 @@ namespace fs = std::filesystem;
 class CounterInFile
 {
 private:
-    static constexpr size_t SMALL_READ_WRITE_BUFFER_SIZE = 16;
+    static inline constexpr size_t SMALL_READ_WRITE_BUFFER_SIZE = 16;
 
 public:
     /// path - the name of the file, including the path
@@ -112,12 +112,12 @@ public:
         }
         catch (...)
         {
-            [[maybe_unused]] int err = close(fd);
+            int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        [[maybe_unused]] int err = close(fd);
+        int err = close(fd);
         chassert(!err || errno == EINTR);
         return res;
     }
@@ -182,12 +182,12 @@ public:
         }
         catch (...)
         {
-            [[maybe_unused]] int err = close(fd);
+            int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        [[maybe_unused]] int err = close(fd);
+        int err = close(fd);
         chassert(!err || errno == EINTR);
     }
 

@@ -112,7 +112,7 @@ struct NetlinkMessage
 
             if (bytes_sent <= 0)
             {
-                if (bytes_sent < 0 && errno == EAGAIN)
+                if (errno == EAGAIN)
                     continue;
                 else
                     throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");
@@ -283,7 +283,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
     {
         if (netlink_socket_fd >= 0)
         {
-            [[maybe_unused]] int err = close(netlink_socket_fd);
+            int err = close(netlink_socket_fd);
             chassert(!err || errno == EINTR);
         }
         throw;
@@ -320,7 +320,7 @@ NetlinkMetricsProvider::~NetlinkMetricsProvider()
 {
     if (netlink_socket_fd >= 0)
     {
-        [[maybe_unused]] int err = close(netlink_socket_fd);
+        int err = close(netlink_socket_fd);
         chassert(!err || errno == EINTR);
     }
 }

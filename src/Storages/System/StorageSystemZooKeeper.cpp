@@ -17,7 +17,6 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
@@ -37,16 +36,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_unrestricted_reads_from_keeper;
-    extern const SettingsFloat insert_keeper_fault_injection_probability;
-    extern const SettingsUInt64 insert_keeper_fault_injection_seed;
-    extern const SettingsUInt64 insert_keeper_max_retries;
-    extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
-    extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
-    extern const SettingsMaxThreads max_download_threads;
-}
 
 namespace ErrorCodes
 {
@@ -115,7 +104,7 @@ struct ZkNodeCache
             auto request = zkutil::makeSetRequest(path, value, -1);
             requests.push_back(request);
         }
-        for (const auto & [_, child] : children)
+        for (auto [_, child] : children)
             child->generateRequests(requests);
     }
 };
@@ -130,7 +119,7 @@ public:
     ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
     String getName() const override { return "ZooKeeperSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         size_t rows = block.rows();
@@ -177,7 +166,7 @@ public:
 };
 
 /// Type of path to be fetched
-enum class ZkPathType : uint8_t
+enum class ZkPathType
 {
     Exact, /// Fetch all nodes under this path
     Prefix, /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
@@ -485,9 +474,8 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
 
 void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(added_filter_nodes);
-
-    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef()[Setting::allow_unrestricted_reads_from_keeper]);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
 }
 
 
@@ -516,9 +504,9 @@ Chunk SystemZooKeeperSource::generate()
     /// Use insert settings for now in order not to introduce new settings.
     /// Hopefully insert settings will also be unified and replaced with some generic retry settings.
     ZooKeeperRetriesInfo retries_seetings(
-        settings[Setting::insert_keeper_max_retries],
-        settings[Setting::insert_keeper_retry_initial_backoff_ms],
-        settings[Setting::insert_keeper_retry_max_backoff_ms]);
+        settings.insert_keeper_max_retries,
+        settings.insert_keeper_retry_initial_backoff_ms,
+        settings.insert_keeper_retry_max_backoff_ms);
 
     /// Handles reconnects when needed
     auto get_zookeeper = [&] ()
@@ -526,16 +514,15 @@ Chunk SystemZooKeeperSource::generate()
         if (!zookeeper || zookeeper->expired())
         {
             zookeeper = ZooKeeperWithFaultInjection::createInstance(
-                settings[Setting::insert_keeper_fault_injection_probability],
-                settings[Setting::insert_keeper_fault_injection_seed],
+                settings.insert_keeper_fault_injection_probability,
+                settings.insert_keeper_fault_injection_seed,
                 context->getZooKeeper(),
-                "",
-                nullptr);
+                "", nullptr);
         }
         return zookeeper;
     };
 
-    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef()[Setting::max_download_threads].value);
+    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef().max_download_threads.value);
 
     struct ListTask
     {
@@ -634,20 +621,6 @@ Chunk SystemZooKeeperSource::generate()
         zkutil::ZooKeeper::MultiTryGetResponse get_responses;
         ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
             [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
-
-        /// Add children count to query total rows. We can not get total rows in advance,
-        /// because it is too heavy to get row count for non exact paths.
-        /// Please be aware that there might be minor setbacks in the query progress,
-        /// but overall it should reflect the advancement of the query.
-        size_t children_count = 0;
-        for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
-        {
-            auto & res = get_responses[i];
-            if (res.error == Coordination::Error::ZNONODE)
-                continue; /// Node was deleted meanwhile.
-            children_count += res.stat.numChildren;
-        }
-        addTotalRowsApprox(children_count);
 
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {

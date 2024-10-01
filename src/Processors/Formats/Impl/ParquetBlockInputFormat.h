@@ -7,8 +7,6 @@
 #include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <queue>
-
 namespace parquet { class FileMetaData; }
 namespace parquet::arrow { class FileReader; }
 namespace arrow { class Buffer; class RecordBatchReader;}
@@ -18,7 +16,6 @@ namespace DB
 {
 
 class ArrowColumnToCHColumn;
-class ParquetRecordReader;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -70,7 +67,7 @@ public:
 private:
     Chunk read() override;
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         is_stopped = 1;
     }
@@ -180,7 +177,7 @@ private:
         //               Paused
         //
         // If max_decoding_threads <= 1: NotStarted -> Complete.
-        enum class Status : uint8_t
+        enum class Status
         {
             NotStarted,
             Running,
@@ -210,14 +207,9 @@ private:
         size_t total_rows = 0;
         size_t total_bytes_compressed = 0;
 
-        size_t adaptive_chunk_size = 0;
-
         std::vector<int> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
-        // If use_native_reader, only native_record_reader is used;
-        // otherwise, only native_record_reader is not used.
-        std::shared_ptr<ParquetRecordReader> native_record_reader;
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
         std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;

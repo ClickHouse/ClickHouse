@@ -1,54 +1,51 @@
 #include <Formats/ProtobufSerializer.h>
 
 #if USE_PROTOBUF
-#    include <AggregateFunctions/IAggregateFunction.h>
-#    include <Columns/ColumnAggregateFunction.h>
-#    include <Columns/ColumnArray.h>
-#    include <Columns/ColumnDecimal.h>
-#    include <Columns/ColumnFixedString.h>
-#    include <Columns/ColumnLowCardinality.h>
-#    include <Columns/ColumnMap.h>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/ColumnVector.h>
-#    include <Core/DecimalComparison.h>
-#    include <DataTypes/DataTypeAggregateFunction.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeEnum.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeLowCardinality.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/Serializations/SerializationDecimal.h>
-#    include <DataTypes/Serializations/SerializationFixedString.h>
-#    include <Formats/ProtobufReader.h>
-#    include <Formats/ProtobufWriter.h>
-#    include <Formats/RowInputMissingColumnsFiller.h>
-#    include <IO/Operators.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/WriteBufferFromString.h>
-#    include <IO/WriteHelpers.h>
-#    include <base/range.h>
-#    include <base/sort.h>
-#    include <Common/PODArray.h>
-#    include <Common/logger_useful.h>
-#    include <Common/quoteString.h>
-
-#    include <boost/algorithm/string.hpp>
-#    include <boost/container/flat_map.hpp>
-#    include <boost/container/flat_set.hpp>
-#    include <boost/numeric/conversion/cast.hpp>
-#    include <boost/range/algorithm.hpp>
-#    include <boost/range/algorithm_ext/erase.hpp>
-#    include <google/protobuf/descriptor.h>
-#    include <google/protobuf/descriptor.pb.h>
-
+#   include <Columns/ColumnAggregateFunction.h>
+#   include <Columns/ColumnArray.h>
+#   include <Columns/ColumnDecimal.h>
+#   include <Columns/ColumnLowCardinality.h>
+#   include <Columns/ColumnMap.h>
+#   include <Columns/ColumnNullable.h>
+#   include <Columns/ColumnFixedString.h>
+#   include <Columns/ColumnString.h>
+#   include <Columns/ColumnTuple.h>
+#   include <Columns/ColumnVector.h>
+#   include <Common/PODArray.h>
+#   include <Common/quoteString.h>
+#   include <Core/DecimalComparison.h>
+#   include <DataTypes/DataTypeAggregateFunction.h>
+#   include <DataTypes/DataTypeArray.h>
+#   include <DataTypes/DataTypesDecimal.h>
+#   include <DataTypes/DataTypeDateTime64.h>
+#   include <DataTypes/DataTypeEnum.h>
+#   include <DataTypes/DataTypeFixedString.h>
+#   include <DataTypes/DataTypeLowCardinality.h>
+#   include <DataTypes/DataTypeMap.h>
+#   include <DataTypes/DataTypeNullable.h>
+#   include <DataTypes/DataTypeTuple.h>
+#   include <DataTypes/DataTypeString.h>
+#   include <DataTypes/Serializations/SerializationDecimal.h>
+#   include <DataTypes/Serializations/SerializationFixedString.h>
+#   include <Formats/ProtobufReader.h>
+#   include <Formats/ProtobufWriter.h>
+#   include <Formats/RowInputMissingColumnsFiller.h>
+#   include <IO/Operators.h>
+#   include <IO/ReadBufferFromString.h>
+#   include <IO/ReadHelpers.h>
+#   include <IO/WriteBufferFromString.h>
+#   include <IO/WriteHelpers.h>
+#   include <base/range.h>
+#   include <base/sort.h>
+#   include <google/protobuf/descriptor.h>
+#   include <google/protobuf/descriptor.pb.h>
+#   include <boost/algorithm/string.hpp>
+#   include <boost/container/flat_map.hpp>
+#   include <boost/container/flat_set.hpp>
+#   include <boost/numeric/conversion/cast.hpp>
+#   include <boost/range/algorithm.hpp>
+#   include <boost/range/algorithm_ext/erase.hpp>
+#   include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -143,7 +140,7 @@ namespace
             return false;
         if (google_wrappers_special_treatment && isGoogleWrapperField(field_descriptor))
             return false;
-        return field_descriptor.message_type() || !field_descriptor.has_presence();
+        return field_descriptor.message_type() || (field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
     }
 
     // Should we pack repeated values while storing them.
@@ -171,7 +168,9 @@ namespace
             default:
                 return false;
         }
-        return field_descriptor.is_packed();
+        if (field_descriptor.options().has_packed())
+            return field_descriptor.options().packed();
+        return field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
     }
 
     WriteBuffer & writeIndent(WriteBuffer & out, size_t size) { return out << String(size * 4, ' '); }
@@ -1719,7 +1718,9 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf, lut);
-            return std::max<time_t>(tm, 0);
+            if (tm < 0)
+                tm = 0;
+            return tm;
         }
     };
 
@@ -3322,152 +3323,137 @@ namespace
                     }
                 }
 
-                /// Complex case: one or more columns are serialized as a nested message.
                 for (const auto & [field_descriptor, suffix] : field_descriptors_with_suffixes)
                 {
-                    if (suffix.empty())
-                        continue;
-
-                    std::vector<size_t> nested_column_indices;
-                    std::vector<std::string_view> nested_column_names;
-                    nested_column_indices.reserve(num_columns - used_column_indices.size());
-                    nested_column_names.reserve(num_columns - used_column_indices.size());
-                    nested_column_indices.push_back(column_idx);
-                    nested_column_names.push_back(suffix);
-
-                    for (size_t j : collections::range(column_idx + 1, num_columns))
+                    if (!suffix.empty())
                     {
-                        if (used_column_indices_sorted.count(j))
-                            continue;
-                        std::string_view other_suffix;
-                        if (!columnNameStartsWithFieldName(column_names[j], *field_descriptor, other_suffix))
-                            continue;
-                        nested_column_indices.push_back(j);
-                        nested_column_names.push_back(other_suffix);
-                    }
+                        /// Complex case: one or more columns are serialized as a nested message.
+                        std::vector<size_t> nested_column_indices;
+                        std::vector<std::string_view> nested_column_names;
+                        nested_column_indices.reserve(num_columns - used_column_indices.size());
+                        nested_column_names.reserve(num_columns - used_column_indices.size());
+                        nested_column_indices.push_back(column_idx);
+                        nested_column_names.push_back(suffix);
 
-                    DataTypes nested_data_types;
-                    nested_data_types.reserve(nested_column_indices.size());
-                    for (size_t j : nested_column_indices)
-                        nested_data_types.push_back(data_types[j]);
-
-                    /// Now we have up to `nested_message_column_names.size()` columns
-                    /// which can be serialized as one or many nested message(s)
-
-                    /// If the field is repeated, and ALL matching columns are array, we serialize as an array of nested messages.
-                    /// Otherwise, we first try to serialize those columns as one nested message,
-                    /// then, if failed, as an array of nested messages (on condition if those columns are array).
-
-                    bool repeated_field_matching_nested_columns_are_all_arrays = false;
-                    bool repeated_field_matching_nested_columns_have_some_arrays = false;
-                    if (field_descriptor->is_repeated())
-                    {
-                        repeated_field_matching_nested_columns_are_all_arrays = true;
-                        for (const auto & nested_data_type : nested_data_types)
+                        for (size_t j : collections::range(column_idx + 1, num_columns))
                         {
-                            if (nested_data_type->getTypeId() == TypeIndex::Array)
-                                repeated_field_matching_nested_columns_have_some_arrays = true;
-                            else
-                                repeated_field_matching_nested_columns_are_all_arrays = false;
-                        }
-                    }
-
-                    std::vector<size_t> used_column_indices_in_nested;
-                    auto attempt_build_serializer = [&](const DataTypes & passed_nested_data_types)
-                    {
-                        return buildMessageSerializerImpl(
-                            nested_column_names.size(),
-                            nested_column_names.data(),
-                            passed_nested_data_types.data(),
-                            *field_descriptor->message_type(),
-                            /* with_length_delimiter = */ false,
-                            google_wrappers_special_treatment,
-                            field_descriptor,
-                            used_column_indices_in_nested,
-                            /* columns_are_reordered_outside = */ true,
-                            /* check_nested_while_filling_missing_columns = */ false);
-
-                        /// `columns_are_reordered_outside` is true because column indices are
-                        /// going to be transformed and then written to the outer message,
-                        /// see next calls to add_field_serializer() further below.
-                    };
-
-                    auto attempt_unwrap_and_build_array_serializer = [&]()
-                    {
-                        DataTypes unwrapped_nested_data_types;
-                        unwrapped_nested_data_types.reserve(nested_data_types.size());
-
-                        for (DataTypePtr & dt : nested_data_types)
-                            unwrapped_nested_data_types.push_back(assert_cast<const DataTypeArray &>(*dt).getNestedType());
-
-                        if (auto serializer = attempt_build_serializer(unwrapped_nested_data_types))
-                        {
-                            std::vector<std::string_view> column_names_used;
-                            column_names_used.reserve(used_column_indices_in_nested.size());
-                            for (const size_t i : used_column_indices_in_nested)
-                                column_names_used.emplace_back(nested_column_names[i]);
-
-                            auto array_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
-                            std::move(column_names_used), field_descriptor, std::move(serializer), get_root_desc_function);
-
-                            transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
-                            add_field_serializer(column_name,std::move(used_column_indices_in_nested), *field_descriptor, std::move(array_serializer));
-
-                            return true;
+                            if (used_column_indices_sorted.count(j))
+                                continue;
+                            std::string_view other_suffix;
+                            if (!columnNameStartsWithFieldName(column_names[j], *field_descriptor, other_suffix))
+                                continue;
+                            nested_column_indices.push_back(j);
+                            nested_column_names.push_back(other_suffix);
                         }
 
-                        return false;
-                    };
+                        DataTypes nested_data_types;
+                        nested_data_types.reserve(nested_column_indices.size());
+                        for (size_t j : nested_column_indices)
+                            nested_data_types.push_back(data_types[j]);
 
-                    /// if the protobuf field has the repeated label,
-                    /// for ALL matching nested cols, since they are all of type array
-                    /// try as ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages
-                    if (repeated_field_matching_nested_columns_are_all_arrays)
-                    {
-                        if (attempt_unwrap_and_build_array_serializer())
-                            break;
-                    }
+                        /// Now we have up to `nested_message_column_names.size()` columns
+                        /// which can be serialized as a nested message.
 
-                    /// for ALL matching nested cols
-                    /// try as ProtobufSerializerMessage
-                    try
-                    {
-                        if (auto serializer = attempt_build_serializer(nested_data_types))
+                        /// We will try to serialize those columns as one nested message,
+                        /// then, if failed, as an array of nested messages (on condition if those columns are array).
+                        bool has_fallback_to_array_of_nested_messages = false;
+                        if (field_descriptor->is_repeated())
                         {
-                            transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
-                            add_field_serializer(column_name,std::move(used_column_indices_in_nested), *field_descriptor, std::move(serializer));
-                            break;
+                            bool has_arrays
+                                = boost::range::find_if(
+                                      nested_data_types, [](const DataTypePtr & dt) { return (dt->getTypeId() == TypeIndex::Array); })
+                                != nested_data_types.end();
+                            if (has_arrays)
+                                has_fallback_to_array_of_nested_messages = true;
                         }
-                    }
 
-                    catch (Exception & e)
-                    {
-                        if ((e.code() != ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED) || !repeated_field_matching_nested_columns_have_some_arrays)
-                            throw;
-                    }
+                        /// Try to serialize those columns as one nested message.
+                        try
+                        {
+                            std::vector<size_t> used_column_indices_in_nested;
+                            auto nested_message_serializer = buildMessageSerializerImpl(
+                                nested_column_names.size(),
+                                nested_column_names.data(),
+                                nested_data_types.data(),
+                                *field_descriptor->message_type(),
+                                /* with_length_delimiter = */ false,
+                                google_wrappers_special_treatment,
+                                field_descriptor,
+                                used_column_indices_in_nested,
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
 
-                    /// if the protobuf field has the repeated label,
-                    /// only for the SUBSET of matching nested cols that are of type Array,
-                    /// try as ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages
-                    if (repeated_field_matching_nested_columns_have_some_arrays)
-                    {
-                        removeNonArrayElements(nested_data_types, nested_column_names, nested_column_indices);
-                        if (attempt_unwrap_and_build_array_serializer())
-                            break;
+                            /// `columns_are_reordered_outside` is true because column indices are
+                            /// going to be transformed and then written to the outer message,
+                            /// see add_field_serializer() below.
+
+                            if (nested_message_serializer)
+                            {
+                                transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
+                                add_field_serializer(
+                                    column_name,
+                                    std::move(used_column_indices_in_nested),
+                                    *field_descriptor,
+                                    std::move(nested_message_serializer));
+                                break;
+                            }
+                        }
+                        catch (Exception & e)
+                        {
+                            if ((e.code() != ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED) || !has_fallback_to_array_of_nested_messages)
+                                throw;
+                        }
+
+                        if (has_fallback_to_array_of_nested_messages)
+                        {
+                            /// Try to serialize those columns as an array of nested messages.
+                            removeNonArrayElements(nested_data_types, nested_column_names, nested_column_indices);
+                            for (DataTypePtr & dt : nested_data_types)
+                                dt = assert_cast<const DataTypeArray &>(*dt).getNestedType();
+
+                            std::vector<size_t> used_column_indices_in_nested;
+                            auto nested_message_serializer = buildMessageSerializerImpl(
+                                nested_column_names.size(),
+                                nested_column_names.data(),
+                                nested_data_types.data(),
+                                *field_descriptor->message_type(),
+                                /* with_length_delimiter = */ false,
+                                google_wrappers_special_treatment,
+                                field_descriptor,
+                                used_column_indices_in_nested,
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
+
+                            /// `columns_are_reordered_outside` is true because column indices are
+                            /// going to be transformed and then written to the outer message,
+                            /// see add_field_serializer() below.
+
+                            if (nested_message_serializer)
+                            {
+                                std::vector<std::string_view> column_names_used;
+                                column_names_used.reserve(used_column_indices_in_nested.size());
+                                for (size_t i : used_column_indices_in_nested)
+                                    column_names_used.emplace_back(nested_column_names[i]);
+                                auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
+                                    std::move(column_names_used), field_descriptor, std::move(nested_message_serializer), get_root_desc_function);
+                                transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
+                                add_field_serializer(column_name, std::move(used_column_indices_in_nested), *field_descriptor, std::move(field_serializer));
+                                break;
+                            }
+                        }
                     }
                 }
             }
 
             /// Check that we've found matching columns for all the required fields.
-            if (reader_or_writer.writer)
+            if ((message_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO2)
+                    && reader_or_writer.writer)
             {
                 for (int i : collections::range(message_descriptor.field_count()))
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
                     if (field_descriptor.is_required() && !field_descriptors_in_use.count(&field_descriptor))
-                        throw Exception(
-                            ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD,
-                            "Field {} is required to be set",
+                        throw Exception(ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD, "Field {} is required to be set",
                             quoteString(field_descriptor.full_name()));
                 }
             }
@@ -3732,24 +3718,8 @@ namespace
         return std::make_shared<DataTypeEnum<Type>>(std::move(values));
     }
 
-    std::optional<NameAndTypePair> getNameAndDataTypeFromField(
-        const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat);
-
-    std::optional<NameAndTypePair> getNameAndDataTypeFromFieldRecursive(
-        const google::protobuf::FieldDescriptor * field_descriptor,
-        bool skip_unsupported_fields,
-        bool allow_repeat,
-        std::unordered_set<const google::protobuf::FieldDescriptor *> & pending_resolution)
+    std::optional<NameAndTypePair> getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat = true)
     {
-        if (pending_resolution.contains(field_descriptor))
-        {
-            if (skip_unsupported_fields)
-                return std::nullopt;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support type recursion ({})", field_descriptor->full_name());
-        }
-        pending_resolution.emplace(field_descriptor);
-        SCOPE_EXIT({ pending_resolution.erase(field_descriptor); });
-
         if (allow_repeat && field_descriptor->is_map())
         {
             auto name_and_type = getNameAndDataTypeFromField(field_descriptor, skip_unsupported_fields, false);
@@ -3803,7 +3773,10 @@ namespace
                 }
                 int max_abs = std::abs(enum_descriptor->value(0)->number());
                 for (int i = 1; i != enum_descriptor->value_count(); ++i)
-                    max_abs = std::max(std::abs(enum_descriptor->value(i)->number()), max_abs);
+                {
+                    if (std::abs(enum_descriptor->value(i)->number()) > max_abs)
+                        max_abs = std::abs(enum_descriptor->value(i)->number());
+                }
                 if (max_abs < 128)
                     return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
                 else if (max_abs < 32768)
@@ -3828,8 +3801,7 @@ namespace
                 else if (message_descriptor->field_count() == 1)
                 {
                     const auto * nested_field_descriptor = message_descriptor->field(0);
-                    auto nested_name_and_type
-                        = getNameAndDataTypeFromFieldRecursive(nested_field_descriptor, skip_unsupported_fields, true, pending_resolution);
+                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor, skip_unsupported_fields);
                     if (!nested_name_and_type)
                         return std::nullopt;
                     return NameAndTypePair{field_descriptor->name() + "_" + nested_name_and_type->name, nested_name_and_type->type};
@@ -3840,8 +3812,7 @@ namespace
                     Strings nested_names;
                     for (int i = 0; i != message_descriptor->field_count(); ++i)
                     {
-                        auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
-                            message_descriptor->field(i), skip_unsupported_fields, true, pending_resolution);
+                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields);
                         if (!nested_name_and_type)
                             continue;
                         nested_types.push_back(nested_name_and_type->type);
@@ -3856,14 +3827,6 @@ namespace
         }
 
         UNREACHABLE();
-    }
-
-    std::optional<NameAndTypePair> getNameAndDataTypeFromField(
-        const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat = true)
-    {
-        /// Keep track of the fields that are pending resolution to avoid recursive types, which are unsupported
-        std::unordered_set<const google::protobuf::FieldDescriptor *> pending_resolution{};
-        return getNameAndDataTypeFromFieldRecursive(field_descriptor, skip_unsupported_fields, allow_repeat, pending_resolution);
     }
 }
 

@@ -53,7 +53,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -61,10 +61,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
-        const ColumnArray & array = checkAndGetColumn<ColumnArray>(*array_ptr);
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
-        const IColumn & src_data = array.getData();
-        const ColumnArray::Offsets & offsets = array.getOffsets();
+        const IColumn & src_data = array->getData();
+        const ColumnArray::Offsets & offsets = array->getOffsets();
 
         auto res = ColumnFloat64::create(input_rows_count);
         auto & res_data = res->getData();
@@ -153,8 +153,12 @@ public:
             return true;
         }
 
+        std::vector<double> xfreq(spec_len);
         double step = 0.5 / (spec_len - 1);
-        auto freq = idx * step;
+        for (size_t i = 0; i < spec_len; ++i)
+            xfreq[i] = i * step;
+
+        auto freq = xfreq[idx];
 
         period = std::round(1 / freq);
         return true;

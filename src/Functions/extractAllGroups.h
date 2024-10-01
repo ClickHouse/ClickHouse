@@ -17,10 +17,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 regexp_max_matches_per_row;
-}
 
 namespace ErrorCodes
 {
@@ -29,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-enum class ExtractAllGroupsResultKind : uint8_t
+enum class ExtractAllGroupsResultKind
 {
     VERTICAL,
     HORIZONTAL
@@ -78,7 +74,7 @@ public:
             {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
             {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         /// Two-dimensional array of strings, each `row` of top array represents matching groups.
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
@@ -159,7 +155,7 @@ public:
         else
         {
             /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row];
+            const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
 
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.

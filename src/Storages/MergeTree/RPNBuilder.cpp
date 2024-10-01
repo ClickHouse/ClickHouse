@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Common/FieldVisitorToString.h>
-#include <Core/Settings.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -24,10 +23,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace ErrorCodes
 {
@@ -135,7 +130,7 @@ std::string RPNBuilderTreeNode::getColumnName() const
     if (ast_node)
         return ast_node->getColumnNameWithoutAlias();
     else
-        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[Setting::allow_experimental_analyzer]);
+        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -148,7 +143,7 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
     }
     else
     {
-        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[Setting::allow_experimental_analyzer], true /*legacy*/);
+        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer, true /*legacy*/);
     }
 }
 
@@ -403,7 +398,7 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
         {
             const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
             const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
-            return index_hint->getActions().getOutputs().size();
+            return index_hint->getActions()->getOutputs().size();
         }
 
         return dag_node->children.size();
@@ -429,9 +424,9 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
         // because they are used only for index analysis.
         if (dag_node->function_base->getName() == "indexHint")
         {
-            const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*dag_node->function_base);
-            const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
-            return RPNBuilderTreeNode(index_hint.getActions().getOutputs()[index], tree_context);
+            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
+            return RPNBuilderTreeNode(index_hint->getActions()->getOutputs()[index], tree_context);
         }
 
         return RPNBuilderTreeNode(dag_node->children[index], tree_context);

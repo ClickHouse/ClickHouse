@@ -28,6 +28,7 @@ namespace ErrorCodes
 
 namespace ProfileEvents
 {
+    extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
     extern const Event DistributedConnectionSkipReadOnlyReplica;
 }
@@ -247,7 +248,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
 
     /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
-    max_tries = std::min(max_tries, max_error_cap);
+    if (max_tries > max_error_cap)
+        max_tries = max_error_cap;
 
     /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
@@ -304,6 +306,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             else
             {
                 LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 

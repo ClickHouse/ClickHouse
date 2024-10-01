@@ -1,12 +1,11 @@
 import logging
 import os.path as p
-import uuid
-from string import Template
-
 import pytest
+import uuid
 
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
+from string import Template
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -92,7 +91,7 @@ def test_jdbc_insert(started_cluster):
         """
         CREATE TABLE test.test_insert ENGINE = Memory AS
         SELECT * FROM test.ClickHouseTable;
-        SELECT *
+        SELECT * 
         FROM jdbc('{0}?mutation', 'INSERT INTO test.test_insert VALUES({1}, ''{1}'', ''{1}'')');
     """.format(
             datasource, records
@@ -116,7 +115,7 @@ def test_jdbc_update(started_cluster):
         """
         CREATE TABLE test.test_update ENGINE = Memory AS
         SELECT * FROM test.ClickHouseTable;
-        SELECT *
+        SELECT * 
         FROM jdbc(
             '{}?mutation',
             'SET mutations_sync = 1; ALTER TABLE test.test_update UPDATE Str=''{}'' WHERE Num = {} - 1;'
@@ -146,7 +145,7 @@ def test_jdbc_delete(started_cluster):
         """
         CREATE TABLE test.test_delete ENGINE = Memory AS
         SELECT * FROM test.ClickHouseTable;
-        SELECT *
+        SELECT * 
         FROM jdbc(
             '{}?mutation',
             'SET mutations_sync = 1; ALTER TABLE test.test_delete DELETE WHERE Num < {} - 1;'
@@ -159,7 +158,7 @@ def test_jdbc_delete(started_cluster):
     expected = records - 1
     actual = instance.query(
         "SELECT Str FROM jdbc('{}', 'SELECT * FROM test.test_delete')".format(
-            datasource
+            datasource, records
         )
     )
     assert int(actual) == expected, "expecting {} but got {}".format(expected, actual)

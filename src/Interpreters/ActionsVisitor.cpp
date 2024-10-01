@@ -1,13 +1,12 @@
 #include <memory>
 
-#include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/checkStackSize.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
@@ -41,17 +40,18 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/interpretSubquery.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <Analyzer/QueryNode.h>
@@ -61,15 +61,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_variant_type;
-    extern const SettingsBool force_grouping_standard_compatibility;
-    extern const SettingsUInt64 max_ast_elements;
-    extern const SettingsBool transform_null_in;
-    extern const SettingsBool use_variant_as_common_type;
-}
 
 namespace ErrorCodes
 {
@@ -111,7 +102,7 @@ static size_t getTypeDepth(const DataTypePtr & type)
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
 /// We can not include values that don't represent any possible value from the type of filtered column to the set.
 template<typename Collection>
-static Block createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, bool transform_null_in)
+static Block createBlockFromCollection(const Collection & collection, const DataTypes & types, bool transform_null_in)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -122,12 +113,11 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     }
 
     Row tuple_values;
-    for (size_t collection_index = 0; collection_index < collection.size(); ++collection_index)
+    for (const auto & value : collection)
     {
-        const auto& value = collection[collection_index];
         if (columns_num == 1)
         {
-            auto field = convertFieldToTypeStrict(value, *value_types[collection_index], *types[0]);
+            auto field = convertFieldToTypeStrict(value, *types[0]);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
             if (field && (!field->isNull() || need_insert_null))
                 columns[0]->insert(*field);
@@ -138,8 +128,9 @@ static Block createBlockFromCollection(const Collection & collection, const Data
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
                     String(value.getTypeName()));
 
-            const auto & tuple = value.template safeGet<const Tuple &>();
+            const auto & tuple = value.template get<const Tuple &>();
             size_t tuple_size = tuple.size();
+
             if (tuple_size != columns_num)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
                     tuple_size, columns_num);
@@ -147,13 +138,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
 
-            const DataTypePtr & value_type = value_types[collection_index];
-            const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
-
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                auto converted_field = convertFieldToTypeStrict(tuple[i], *tuple_value_type[i], *types[i]);
+                auto converted_field = convertFieldToTypeStrict(tuple[i], *types[i]);
                 if (!converted_field)
                     break;
                 tuple_values[i] = std::move(*converted_field);
@@ -204,7 +192,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
     DataTypePtr tuple_type;
     Row tuple_values;
     const auto & list = node->as<ASTExpressionList &>();
-    bool transform_null_in = context->getSettingsRef()[Setting::transform_null_in];
+    bool transform_null_in = context->getSettingsRef().transform_null_in;
     for (const auto & elem : list.children)
     {
         if (num_columns == 1)
@@ -240,7 +228,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                         "Invalid type of set. Expected tuple, got {}",
                         function_result.getTypeName());
 
-                tuple = &function_result.safeGet<Tuple>();
+                tuple = &function_result.get<Tuple>();
             }
 
             /// Tuple can be represented as a literal in AST.
@@ -253,7 +241,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                         "Invalid type in set. Expected tuple, got {}",
                         literal->value.getTypeName());
 
-                tuple = &literal->value.safeGet<Tuple>();
+                tuple = &literal->value.get<Tuple>();
             }
 
             assert(tuple || func);
@@ -323,31 +311,22 @@ Block createBlockForSet(
     };
 
     Block block;
-    bool tranform_null_in = context->getSettingsRef()[Setting::transform_null_in];
+    bool tranform_null_in = context->getSettingsRef().transform_null_in;
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_type_depth == right_type_depth)
     {
         Array array{right_arg_value};
-        DataTypes value_types{right_arg_type};
-        block = createBlockFromCollection(array, value_types, set_element_types, tranform_null_in);
+        block = createBlockFromCollection(array, set_element_types, tranform_null_in);
     }
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_type_depth + 1 == right_type_depth)
     {
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
-        {
-            const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.safeGet<const Tuple &>(), value_types, set_element_types, tranform_null_in);
-        }
+            block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), set_element_types, tranform_null_in);
         else if (type_index == TypeIndex::Array)
-        {
-            const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
-            size_t right_arg_array_size = right_arg_value.safeGet<const Array &>().size();
-            DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
-            block = createBlockFromCollection(right_arg_value.safeGet<const Array &>(), value_types, set_element_types, tranform_null_in);
-        }
+            block = createBlockFromCollection(right_arg_value.get<const Array &>(), set_element_types, tranform_null_in);
         else
             throw_unsupported_type(right_arg_type);
     }
@@ -413,6 +392,7 @@ Block createBlockForSet(
 
 }
 
+
 FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
 {
@@ -433,7 +413,7 @@ FutureSetPtr makeExplicitSet(
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
-    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef()[Setting::transform_null_in]);
+    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
 
     auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
@@ -450,7 +430,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, block, context->getSettingsRef());
+    return prepared_sets.addFromTuple(set_key, block, context->getSettings());
 }
 
 class ScopeStack::Index
@@ -466,7 +446,6 @@ public:
         for (const auto * node : index)
             map.emplace(node->result_name, node);
     }
-    ~Index() = default;
 
     void addNode(const ActionsDAG::Node * node)
     {
@@ -507,8 +486,8 @@ public:
     }
 };
 
-ScopeStack::Level::Level() = default;
 ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level() = default;
 ScopeStack::Level::Level(Level &&) noexcept = default;
 
 ActionsMatcher::Data::Data(
@@ -516,7 +495,7 @@ ActionsMatcher::Data::Data(
     SizeLimits set_size_limit_,
     size_t subquery_depth_,
     std::reference_wrapper<const NamesAndTypesList> source_columns_,
-    ActionsDAG actions_dag,
+    ActionsDAGPtr actions_dag,
     PreparedSetsPtr prepared_sets_,
     bool no_subqueries_,
     bool no_makeset_,
@@ -552,13 +531,13 @@ std::vector<std::string_view> ActionsMatcher::Data::getAllColumnNames() const
     return index.getAllNames();
 }
 
-ScopeStack::ScopeStack(ActionsDAG actions_dag, ContextPtr context_) : WithContext(context_)
+ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_) : WithContext(context_)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::move(actions_dag);
-    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag.getOutputs());
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getOutputs());
 
-    for (const auto & node : level.actions_dag.getOutputs())
+    for (const auto & node : level.actions_dag->getOutputs())
         if (node->type == ActionsDAG::ActionType::INPUT)
             level.inputs.emplace(node->result_name);
 }
@@ -566,21 +545,22 @@ ScopeStack::ScopeStack(ActionsDAG actions_dag, ContextPtr context_) : WithContex
 void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 {
     auto & level = stack.emplace_back();
-    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag.getOutputs());
+    level.actions_dag = std::make_shared<ActionsDAG>();
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getOutputs());
     const auto & prev = stack[stack.size() - 2];
 
     for (const auto & input_column : input_columns)
     {
-        const auto & node = level.actions_dag.addInput(input_column.name, input_column.type);
+        const auto & node = level.actions_dag->addInput(input_column.name, input_column.type);
         level.index->addNode(&node);
         level.inputs.emplace(input_column.name);
     }
 
-    for (const auto & node : prev.actions_dag.getOutputs())
+    for (const auto & node : prev.actions_dag->getOutputs())
     {
         if (!level.index->contains(node->result_name))
         {
-            const auto & input = level.actions_dag.addInput({node->column, node->result_type, node->result_name});
+            const auto & input = level.actions_dag->addInput({node->column, node->result_type, node->result_name});
             level.index->addNode(&input);
         }
     }
@@ -605,12 +585,12 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
 
 void ScopeStack::addColumn(ColumnWithTypeAndName column)
 {
-    const auto & node = stack[0].actions_dag.addColumn(std::move(column));
+    const auto & node = stack[0].actions_dag->addColumn(std::move(column));
     stack[0].index->addNode(&node);
 
     for (size_t j = 1; j < stack.size(); ++j)
     {
-        const auto & input = stack[j].actions_dag.addInput({node.column, node.result_type, node.result_name});
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
         stack[j].index->addNode(&input);
     }
 }
@@ -619,12 +599,12 @@ void ScopeStack::addAlias(const std::string & name, std::string alias)
 {
     auto level = getColumnLevel(name);
     const auto & source = stack[level].index->getNode(name);
-    const auto & node = stack[level].actions_dag.addAlias(source, std::move(alias));
+    const auto & node = stack[level].actions_dag->addAlias(source, std::move(alias));
     stack[level].index->addNode(&node);
 
     for (size_t j = level + 1; j < stack.size(); ++j)
     {
-        const auto & input = stack[j].actions_dag.addInput({node.column, node.result_type, node.result_name});
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
         stack[j].index->addNode(&input);
     }
 }
@@ -638,12 +618,12 @@ void ScopeStack::addArrayJoin(const std::string & source_name, std::string resul
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin cannot depend on lambda argument: {}",
                         source_name);
 
-    const auto & node = stack.front().actions_dag.addArrayJoin(*source_node, std::move(result_name));
+    const auto & node = stack.front().actions_dag->addArrayJoin(*source_node, std::move(result_name));
     stack.front().index->addNode(&node);
 
     for (size_t j = 1; j < stack.size(); ++j)
     {
-        const auto & input = stack[j].actions_dag.addInput({node.column, node.result_type, node.result_name});
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
         stack[j].index->addNode(&input);
     }
 }
@@ -662,17 +642,17 @@ void ScopeStack::addFunction(
     for (const auto & argument : argument_names)
         children.push_back(&stack[level].index->getNode(argument));
 
-    const auto & node = stack[level].actions_dag.addFunction(function, std::move(children), std::move(result_name));
+    const auto & node = stack[level].actions_dag->addFunction(function, std::move(children), std::move(result_name));
     stack[level].index->addNode(&node);
 
     for (size_t j = level + 1; j < stack.size(); ++j)
     {
-        const auto & input = stack[j].actions_dag.addInput({node.column, node.result_type, node.result_name});
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
         stack[j].index->addNode(&input);
     }
 }
 
-ActionsDAG ScopeStack::popLevel()
+ActionsDAGPtr ScopeStack::popLevel()
 {
     auto res = std::move(stack.back().actions_dag);
     stack.pop_back();
@@ -681,12 +661,12 @@ ActionsDAG ScopeStack::popLevel()
 
 std::string ScopeStack::dumpNames() const
 {
-    return stack.back().actions_dag.dumpNames();
+    return stack.back().actions_dag->dumpNames();
 }
 
 const ActionsDAG & ScopeStack::getLastActions() const
 {
-    return stack.back().actions_dag;
+    return *stack.back().actions_dag;
 }
 
 const ScopeStack::Index & ScopeStack::getLastActionsIndex() const
@@ -789,7 +769,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto tuple_ast = function->arguments->children[0];
 
         /// This transformation can lead to exponential growth of AST size, let's check it.
-        tuple_ast->checkSize(data.getContext()->getSettingsRef()[Setting::max_ast_elements]);
+        tuple_ast->checkSize(data.getContext()->getSettingsRef().max_ast_elements);
 
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
@@ -933,20 +913,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             case GroupByKind::GROUPING_SETS:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ROLLUP:
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
                 break;
             case GroupByKind::CUBE:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ORDINARY:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), {}, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), {}, column_name);
                 break;
             }
             default:
@@ -1009,7 +989,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.set_size_limit,
             data.subquery_depth,
             data.source_columns,
-            ActionsDAG(data.source_columns),
+            std::make_shared<ActionsDAG>(data.source_columns),
             data.prepared_sets,
             data.no_subqueries,
             data.no_makeset,
@@ -1028,7 +1008,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
 
         auto dag = index_hint_data.getActions();
-        dag.project(args);
+        dag->project(args);
 
         auto index_hint = std::make_shared<FunctionIndexHint>();
         index_hint->setActions(std::move(dag));
@@ -1091,7 +1071,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     auto current_context = data.getContext();
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
     {
         Array parameters;
         if (node.parameters)
@@ -1107,7 +1087,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
         }
 
-        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
     }
 
     if (!function_builder)
@@ -1291,10 +1271,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     auto lambda_dag = data.actions_stack.popLevel();
 
                     String result_name = lambda->arguments->children.at(1)->getColumnName();
-                    lambda_dag.removeUnusedActions(Names(1, result_name));
+                    lambda_dag->removeUnusedActions(Names(1, result_name));
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
-                        std::move(lambda_dag),
+                        lambda_dag,
                         ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
@@ -1343,11 +1323,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
     DataTypePtr type;
-    if (literal.custom_type)
-        type = literal.custom_type;
-    else if (
-        data.getContext()->getSettingsRef()[Setting::allow_experimental_variant_type]
-        && data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
+    if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);
@@ -1420,7 +1396,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer] && !identifier)
+        if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.

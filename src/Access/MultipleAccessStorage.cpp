@@ -260,7 +260,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids); // NOLINT
+        source_storage->remove(ids);
         need_rollback = true;
         destination_storage->insert(to_move, ids);
     }
@@ -353,7 +353,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -376,7 +376,7 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
             getStorageName());
     }
 
-    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
+    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
     {
         std::lock_guard lock{mutex};
         ids_cache.set(id, storage_for_insertion);
@@ -416,7 +416,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
     {
         if (auto old_entity = storage_for_updating->tryRead(id))
         {
-            auto new_entity = update_func(old_entity, id);
+            auto new_entity = update_func(old_entity);
             if (new_entity->getName() != old_entity->getName())
             {
                 for (const auto & storage : *storages)
@@ -508,7 +508,7 @@ void MultipleAccessStorage::backup(BackupEntriesCollector & backup_entries_colle
         throwBackupNotAllowed();
 }
 
-void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
+void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 {
     auto storages = getStoragesInternal();
 
@@ -516,7 +516,7 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, con
     {
         if (storage->isRestoreAllowed())
         {
-            storage->restoreFromBackup(restorer, data_path_in_backup);
+            storage->restoreFromBackup(restorer);
             return;
         }
     }

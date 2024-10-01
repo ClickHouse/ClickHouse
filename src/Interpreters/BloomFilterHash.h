@@ -108,7 +108,7 @@ struct BloomFilterHash
         {
             const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
-            if (checkAndGetColumn<ColumnNullable>(&array_col->getData()))
+            if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
 
             const auto & offsets = array_col->getOffsets();
@@ -171,7 +171,7 @@ struct BloomFilterHash
         const auto * index_column = typeid_cast<const ColumnVector<Type> *>(column);
 
         if (unlikely(!index_column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} was passed to the bloom filter index", column->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type was passed to the bloom filter index.");
 
         const typename ColumnVector<Type>::Container & vec_from = index_column->getData();
 

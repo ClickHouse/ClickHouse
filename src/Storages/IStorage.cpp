@@ -1,7 +1,6 @@
 #include <Storages/IStorage.h>
 
-#include <Common/StringUtils.h>
-#include <Core/Settings.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -13,35 +12,26 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/Estimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool parallelize_output_from_storages;
-}
-
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int TABLE_IS_BEING_RESTARTED;
 }
 
-IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
+IStorage::IStorage(StorageID storage_id_)
     : storage_id(std::move(storage_id_))
+    , metadata(std::make_unique<StorageInMemoryMetadata>())
     , virtuals(std::make_unique<VirtualColumnsDescription>())
 {
-    if (metadata_)
-        metadata.set(std::move(metadata_));
-    else
-        metadata.set(std::make_unique<StorageInMemoryMetadata>());
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -67,13 +57,12 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
 TableLockHolder IStorage::lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
-    auto table_id = getStorageID();
-    if (!table_id.hasUUID() && (is_dropped || is_detached))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
 
-    if (is_being_restarted)
-        throw Exception(
-            ErrorCodes::TABLE_IS_BEING_RESTARTED, "Table {}.{} is being restarted", table_id.database_name, table_id.table_name);
+    if (is_dropped || is_detached)
+    {
+        auto table_id = getStorageID();
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
+    }
     return result;
 }
 
@@ -81,10 +70,12 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    auto table_id = getStorageID();
-    if (is_being_restarted || (!table_id.hasUUID() && (is_dropped || is_detached)))
-        // Table was dropped or is being restarted while acquiring the lock
+    if (is_dropped || is_detached)
+    {
+        // Table was dropped while acquiring the lock
         result = nullptr;
+    }
+
     return result;
 }
 
@@ -162,7 +153,7 @@ void IStorage::read(
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
+    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
     if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
@@ -242,7 +233,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
+ConditionEstimator IStorage::getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const
 {
     return {};
 }
@@ -330,8 +321,9 @@ std::string PrewhereInfo::dump() const
         ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
     }
 
+    if (prewhere_actions)
     {
-        ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
+        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column
@@ -345,8 +337,10 @@ std::string FilterDAGInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-
-    ss << "actions " << actions.dumpDAG() << "\n";
+    if (actions)
+    {
+        ss << "actions " << actions->dumpDAG() << "\n";
+    }
 
     return ss.str();
 }

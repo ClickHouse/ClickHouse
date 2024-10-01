@@ -1,6 +1,6 @@
 import sys
 
-from bottle import request, response, route, run
+from bottle import route, run, request, response
 
 
 @route("/<_bucket>/<_path:path>")
