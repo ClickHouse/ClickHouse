@@ -1,4 +1,3 @@
-version: '2.3'
 # Used to pre-pull images with docker compose
 services:
   clickhouse1:
