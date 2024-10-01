@@ -31,7 +31,7 @@ struct ZooKeeperLogElement
     UInt64 duration_microseconds = 0;
 
     /// Common request info
-    Int32 xid = 0;
+    Int64 xid = 0;
     bool has_watch = false;
     Int32 op_num = 0;
     String path;
