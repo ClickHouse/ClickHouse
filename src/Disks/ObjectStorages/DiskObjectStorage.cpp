@@ -517,14 +517,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
 
+    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
         global_context->getFilesystemCacheLog(),
-        read_settings.remote_read_buffer_use_external_buffer);
+        /* use_external_buffer */use_async_buffer);
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    if (use_async_buffer)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
         return std::make_unique<AsynchronousBoundedReadBuffer>(
