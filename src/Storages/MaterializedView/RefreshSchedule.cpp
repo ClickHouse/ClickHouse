@@ -48,12 +48,15 @@ std::chrono::sys_seconds RefreshSchedule::timeslotForCompletedRefresh(std::chron
 {
     if (kind == RefreshScheduleKind::AFTER)
         return end_time;
+    /// Timeslot based on when the refresh actually happened. Useful if we fell behind and missed
+    /// some timeslots.
+    auto res = floorEvery(start_time, period, offset);
     if (out_of_schedule)
-        return last_completed_timeslot;
-    /// Typically the two max()ed values are equal, but we need both:
-    /// floor(start_time) - in case we fell behind and missed some timeslots,
-    /// advance(last_completed_timeslot) - in case we did a refresh a little early because of random spread.
-    return std::max(advanceEvery(last_completed_timeslot, period, offset), floorEvery(start_time, period, offset));
+        return res;
+    /// Next timeslot after the last completed one. Useful in case we did a refresh a little early
+    /// because of random spread.
+    res = std::max(res, advanceEvery(last_completed_timeslot, period, offset));
+    return res;
 }
 
 std::chrono::sys_seconds RefreshSchedule::advance(std::chrono::sys_seconds last_completed_timeslot) const
