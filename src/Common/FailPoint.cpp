@@ -63,6 +63,9 @@ static struct InitFiu
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
+    PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    REGULAR(slowdown_index_analysis) \
+    REGULAR(replicated_merge_tree_all_replicas_stale) \
 
 
 namespace FailPoints

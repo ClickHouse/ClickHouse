@@ -18,13 +18,13 @@
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
-#include <unistd.h>
-#include <algorithm>
-#include <typeinfo>
 #include <iostream>
 #include <memory>
+#include <sstream>
+#include <unistd.h>
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
@@ -331,7 +331,7 @@ void BaseDaemon::initialize(Application & self)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {
-                int err = ::close(fd);
+                [[maybe_unused]] int err = ::close(fd);
                 chassert(!err || errno == EINTR);
             }
         }

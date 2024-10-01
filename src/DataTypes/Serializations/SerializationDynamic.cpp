@@ -64,7 +64,7 @@ void SerializationDynamic::enumerateStreams(
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateDynamic>(data.deserialize_state) : nullptr;
 
     /// If column is nullptr and we don't have deserialize state yet, nothing to enumerate as we don't have any variants.
-    if (!column_dynamic && !deserialize_state)
+    if (!settings.enumerate_dynamic_streams || (!column_dynamic && !deserialize_state))
         return;
 
     const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state)->variant_type;
@@ -489,9 +489,8 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
     }
 
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(global_discr);
-    const auto & variant_type_name = variant_info.variant_names[global_discr];
     encodeDataType(variant_type, ostr);
-    dynamic_column.getVariantSerialization(variant_type, variant_type_name)->serializeBinary(variant_column.getVariantByGlobalDiscriminator(global_discr), variant_column.offsetAt(row_num), ostr, settings);
+    variant_type->getDefaultSerialization()->serializeBinary(variant_column.getVariantByGlobalDiscriminator(global_discr), variant_column.offsetAt(row_num), ostr, settings);
 }
 
 template <typename ReturnType = void, typename DeserializeFunc>
@@ -567,7 +566,6 @@ static void deserializeTextImpl(
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     String field = read_field(istr);
-    auto field_buf = std::make_unique<ReadBufferFromString>(field);
     JSONInferenceInfo json_info;
     auto variant_type = tryInferDataTypeByEscapingRule(field, settings, escaping_rule, &json_info);
     if (escaping_rule == FormatSettings::EscapingRule::JSON)
@@ -581,7 +579,7 @@ static void deserializeTextImpl(
         size_t shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
         for (size_t i = 0; i != variant_types.size(); ++i)
         {
-            field_buf = std::make_unique<ReadBufferFromString>(field);
+            auto field_buf = std::make_unique<ReadBufferFromString>(field);
             if (i != shared_variant_discr
                 && deserializeVariant<bool>(
                     variant_column,
@@ -592,21 +590,24 @@ static void deserializeTextImpl(
                 return;
         }
 
+        /// We cannot insert value with incomplete type, insert it as String.
         variant_type = std::make_shared<DataTypeString>();
         /// To be able to deserialize field as String with Quoted escaping rule, it should be quoted.
         if (escaping_rule == FormatSettings::EscapingRule::Quoted && (field.size() < 2 || field.front() != '\'' || field.back() != '\''))
             field = "'" + field + "'";
     }
-    else if (dynamic_column.addNewVariant(variant_type, variant_type->getName()))
+
+    if (dynamic_column.addNewVariant(variant_type, variant_type->getName()))
     {
+        auto field_buf = std::make_unique<ReadBufferFromString>(field);
         auto discr = variant_info.variant_name_to_discriminator.at(variant_type->getName());
         deserializeVariant(dynamic_column.getVariantColumn(), dynamic_column.getVariantSerialization(variant_type), discr, *field_buf, deserialize_variant);
         return;
     }
 
-    /// We couldn't infer type or add new variant. Insert it into shared variant.
+    /// We couldn't add new variant. Insert it into shared variant.
     auto tmp_variant_column = variant_type->createColumn();
-    field_buf = std::make_unique<ReadBufferFromString>(field);
+    auto field_buf = std::make_unique<ReadBufferFromString>(field);
     auto variant_type_name = variant_type->getName();
     deserialize_variant(*dynamic_column.getVariantSerialization(variant_type, variant_type_name), *tmp_variant_column, *field_buf);
     dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);
@@ -629,7 +630,7 @@ static void serializeTextImpl(
         ReadBufferFromMemory buf(value.data, value.size);
         auto variant_type = decodeDataType(buf);
         auto tmp_variant_column = variant_type->createColumn();
-        auto variant_serialization = dynamic_column.getVariantSerialization(variant_type);
+        auto variant_serialization = variant_type->getDefaultSerialization();
         variant_serialization->deserializeBinary(*tmp_variant_column, buf, settings);
         nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
     }

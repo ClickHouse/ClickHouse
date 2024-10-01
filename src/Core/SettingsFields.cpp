@@ -1,7 +1,7 @@
 #include <Core/SettingsFields.h>
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -210,7 +210,7 @@ namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
-        if (startsWith(str, "auto"))
+        if (startsWith(str, "auto") || startsWith(str, "'auto"))
             return 0;
         return parseFromString<UInt64>(str);
     }
@@ -237,7 +237,8 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        return "auto(" + ::DB::toString(value) + ")";
+        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
+        return "'auto(" + ::DB::toString(value) + ")'";
     else
         return ::DB::toString(value);
 }
@@ -261,7 +262,7 @@ void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
 
 UInt64 SettingFieldMaxThreads::getAuto()
 {
-    return getNumberOfPhysicalCPUCores();
+    return getNumberOfCPUCoresToUse();
 }
 
 namespace

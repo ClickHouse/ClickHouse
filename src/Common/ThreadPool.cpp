@@ -1,7 +1,8 @@
 #include <Common/ThreadPool.h>
+#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 
@@ -27,6 +28,25 @@ namespace CurrentMetrics
     extern const Metric GlobalThreadScheduled;
 }
 
+namespace ProfileEvents
+{
+    extern const Event GlobalThreadPoolExpansions;
+    extern const Event GlobalThreadPoolShrinks;
+    extern const Event GlobalThreadPoolThreadCreationMicroseconds;
+    extern const Event GlobalThreadPoolLockWaitMicroseconds;
+    extern const Event GlobalThreadPoolJobs;
+    extern const Event GlobalThreadPoolJobWaitTimeMicroseconds;
+
+    extern const Event LocalThreadPoolExpansions;
+    extern const Event LocalThreadPoolShrinks;
+    extern const Event LocalThreadPoolThreadCreationMicroseconds;
+    extern const Event LocalThreadPoolLockWaitMicroseconds;
+    extern const Event LocalThreadPoolJobs;
+    extern const Event LocalThreadPoolBusyMicroseconds;
+    extern const Event LocalThreadPoolJobWaitTimeMicroseconds;
+
+}
+
 class JobWithPriority
 {
 public:
@@ -40,6 +60,7 @@ public:
     /// Call stacks of all jobs' schedulings leading to this one
     std::vector<StackTrace::FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
+    Stopwatch job_create_time;
 
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
@@ -59,13 +80,20 @@ public:
     {
         return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
     }
+
+    UInt64 elapsedMicroseconds() const
+    {
+        return job_create_time.elapsedMicroseconds();
+    }
+
+
 };
 
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
-    : ThreadPoolImpl(metric_threads_, metric_active_threads_, metric_scheduled_jobs_, getNumberOfPhysicalCPUCores())
+    : ThreadPoolImpl(metric_threads_, metric_active_threads_, metric_scheduled_jobs_, getNumberOfCPUCoresToUse())
 {
 }
 
@@ -180,14 +208,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     };
 
     {
+        Stopwatch watch;
         std::unique_lock lock(mutex);
+        ProfileEvents::increment(
+            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+            watch.elapsedMicroseconds());
 
         if (CannotAllocateThreadFaultInjector::injectFault())
             return on_error("fault injected");
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
-        if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
+        if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
             if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
@@ -216,7 +248,13 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
             try
             {
+                Stopwatch watch2;
                 threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
+                    watch2.elapsedMicroseconds());
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
             }
             catch (...)
             {
@@ -238,6 +276,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
     /// Wake up a free thread to run the new job.
     new_job_or_shutdown.notify_one();
+
+    ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
     return static_cast<ReturnType>(true);
 }
@@ -262,7 +302,14 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 
         try
         {
+            Stopwatch watch;
             threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
+                watch.elapsedMicroseconds());
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
+
         }
         catch (...)
         {
@@ -293,7 +340,11 @@ void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, uint64_
 template <typename Thread>
 void ThreadPoolImpl<Thread>::wait()
 {
+    Stopwatch watch;
     std::unique_lock lock(mutex);
+    ProfileEvents::increment(
+        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+        watch.elapsedMicroseconds());
     /// Signal here just in case.
     /// If threads are waiting on condition variables, but there are some jobs in the queue
     /// then it will prevent us from deadlock.
@@ -334,7 +385,11 @@ void ThreadPoolImpl<Thread>::finalize()
 
     /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
     for (auto & thread : threads)
+    {
         thread.join();
+        ProfileEvents::increment(
+            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
+    }
 
     threads.clear();
 }
@@ -391,7 +446,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         std::optional<JobWithPriority> job_data;
 
         {
+            Stopwatch watch;
             std::unique_lock lock(mutex);
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+                watch.elapsedMicroseconds());
 
             // Finish with previous job if any
             if (job_is_done)
@@ -424,6 +483,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 {
                     thread_it->detach();
                     threads.erase(thread_it);
+                    ProfileEvents::increment(
+                        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
                 }
                 return;
             }
@@ -432,6 +493,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority.
             job_data = std::move(const_cast<JobWithPriority &>(jobs.top()));
             jobs.pop();
+
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
+                job_data->elapsedMicroseconds());
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
@@ -459,7 +524,22 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 
-            job_data->job();
+            if constexpr (!std::is_same_v<Thread, std::thread>)
+            {
+                Stopwatch watch;
+                job_data->job();
+                // This metric is less relevant for the global thread pool, as it would show large values (time while
+                // a thread was used by local pools) and increment only when local pools are destroyed.
+                //
+                // In cases where global pool threads are used directly (without a local thread pool), distinguishing
+                // them is difficult.
+                ProfileEvents::increment(ProfileEvents::LocalThreadPoolBusyMicroseconds, watch.elapsedMicroseconds());
+            }
+            else
+            {
+                job_data->job();
+            }
+
 
             if (thread_trace_context.root_span.isTraceEnabled())
             {
