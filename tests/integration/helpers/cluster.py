@@ -399,10 +399,10 @@ def get_instances_dir(name):
     run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
 
     if name:
-        instances_dir_name += "_" + name
+        instances_dir_name += "-" + name
 
     if run_id:
-        instances_dir_name += "_" + shlex.quote(run_id)
+        instances_dir_name += "-" + shlex.quote(run_id)
 
     return instances_dir_name
 
@@ -487,8 +487,8 @@ class ClickHouseCluster:
         self.instances_dir_name = get_instances_dir(self.name)
         xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
         if xdist_worker:
-            self.project_name += f"_{xdist_worker}"
-            self.instances_dir_name += f"_{xdist_worker}"
+            self.project_name += f"-{xdist_worker}"
+            self.instances_dir_name += f"-{xdist_worker}"
 
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
@@ -509,7 +509,7 @@ class ClickHouseCluster:
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
         self.docker_base_tag = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-        self.base_cmd = ["docker-compose"]
+        self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
             self.base_cmd += ["--host", custom_dockerd_host]
         self.base_cmd += ["--env-file", self.env_file]
@@ -971,10 +971,10 @@ class ClickHouseCluster:
     # Returns the list of currently running docker containers corresponding to this ClickHouseCluster.
     def get_running_containers(self):
         # docker-compose names containers using the following formula:
-        # container_name = project_name + '_' + instance_name + '_1'
+        # container_name = project_name + '-' + instance_name + '-1'
         # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
         # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
-        filter_name = f"^/{self.project_name}_.*_1$"
+        filter_name = f"^/{self.project_name}-.*-1$"
         # We want the command "docker container list" to show only containers' ID and their names, separated by colon.
         format = "{{.ID}}:{{.Names}}"
         containers = run_and_check(
@@ -1021,7 +1021,8 @@ class ClickHouseCluster:
         self.with_zookeeper_secure = True
         self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
         self.base_zookeeper_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1053,7 +1054,8 @@ class ClickHouseCluster:
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
         self.base_zookeeper_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1101,7 +1103,8 @@ class ClickHouseCluster:
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
         self.base_zookeeper_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1120,7 +1123,8 @@ class ClickHouseCluster:
             ]
         )
         self.base_mysql_client_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1144,7 +1148,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
         )
         self.base_mysql57_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1168,7 +1173,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml")]
         )
         self.base_mysql8_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1194,7 +1200,8 @@ class ClickHouseCluster:
             ]
         )
         self.base_mysql_cluster_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1215,7 +1222,8 @@ class ClickHouseCluster:
 
         self.with_postgres = True
         self.base_postgres_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1241,7 +1249,8 @@ class ClickHouseCluster:
             ]
         )
         self.base_postgres_cluster_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1263,7 +1272,8 @@ class ClickHouseCluster:
             ]
         )
         self.base_postgresql_java_client_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1283,7 +1293,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml")]
         )
         self.base_hdfs_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1311,7 +1322,8 @@ class ClickHouseCluster:
             ]
         )
         self.base_kerberized_hdfs_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1334,7 +1346,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
         self.base_kafka_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1360,7 +1373,8 @@ class ClickHouseCluster:
             ]
         )
         self.base_kerberized_kafka_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1381,7 +1395,8 @@ class ClickHouseCluster:
             ]
         )
         self.base_kerberos_kdc_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1401,7 +1416,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_redis.yml")]
         )
         self.base_redis_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1425,7 +1441,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml")]
         )
         self.base_rabbitmq_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1446,7 +1463,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
         )
         self.base_nats_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1472,7 +1490,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mongo.yml")]
         )
         self.base_mongo_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1490,7 +1509,8 @@ class ClickHouseCluster:
         )
 
         self.base_coredns_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1513,7 +1533,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
         )
         self.base_minio_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1539,7 +1560,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
         )
         self.base_azurite_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1556,7 +1578,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml")]
         )
         self.base_cassandra_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1573,7 +1596,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ldap.yml")]
         )
         self.base_ldap_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1591,7 +1615,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml")]
         )
         self.base_jdbc_bridge_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1608,7 +1633,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nginx.yml")]
         )
         self.base_nginx_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1624,7 +1650,8 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_hive.yml")]
         )
         self.base_hive_cmd = [
-            "docker-compose",
+            "docker",
+            "compose",
             "--env-file",
             instance.env_file,
             "--project-name",
@@ -1660,7 +1687,8 @@ class ClickHouseCluster:
                 ]
             )
             self.base_prometheus_cmd = [
-                "docker-compose",
+                "docker",
+                "compose",
                 "--env-file",
                 instance.env_file,
                 "--project-name",
@@ -2069,7 +2097,7 @@ class ClickHouseCluster:
 
     def get_instance_docker_id(self, instance_name):
         # According to how docker-compose names containers.
-        return self.project_name + "_" + instance_name + "_1"
+        return self.project_name + "-" + instance_name + "-1"
 
     def _replace(self, path, what, to):
         with open(path, "r") as p:
@@ -3250,7 +3278,7 @@ class ClickHouseCluster:
                 )
         else:
             logging.warning(
-                "docker-compose up was not called. Trying to export docker.log for running containers"
+                "docker compose up was not called. Trying to export docker.log for running containers"
             )
 
         self.cleanup()

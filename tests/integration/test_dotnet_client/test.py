@@ -39,7 +39,8 @@ def dotnet_container():
     )
     run_and_check(
         [
-            "docker-compose",
+            "docker",
+            "compose",
             "-p",
             cluster.project_name,
             "-f",
