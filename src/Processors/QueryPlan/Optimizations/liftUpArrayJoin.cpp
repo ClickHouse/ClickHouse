@@ -24,11 +24,11 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!(expression_step || filter_step) || !array_join_step)
         return 0;
 
-    const auto & array_join = array_join_step->arrayJoin();
+    const auto & array_join_columns = array_join_step->getColumns();
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
 
-    auto split_actions = expression.splitActionsBeforeArrayJoin(array_join->columns);
+    auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns);
 
     /// No actions can be moved before ARRAY JOIN.
     if (split_actions.first.trivial())

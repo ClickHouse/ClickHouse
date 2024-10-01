@@ -216,6 +216,19 @@ Possible values:
 
 Default value: 1.
 
+## use_skip_indexes_if_final {#use_skip_indexes_if_final}
+
+Controls whether skipping indexes are used when executing a query with the FINAL modifier.
+
+By default, this setting is disabled because skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results. When enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
 ## force_data_skipping_indices {#force_data_skipping_indices}
 
 Disables query execution if passed data skipping indices wasn't used.
@@ -933,7 +946,7 @@ Default value: `1`.
 
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query-log) server configuration parameter.
 
 Example:
 
@@ -978,7 +991,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -997,7 +1010,7 @@ log_query_threads=1
 
 Setting up query views logging.
 
-When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_views_log) server configuration parameter.
+When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#query_views_log) server configuration parameter.
 
 Example:
 
@@ -1588,24 +1601,11 @@ This setting is useful for any replicated table.
 
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
-A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#parallel_replicas_custom_key)
-and [parallel_replicas_custom_key_filter_type](#parallel_replicas_custom_key_filter_type).
 
 Simple expressions using primary keys are preferred.
 
 If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
 Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
-
-## parallel_replicas_custom_key_filter_type {#parallel_replicas_custom_key_filter_type}
-
-How to use `parallel_replicas_custom_key` expression for splitting work between replicas.
-
-Possible values:
-
-- `default` — Use the default implementation using modulo operation on the `parallel_replicas_custom_key`.
-- `range` — Split the entire value space of the expression in the ranges. This type of filtering is useful if values of `parallel_replicas_custom_key` are uniformly spread across the entire integer space, e.g. hash values.
-
-Default value: `default`.
 
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
@@ -1621,9 +1621,9 @@ Allows the filter type `range` to split the work evenly between replicas based o
 
 When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
 
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing
 
-## allow_experimental_parallel_reading_from_replicas
+## enable_parallel_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
 
@@ -3226,7 +3226,7 @@ Default value: `0`.
 
 ## lightweight_deletes_sync {#lightweight_deletes_sync}
 
-The same as 'mutation_sync', but controls only execution of lightweight deletes.
+The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
 
 Possible values:
 
@@ -4773,7 +4773,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
 The setting takes precedence over the globally configured (server-level) implicit time zone.
-A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#timezone).
 
 You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
 
@@ -4829,7 +4829,7 @@ This happens due to different parsing pipelines:
 
 **See also**
 
-- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [timezone](../server-configuration-parameters/settings.md#timezone)
 
 ## final {#final}
 
@@ -5682,3 +5682,29 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## show_create_query_identifier_quoting_rule
+
+Define identifier quoting behavior of the show create query result:
+- `when_necessary`: When the identifiers is one of `{"distinct", "all", "table"}`, or it can cause ambiguity: column names, dictionary attribute names.
+- `always`: Always quote identifiers.
+- `user_display`: When the identifiers is a keyword.
+
+Default value: `when_necessary`.
+
+## show_create_query_identifier_quoting_style
+
+Define identifier quoting style of the show create query result:
+- `Backticks`: \`clickhouse\` style.
+- `DoubleQuotes`: "postgres" style
+- `BackticksMySQL`: \`mysql\` style, most same as `Backticks`, but it uses '``' to escape '`'
+
+Default value: `Backticks`.
+
+## mongodb_throw_on_unsupported_query
+
+If enabled, MongoDB tables will return an error when a MongoDB query can't be built.
+
+Not applied for the legacy implementation, or when 'allow_experimental_analyzer=0`.
+
+Default value: `true`.

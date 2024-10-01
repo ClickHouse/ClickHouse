@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <jemalloc/jemalloc.h>
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
@@ -26,7 +25,6 @@ namespace ErrorCodes
 
 void purgeJemallocArenas()
 {
-    LOG_TRACE(getLogger("SystemJemalloc"), "Purging unused memory");
     Stopwatch watch;
     mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
@@ -44,20 +42,6 @@ void checkJemallocProfilingEnabled()
             ErrorCodes::BAD_ARGUMENTS,
             "ClickHouse was started without enabling profiling for jemalloc. To use jemalloc's profiler, following env variable should be "
             "set: MALLOC_CONF=background_thread:true,prof:true");
-}
-
-template <typename T>
-void setJemallocValue(const char * name, T value)
-{
-    T old_value;
-    size_t old_value_size = sizeof(T);
-    if (mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T)))
-    {
-        LOG_WARNING(getLogger("Jemalloc"), "mallctl for {} failed", name);
-        return;
-    }
-
-    LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
 }
 
 void setJemallocProfileActive(bool value)

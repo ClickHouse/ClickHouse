@@ -9,6 +9,7 @@ from typing import Any, List, Union
 
 import boto3  # type: ignore
 import botocore  # type: ignore
+
 from compress_files import compress_file_fast
 from env_helper import (
     IS_CI,

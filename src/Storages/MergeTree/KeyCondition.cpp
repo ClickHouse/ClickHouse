@@ -1,10 +1,10 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
@@ -17,31 +17,40 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/HilbertUtils.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
 #include <algorithm>
 #include <cassert>
 #include <stack>
 #include <limits>
 
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry/geometries/multi_polygon.hpp>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool analyze_index_with_space_filling_curves;
+}
 
 namespace ErrorCodes
 {
@@ -454,12 +463,20 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             out.range = Range::createWholeUniverseWithoutNull();
             return true;
         }
+    },
+    {
+        "pointInPolygon",
+        [] (RPNElement & out, const Field &)
+        {
+            out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+            return true;
+        }
     }
 };
 
 static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
-    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE};
+    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
@@ -818,7 +835,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
+    if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
     if (!filter_dag)
@@ -1207,14 +1224,6 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!future_set)
         return false;
 
-    const auto set_types = future_set->getTypes();
-    size_t set_types_size = set_types.size();
-    size_t indexes_mapping_size = indexes_mapping.size();
-
-    for (auto & index_mapping : indexes_mapping)
-        if (index_mapping.tuple_index >= set_types_size)
-            return false;
-
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
         return false;
@@ -1229,14 +1238,50 @@ bool KeyCondition::tryPrepareSetIndex(
       * we need to convert set column to primary key column.
       */
     auto set_columns = prepared_set->getSetElements();
+    auto set_types = future_set->getTypes();
+    {
+        Columns new_columns;
+        DataTypes new_types;
+        while (set_columns.size() < left_args_count) /// If we have an unpacked tuple inside, we unpack it
+        {
+            bool has_tuple = false;
+            for (size_t i = 0; i < set_columns.size(); ++i)
+            {
+                if (isTuple(set_types[i]))
+                {
+                    has_tuple = true;
+                    auto columns_tuple = assert_cast<const ColumnTuple*>(set_columns[i].get())->getColumns();
+                    auto subtypes = assert_cast<const DataTypeTuple&>(*set_types[i]).getElements();
+                    new_columns.insert(new_columns.end(), columns_tuple.begin(), columns_tuple.end());
+                    new_types.insert(new_types.end(), subtypes.begin(), subtypes.end());
+                }
+                else
+                {
+                    new_columns.push_back(set_columns[i]);
+                    new_types.push_back(set_types[i]);
+                }
+            }
+            if (!has_tuple)
+                return false;
+
+            set_columns.swap(new_columns);
+            set_types.swap(new_types);
+            new_columns.clear();
+            new_types.clear();
+        }
+    }
+    size_t set_types_size = set_types.size();
+    size_t indexes_mapping_size = indexes_mapping.size();
     assert(set_types_size == set_columns.size());
+
+    Columns transformed_set_columns = set_columns;
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
     {
         const auto & key_column_type = data_types[indexes_mapping_index];
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
-        auto set_column = set_columns[set_element_index];
+        ColumnPtr set_column = set_columns[set_element_index];
 
         if (!set_transforming_chains[indexes_mapping_index].empty())
         {
@@ -1257,7 +1302,7 @@ bool KeyCondition::tryPrepareSetIndex(
 
         if (canBeSafelyCasted(set_element_type, key_column_type))
         {
-            set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
             continue;
         }
 
@@ -1266,23 +1311,40 @@ bool KeyCondition::tryPrepareSetIndex(
 
         const NullMap * set_column_null_map = nullptr;
 
+        // Keep a reference to the original set_column to ensure the data remains valid
+        ColumnPtr original_set_column = set_column;
+
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
             if (WhichDataType(set_element_type).isLowCardinality())
             {
                 set_element_type = removeLowCardinality(set_element_type);
-                set_column = set_column->convertToFullColumnIfLowCardinality();
+                transformed_set_columns[set_element_index] = set_column->convertToFullColumnIfLowCardinality();
             }
 
             set_element_type = removeNullable(set_element_type);
-            const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
-            set_column_null_map = &set_column_nullable.getNullMapData();
-            set_column = set_column_nullable.getNestedColumnPtr();
+
+            // Obtain the nullable column without reassigning set_column immediately
+            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
+            if (!set_column_nullable)
+                return false;
+
+            const NullMap & null_map_data = set_column_nullable->getNullMapData();
+            if (!null_map_data.empty())
+                set_column_null_map = &null_map_data;
+
+            ColumnPtr nested_column = set_column_nullable->getNestedColumnPtr();
+
+            // Reassign set_column after we have obtained necessary references
+            set_column = nested_column;
         }
 
-        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
-        const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
-        const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
+        ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
+        if (!nullable_set_column_typed)
+            return false;
+
+        const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
 
         IColumn::Filter filter(nullable_set_column_null_map_size);
@@ -1290,20 +1352,27 @@ bool KeyCondition::tryPrepareSetIndex(
         if (set_column_null_map)
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+            {
+                if (nullable_set_column_null_map_size < set_column_null_map->size())
+                    filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+                else
+                    filter[i] = !nullable_set_column_null_map[i];
+            }
 
-            set_column = nullable_set_column_typed.filter(filter, 0);
+            set_column = nullable_set_column_typed->filter(filter, 0);
         }
         else
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
                 filter[i] = !nullable_set_column_null_map[i];
 
-            set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
+            set_column = nullable_set_column_typed->getNestedColumn().filter(filter, 0);
         }
 
-        set_columns[set_element_index] = std::move(set_column);
+        transformed_set_columns[set_element_index] = std::move(set_column);
     }
+
+    set_columns = std::move(transformed_set_columns);
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
@@ -1793,6 +1862,54 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        auto analyze_point_in_polygon = [&, this]() -> bool
+        {
+            /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
+            if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
+                return false;
+            if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+                return false;
+
+            const auto atom_it = atom_map.find(func_name);
+
+            /// Analyze (x, y)
+            RPNElement::MultiColumnsFunctionDescription column_desc;
+            column_desc.function_name = func_name;
+            auto first_argument = func.getArgumentAt(0).toFunctionNode();
+
+            if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
+                return false;
+
+            for (size_t i = 0; i < 2; ++i)
+            {
+                auto name = first_argument.getArgumentAt(i).getColumnName();
+                auto it = key_columns.find(name);
+                if (it == key_columns.end())
+                    return false;
+                column_desc.key_columns.push_back(name);
+                column_desc.key_column_positions.push_back(key_columns[name]);
+            }
+            out.point_in_polygon_column_description = column_desc;
+
+            /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
+            chassert(WhichDataType(const_type).isArray());
+            for (const auto & elem : const_value.safeGet<Array>())
+            {
+                if (elem.getType() != Field::Types::Tuple)
+                    return false;
+
+                const auto & elem_tuple = elem.safeGet<Tuple>();
+                if (elem_tuple.size() != 2)
+                    return false;
+
+                auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
+                auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
+                out.polygon.outer().push_back({x, y});
+            }
+            boost::geometry::correct(out.polygon);
+            return atom_it->second(out, const_value);
+        };
+
         if (always_relaxed_atom_functions.contains(func_name))
             relaxed = true;
 
@@ -1821,6 +1938,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 }
                 else
                     return false;
+            }
+            else if (func_name == "pointInPolygon")
+            {
+                /// Case1 no holes in polygon
+                return analyze_point_in_polygon();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
@@ -1990,7 +2112,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         }
         else
-            return false;
+        {
+            if (func_name == "pointInPolygon")
+            {
+                /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
+                return analyze_point_in_polygon();
+            }
+            else
+                return false;
+        }
 
         const auto atom_it = atom_map.find(func_name);
 
@@ -3002,6 +3132,46 @@ BoolMask KeyCondition::checkInHyperrectangle(
               * represented by a set of hyperrectangles.
               */
         }
+        else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
+        {
+            /** There are 2 kinds of polygons:
+              *   1. Polygon by minmax index
+              *   2. Polygons which is provided by user
+              *
+              * Polygon by minmax index:
+              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *
+              * Algorithm:
+              *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
+              */
+            const auto & key_column_positions = element.point_in_polygon_column_description->key_column_positions;
+
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[0]].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[0]].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[1]].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[1]].right);
+
+            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            using Point = boost::geometry::model::d2::point_xy<Float64>;
+            using Polygon = boost::geometry::model::polygon<Point>;
+            Polygon  polygon_by_minmax_index;
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+
+            /// Close ring
+            boost::geometry::correct(polygon_by_minmax_index);
+
+            /// Because the polygon may have a hole so the "can_be_false" should always be true.
+            rpn_stack.emplace_back(
+                boost::geometry::intersects(polygon_by_minmax_index, element.polygon), true);
+        }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
@@ -3081,7 +3251,16 @@ bool KeyCondition::mayBeTrueInRange(
 String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
-        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), true);
+        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+    else if (point_in_polygon_column_description)
+    {
+        return toString(
+            fmt::format(
+                "column ({}, {})",
+                point_in_polygon_column_description->key_columns[0],
+                point_in_polygon_column_description->key_columns[1]),
+            false);
+    }
     else
         return toString(fmt::format("column {}", key_column), true);
 }
@@ -3161,6 +3340,23 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             buf << ")";
             return buf.str();
         }
+        case FUNCTION_POINT_IN_POLYGON:
+        {
+            auto points_in_polygon = polygon.outer();
+            buf << "(";
+            print_wrapped_column(buf);
+            buf << " in ";
+            buf << "[";
+            for (size_t i = 0; i < points_in_polygon.size(); ++i)
+            {
+                if (i != 0)
+                    buf << ", ";
+                buf << "(" << points_in_polygon[i].x() << ", " << points_in_polygon[i].y() << ")";
+            }
+            buf << "]";
+            buf << ")";
+            return buf.str();
+        }
         case FUNCTION_IS_NULL:
         case FUNCTION_IS_NOT_NULL:
         {
@@ -3212,6 +3408,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             || element.function == RPNElement::FUNCTION_IN_SET
             || element.function == RPNElement::FUNCTION_NOT_IN_SET
             || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
+            || element.function == RPNElement::FUNCTION_POINT_IN_POLYGON
             || element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL
             || element.function == RPNElement::ALWAYS_FALSE)

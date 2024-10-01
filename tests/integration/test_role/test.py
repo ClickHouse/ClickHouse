@@ -1,6 +1,8 @@
-import time
-import pytest
 import random
+import time
+
+import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -629,5 +631,6 @@ def test_roles_cache():
     check()
 
     instance.query("DROP USER " + ", ".join(users))
-    instance.query("DROP ROLE " + ", ".join(roles))
+    if roles:
+        instance.query("DROP ROLE " + ", ".join(roles))
     instance.query("DROP TABLE tbl")

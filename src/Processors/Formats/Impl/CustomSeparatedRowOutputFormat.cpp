@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowOutputFormat.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 
 

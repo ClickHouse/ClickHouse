@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
+#include <Core/Settings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -17,6 +18,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMaxThreads max_parsing_threads;
+}
 
 namespace ErrorCodes
 {
@@ -436,9 +441,19 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
-                processor_id, file_iterator, configuration, object_storage, read_from_format_info,
-                format_settings, nullptr, context, nullptr, log, max_block_size,
-                context->getSettingsRef().max_parsing_threads.value, /* need_only_count */false);
+                processor_id,
+                file_iterator,
+                configuration,
+                object_storage,
+                read_from_format_info,
+                format_settings,
+                nullptr,
+                context,
+                nullptr,
+                log,
+                max_block_size,
+                context->getSettingsRef()[Setting::max_parsing_threads].value,
+                /* need_only_count */ false);
 
             if (!reader)
             {
