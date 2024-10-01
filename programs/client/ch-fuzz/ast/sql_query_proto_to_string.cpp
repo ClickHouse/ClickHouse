@@ -2251,8 +2251,25 @@ CONV_FN(Detach, dt) {
   }
 }
 
+CONV_FN(SelectIntoFile, intofile) {
+  ret += "INTO OUTFILE '";
+  ret += intofile.path();
+  ret += "'";
+  if (intofile.has_compression()) {
+    ret += " COMPRESSION '";
+    if (intofile.has_level()) {
+      ret += "' LEVEL ";
+      ret += std::to_string(intofile.level());
+    }
+  }
+}
+
 CONV_FN(TopSelect, top) {
   SelectToString(ret, top.sel());
+  if (top.has_intofile()) {
+    ret += " ";
+    SelectIntoFileToString(ret, top.intofile());
+  }
   if (top.has_format()) {
     ret += " FORMAT ";
     ret += OutFormat_Name(top.format()).substr(4);

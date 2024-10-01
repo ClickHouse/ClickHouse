@@ -3,9 +3,10 @@
 #include "random_generator.h"
 #include "random_settings.h"
 #include "sql_catalog.h"
-#include "../config/fuzz_config.h"
 
 namespace chfuzz {
+
+class QueryOracle;
 
 class SQLRelationCol {
 public:
@@ -75,7 +76,6 @@ typedef struct InsertEntry {
 class StatementGenerator {
 private:
 	std::string buf;
-	const FuzzConfig &fc;
 	bool in_transaction = false, inside_projection = false;
 	uint32_t table_counter = 0, current_level = 0;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
@@ -190,6 +190,8 @@ private:
 	int GenerateAlterTable(RandomGenerator &rg, sql_query_grammar::AlterTable *at);
 	int GenerateSettingValues(RandomGenerator &rg, const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
 							  sql_query_grammar::SettingValues *vals);
+	int GenerateSettingValues(RandomGenerator &rg, const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
+							  const size_t nvalues, sql_query_grammar::SettingValues *vals);
 	int GenerateSettingList(RandomGenerator &rg, const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
 							sql_query_grammar::SettingList *pl);
 	int GenerateAttach(RandomGenerator &rg, sql_query_grammar::Attach *att);
@@ -233,18 +235,16 @@ private:
 public:
 	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return t.attached;};
 
-	StatementGenerator(const FuzzConfig &ffc) : fc(ffc) {}
+	StatementGenerator() {
+		buf.reserve(2048);
+	}
 
 	int GenerateNextCreateTable(RandomGenerator &rg, sql_query_grammar::CreateTable *sq);
 	int GenerateNextStatement(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq);
 
-	int GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq);
-	int GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
-	int GenerateExportQuery(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq1);
-	int GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
-	int GenerateImportQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq3);
-
 	void UpdateGenerator(const sql_query_grammar::SQLQuery &sq, const bool success);
+
+	friend class QueryOracle;
 };
 
 }

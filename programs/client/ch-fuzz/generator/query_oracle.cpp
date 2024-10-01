@@ -1,8 +1,4 @@
-#include "sql_catalog.h"
-#include "sql_types.h"
-#include "statement_generator.h"
-
-#include <filesystem>
+#include "query_oracle.h"
 
 namespace chfuzz {
 
@@ -11,27 +7,27 @@ SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 or
 SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 */
-int StatementGenerator::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq) {
+int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq) {
 	sql_query_grammar::SelectStatementCore *ssc = sq.mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
 	const uint32_t combination = rg.NextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
-	this->levels[this->current_level] = QueryLevel(this->current_level);
-	GenerateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
+	gen.levels[gen.current_level] = QueryLevel(gen.current_level);
+	gen.GenerateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
-	const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates,
-			   prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
-	this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+	const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates,
+			   prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
+	gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
 	if (combination != 1) {
-		GenerateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
+		gen.GenerateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
 	}
 	if (combination != 0) {
-		GenerateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
+		gen.GenerateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
 	}
-	this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
-	this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+	gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
+	gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
 
 	ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->set_func(sql_query_grammar::FUNCcount);
-	this->levels.erase(this->current_level);
+	gen.levels.erase(gen.current_level);
 	return 0;
 }
 
@@ -40,7 +36,7 @@ SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
 or
 SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 */
-int StatementGenerator::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
+int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
 	sql_query_grammar::SelectStatementCore &ssc1 =
 		const_cast<sql_query_grammar::SelectStatementCore &>(sq1.inner_query().select().sel().select_core());
 	sql_query_grammar::SelectStatementCore *ssc2 = sq2.mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
@@ -117,10 +113,10 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 	{sql_query_grammar::OutFormat::OUT_MsgPack, sql_query_grammar::InFormat::IN_MsgPack}
 };
 
-int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq1) {
+int QueryOracle::GenerateExportQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1) {
 	bool first = true;
 	NestedType *ntp = nullptr;
-	const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
+	const SQLTable &t = rg.PickRandomlyFromVector(gen.FilterCollection<SQLTable>(gen.attached_tables));
 	sql_query_grammar::Insert *ins = sq1.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();
@@ -173,7 +169,7 @@ int StatementGenerator::GenerateExportQuery(RandomGenerator &rg, sql_query_gramm
 	return 0;
 }
 
-int StatementGenerator::GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
+int QueryOracle::GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2) {
 	sql_query_grammar::Truncate *trunc = sq2.mutable_inner_query()->mutable_trunc();
 	sql_query_grammar::JoinedTable &jt =
 		const_cast<sql_query_grammar::JoinedTable &>(sq1.inner_query().insert().select().select_core().from().tos().join_clause().tos().joined_table());
@@ -182,7 +178,8 @@ int StatementGenerator::GenerateClearQuery(sql_query_grammar::SQLQuery &sq1, sql
 	return 0;
 }
 
-int StatementGenerator::GenerateImportQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq3) {
+int QueryOracle::GenerateImportQuery(StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1,
+									 sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq3) {
 	NestedType *ntp = nullptr;
 	sql_query_grammar::Insert *ins = sq3.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::InsertIntoTable *iit = ins->mutable_itable();
@@ -190,7 +187,7 @@ int StatementGenerator::GenerateImportQuery(sql_query_grammar::SQLQuery &sq1, sq
 	sql_query_grammar::Truncate &trunc = const_cast<sql_query_grammar::Truncate &>(sq2.inner_query().trunc());
 	const sql_query_grammar::FileFunc &ff = sq1.inner_query().insert().tfunction().file();
 	const uint32_t tname = static_cast<uint32_t>(std::stoul(trunc.est().table_name().table().substr(1)));
-	const SQLTable &t = this->tables[tname];
+	const SQLTable &t = gen.tables[tname];
 
 	iit->set_allocated_est(trunc.release_est());
 	for (const auto &entry : t.cols) {
@@ -212,6 +209,117 @@ int StatementGenerator::GenerateImportQuery(sql_query_grammar::SQLQuery &sq1, sq
 	if (ff.has_fcomp()) {
 		iff->set_fcomp(ff.fcomp());
 	}
+	return 0;
+}
+
+typedef struct TestSetting {
+	const std::string tsetting, first_value, second_value;
+
+	TestSetting (const std::string &sett, const std::string &fir, const std::string &sec) :
+		tsetting(sett), first_value(fir), second_value(sec) {}
+} TestSetting;
+
+static const std::vector<TestSetting> test_settings{
+	TestSetting("aggregate_functions_null_for_empty", "0", "1"),
+	TestSetting("any_join_distinct_right_table_keys", "0", "1"),
+	TestSetting("async_insert", "0", "1"),
+	TestSetting("cast_keep_nullable", "0", "1"),
+	TestSetting("check_query_single_value_result", "0", "1"),
+	TestSetting("compile_aggregate_expressions", "0", "1"),
+	TestSetting("compile_sort_description", "0", "1"),
+	TestSetting("data_type_default_nullable", "0", "1"),
+	TestSetting("deduplicate_blocks_in_dependent_materialized_views", "0", "1"),
+	TestSetting("describe_include_subcolumns", "0", "1"),
+	TestSetting("distributed_aggregation_memory_efficient", "0", "1"),
+	TestSetting("enable_memory_bound_merging_of_aggregation_results", "0", "1"),
+	TestSetting("enable_multiple_prewhere_read_steps", "0", "1"),
+	TestSetting("exact_rows_before_limit", "0", "1"),
+	TestSetting("input_format_import_nested_json", "0", "1"),
+	TestSetting("flatten_nested", "0", "1"),
+	TestSetting("force_optimize_projection", "0", "1"),
+	TestSetting("fsync_metadata", "0", "1"),
+	TestSetting("group_by_use_nulls", "0", "1"),
+	TestSetting("http_wait_end_of_query", "0", "1"),
+	TestSetting("input_format_parallel_parsing", "0", "1"),
+	TestSetting("insert_null_as_default", "0", "1"),
+	TestSetting("join_any_take_last_row", "0", "1"),
+	TestSetting("join_use_nulls", "0", "1"),
+	TestSetting("local_filesystem_read_prefetch", "0", "1"),
+	TestSetting("log_query_threads", "0", "1"),
+	TestSetting("low_cardinality_use_single_dictionary_for_part", "0", "1"),
+	TestSetting("max_threads", "1", std::to_string(std::thread::hardware_concurrency())),
+	TestSetting("optimize_aggregation_in_order", "0", "1"),
+	TestSetting("optimize_aggregation_in_order", "0", "1"),
+	TestSetting("optimize_append_index", "0", "1"),
+	TestSetting("optimize_distinct_in_order", "0", "1"),
+	TestSetting("optimize_functions_to_subcolumns", "0", "1"),
+	TestSetting("optimize_if_chain_to_multiif", "0", "1"),
+	TestSetting("optimize_if_transform_strings_to_enum", "0", "1"),
+	TestSetting("optimize_move_to_prewhere_if_final", "0", "1"),
+	TestSetting("optimize_or_like_chain", "0", "1"),
+	TestSetting("optimize_read_in_order", "0", "1"),
+	TestSetting("optimize_skip_merged_partitions", "0", "1"),
+	TestSetting("optimize_sorting_by_input_stream_properties", "0", "1"),
+	TestSetting("optimize_substitute_columns", "0", "1"),
+	TestSetting("optimize_syntax_fuse_functions", "0", "1"),
+	TestSetting("optimize_trivial_approximate_count_query", "0", "1"),
+	TestSetting("output_format_parallel_formatting", "0", "1"),
+	TestSetting("output_format_pretty_highlight_digit_groups", "0", "1"),
+	TestSetting("output_format_pretty_row_numbers", "0", "1"),
+	TestSetting("output_format_write_statistics", "0", "1"),
+	TestSetting("page_cache_inject_eviction", "0", "1"),
+	TestSetting("partial_merge_join_optimizations", "0", "1"),
+	TestSetting("precise_float_parsing", "0", "1"),
+	TestSetting("prefer_localhost_replica", "0", "1"),
+	TestSetting("query_plan_aggregation_in_order", "0", "1"),
+	TestSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", "0", "1"),
+	TestSetting("remote_filesystem_read_prefetch", "0", "1"),
+	TestSetting("rows_before_aggregation", "0", "1"),
+	TestSetting("throw_on_error_from_cache_on_write_operations", "0", "1"),
+	TestSetting("transform_null_in", "0", "1"),
+	TestSetting("ttl_only_drop_parts", "0", "1"),
+	TestSetting("update_insert_deduplication_token_in_dependent_materialized_views", "0", "1"),
+	TestSetting("use_page_cache_for_disks_without_file_cache", "0", "1"),
+	TestSetting("use_skip_indexes", "0", "1"),
+	TestSetting("use_uncompressed_cache", "0", "1")
+};
+
+int QueryOracle::GenerateFirstSetting(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq1) {
+	const TestSetting &ts = rg.PickRandomlyFromVector(test_settings);
+	sql_query_grammar::SettingValues *sv = sq1.mutable_inner_query()->mutable_setting_values();
+	sql_query_grammar::SetValue *sett = sv->mutable_set_value();
+
+	sett->set_property(ts.tsetting);
+	nsetting.resize(0);
+	if (rg.NextBool()) {
+		sett->set_value(ts.first_value);
+		nsetting += ts.second_value;
+	} else {
+		sett->set_value(ts.second_value);
+		nsetting += ts.first_value;
+	}
+	return 0;
+}
+
+int QueryOracle::GenerateFirtSettingQuery(RandomGenerator &rg, StatementGenerator &gen, sql_query_grammar::SQLQuery &sq2) {
+	const std::filesystem::path qfile = fc.db_file_path / "query.data";
+	sql_query_grammar::TopSelect *ts = sq2.mutable_inner_query()->mutable_select();
+
+	if (std::filesystem::exists(qfile)) {
+		std::filesystem::resize_file(qfile, 0); //truncate the file
+	}
+	gen.GenerateTopSelect(rg, ts);
+	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	ts->mutable_intofile()->set_path(qfile.generic_string());
+	return 0;
+}
+
+int QueryOracle::GenerateSecondSetting(const sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq3) {
+	sql_query_grammar::SettingValues *sv = sq3.mutable_inner_query()->mutable_setting_values();
+	sql_query_grammar::SetValue *sett = sv->mutable_set_value();
+
+	sett->set_property(sq1.inner_query().setting_values().set_value().property());
+	sett->set_value(nsetting);
 	return 0;
 }
 

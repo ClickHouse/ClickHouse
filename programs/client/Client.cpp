@@ -51,6 +51,7 @@
 #include <Poco/Util/Application.h>
 
 #include "ch-fuzz/ast/sql_query_proto_to_string.h"
+#include "ch-fuzz/generator/query_oracle.h"
 #include "ch-fuzz/generator/statement_generator.h"
 
 namespace fs = std::filesystem;
@@ -999,7 +1000,8 @@ bool Client::chFuzz()
     chfuzz::FuzzConfig fc(ch_fuzz_options_path);
     chfuzz::RandomGenerator rg(fc.seed);
     std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
-    chfuzz::StatementGenerator gen(std::move(fc));
+    chfuzz::QueryOracle qo(std::move(fc));
+    chfuzz::StatementGenerator gen;
     sql_query_grammar::SQLQuery sq1, sq2, sq3;
 
     GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -1032,32 +1034,32 @@ bool Client::chFuzz()
             if (noption < 31)
             {
                 //correctness test query
-                (void) gen.GenerateCorrectnessTestFirstQuery(rg, sq1);
+                (void) qo.GenerateCorrectnessTestFirstQuery(rg, gen, sq1);
                 chfuzz::SQLQueryToString(full_query, sq1);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
 
                 sq2.Clear();
                 full_query.resize(0);
-                (void) gen.GenerateCorrectnessTestSecondQuery(sq1, sq2);
+                (void) qo.GenerateCorrectnessTestSecondQuery(sq1, sq2);
                 chfuzz::SQLQueryToString(full_query, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
             }
             else if (gen.CollectionHas<chfuzz::SQLTable>(gen.attached_tables) && noption < 41)
             {
                 //test in and out formats
-                (void) gen.GenerateExportQuery(rg, sq1);
+                (void) qo.GenerateExportQuery(rg, gen, sq1);
                 chfuzz::SQLQueryToString(full_query, sq1);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
 
                 sq2.Clear();
                 full_query.resize(0);
-                (void) gen.GenerateClearQuery(sq1, sq2);
+                (void) qo.GenerateClearQuery(sq1, sq2);
                 chfuzz::SQLQueryToString(full_query, sq2);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
 
                 sq3.Clear();
                 full_query.resize(0);
-                (void) gen.GenerateImportQuery(sq1, sq2, sq3);
+                (void) qo.GenerateImportQuery(gen, sq1, sq2, sq3);
                 chfuzz::SQLQueryToString(full_query, sq3);
                 server_up &= ProcessCHFuzzQuery(outf, full_query);
             }
@@ -1266,7 +1268,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
-    ch_fuzz_options_path = options["ch-fuzz-config"].as<std::string>();
+    ch_fuzz_options_path = options.count("ch-fuzz-config") ? options["ch-fuzz-config"].as<std::string>() : "";
     ch_fuzz = ch_fuzz_options_path != "";
     if (query_fuzzer_runs || ch_fuzz)
     {

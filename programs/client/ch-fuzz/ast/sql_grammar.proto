@@ -2678,9 +2678,16 @@ message ExplainOption {
   required bool val = 2;
 }
 
+message SelectIntoFile {
+  required string path = 1;
+  optional FileCompression compression = 2;
+  optional uint32 level = 3;
+}
+
 message TopSelect {
   required Select sel = 1;
-  optional OutFormat format = 2;
+  optional SelectIntoFile intofile = 2;
+  optional OutFormat format = 3;
 }
 
 message CheckTable {

@@ -10,15 +10,19 @@ namespace chfuzz {
 
 int StatementGenerator::GenerateSettingValues(RandomGenerator &rg,
 											  const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
-											  sql_query_grammar::SettingValues *vals) {
-	const size_t nvalues = std::min<size_t>(settings.size(), static_cast<size_t>((rg.NextRandomUInt32() % 4) + 1));
-
+											  const size_t nvalues, sql_query_grammar::SettingValues *vals) {
 	for (size_t i = 0 ; i < nvalues ; i++) {
 		sql_query_grammar::SetValue *sv = i == 0 ? vals->mutable_set_value() : vals->add_other_values();
 
 		SetRandomSetting(rg, settings, this->buf, sv);
 	}
 	return 0;
+}
+
+int StatementGenerator::GenerateSettingValues(RandomGenerator &rg,
+											  const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
+											  sql_query_grammar::SettingValues *vals) {
+	return GenerateSettingValues(rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.NextRandomUInt32() % 4) + 1)), vals);
 }
 
 int StatementGenerator::GenerateSettingList(RandomGenerator &rg,

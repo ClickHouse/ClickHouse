@@ -2,7 +2,7 @@
 #include <filesystem>
 #include <string>
 
-#include "json.h"
+#include "../third_party/json.h"
 using json = nlohmann::json;
 
 namespace chfuzz {
