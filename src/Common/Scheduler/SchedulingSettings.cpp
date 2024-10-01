@@ -12,8 +12,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-// TODO(serxa): we should validate workloads with this function before storing in WorkloadEntityStorage
-// TODO(serxa): and probably we should add and persist version in filename for future changes
 void SchedulingSettings::updateFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
 {
     struct {
