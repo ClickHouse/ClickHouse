@@ -13,7 +13,7 @@ NUM_REPLICAS=6
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS r$i SYNC;
-        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x;
+        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x SETTINGS replicated_max_ratio_of_wrong_parts=1.0;
     "
 done
 
@@ -36,8 +36,9 @@ done
 wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    (while [[ $($CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA r$i;" 2>&1) ]]; do sleep 0.001; done) | grep -F "Exception: " | grep -Fv "Table is in readonly mode" ||:
-    $CLICKHOUSE_CLIENT -q "SELECT count(), min(x), max(x), sum(x) FROM r$i;"
+    $CLICKHOUSE_CLIENT -q "
+        SYSTEM SYNC REPLICA r$i;
+        SELECT count(), min(x), max(x), sum(x) FROM r$i;"
 done
 
 for i in $(seq 1 $NUM_REPLICAS); do
