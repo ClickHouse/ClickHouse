@@ -174,7 +174,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
-
     WriteBufferFromOwnString buf;
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
