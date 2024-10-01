@@ -86,19 +86,17 @@ namespace
         return hashes;
     }
 
-    bool maybeTrueOnBloomFilter(const std::vector<uint64_t> & hashes, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
+    bool maybeTrueOnBloomFilter(const std::vector<uint64_t> & hashes, const std::unique_ptr<parquet::BloomFilter> & bloom_filter)
     {
         for (const auto hash : hashes)
         {
-            bool found = bloom_filter->FindHash(hash);
-
-            if (match_all && !found)
-                return false;
-            if (!match_all && found)
+            if (bloom_filter->FindHash(hash))
+            {
                 return true;
+            }
         }
 
-        return match_all;
+        return false;
     }
 
     bool isClickHouseTypeCompatibleWithParquetIntegerType(const DataTypePtr clickhouse_type)
@@ -207,7 +205,7 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
 
             const auto & bloom_filter = column_index_to_column_bf.at(element.key_columns[0]);
 
-            bool maybe_true = maybeTrueOnBloomFilter(element.hashes_per_column[0], bloom_filter, false);
+            bool maybe_true = maybeTrueOnBloomFilter(element.hashes_per_column[0], bloom_filter);
 
             rpn_stack.emplace_back(maybe_true, true);
 
@@ -230,8 +228,7 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
 
                 bool column_maybe_contains = maybeTrueOnBloomFilter(
                     element.hashes_per_column[column_index],
-                    column_index_to_column_bf.at(element.key_columns[column_index]),
-                    false);
+                    column_index_to_column_bf.at(element.key_columns[column_index]));
 
                 if (!column_maybe_contains)
                 {
