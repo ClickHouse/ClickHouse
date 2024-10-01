@@ -152,6 +152,8 @@
     M(String, format_json_object_each_row_column_for_object_name, "", "The name of column that will be used as object names in JSONObjectEachRow format. Column type should be String", 0) \
     \
     M(UInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.", 0) \
+    M(UInt64, output_format_pretty_max_column_name_width, 100, "Maximum width of column name to display in Pretty formats. If greater - it will be truncated in the middle.", 0) \
+    M(UInt64, output_format_pretty_max_column_name_width_histeresis, 10, "If the column name exceeds the maximum allowed width by this number of characters, it will be truncated in the middle.", 0) \
     M(UInt64, output_format_pretty_max_column_pad_width, 250, "Maximum width to pad all values in a column in Pretty formats.", 0) \
     M(UInt64, output_format_pretty_max_value_width, 10000, "Maximum width of value to display in Pretty formats. If greater - it will be cut.", 0) \
     M(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, "Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.", 0) \
