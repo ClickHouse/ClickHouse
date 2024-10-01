@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 
 #include <Common/scope_guard_safe.h>
+#include <Core/ParallelReplicasMode.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -94,7 +95,7 @@ namespace Setting
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
@@ -322,14 +323,21 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    if (settings[Setting::max_parallel_replicas] > 1)
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
     {
-        if (!settings[Setting::parallel_replicas_custom_key].value.empty() || settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0)
+        /// Imagine the situation when we have a query with parallel replicas and
+        /// this code executed on the remote server.
+        /// If we will apply trivial count optimization, then each remote server will do the same
+        /// and we will have N times more rows as the result on the initiator.
+        /// TODO: This condition seems unneeded when we will make the parallel replicas with custom key
+        /// to work on top of MergeTree instead of Distributed.
+        if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY)
             return false;
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        query_context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
@@ -537,7 +545,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         settings[Setting::parallel_replicas_count],
         settings[Setting::parallel_replica_offset],
         std::move(custom_key_ast),
-        {settings[Setting::parallel_replicas_custom_key_filter_type],
+        {settings[Setting::parallel_replicas_mode],
          settings[Setting::parallel_replicas_custom_key_range_lower],
          settings[Setting::parallel_replicas_custom_key_range_upper]},
         storage->getInMemoryMetadataPtr()->columns,
@@ -1549,8 +1557,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 plan.getCurrentDataStream(),
                 std::move(sort_description),
                 0 /*limit*/,
-                sort_settings,
-                settings[Setting::optimize_sorting_by_input_stream_properties]);
+                sort_settings);
             sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
             plan.addStep(std::move(sorting_step));
         };
