@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <cstdint>
 #include "sql_types.h"
 #include "sql_funcs.h"
 #include "statement_generator.h"
@@ -146,7 +148,7 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator &rg, sql_query_gram
 		AppendDecimal(rg, buf, left, right);
 		buf += ")";
 		lv->set_no_quote_str(buf);
-	} else if (noption < 551) {
+	} else if (this->allow_not_deterministic && noption < 551) {
 		const uint32_t nlen = rg.NextLargeNumber(), noption2 = rg.NextSmallNumber();
 
 		buf.resize(0);
@@ -356,15 +358,16 @@ int StatementGenerator::GeneratePredicate(RandomGenerator &rg, sql_query_grammar
 }
 
 int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_funcs, const bool allow_aggr, sql_query_grammar::SQLFuncCall *func_call) {
-	const uint32_t nfuncs = static_cast<uint32_t>((allow_funcs ? CHFuncs.size() : 0) + (allow_aggr ? CHAggrs.size() : 0));
+	const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 35);
+	const uint32_t nfuncs = static_cast<uint32_t>((allow_funcs ? funcs_size : 0) + (allow_aggr ? CHAggrs.size() : 0));
 	std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
 	uint32_t generated_params = 0;
 
 	assert(allow_funcs || allow_aggr);
 	const uint32_t nopt = next_dist(rg.gen);
-	if (!allow_funcs || nopt >= CHFuncs.size()) {
+	if (!allow_funcs || nopt >= funcs_size) {
 		//aggregate
-		const CHAggregate &agg = CHAggrs[nopt - (allow_funcs ? CHFuncs.size() : 0)];
+		const CHAggregate &agg = CHAggrs[nopt - static_cast<uint32_t>(allow_funcs ? funcs_size : 0)];
 		const uint32_t max_params = std::min(this->max_width - this->width, std::min(agg.max_params, UINT32_C(5))),
 					   max_args = std::min(this->max_width - this->width, std::min(agg.max_args, UINT32_C(5))),
 					   ncombinators = rg.NextSmallNumber() < 4 ? std::min(this->max_width - this->width, (rg.NextSmallNumber() % 3) + 1) : 0;

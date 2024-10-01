@@ -19,6 +19,7 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 	sql_query_grammar::SelectStatementCore *ssc = ts->mutable_sel()->mutable_select_core();
 	const uint32_t combination = 0;//TODO fix this rg.NextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
+	gen.SetAllowNotDetermistic(false);
 	gen.levels[gen.current_level] = QueryLevel(gen.current_level);
 	gen.GenerateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
@@ -36,6 +37,8 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 
 	ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->set_func(sql_query_grammar::FUNCcount);
 	gen.levels.erase(gen.current_level);
+	gen.SetAllowNotDetermistic(true);
+
 	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
 	sif->set_path(qfile.generic_string());
 	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
@@ -381,7 +384,9 @@ int QueryOracle::GenerateSettingQuery(RandomGenerator &rg, StatementGenerator &g
 	sql_query_grammar::TopSelect *ts = sq2.mutable_inner_query()->mutable_select();
 	sql_query_grammar::SelectIntoFile *sif = ts->mutable_intofile();
 
+	gen.SetAllowNotDetermistic(false);
 	gen.GenerateTopSelect(rg, ts);
+	gen.SetAllowNotDetermistic(true);
 	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
 	sif->set_path(qfile.generic_string());
 	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);

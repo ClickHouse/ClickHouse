@@ -76,7 +76,7 @@ typedef struct InsertEntry {
 class StatementGenerator {
 private:
 	std::string buf;
-	bool in_transaction = false, inside_projection = false;
+	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true;
 	uint32_t table_counter = 0, current_level = 0;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
 	std::map<uint32_t, SQLView> staged_views, views;
@@ -89,6 +89,10 @@ private:
 
 	std::map<uint32_t, std::map<std::string, SQLRelation>> ctes;
 	std::map<uint32_t, QueryLevel> levels;
+
+	void SetAllowNotDetermistic(const bool value) {
+		allow_not_deterministic = value;
+	}
 
 	const std::function<bool (const SQLView&)> attached_views = [](const SQLView& t){return t.attached;};
 
