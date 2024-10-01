@@ -285,7 +285,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 						}
 						desc += "max_dynamic_paths=";
 						desc += std::to_string(max_dpaths);
-					} else if (noption < 7) {
+					} else if (this->depth >= this->max_depth || noption < 8) {
 						const uint32_t max_dtypes = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 33);
 
 						if (tp) {
@@ -293,7 +293,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 						}
 						desc += "max_dynamic_types=";
 						desc += std::to_string(max_dtypes);
-					} else if (this->depth >= this->max_depth || noption < 9) {
+					} /*else if (this->depth >= this->max_depth || noption < 9) {
 						const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
 						sql_query_grammar::ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
 
@@ -313,13 +313,13 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 								col->set_column(std::move(nbuf));
 							}
 						}
-					} else {
+					}*/ else {
 						uint32_t col_counter = 0;
-						const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
+						const uint32_t ncols = (rg.NextMediumNumber() % 4) + 1;
 						sql_query_grammar::JsonPathType *jpt = tp ? jdi->mutable_path_type() : nullptr;
 						sql_query_grammar::ColumnPath *cp = tp ? jpt->mutable_col() : nullptr;
 
-						for (uint32_t j = 0 ; j < nskips; j++) {
+						for (uint32_t j = 0 ; j < ncols; j++) {
 							std::string nbuf;
 							sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
 

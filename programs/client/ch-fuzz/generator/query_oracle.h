@@ -27,7 +27,7 @@ public:
 	int GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery &sq1, sql_query_grammar::SQLQuery &sq2);
 
 	/* Dump and read table oracle */
-	int DumpTableContent(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq1);
+	int DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery &sq1);
 	int GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq2);
 	int GenerateClearQuery(const SQLTable &t, sql_query_grammar::SQLQuery &sq3);
 	int GenerateImportQuery(const SQLTable &t, const sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq4);

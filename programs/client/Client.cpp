@@ -1010,6 +1010,7 @@ bool Client::chFuzz()
     ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
     ProcessQueryAndLog(outf, "CREATE DATABASE s0;");
     ProcessQueryAndLog(outf, "USE s0;");
+    ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
 
     full_query.reserve(8192);
     full_query2.reserve(8192);
@@ -1053,7 +1054,7 @@ bool Client::chFuzz()
 
                 //test in and out formats
                 full_query2.resize(0);
-                (void) qo.DumpTableContent(rg, t, sq1);
+                (void) qo.DumpTableContent(t, sq1);
                 chfuzz::SQLQueryToString(full_query2, sq1);
                 server_up &= ProcessCHFuzzQuery(outf, full_query2);
                 (void) qo.ProcessOracleQueryResult(true, !have_error, "Dump and read table");

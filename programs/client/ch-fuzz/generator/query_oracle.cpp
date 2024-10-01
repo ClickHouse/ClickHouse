@@ -39,7 +39,7 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 	gen.levels.erase(gen.current_level);
 	gen.SetAllowNotDetermistic(true);
 
-	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	ts->set_format(sql_query_grammar::OutFormat::OUT_CSV);
 	sif->set_path(qfile.generic_string());
 	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
@@ -76,7 +76,7 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 
 		sfc2->add_args()->set_allocated_expr(expr.release_expr());
 	}
-	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	ts->set_format(sql_query_grammar::OutFormat::OUT_CSV);
 	sif->set_path(qfile.generic_string());
 	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
@@ -85,16 +85,25 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 /*
 Dump and read table oracle
 */
-int QueryOracle::DumpTableContent(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq1) {
+int QueryOracle::DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery &sq1) {
+	bool first = true;
 	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq1.mutable_inner_query()->mutable_select();
 	sql_query_grammar::SelectIntoFile *sif = ts->mutable_intofile();
 	sql_query_grammar::SelectStatementCore *sel = ts->mutable_sel()->mutable_select_core();
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+	sql_query_grammar::OrderByStatement *obs = sel->mutable_orderby();
 
 	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
-	jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
-	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	jt->set_final(t.SupportsFinal());
+	for (const auto &col : t.cols) {
+		sql_query_grammar::ExprOrderingTerm *eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+		sql_query_grammar::ExprColumn *ecol = eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+
+		ecol->mutable_col()->set_column("c" + std::to_string(col.first));
+		first = false;
+	}
+	ts->set_format(sql_query_grammar::OutFormat::OUT_CSV);
 	sif->set_path(qfile.generic_string());
 	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
@@ -107,7 +116,6 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 	{sql_query_grammar::OutFormat::OUT_TabSeparatedWithNamesAndTypes, sql_query_grammar::InFormat::IN_TabSeparatedWithNamesAndTypes},
 	{sql_query_grammar::OutFormat::OUT_TabSeparatedRawWithNames, sql_query_grammar::InFormat::IN_TabSeparatedRawWithNames},
 	{sql_query_grammar::OutFormat::OUT_TabSeparatedRawWithNamesAndTypes, sql_query_grammar::InFormat::IN_TabSeparatedRawWithNamesAndTypes},
-	{sql_query_grammar::OutFormat::OUT_Template, sql_query_grammar::InFormat::IN_Template},
 	{sql_query_grammar::OutFormat::OUT_CSV, sql_query_grammar::InFormat::IN_CSV},
 	{sql_query_grammar::OutFormat::OUT_CSVWithNames, sql_query_grammar::InFormat::IN_CSVWithNames},
 	{sql_query_grammar::OutFormat::OUT_CSVWithNamesAndTypes, sql_query_grammar::InFormat::IN_CSVWithNamesAndTypes},
@@ -116,7 +124,6 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 	{sql_query_grammar::OutFormat::OUT_CustomSeparatedWithNamesAndTypes, sql_query_grammar::InFormat::IN_CustomSeparatedWithNamesAndTypes},
 	{sql_query_grammar::OutFormat::OUT_Values, sql_query_grammar::InFormat::IN_Values},
 	{sql_query_grammar::OutFormat::OUT_JSON, sql_query_grammar::InFormat::IN_JSON},
-	{sql_query_grammar::OutFormat::OUT_JSONStrings, sql_query_grammar::InFormat::IN_JSONStrings},
 	{sql_query_grammar::OutFormat::OUT_JSONColumns, sql_query_grammar::InFormat::IN_JSONColumns},
 	{sql_query_grammar::OutFormat::OUT_JSONColumnsWithMetadata, sql_query_grammar::InFormat::IN_JSONColumnsWithMetadata},
 	{sql_query_grammar::OutFormat::OUT_JSONCompact, sql_query_grammar::InFormat::IN_JSONCompact},
@@ -145,7 +152,6 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 	{sql_query_grammar::OutFormat::OUT_RowBinaryWithNames, sql_query_grammar::InFormat::IN_RowBinaryWithNames},
 	{sql_query_grammar::OutFormat::OUT_RowBinaryWithNamesAndTypes, sql_query_grammar::InFormat::IN_RowBinaryWithNamesAndTypes},
 	{sql_query_grammar::OutFormat::OUT_Native, sql_query_grammar::InFormat::IN_Native},
-	{sql_query_grammar::OutFormat::OUT_CapnProto, sql_query_grammar::InFormat::IN_CapnProto},
 	{sql_query_grammar::OutFormat::OUT_LineAsString, sql_query_grammar::InFormat::IN_LineAsString},
 	{sql_query_grammar::OutFormat::OUT_RawBLOB, sql_query_grammar::InFormat::IN_RawBLOB},
 	{sql_query_grammar::OutFormat::OUT_MsgPack, sql_query_grammar::InFormat::IN_MsgPack}
@@ -158,12 +164,12 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();
 	const std::filesystem::path &nfile = fc.db_file_path / "table.data";
+	sql_query_grammar::OutFormat outf = rg.PickKeyRandomlyFromMap(out_in);
 
 	if (std::filesystem::exists(nfile)) {
 		std::remove(nfile.generic_string().c_str()); //remove the file
 	}
 	ff->set_path(nfile.generic_string());
-	ff->set_outformat(rg.PickKeyRandomlyFromMap(out_in));
 
 	buf.resize(0);
 	for (const auto &col : t.cols) {
@@ -194,9 +200,14 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 				buf += " NULL";
 			}
 			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
+			/* ArrowStream doesn't support UUID */
+			if (outf == sql_query_grammar::OutFormat::OUT_ArrowStream && dynamic_cast<UUIDType*>(col.second.tp)) {
+				outf = sql_query_grammar::OutFormat::OUT_CSV;
+			}
 			first = false;
 		}
 	}
+	ff->set_outformat(outf);
 	ff->set_structure(buf);
 	if (rg.NextSmallNumber() < 4) {
 		ff->set_fcomp(static_cast<sql_query_grammar::FileCompression>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::FileCompression_MAX)) + 1));
@@ -387,7 +398,7 @@ int QueryOracle::GenerateSettingQuery(RandomGenerator &rg, StatementGenerator &g
 	gen.SetAllowNotDetermistic(false);
 	gen.GenerateTopSelect(rg, ts);
 	gen.SetAllowNotDetermistic(true);
-	ts->set_format(sql_query_grammar::OutFormat::OUT_RawBLOB);
+	ts->set_format(sql_query_grammar::OutFormat::OUT_CSV);
 	sif->set_path(qfile.generic_string());
 	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 	return 0;
