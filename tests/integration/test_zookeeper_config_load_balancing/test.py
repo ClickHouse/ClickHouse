@@ -5,6 +5,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.keeper_utils import ss_established
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
@@ -25,16 +26,6 @@ node3 = cluster.add_instance(
 node4 = cluster.add_instance(
     "nod4", with_zookeeper=True, main_configs=["configs/zookeeper_load_balancing2.xml"]
 )
-
-ss_established = [
-    "ss",
-    "--resolve",
-    "--tcp",
-    "--no-header",
-    "state",
-    "ESTABLISHED",
-    "( dport = 2181 or sport = 2181 )",
-]
 
 zk1_re = re.compile(
     r"testzookeeperconfigloadbalancing-(gw\d+-)?zoo1-1"
