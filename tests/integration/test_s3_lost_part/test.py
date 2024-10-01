@@ -90,6 +90,11 @@ def check_replica_after_broke_s3(node, table_name):
     ).strip()
     assert detached_parts_name_after_drop == "broken_all_0_0_0"
 
+    REMOVED_PART_MSG_LOG = "Removed 1 old parts"
+    assert replica1.wait_for_log_line(
+        regexp=REMOVED_PART_MSG_LOG, timeout=60, repetitions=2, look_behind_lines=2000
+    )
+
     active_parts_name_after_drop = node.query(
         f"SELECT name FROM system.parts WHERE table='{table_name}'"
     ).strip()
