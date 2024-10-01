@@ -770,9 +770,11 @@ ColumnPtr ColumnTuple::compress() const
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : my_compressed)
-                column = column->decompress();
-            return ColumnTuple::create(my_compressed);
+            Columns decompressed;
+            decompressed.reserve(my_compressed.size());
+            for (const auto & column : my_compressed)
+                decompressed.push_back(column->decompress());
+            return ColumnTuple::create(decompressed);
         });
 }
 
