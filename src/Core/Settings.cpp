@@ -782,13 +782,13 @@ namespace ErrorCodes
     M(Bool, local_filesystem_read_prefetch, false, "Should use prefetching when reading data from local filesystem.", 0) \
     M(Bool, remote_filesystem_read_prefetch, true, "Should use prefetching when reading data from remote filesystem.", 0) \
     M(Int64, read_priority, 0, "Priority to read data from local filesystem or remote filesystem. Only supported for 'pread_threadpool' method for local filesystem and for `threadpool` method for remote filesystem.", 0) \
-    M(UInt64, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem, 0, "Setting is deprecated.", 0) \
-    M(UInt64, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem, 0, "Setting is deprecated.", 0) \
+    M(UInt64, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem, 0, "If at least as many lines are read from one file, the reading can be parallelized, when reading from remote filesystem. We do not recommend using this setting.", 0) \
+    M(UInt64, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem, 0, "If at least as many bytes are read from one file, the reading can be parallelized, when reading from remote filesystem. We do not recommend using this setting.", 0) \
     M(UInt64, remote_read_min_bytes_for_seek, 4 * DBMS_DEFAULT_BUFFER_SIZE, "Min bytes required for remote read (url, s3) to do seek, instead of read with ignore.", 0) \
     M(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, "Min bytes to read per task.", 0) ALIAS(filesystem_prefetch_min_bytes_for_single_read_task) \
     M(Bool, merge_tree_use_const_size_tasks_for_remote_reading, true, "Whether to use constant size tasks for reading from a remote table.", 0) \
     M(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, "Whether to use only prewhere columns size to determine reading task size.", 0) \
-    M(UInt64, merge_tree_min_read_task_size, 1, "Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks) (I HOPE TO REMOVE IT AFTER TESTING)", 0) \
+    M(UInt64, merge_tree_min_read_task_size, 8, "Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks)", 0) \
     M(Bool, merge_tree_flag, true, "documentation", 0) \
     M(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, "Only available in ClickHouse Cloud", 0) \
     \
