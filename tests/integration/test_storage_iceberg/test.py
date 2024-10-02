@@ -32,9 +32,9 @@ import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_tools import (
     AzureUploader,
+    HDFSUploader,
     LocalUploader,
     S3Uploader,
-    HDFSUploader,
     get_file_contents,
     list_s3_objects,
     prepare_s3_bucket,
