@@ -10,6 +10,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -24,11 +28,11 @@ namespace ErrorCodes
 
 
 /// Some types are only for intermediate values of expressions and cannot be used in tables.
-static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
+void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 {
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} cannot be used in tables", elem.type->getName());
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
 }
 
 
@@ -232,7 +236,7 @@ StoragePtr StorageFactory::get(
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;

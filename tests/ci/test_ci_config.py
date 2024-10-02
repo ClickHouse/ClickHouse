@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 import copy
-import unittest
 import random
+import unittest
 
-from ci_config import CI
 import ci as CIPY
-from ci_settings import CiSettings
-from pr_info import PRInfo, EventType
-from s3_helper import S3Helper
 from ci_cache import CiCache
+from ci_config import CI
+from ci_settings import CiSettings
 from ci_utils import Utils
-
+from pr_info import EventType, PRInfo
+from s3_helper import S3Helper
 
 _TEST_EVENT_JSON = {"dummy": "dummy"}
 
@@ -305,7 +304,7 @@ class TestCIConfig(unittest.TestCase):
         for job, config in CI.JOB_CONFIGS.items():
             if (
                 CI.is_build_job(job)
-                and not config.run_by_label
+                and not config.run_by_labels
                 and job not in expected_jobs_to_do
             ):
                 # expected to run all builds jobs
@@ -359,7 +358,7 @@ class TestCIConfig(unittest.TestCase):
                 continue
             if config.release_only:
                 continue
-            if config.run_by_label:
+            if config.run_by_labels:
                 continue
             expected_jobs_to_do.append(job)
 
@@ -392,7 +391,7 @@ class TestCIConfig(unittest.TestCase):
         for job, config in CI.JOB_CONFIGS.items():
             if config.pr_only:
                 continue
-            if config.run_by_label:
+            if config.run_by_labels:
                 continue
             if job in CI.MQ_JOBS:
                 continue
