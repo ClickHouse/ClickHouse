@@ -921,12 +921,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 /// If you format AST, parse it back, and format it again, you get the same string.
 
                 String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
-                /*max_length=*/0,
-                /*one_line=*/true,
-                /*show_secrets=*/true,
-                /*print_pretty_type_names=*/false,
-                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
                 /// The query can become more verbose after formatting, so:
                 size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
