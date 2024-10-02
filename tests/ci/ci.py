@@ -1133,7 +1133,7 @@ def main() -> int:
 
         if pr_info.is_release and not pr_info.is_master:
             ### FIXME bug with Docs check in ci_cache.jobs_to_wait in release branches
-            ci_cache.jobs_to_wait.pop(CI.JobNames.DOCS_CHECK)
+            ci_cache.jobs_to_wait.pop(CI.JobNames.DOCS_CHECK, None)
 
         if IS_CI and not pr_info.is_merge_queue:
 
