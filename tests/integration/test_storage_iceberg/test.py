@@ -210,7 +210,7 @@ def get_creation_expression(
             return f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
-                ENGINE=IcebergLocal(local, path = 'hdfs://hdfs1:9000/iceberg_data/default/{table_name}/', format={format});"""
+                ENGINE=IcebergHDFS(local, path = 'hdfs://hdfs1:9000/iceberg_data/default/{table_name}/', format={format});"""
     elif storage_type == "local":
         if table_function:
             return f"""
