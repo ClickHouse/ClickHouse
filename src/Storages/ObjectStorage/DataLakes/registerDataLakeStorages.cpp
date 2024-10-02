@@ -13,7 +13,6 @@
 #    include <Storages/ObjectStorage/HDFS/Configuration.h>
 #endif
 
-
 namespace DB
 {
 

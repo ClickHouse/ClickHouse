@@ -712,7 +712,7 @@ def test_schema_inference(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs","local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_metadata_file_selection(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -747,7 +747,7 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs","local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_metadata_file_format_with_uuid(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
