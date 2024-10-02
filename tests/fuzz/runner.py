@@ -7,8 +7,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from tests.ci.env_helper import S3_BUILDS_BUCKET
-from tests.ci.s3_helper import S3Helper
+from ci.env_helper import S3_BUILDS_BUCKET
+from ci.s3_helper import S3Helper
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
@@ -150,9 +150,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
     else:
         process_fuzzer_output(result.stderr)
 
-    f = open(f"{new_corpus_dir}/testfile", "a")
-    f.write("Now the file has more content!")
-    f.close()
+    with open(f"{new_corpus_dir}/testfile", "a", encoding='ascii') as f:
+        f.write("Now the file has more content!")
 
     s3.upload_build_directory_to_s3(new_corpus_dir, "fuzzer/corpus/")
 
