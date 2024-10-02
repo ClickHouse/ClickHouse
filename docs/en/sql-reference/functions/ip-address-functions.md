@@ -316,6 +316,38 @@ Result:
 
 Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns null.
 
+**Syntax**
+
+```sql
+toIPv4OrNull(value)
+```
+
+**Arguments**
+
+- `value` — The value with IPv4 address.
+
+**Returned value**
+
+- `value` converted to the current IPv4 address. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toIPv4OrNull('192.168.0.1') AS s1,
+  toIPv4OrNull('192.168.0') AS s2
+```
+
+Result:
+
+```response
+┌─s1──────────┬─s2───┐
+│ 192.168.0.1 │ ᴺᵁᴸᴸ │
+└─────────────┴──────┘
+```
+
 ## toIPv6OrDefault(string)
 
 Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns `::` (0 IPv6).
