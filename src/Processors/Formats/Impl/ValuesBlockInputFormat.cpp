@@ -57,6 +57,7 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
         rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
+    , block_missing_values(getPort().getHeader().columns())
 {
 }
 
