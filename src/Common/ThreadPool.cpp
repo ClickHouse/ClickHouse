@@ -296,8 +296,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         currently_available_threads = available_threads.load(std::memory_order_relaxed);
     }
 
-    bool inject_fault = CannotAllocateThreadFaultInjector::injectFault();
-
     {
         Stopwatch watch;
         std::unique_lock lock(mutex);
@@ -305,7 +303,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
             watch.elapsedMicroseconds());
 
-        if (inject_fault)
+        if (CannotAllocateThreadFaultInjector::injectFault())
             return on_error("fault injected");
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
