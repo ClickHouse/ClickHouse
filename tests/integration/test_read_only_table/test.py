@@ -1,10 +1,10 @@
 import logging
-import re
 import time
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.keeper_utils import get_zookeeper_which_node_connected_to
 from helpers.test_tools import assert_eq_with_retry
 
 NUM_TABLES = 10
@@ -56,26 +56,6 @@ def test_restart_zookeeper(start_cluster):
         )
 
     logging.info("Inserted test data and initialized all tables")
-
-    def get_zookeeper_which_node_connected_to(node):
-        line = str(
-            node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "lsof -a -i4 -i6 -itcp -w | grep 2181 | grep ESTABLISHED",
-                ],
-                privileged=True,
-                user="root",
-            )
-        ).strip()
-
-        pattern = re.compile(r"zoo[0-9]+", re.IGNORECASE)
-        result = pattern.findall(line)
-        assert (
-            len(result) == 1
-        ), "ClickHouse must be connected only to one Zookeeper at a time"
-        return result[0]
 
     node1_zk = get_zookeeper_which_node_connected_to(node1)
 
