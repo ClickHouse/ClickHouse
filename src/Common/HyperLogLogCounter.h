@@ -353,18 +353,6 @@ public:
         }
     }
 
-    void readAndMerge(DB::ReadBuffer & in)
-    {
-        typename RankStore::Reader reader(in);
-        while (reader.next())
-        {
-            const auto & data = reader.get();
-            update(data.first, data.second);
-        }
-
-        in.ignore(sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
-    }
-
     static void skip(DB::ReadBuffer & in)
     {
         in.ignore(sizeof(RankStore) + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
