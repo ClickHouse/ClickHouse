@@ -1,10 +1,10 @@
 import re
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from dataclasses import dataclass, asdict
+from typing import Optional, List, Dict, Any, Iterable
 
+from ci_utils import normalize_string
 from ci_config import CI
-from git_helper import GIT_PREFIX
-from git_helper import Runner as GitRunner
+from git_helper import Runner as GitRunner, GIT_PREFIX
 from pr_info import PRInfo
 
 # pylint: disable=too-many-return-statements
@@ -89,14 +89,14 @@ class CiSettings:
                 if not res.include_keywords:
                     res.include_keywords = []
                 res.include_keywords.append(
-                    CI.Utils.normalize_string(match.removeprefix("ci_include_"))
+                    normalize_string(match.removeprefix("ci_include_"))
                 )
             elif match.startswith("ci_exclude_"):
                 if not res.exclude_keywords:
                     res.exclude_keywords = []
                 keywords = match.removeprefix("ci_exclude_").split("|")
                 res.exclude_keywords += [
-                    CI.Utils.normalize_string(keyword) for keyword in keywords
+                    normalize_string(keyword) for keyword in keywords
                 ]
             elif match == CI.Tags.NO_CI_CACHE:
                 res.no_ci_cache = True
@@ -157,12 +157,13 @@ class CiSettings:
                     f"Job [{job}] selected by GH label [{job_config.run_by_label}] - pass"
                 )
                 return True
-            return False
+            else:
+                return False
 
         # do not exclude builds
         if self.exclude_keywords and not CI.is_build_job(job):
             for keyword in self.exclude_keywords:
-                if keyword in CI.Utils.normalize_string(job):
+                if keyword in normalize_string(job):
                     print(f"Job [{job}] matches Exclude keyword [{keyword}] - deny")
                     return False
 
@@ -173,7 +174,7 @@ class CiSettings:
                 # never exclude Style Check by include keywords
                 return True
             for keyword in self.include_keywords:
-                if keyword in CI.Utils.normalize_string(job):
+                if keyword in normalize_string(job):
                     print(f"Job [{job}] matches Include keyword [{keyword}] - pass")
                     return True
             to_deny = True
@@ -195,8 +196,7 @@ class CiSettings:
 
         if job_config.release_only and not is_release:
             return False
-
-        if job_config.pr_only and not is_pr and not is_mq:
+        elif job_config.pr_only and not is_pr and not is_mq:
             return False
 
         return not to_deny
@@ -233,5 +233,12 @@ class CiSettings:
                     print(f"Job [{job}] requires [{parent_job}] - add")
         for job in add_parents:
             res[job] = job_configs[job]
+
+        for job, job_config in res.items():
+            batches = []
+            for batch in range(job_config.num_batches):
+                if not self.job_batches or batch in self.job_batches:
+                    batches.append(batch)
+            job_config.batches = batches
 
         return res

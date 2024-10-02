@@ -25,12 +25,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool group_by_use_nulls;
-    extern const SettingsBool join_use_nulls;
-    extern const SettingsBool optimize_functions_to_subcolumns;
-}
 
 namespace
 {
@@ -74,10 +68,10 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
 String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & data_type_tuple)
 {
     if (value.getType() == Field::Types::String)
-        return value.safeGet<const String &>();
+        return value.get<const String &>();
 
     if (value.getType() == Field::Types::UInt64)
-        return data_type_tuple.getNameByPosition(value.safeGet<UInt64>());
+        return data_type_tuple.getNameByPosition(value.get<UInt64>());
 
     return "";
 }
@@ -85,7 +79,7 @@ String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & dat
 String getSubcolumnNameForElement(const Field & value, const DataTypeVariant &)
 {
     if (value.getType() == Field::Types::String)
-        return value.safeGet<const String &>();
+        return value.get<const String &>();
 
     return "";
 }
@@ -215,7 +209,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
 };
 
-std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -238,12 +232,6 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     const auto & storage_snapshot = table_node->getStorageSnapshot();
     auto column = first_argument_column_node->getColumn();
 
-    /// If view source is set we cannot optimize because it doesn't support moving functions to subcolumns.
-    /// The storage is replaced to the view source but it happens only after building a query tree and applying passes.
-    auto view_source = context->getViewSource();
-    if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-        return {};
-
     if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
         return {};
 
@@ -263,7 +251,7 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+        if (!getSettings().optimize_functions_to_subcolumns)
             return;
 
         if (auto * table_node = node->as<TableNode>())
@@ -278,7 +266,7 @@ public:
             return;
         }
 
-        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node);
         if (function_node && first_argument_node && table_node)
         {
             enterImpl(*function_node, *first_argument_node, *table_node);
@@ -287,14 +275,14 @@ public:
 
         if (const auto * join_node = node->as<JoinNode>())
         {
-            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
+            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().join_use_nulls;
             return;
         }
 
         if (const auto * query_node = node->as<QueryNode>())
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
-                can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
+                can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().group_by_use_nulls;
             return;
         }
     }
@@ -425,10 +413,10 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node) const
     {
-        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+        if (!getSettings().optimize_functions_to_subcolumns)
             return;
 
-        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node);
         if (!function_node || !first_argument_column_node || !table_node)
             return;
 

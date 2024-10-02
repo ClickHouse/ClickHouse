@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/BaseSettings.h>
-#include <Core/FormatFactorySettingsDeclaration.h>
-#include <Core/SettingsEnums.h>
+#include <Core/Settings.h>
+
 
 namespace DB
 {

@@ -54,7 +54,6 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
-    std::string etag;
     ObjectAttributes attributes;
 };
 
@@ -146,14 +145,14 @@ public:
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
     /// Read multiple objects with common prefix
     virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const StoredObjects & objects,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
@@ -233,11 +232,10 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const = 0;
+    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
 
     /// Object key prefix for local paths in the directory 'path'.
-    virtual ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+    virtual ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
     }

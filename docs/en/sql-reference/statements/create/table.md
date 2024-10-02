@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
-  [COMMENT 'comment for table']
+  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -42,19 +42,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
-
-### With a Schema and Data Cloned from Another Table 
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
-```
-
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
-ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
-```
 
 ### From a Table Function
 
@@ -254,12 +241,12 @@ CREATE OR REPLACE TABLE test
 (
     id UInt64,
     size_bytes Int64,
-    size String ALIAS formatReadableSize(size_bytes)
+    size String Alias formatReadableSize(size_bytes)
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test VALUES (1, 4678899);
+INSERT INTO test Values (1, 4678899);
 
 SELECT id, size_bytes, size FROM test;
 ┌─id─┬─size_bytes─┬─size─────┐
@@ -510,7 +497,7 @@ If you perform a SELECT query mentioning a specific value in an encrypted column
 ```sql
 CREATE TABLE mytable
 (
-    x String CODEC(AES_128_GCM_SIV)
+    x String Codec(AES_128_GCM_SIV)
 )
 ENGINE = MergeTree ORDER BY x;
 ```
@@ -638,6 +625,11 @@ SELECT * FROM base.t1;
 ## COMMENT Clause
 
 You can add a comment to the table when you creating it.
+
+:::note
+The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+:::
+
 
 **Syntax**
 

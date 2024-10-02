@@ -1,5 +1,4 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 

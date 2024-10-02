@@ -7,7 +7,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
@@ -24,10 +23,6 @@ extern const Event SleepFunctionElapsedMicroseconds;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 function_sleep_max_microseconds_per_block;
-}
 
 namespace ErrorCodes
 {
@@ -35,11 +30,6 @@ namespace ErrorCodes
     extern const int TOO_SLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace FailPoints
-{
-    extern const char infinite_sleep[];
 }
 
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
@@ -63,7 +53,8 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionSleep<variant>>(
-            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
+            context->getSettingsRef().function_sleep_max_microseconds_per_block,
+            context->getProcessListElementSafe());
     }
 
     FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
@@ -116,8 +107,6 @@ public:
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             UInt64 microseconds = static_cast<UInt64>(seconds * 1e6);
-            FailPointInjection::pauseFailPoint(FailPoints::infinite_sleep);
-
             if (max_microseconds && microseconds > max_microseconds)
                 throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {} microseconds",
                     max_microseconds, microseconds);

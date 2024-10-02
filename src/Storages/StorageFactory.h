@@ -135,6 +135,4 @@ private:
     Storages storages;
 };
 
-void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
-
 }

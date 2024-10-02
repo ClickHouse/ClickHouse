@@ -5,6 +5,14 @@ FROM ubuntu:22.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
+# FIXME: rebuild for clang 18.1.3, that contains a workaround [1] for
+# sanitizers issue [2]:
+#
+# $ git tag --contains  c2a57034eff048cd36c563c8e0051db3a70991b3 | tail -1
+# llvmorg-18.1.3
+#
+#  [1]: https://github.com/llvm/llvm-project/commit/c2a57034eff048cd36c563c8e0051db3a70991b3
+#  [2]: https://github.com/ClickHouse/ClickHouse/issues/64086
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
 
 RUN apt-get update \
@@ -44,6 +52,7 @@ RUN apt-get update \
         bash \
         bsdmainutils \
         build-essential \
+        gdb \
         git \
         gperf \
         moreutils \
@@ -56,5 +65,4 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
-ENV PATH="/opt/gdb/bin:${PATH}"
+COPY process_functional_tests_result.py /

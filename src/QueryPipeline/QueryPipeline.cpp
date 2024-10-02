@@ -1,14 +1,15 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <queue>
-#include <Core/Settings.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActions.h>
+#include <QueryPipeline/Chain.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
-#include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+#include <QueryPipeline/ReadProgressCallback.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/printPipeline.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -16,27 +17,19 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/ISource.h>
 #include <Processors/Transforms/CountingTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryCacheTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
-#include <QueryPipeline/Chain.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/ReadProgressCallback.h>
-#include <QueryPipeline/printPipeline.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool rows_before_aggregation;
-}
 
 namespace ErrorCodes
 {
@@ -146,7 +139,7 @@ static void checkCompleted(Processors & processors)
 
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
-    RowsBeforeStepCounterPtr rows_before_limit_at_least;
+    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
     std::vector<IProcessor *> processors;
     std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
     std::unordered_set<IProcessor *> visited;
@@ -268,7 +261,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
     if (!processors.empty())
     {
-        rows_before_limit_at_least = std::make_shared<RowsBeforeStepCounter>();
+        rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
         for (auto & processor : processors)
             processor->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
@@ -280,28 +273,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
 }
-static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IOutputFormat * output_format)
-{
-    bool has_aggregation = false;
 
-    if (!processors->empty())
-    {
-        RowsBeforeStepCounterPtr rows_before_aggregation = std::make_shared<RowsBeforeStepCounter>();
-        for (const auto & processor : *processors)
-        {
-            if (typeid_cast<AggregatingTransform *>(processor.get()) || typeid_cast<AggregatingInOrderTransform *>(processor.get()))
-            {
-                processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
-                has_aggregation = true;
-            }
-            if (typeid_cast<RemoteSource *>(processor.get()) || typeid_cast<DelayedSource *>(processor.get()))
-                processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
-        }
-        if (has_aggregation)
-            rows_before_aggregation->add(0);
-        output_format->setRowsBeforeAggregationCounter(rows_before_aggregation);
-    }
-}
 
 QueryPipeline::QueryPipeline(
     QueryPlanResourceHolder resources_,
@@ -549,14 +521,6 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     extremes = nullptr;
 
     initRowsBeforeLimit(format.get());
-    for (const auto & context : resources.interpreter_context)
-    {
-        if (context->getSettingsRef()[Setting::rows_before_aggregation])
-        {
-            initRowsBeforeAggregation(processors, format.get());
-            break;
-        }
-    }
     output_format = format.get();
 
     processors->emplace_back(std::move(format));

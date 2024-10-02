@@ -140,7 +140,7 @@ void MergeTreeDeduplicationLog::load()
 
 size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
 {
-    auto read_buf = disk->readFile(path, getReadSettings());
+    auto read_buf = disk->readFile(path);
 
     size_t total_entries = 0;
     while (!read_buf->eof())

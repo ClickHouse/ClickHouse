@@ -2,10 +2,9 @@
 
 #include <map>
 
-#include <Core/Names.h>
-#include <Core/Settings.h>
-#include <Interpreters/Aliases.h>
 #include <Parsers/IAST.h>
+#include <Interpreters/Aliases.h>
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -15,13 +14,6 @@ class ASTIdentifier;
 struct ASTTablesInSelectQueryElement;
 class Context;
 class ASTQueryParameter;
-
-namespace Setting
-{
-    extern const SettingsUInt64 max_ast_depth;
-    extern const SettingsUInt64 max_expanded_ast_elements;
-    extern const SettingsBool prefer_column_name_to_alias;
-}
 
 
 class QueryNormalizer
@@ -35,9 +27,9 @@ class QueryNormalizer
 
         template <typename T>
         ExtractedSettings(const T & settings) /// NOLINT
-            : max_ast_depth(settings[Setting::max_ast_depth])
-            , max_expanded_ast_elements(settings[Setting::max_expanded_ast_elements])
-            , prefer_column_name_to_alias(settings[Setting::prefer_column_name_to_alias])
+            : max_ast_depth(settings.max_ast_depth)
+            , max_expanded_ast_elements(settings.max_expanded_ast_elements)
+            , prefer_column_name_to_alias(settings.prefer_column_name_to_alias)
         {
         }
     };

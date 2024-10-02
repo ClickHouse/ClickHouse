@@ -1,15 +1,13 @@
-import contextlib
 import io
-import select
-import socket
 import subprocess
+import socket
 import time
 import typing as tp
-
+import contextlib
+import select
 from kazoo.client import KazooClient
-
-from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.client import CommandRequest
 
 
 def execute_keeper_client_query(

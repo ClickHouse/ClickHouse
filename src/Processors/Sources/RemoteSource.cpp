@@ -4,8 +4,6 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <Common/Exception.h>
-#include <Common/Logger.h>
 
 namespace DB
 {
@@ -37,23 +35,16 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
         progress(value.read_rows, value.read_bytes);
     });
 
-    query_executor->setProfileInfoCallback(
-        [this](const ProfileInfo & info)
+    query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
+    {
+        if (rows_before_limit)
         {
-            if (rows_before_limit)
-            {
-                if (info.hasAppliedLimit())
-                    rows_before_limit->add(info.getRowsBeforeLimit());
-                else
-                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-            }
-
-            if (rows_before_aggregation)
-            {
-                if (info.hasAppliedAggregation())
-                    rows_before_aggregation->add(info.getRowsBeforeAggregation());
-            }
-        });
+            if (info.hasAppliedLimit())
+                rows_before_limit->add(info.getRowsBeforeLimit());
+            else
+                manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+        }
+    });
 }
 
 RemoteSource::~RemoteSource() = default;
@@ -77,14 +68,6 @@ ISource::Status RemoteSource::prepare()
         return Status::Finished;
     }
 
-#if defined(OS_LINUX)
-    if (async_query_sending && !was_query_sent && fd < 0)
-    {
-        startup_event_fd.write();
-        return Status::Async;
-    }
-#endif
-
     if (is_async_state)
         return Status::Async;
 
@@ -104,15 +87,6 @@ ISource::Status RemoteSource::prepare()
     return status;
 }
 
-int RemoteSource::schedule()
-{
-#if defined(OS_LINUX)
-    return (fd < 0 ? startup_event_fd.fd : fd);
-#else
-    return fd;
-#endif
-}
-
 void RemoteSource::work()
 {
     /// Connection drain is a heavy operation that may take a long time.
@@ -124,27 +98,7 @@ void RemoteSource::work()
         executor_finished = true;
         return;
     }
-
-    if (preprocessed_packet)
-    {
-        preprocessed_packet = false;
-        return;
-    }
-
     ISource::work();
-}
-
-void RemoteSource::onAsyncJobReady()
-{
-    chassert(async_read);
-
-    if (!was_query_sent)
-        return;
-
-    chassert(!preprocessed_packet);
-    preprocessed_packet = query_executor->processParallelReplicaPacketIfAny();
-    if (preprocessed_packet)
-        is_async_state = false;
 }
 
 std::optional<Chunk> RemoteSource::tryGenerate()
@@ -208,6 +162,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
+
         query_executor->finish();
         return {};
     }
@@ -227,16 +182,9 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     return chunk;
 }
 
-void RemoteSource::onCancel() noexcept
+void RemoteSource::onCancel()
 {
-    try
-    {
-        query_executor->cancel();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation.");
-    }
+    query_executor->cancel();
 }
 
 void RemoteSource::onUpdatePorts()

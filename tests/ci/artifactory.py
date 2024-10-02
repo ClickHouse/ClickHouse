@@ -1,21 +1,20 @@
 import argparse
 import time
 from pathlib import Path
-from shutil import copy2
 from typing import Optional
-
-from ci_utils import Shell, WithIter
+from shutil import copy2
 from create_release import (
     PackageDownloader,
-    ReleaseContextManager,
     ReleaseInfo,
+    ReleaseContextManager,
     ReleaseProgress,
 )
+from ci_utils import WithIter, Shell
 
 
 class MountPointApp(metaclass=WithIter):
+    RCLONE = "rclone"
     S3FS = "s3fs"
-    GEESEFS = "geesefs"
 
 
 class R2MountPoint:
@@ -31,6 +30,9 @@ class R2MountPoint:
     DEBUG = True
     # enable cache for mountpoint
     CACHE_ENABLED = False
+    # TODO: which mode is better: minimal/writes/full/off
+    _RCLONE_CACHE_MODE = "minimal"
+    UMASK = "0000"
 
     def __init__(self, app: str, dry_run: bool) -> None:
         assert app in MountPointApp
@@ -50,32 +52,20 @@ class R2MountPoint:
                 if self.CACHE_ENABLED
                 else ""
             )
-            if not dry_run:
-                self.aux_mount_options += (
-                    "-o passwd_file /home/ubuntu/.passwd-s3fs_packages "
-                )
             # without -o nomultipart there are errors like "Error 5 writing to /home/ubuntu/***.deb: Input/output error"
-            self.mount_cmd = (
-                f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} "
-                f"-o use_path_request_style -o umask=0000 -o nomultipart "
-                f"-o logfile={self.LOG_FILE} {self.aux_mount_options}"
-            )
-        elif self.app == MountPointApp.GEESEFS:
-            self.cache_dir = "/home/ubuntu/geesefs_cache"
+            self.mount_cmd = f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} -o use_path_request_style -o umask=0000 -o nomultipart -o logfile={self.LOG_FILE} {self.aux_mount_options}"
+        elif self.app == MountPointApp.RCLONE:
+            # run rclone mount process asynchronously, otherwise subprocess.run(daemonized command) will not return
+            self.cache_dir = "/home/ubuntu/rclone_cache"
+            self.aux_mount_options += "--no-modtime " if self.NOMODTIME else ""
+            self.aux_mount_options += "-v " if self.DEBUG else ""  # -vv too verbose
             self.aux_mount_options += (
-                f" --cache={self.cache_dir} " if self.CACHE_ENABLED else ""
+                f"--vfs-cache-mode {self._RCLONE_CACHE_MODE} --vfs-cache-max-size {self._CACHE_MAX_SIZE_GB}G"
+                if self.CACHE_ENABLED
+                else "--vfs-cache-mode off"
             )
-            if not dry_run:
-                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth "
-            else:
-                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth_test "
-            if self.DEBUG:
-                self.aux_mount_options += " --debug_s3 "
-            self.mount_cmd = (
-                f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=1000 "
-                f"--gc-interval=100 --max-flushers=10 --max-parallel-parts=1 --max-parallel-copy=10 "
-                f"--log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
-            )
+            # Use --no-modtime to try to avoid: ERROR : rpm/lts/clickhouse-client-24.3.6.5.x86_64.rpm: Failed to apply pending mod time
+            self.mount_cmd = f"rclone mount remote:{self.bucket_name} {self.MOUNT_POINT} --daemon --cache-dir {self.cache_dir} --umask 0000 --log-file {self.LOG_FILE} {self.aux_mount_options}"
         else:
             assert False
 
@@ -89,17 +79,22 @@ class R2MountPoint:
         )
 
         _TEST_MOUNT_CMD = f"mount | grep -q {self.MOUNT_POINT}"
-        Shell.check(_CLEAN_LOG_FILE_CMD, verbose=True)
-        Shell.check(_UNMOUNT_CMD, verbose=True)
-        Shell.check(_MKDIR_CMD, verbose=True)
-        Shell.check(_MKDIR_FOR_CACHE, verbose=True)
-        Shell.check(self.mount_cmd, strict=True, verbose=True)
+        Shell.run(_CLEAN_LOG_FILE_CMD)
+        Shell.run(_UNMOUNT_CMD)
+        Shell.run(_MKDIR_CMD)
+        Shell.run(_MKDIR_FOR_CACHE)
+        if self.app == MountPointApp.S3FS:
+            Shell.run(self.mount_cmd, check=True)
+        else:
+            # didn't manage to use simple run() and without blocking or failure
+            Shell.run_as_daemon(self.mount_cmd)
         time.sleep(3)
-        Shell.check(_TEST_MOUNT_CMD, strict=True, verbose=True)
+        Shell.run(_TEST_MOUNT_CMD, check=True)
 
     @classmethod
     def teardown(cls):
-        Shell.check(f"umount {cls.MOUNT_POINT}", verbose=True)
+        print(f"Unmount [{cls.MOUNT_POINT}]")
+        Shell.run(f"umount {cls.MOUNT_POINT}")
 
 
 class RepoCodenames(metaclass=WithIter):
@@ -134,9 +129,10 @@ class DebianArtifactory:
         ]
         REPREPRO_CMD_PREFIX = f"reprepro --basedir {R2MountPoint.MOUNT_POINT}/configs/deb --outdir {R2MountPoint.MOUNT_POINT}/deb --verbose"
         cmd = f"{REPREPRO_CMD_PREFIX} includedeb {self.codename} {' '.join(paths)}"
-        print("Running export commands:")
-        Shell.check(cmd, strict=True, verbose=True)
-        Shell.check("sync")
+        print("Running export command:")
+        print(f"  {cmd}")
+        Shell.run(cmd, check=True)
+        Shell.run("sync")
 
         if self.codename == RepoCodenames.LTS:
             packages_with_version = [
@@ -148,39 +144,18 @@ class DebianArtifactory:
             cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}"
             print("Running copy command:")
             print(f"  {cmd}")
-            Shell.check(cmd, strict=True)
-            Shell.check("sync")
-        time.sleep(10)
-        Shell.check("lsof +D R2MountPoint.MOUNT_POINT", verbose=True)
+            Shell.run(cmd, check=True)
+            Shell.run("sync")
 
     def test_packages(self):
-        Shell.check("docker pull ubuntu:latest", strict=True)
+        Shell.run("docker pull ubuntu:latest")
         print(f"Test packages installation, version [{self.version}]")
-        debian_command = (
-            f"echo 'deb {self.repo_url} stable main' | "
-            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; "
-            f"apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
-        )
-        cmd = (
-            "docker run --rm ubuntu:latest bash -c "
-            f'"apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
-        )
+        debian_command = f"echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
+        cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
-        print("Test packages installation, version [latest]")
-        debian_command_2 = (
-            f"echo 'deb {self.repo_url} stable main' | "
-            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static clickhouse-client"
-        )
-        cmd = (
-            "docker run --rm ubuntu:latest bash -c "
-            f'"apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command_2}"'
-        )
-        print("Running test command:")
-        print(f"  {cmd}")
-        assert Shell.check(cmd)
-        self.release_info.debian = debian_command
+        Shell.run(cmd, check=True)
+        self.release_info.debian_command = debian_command
         self.release_info.dump()
 
 
@@ -229,40 +204,34 @@ class RpmArtifactory:
         for package in paths:
             _copy_if_not_exists(Path(package), dest_dir)
 
-        # switching between different fuse providers invalidates --update option (apparently some fuse(s) can mess around with mtime)
-        #   add --skip-stat to skip mtime check
         commands = (
-            f"createrepo_c --local-sqlite --workers=2 --update --skip-stat --verbose {dest_dir}",
+            f"createrepo_c --local-sqlite --workers=2 --update --verbose {dest_dir}",
             f"gpg --sign-with {self._SIGN_KEY} --detach-sign --batch --yes --armor {dest_dir / 'repodata' / 'repomd.xml'}",
         )
         print(f"Exporting RPM packages into [{codename}]")
 
         for command in commands:
-            Shell.check(command, strict=True, verbose=True)
+            print("Running command:")
+            print(f"    {command}")
+            Shell.run(command, check=True)
 
         update_public_key = f"gpg --armor --export {self._SIGN_KEY}"
         pub_key_path = dest_dir / "repodata" / "repomd.xml.key"
         print("Updating repomd.xml.key")
-        pub_key_path.write_text(Shell.get_output_or_raise(update_public_key))
+        pub_key_path.write_text(Shell.run(update_public_key, check=True))
         if codename == RepoCodenames.LTS:
             self.export_packages(RepoCodenames.STABLE)
-        Shell.check("sync")
+        Shell.run("sync")
 
     def test_packages(self):
-        Shell.check("docker pull fedora:latest", strict=True)
+        Shell.run("docker pull fedora:latest")
         print(f"Test package installation, version [{self.version}]")
         rpm_command = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client-{self.version}-1"
         cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
-        print("Test package installation, version [latest]")
-        rpm_command_2 = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client"
-        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
-        print("Running test command:")
-        print(f"  {cmd}")
-        assert Shell.check(cmd)
-        self.release_info.rpm = rpm_command
+        Shell.run(cmd, check=True)
+        self.release_info.rpm_command = rpm_command
         self.release_info.dump()
 
 
@@ -302,31 +271,27 @@ class TgzArtifactory:
 
         if codename == RepoCodenames.LTS:
             self.export_packages(RepoCodenames.STABLE)
-        Shell.check("sync")
+        Shell.run("sync")
 
     def test_packages(self):
         tgz_file = "/tmp/tmp.tgz"
         tgz_sha_file = "/tmp/tmp.tgz.sha512"
         cmd = f"curl -o {tgz_file} -f0 {self.repo_url}/stable/clickhouse-client-{self.version}-arm64.tgz"
-        Shell.check(
+        Shell.run(
             cmd,
-            strict=True,
-            verbose=True,
+            check=True,
         )
-        Shell.check(
+        Shell.run(
             f"curl -o {tgz_sha_file} -f0 {self.repo_url}/stable/clickhouse-client-{self.version}-arm64.tgz.sha512",
-            strict=True,
-            verbose=True,
+            check=True,
         )
-        expected_checksum = Shell.get_output_or_raise(f"cut -d ' ' -f 1 {tgz_sha_file}")
-        actual_checksum = Shell.get_output_or_raise(
-            f"sha512sum {tgz_file} | cut -d ' ' -f 1"
-        )
+        expected_checksum = Shell.run(f"cut -d ' ' -f 1 {tgz_sha_file}", check=True)
+        actual_checksum = Shell.run(f"sha512sum {tgz_file} | cut -d ' ' -f 1")
         assert (
             expected_checksum == actual_checksum
         ), f"[{actual_checksum} != {expected_checksum}]"
-        Shell.check("rm /tmp/tmp.tgz*", verbose=True)
-        self.release_info.tgz = cmd
+        Shell.run("rm /tmp/tmp.tgz*")
+        self.release_info.tgz_command = cmd
         self.release_info.dump()
 
 
@@ -377,11 +342,11 @@ if __name__ == "__main__":
     args = parse_args()
 
     """
-    S3FS - very slow with a big repo
-    RCLONE - fuse had many different errors with r2 remote and completely removed
-    GEESEFS ?
+    Use S3FS. RCLONE has some errors with r2 remote which I didn't figure out how to resolve:
+           ERROR : IO error: NotImplemented: versionId not implemented
+           Failed to copy: NotImplemented: versionId not implemented
     """
-    mp = R2MountPoint(MountPointApp.GEESEFS, dry_run=args.dry_run)
+    mp = R2MountPoint(MountPointApp.S3FS, dry_run=args.dry_run)
     if args.export_debian:
         with ReleaseContextManager(
             release_progress=ReleaseProgress.EXPORT_DEB

@@ -291,13 +291,12 @@ void HashJoin::dataMapInit(MapsVariant & map)
 {
     if (kind == JoinKind::Cross)
         return;
-    auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
-    joinDispatchInit(kind, strictness, map, prefer_use_maps_all);
-    joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.create(data->type); });
+    joinDispatchInit(kind, strictness, map);
+    joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { map_.create(data->type); });
 
     if (reserve_num)
     {
-        joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.reserve(data->type, reserve_num); });
+        joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { map_.reserve(data->type, reserve_num); });
     }
 
     if (!data)
@@ -328,18 +327,20 @@ size_t HashJoin::getTotalRowCount() const
     }
     else
     {
-        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
         for (const auto & map : data->maps)
         {
-            joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
+            joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
         }
     }
 
     return res;
 }
 
-void HashJoin::doDebugAsserts() const
+size_t HashJoin::getTotalByteCount() const
 {
+    if (!data)
+        return 0;
+
 #ifndef NDEBUG
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
@@ -357,14 +358,6 @@ void HashJoin::doDebugAsserts() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size ({} != {})",
                         data->blocks_nullmaps_allocated_size, debug_blocks_nullmaps_allocated_size);
 #endif
-}
-
-size_t HashJoin::getTotalByteCount() const
-{
-    if (!data)
-        return 0;
-
-    doDebugAsserts();
 
     size_t res = 0;
 
@@ -374,10 +367,9 @@ size_t HashJoin::getTotalByteCount() const
 
     if (data->type != Type::CROSS)
     {
-        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
         for (const auto & map : data->maps)
         {
-            joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
+            joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
         }
     }
     return res;
@@ -500,7 +492,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     }
 
     size_t rows = source_block.rows();
-    data->rows_to_join += rows;
+
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
     for (const auto & column_name : right_key_names)
@@ -528,8 +520,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         return true;
     }
 
-    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
-
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -549,11 +539,9 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             have_compressed = true;
         }
 
-        doDebugAsserts();
         data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
-        doDebugAsserts();
 
         if (rows)
             data->empty = false;
@@ -604,7 +592,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             bool is_inserted = false;
             if (kind != JoinKind::Cross)
             {
-                joinDispatch(kind, strictness, data->maps[onexpr_idx], prefer_use_maps_all, [&](auto kind_, auto strictness_, auto & map)
+                joinDispatch(kind, strictness, data->maps[onexpr_idx], [&](auto kind_, auto strictness_, auto & map)
                 {
                     size_t size = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
                             *this,
@@ -620,10 +608,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                             is_inserted);
 
                     if (flag_per_row)
-                        used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(stored_block);
+                        used_flags->reinit<kind_, strictness_>(stored_block);
                     else if (is_inserted)
                         /// Number of buckets + 1 value from zero storage
-                        used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(size + 1);
+                        used_flags->reinit<kind_, strictness_>(size + 1);
                 });
             }
 
@@ -641,11 +629,9 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
             if (!flag_per_row && !is_inserted)
             {
-                doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->blocks_allocated_size -= stored_block->allocatedBytes();
                 data->blocks.pop_back();
-                doDebugAsserts();
             }
 
             if (!check_limits)
@@ -656,13 +642,16 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             total_bytes = getTotalByteCount();
         }
     }
-    data->keys_to_join = total_rows;
+
     shrinkStoredBlocksToFit(total_bytes);
+
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
+void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
 {
+    if (shrink_blocks)
+        return; /// Already shrunk
 
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
@@ -670,21 +659,15 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
     auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
 
-    if (!force_optimize)
-    {
-        if (shrink_blocks)
-            return; /// Already shrunk
-
-        /** If accounted data size is more than half of `max_bytes_in_join`
-        * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
-        * is bigger than half of all memory available for query,
-        * then shrink stored blocks to fit.
-        */
-        shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
-                        (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
-        if (!shrink_blocks)
-            return;
-    }
+    /** If accounted data size is more than half of `max_bytes_in_join`
+      * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
+      * is bigger than half of all memory available for query,
+      * then shrink stored blocks to fit.
+      */
+    shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
+                    (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
+    if (!shrink_blocks)
+        return;
 
     LOG_DEBUG(log, "Shrinking stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
         ReadableSize(total_bytes_in_join), max_total_bytes_in_join ? fmt::format("/ {}", ReadableSize(max_total_bytes_in_join)) : "",
@@ -692,8 +675,6 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
     for (auto & stored_block : data->blocks)
     {
-        doDebugAsserts();
-
         size_t old_size = stored_block.allocatedBytes();
         stored_block = stored_block.shrinkToFit();
         size_t new_size = stored_block.allocatedBytes();
@@ -711,8 +692,6 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         else
             /// Sometimes after clone resized block can be bigger than original
             data->blocks_allocated_size += new_size - old_size;
-
-        doDebugAsserts();
     }
 
     auto new_total_bytes_in_join = getTotalByteCount();
@@ -890,7 +869,7 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
         keys.insert(std::move(key));
     }
 
-    static_assert(!MapGetter<JoinKind::Left, JoinStrictness::Any, false>::flagged,
+    static_assert(!MapGetter<JoinKind::Left, JoinStrictness::Any>::flagged,
                   "joinGet are not protected from hash table changes between block processing");
 
     std::vector<const MapsOne *> maps_vector;
@@ -931,34 +910,16 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         materializeBlockInplace(block);
     }
 
-    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
 
-        if (joinDispatch(kind, strictness, maps_vector, prefer_use_maps_all, [&](auto kind_, auto strictness_, auto & maps_vector_)
+        if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
-            Block remaining_block;
-            if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
-            {
-                remaining_block = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
-                    *this, block, sample_block_with_columns_to_add, maps_vector_);
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
-            {
-                remaining_block = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
-                    *this, block, sample_block_with_columns_to_add, maps_vector_);
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
-            {
-                remaining_block = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
-                    *this, block, sample_block_with_columns_to_add, maps_vector_);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
-            }
+            using MapType = typename MapGetter<kind_, strictness_>::Map;
+            Block remaining_block = HashJoinMethods<kind_, strictness_, MapType>::joinBlockImpl(
+                *this, block, sample_block_with_columns_to_add, maps_vector_);
             if (remaining_block.rows())
                 not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(remaining_block)});
             else
@@ -1058,8 +1019,7 @@ public:
                 rows_added = fillColumnsFromMap(map, columns_right);
             };
 
-            bool prefer_use_maps_all = parent.table_join->getMixedJoinExpression() != nullptr;
-            if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
+            if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), fill_callback))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
         }
 
@@ -1249,7 +1209,6 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
 
 void HashJoin::reuseJoinedData(const HashJoin & join)
 {
-    have_compressed = join.have_compressed;
     data = join.data;
     from_storage_join = true;
 
@@ -1257,12 +1216,11 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     if (flag_per_row)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
 
-    bool prefer_use_maps_all = join.table_join->getMixedJoinExpression() != nullptr;
     for (auto & map : data->maps)
     {
-        joinDispatch(kind, strictness, map, prefer_use_maps_all, [this](auto kind_, auto strictness_, auto & map_)
+        joinDispatch(kind, strictness, map, [this](auto kind_, auto strictness_, auto & map_)
         {
-            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(map_.getBufferSizeInCells(data->type) + 1);
+            used_flags->reinit<kind_, strictness_>(map_.getBufferSizeInCells(data->type) + 1);
         });
     }
 }
@@ -1342,9 +1300,7 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
             additional_filter_expression->dumpActions());
     }
 
-    bool is_supported = ((strictness == JoinStrictness::All) && (isInnerOrLeft(kind) || isRightOrFull(kind)))
-        || ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Any || strictness == JoinStrictness::Anti)
-                && (isLeft(kind) || isRight(kind))) || (strictness == JoinStrictness::Any && (isInner(kind)));
+    bool is_supported = (strictness == JoinStrictness::All) && (isInnerOrLeft(kind) || isRightOrFull(kind));
     if (!is_supported)
     {
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
@@ -1372,104 +1328,6 @@ bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table
     if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
         return true;
     return false;
-}
-
-template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
-void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
-{
-    constexpr JoinFeatures<KIND, STRICTNESS, Map> join_features;
-    if constexpr (!join_features.is_all_join || (!join_features.left && !join_features.inner))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only left or inner join table can be reranged.");
-    else
-    {
-        auto merge_rows_into_one_block = [&](BlocksList & blocks, RowRefList & rows_ref)
-        {
-            auto it = rows_ref.begin();
-            if (it.ok())
-            {
-                if (blocks.empty() || blocks.back().rows() >= DEFAULT_BLOCK_SIZE)
-                    blocks.emplace_back(it->block->cloneEmpty());
-            }
-            else
-            {
-                return;
-            }
-            auto & block = blocks.back();
-            size_t start_row = block.rows();
-            for (; it.ok(); ++it)
-            {
-                for (size_t i = 0; i < block.columns(); ++i)
-                {
-                    auto & col = block.getByPosition(i).column->assumeMutableRef();
-                    col.insertFrom(*it->block->getByPosition(i).column, it->row_num);
-                }
-            }
-            if (block.rows() > start_row)
-            {
-                RowRefList new_rows_ref(&block, start_row, block.rows() - start_row);
-                rows_ref = std::move(new_rows_ref);
-            }
-        };
-
-        auto visit_rows_map = [&](BlocksList & blocks, MapsAll & rows_map)
-        {
-            switch (data->type)
-            {
-        #define M(TYPE) \
-                case Type::TYPE: \
-                {\
-                    rows_map.TYPE->forEachMapped([&](RowRefList & rows_ref) { merge_rows_into_one_block(blocks, rows_ref); }); \
-                    break; \
-                }
-                APPLY_FOR_JOIN_VARIANTS(M)
-        #undef M
-                default:
-                    break;
-            }
-        };
-        BlocksList sorted_blocks;
-        visit_rows_map(sorted_blocks, map);
-        doDebugAsserts();
-        data->blocks.swap(sorted_blocks);
-        size_t new_blocks_allocated_size = 0;
-        for (const auto & block : data->blocks)
-            new_blocks_allocated_size += block.allocatedBytes();
-        data->blocks_allocated_size = new_blocks_allocated_size;
-        doDebugAsserts();
-    }
-}
-
-void HashJoin::tryRerangeRightTableData()
-{
-    if (!table_join->allowJoinSorting() || table_join->getMixedJoinExpression() || !isInnerOrLeft(kind) || strictness != JoinStrictness::All)
-        return;
-
-    /// We should not rerange the right table on such conditions:
-    /// 1. the right table is already reranged by key or it is empty.
-    /// 2. the join clauses size is greater than 1, like `...join on a.key1=b.key1 or a.key2=b.key2`, we can not rerange the right table on different set of keys.
-    /// 3. the number of right table rows exceed the threshold, which may result in a significant cost for reranging and lead to performance degradation.
-    /// 4. the keys of right table is very sparse, which may result in insignificant performance improvement after reranging by key.
-    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightMaximumTableRows() ||  data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
-        return;
-
-    if (data->keys_to_join == 0)
-        data->keys_to_join = getTotalRowCount();
-
-    /// If the there is no columns to add, means no columns to output, then the rerange would not improve performance by using column's `insertRangeFrom`
-    /// to replace column's `insertFrom` to make the output.
-    if (sample_block_with_columns_to_add.columns() == 0)
-    {
-        LOG_DEBUG(log, "The joined right table total rows :{}, total keys :{}", data->rows_to_join, data->keys_to_join);
-        return;
-    }
-    [[maybe_unused]] bool result = joinDispatch(
-        kind,
-        strictness,
-        data->maps.front(),
-        /*prefer_use_maps_all*/ false,
-        [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
-    chassert(result);
-    data->sorted = true;
 }
 
 }
