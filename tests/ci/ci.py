@@ -427,7 +427,7 @@ def _mark_success_action(
         # do nothing, exit without failure
         print(f"ERROR: no status file for job [{job}]")
 
-    if job_config.run_by_label or not job_config.has_digest():
+    if job_config.run_by_labels or not job_config.has_digest():
         print(f"Job [{job}] has no digest or run by label in CI - do not cache")
     else:
         if pr_info.is_master:
