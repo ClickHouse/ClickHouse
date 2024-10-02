@@ -2498,7 +2498,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
         || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
         return false;
 
-    auto all_changed = cmd_merge_tree_settings.allChanged();
+    auto all_changed = cmd_merge_tree_settings.changes();
     if (all_changed.begin() == all_changed.end())
         return false;
 
@@ -2512,11 +2512,11 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     auto & storage_settings = *ast_create.storage->settings;
     bool added_new_setting = false;
 
-    for (const auto & setting : all_changed)
+    for (const auto & change : all_changed)
     {
-        if (!storage_settings.changes.tryGet(setting.getName()))
+        if (!storage_settings.changes.tryGet(change.name))
         {
-            storage_settings.changes.emplace_back(setting.getName(), setting.getValue());
+            storage_settings.changes.emplace_back(change.name, change.value);
             added_new_setting = true;
         }
     }

@@ -22,8 +22,10 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
+#include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
+
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -133,7 +135,7 @@ public:
                             String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
         else
-            BaseSettingsHelpers::throwSettingNotFound(setting_name);
+            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{setting_name});
     }
 
 private:

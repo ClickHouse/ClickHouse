@@ -28,6 +28,7 @@
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
+#include <base/range.h>
 
 
 namespace DB
