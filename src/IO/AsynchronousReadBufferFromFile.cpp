@@ -82,7 +82,7 @@ AsynchronousReadBufferFromFile::~AsynchronousReadBufferFromFile()
     if (fd < 0)
         return;
 
-    [[maybe_unused]] int err = ::close(fd);
+    int err = ::close(fd);
     chassert(!err || errno == EINTR);
 }
 

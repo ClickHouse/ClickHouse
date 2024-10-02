@@ -207,7 +207,7 @@ public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
-    PartitionActionBlocker merges_blocker;
+    ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
 
 private:

@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
-import gzip
 import io
-import logging
-import os
-import socket
+import gzip
 import subprocess
-import tempfile
 import time
 from tempfile import NamedTemporaryFile
-
 import requests
 import requests_kerberos as reqkerb
+import socket
+import tempfile
+import logging
+import os
 
 
 class mk_krb_conf(object):

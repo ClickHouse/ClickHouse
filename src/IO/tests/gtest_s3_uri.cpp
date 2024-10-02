@@ -189,14 +189,6 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri("https://bucketname.dots-are-allowed.s3-us-east-2.amazonaws.com/data");
-        ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
-        ASSERT_EQ("bucketname.dots-are-allowed", uri.bucket);
-        ASSERT_EQ("data", uri.key);
-        ASSERT_EQ("", uri.version_id);
-        ASSERT_EQ(true, uri.is_virtual_hosted_style);
-    }
-    {
         S3::URI uri("https://s3-us-east-2.amazonaws.com/bucketname/data");
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);

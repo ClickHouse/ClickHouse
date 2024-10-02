@@ -2,17 +2,21 @@
 
 import datetime
 import fnmatch
-import logging
 import math
 import os
 import time
+
+import logging
 from typing import Literal
 
 import docker
 import pymysql.connections
 import pytest
-
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import (
+    ClickHouseCluster,
+    get_docker_compose_path,
+    run_and_check,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()

@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
-import os
-from multiprocessing.dummy import Pool
-
 import pytest
-
-import helpers.keeper_utils as ku
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as ku
+from multiprocessing.dummy import Pool
+import os
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)

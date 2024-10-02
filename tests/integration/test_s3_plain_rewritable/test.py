@@ -1,8 +1,7 @@
+import pytest
 import random
 import string
 import threading
-
-import pytest
 
 from helpers.cluster import ClickHouseCluster
 

@@ -51,40 +51,6 @@ Calculates the MD5 from a string and returns the resulting set of bytes as Fixed
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## RIPEMD160
-
-Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
-
-**Syntax**
-
-```sql
-RIPEMD160(input)
-```
-
-**Parameters**
-
-- `input`: Input string. [String](../data-types/string.md)
-
-**Returned value**
-
-- A 160-bit `RIPEMD-160` hash value of type [FixedString(20)](../data-types/fixedstring.md).
-
-**Example**
-
-Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
-
-Query:
-
-```sql
-SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
-```
-
-```response
-┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
-└───────────────────────────────────────────────────────────────┘
-```
-
 ## sipHash64
 
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.

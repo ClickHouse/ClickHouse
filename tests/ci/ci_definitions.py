@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, List, Literal, Optional, Union
+from typing import List, Union, Iterable, Optional, Literal, Any
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES

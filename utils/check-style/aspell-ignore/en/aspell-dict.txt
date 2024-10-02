@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 2983
 AArch
 ACLs
 ALTERs
@@ -24,6 +24,7 @@ Aggregatefunction
 AggregatingMergeTree
 AggregatorThreads
 AggregatorThreadsActive
+AzureQueue
 Akka
 AlertManager
 Alexey
@@ -47,7 +48,6 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
-AzureQueue
 BIGINT
 BIGSERIAL
 BORO
@@ -100,7 +100,6 @@ BlockWriteBytes
 BlockWriteMerges
 BlockWriteOps
 BlockWriteTime
-Boncz
 Bool
 BrokenDistributedFilesToInsert
 Bugfix
@@ -116,13 +115,13 @@ CESU
 CIDR
 CIDRToRange
 CKMAN
-CKibana
 CLOB
 CLion
 CMPLNT
 CMake
 CMakeLists
 CODECS
+CountMin
 COVID
 CPUFrequencyMHz
 CPUs
@@ -154,6 +153,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+CKibana
 Clangd
 ClickBench
 ClickCat
@@ -186,7 +186,6 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
-CountMin
 Covid
 Cramer's
 Criteo
@@ -249,15 +248,14 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
-Dresseler
 Durre
 ECMA
+ElasticSearch
 ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
-ElasticSearch
 EmbeddedRocksDB
 Embeddings
 Encodings
@@ -425,9 +423,9 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
-JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
+JSONCompactWithProgress
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -444,11 +442,11 @@ JSONExtractUInt
 JSONHas
 JSONLength
 JSONObjectEachRow
-JSONSharedDataPaths
-JSONSharedDataPathsWithTypes
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -488,7 +486,6 @@ Kubernetes
 LDAP
 LGPL
 LIMITs
-LINEITEM
 LLDB
 LLVM's
 LOCALTIME
@@ -615,7 +612,6 @@ NVMe
 NYPD
 NaNs
 Nagios
-Nambiar
 Namenode
 NamesAndTypesList
 Nano
@@ -739,18 +735,15 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
-PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
 PlantUML
-Poess
 PointDistKm
 PointDistM
 PointDistRads
 PostHistory
 PostLink
-PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -808,7 +801,6 @@ RWLockActiveWriters
 RWLockWaitingReaders
 RWLockWaitingWriters
 RabbitMQ
-Rabl
 RangeHashed
 RawBLOB
 ReDoS
@@ -853,7 +845,6 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
-RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -991,8 +982,8 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
-TimeSeries
 TimescaleDB's
+TimeSeries
 Timeunit
 TinyLog
 Tkachenko
@@ -1174,7 +1165,6 @@ arrayDifference
 arrayDistinct
 arrayDotProduct
 arrayElement
-arrayElementOrNull
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -1224,7 +1214,6 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip
@@ -1559,7 +1548,6 @@ dequeues
 deserialization
 deserialized
 deserializing
-dest
 destructor
 destructors
 detectCharset
@@ -1585,12 +1573,12 @@ disjunction
 disjunctions
 displayName
 displaySecretsInShowAndSelect
+distro
+distinctdynamictypes
 distinctDynamicTypes
+distinctjsonpaths
 distinctJSONPaths
 distinctJSONPathsAndTypes
-distinctdynamictypes
-distinctjsonpaths
-distro
 divideDecimal
 dmesg
 doesnt
@@ -1747,7 +1735,6 @@ getMacro
 getOSKernelVersion
 getServerPort
 getSetting
-getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -2012,7 +1999,6 @@ linearizable
 linearized
 lineasstring
 linefeeds
-lineitem
 lineorder
 linestring
 linux
@@ -2608,6 +2594,7 @@ sqlinsert
 sqlite
 sqrt
 src
+dest
 srcReplicas
 sshkey
 stackoverflow
@@ -2866,8 +2853,6 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
-tpcds
-tpch
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot

@@ -355,11 +355,10 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     use_threads = cpu_slots->grantedCount();
 
     Queue queue;
-    Queue async_queue;
-    graph->initializeExecution(queue, async_queue);
+    graph->initializeExecution(queue);
 
     tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get());
-    tasks.fill(queue, async_queue);
+    tasks.fill(queue);
 
     if (num_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);

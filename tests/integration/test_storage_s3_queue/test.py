@@ -1,5 +1,4 @@
 import io
-import json
 import logging
 import random
 import string
@@ -7,9 +6,11 @@ import time
 import uuid
 
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+import json
+from uuid import uuid4
+
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
@@ -125,26 +126,6 @@ def started_cluster():
             use_old_analyzer=True,
         )
         cluster.add_instance(
-            "node1",
-            with_zookeeper=True,
-            stay_alive=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-                "configs/remote_servers.xml",
-            ],
-        )
-        cluster.add_instance(
-            "node2",
-            with_zookeeper=True,
-            stay_alive=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-                "configs/remote_servers.xml",
-            ],
-        )
-        cluster.add_instance(
             "instance_too_many_parts",
             user_configs=["configs/users.xml"],
             with_minio=True,
@@ -247,7 +228,6 @@ def create_table(
     auth=DEFAULT_AUTH,
     bucket=None,
     expect_error=False,
-    database_name="default",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -269,7 +249,7 @@ def create_table(
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
-        CREATE TABLE {database_name}.{table_name} ({format})
+        CREATE TABLE {table_name} ({format})
         ENGINE = {engine_def}
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
@@ -547,7 +527,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3},
+        additional_settings={"keeper_path": keeper_path},
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]

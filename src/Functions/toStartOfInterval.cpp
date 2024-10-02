@@ -1,4 +1,3 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
@@ -226,17 +225,8 @@ public:
         if (overload == Overload::Origin)
             origin_column = arguments[2];
 
-        const DateLUTImpl * time_zone_tmp;
-
-        if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
-        {
-            const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
-        }
-        else /// As we convert date to datetime and perform calculation, we don't need to take the timezone into account, so we set it to default
-            time_zone_tmp = &DateLUT::instance("UTC");
-
-        const DateLUTImpl & time_zone = *time_zone_tmp;
+        const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
 
         ColumnPtr result_column;
         if (isDate(result_type))
@@ -430,8 +420,6 @@ private:
 REGISTER_FUNCTION(ToStartOfInterval)
 {
     factory.registerFunction<FunctionToStartOfInterval>();
-    factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
-    factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
 }
 
 }

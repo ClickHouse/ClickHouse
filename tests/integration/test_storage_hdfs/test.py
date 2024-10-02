@@ -1,14 +1,13 @@
 import os
-import re
-import time
-import uuid
 
 import pytest
-from pyhdfs import HdfsClient
-
-from helpers.client import QueryRuntimeException
+import uuid
+import time
+import re
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.client import QueryRuntimeException
 from helpers.test_tools import TSV
+from pyhdfs import HdfsClient
 
 if is_arm():
     pytestmark = pytest.mark.skip

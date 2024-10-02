@@ -5,7 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/BitHelpers.h>
 #include <Common/formatReadable.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -272,7 +272,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// Reserving space is mandatory
     size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings().max_build_vector_similarity_index_thread_pool_size;
     if (max_thread_pool_size == 0)
-        max_thread_pool_size = getNumberOfCPUCoresToUse();
+        max_thread_pool_size = getNumberOfPhysicalCPUCores();
     unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(index->size() + rows), max_thread_pool_size);
     index->reserve(limits);
 

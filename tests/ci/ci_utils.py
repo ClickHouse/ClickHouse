@@ -117,7 +117,8 @@ class GH:
         res = cls.get_workflow_results()
         if wf_job_name in res:
             return res[wf_job_name]["result"]  # type: ignore
-        return None
+        else:
+            return None
 
     @staticmethod
     def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
@@ -248,7 +249,7 @@ class Shell:
             return True
         if verbose:
             print(f"Run command [{command}]")
-        with subprocess.Popen(
+        proc = subprocess.Popen(
             command,
             shell=True,
             stderr=subprocess.STDOUT,
@@ -259,17 +260,16 @@ class Shell:
             bufsize=1,
             errors="backslashreplace",
             **kwargs,
-        ) as proc:
-            if stdin_str:
-                proc.communicate(input=stdin_str)
-            elif proc.stdout:
-                for line in proc.stdout:
-                    sys.stdout.write(line)
-            proc.wait()
-            retcode = proc.returncode
-            if strict:
-                assert retcode == 0
-        return retcode == 0
+        )
+        if stdin_str:
+            proc.communicate(input=stdin_str)
+        elif proc.stdout:
+            for line in proc.stdout:
+                sys.stdout.write(line)
+        proc.wait()
+        if strict:
+            assert proc.returncode == 0
+        return proc.returncode == 0
 
 
 class Utils:

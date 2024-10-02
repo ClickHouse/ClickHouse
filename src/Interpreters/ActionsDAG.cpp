@@ -1433,21 +1433,16 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
-void ActionsDAG::addMaterializingOutputActions(bool materialize_sparse)
+void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & output_node : outputs)
-        output_node = &materializeNode(*output_node, materialize_sparse);
+        output_node = &materializeNode(*output_node);
 }
 
-const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool materialize_sparse)
+const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
 {
-    FunctionPtr func_materialize;
-    if (materialize_sparse)
-        func_materialize = std::make_shared<FunctionMaterialize<true>>();
-    else
-        func_materialize = std::make_shared<FunctionMaterialize<false>>();
-
-    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(func_materialize));
+    FunctionOverloadResolverPtr func_builder_materialize
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
@@ -1474,7 +1469,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     ActionsDAG actions_dag(source);
     NodeRawConstPtrs projection(num_result_columns);
 
-    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize<false>>());
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     std::unordered_map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
@@ -1601,7 +1596,7 @@ ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
     ActionsDAG adding_column_action;
     FunctionOverloadResolverPtr func_builder_materialize
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize<true>>());
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     auto column_name = column.name;
     const auto * column_node = &adding_column_action.addColumn(std::move(column));
@@ -3189,6 +3184,34 @@ FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAG & 
 const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
 {
     const auto it = index.find(output_name);
+    if (it == index.end())
+        return nullptr;
+
+    return it->second;
+}
+
+FindAliasForInputName::FindAliasForInputName(const ActionsDAG & actions_)
+{
+    const auto & actions_outputs = actions_.getOutputs();
+    for (const auto * output_node : actions_outputs)
+    {
+        /// find input node which corresponds to alias
+        const auto * node = output_node;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            /// alias has only one child
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            /// node can have several aliases but we consider only the first one
+            index.emplace(node->result_name, output_node);
+    }
+}
+
+const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
+{
+    const auto it = index.find(name);
     if (it == index.end())
         return nullptr;
 

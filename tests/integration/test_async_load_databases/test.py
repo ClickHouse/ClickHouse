@@ -1,7 +1,5 @@
-import random
-
 import pytest
-
+import random
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 

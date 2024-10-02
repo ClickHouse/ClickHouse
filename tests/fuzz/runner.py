@@ -3,8 +3,8 @@
 import configparser
 import logging
 import os
-import subprocess
 from pathlib import Path
+import subprocess
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")

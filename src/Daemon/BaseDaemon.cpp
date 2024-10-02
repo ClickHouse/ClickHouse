@@ -331,7 +331,7 @@ void BaseDaemon::initialize(Application & self)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {
-                [[maybe_unused]] int err = ::close(fd);
+                int err = ::close(fd);
                 chassert(!err || errno == EINTR);
             }
         }

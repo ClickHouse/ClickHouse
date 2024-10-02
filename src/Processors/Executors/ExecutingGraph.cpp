@@ -181,7 +181,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint6
     return UpdateNodeStatus::Done;
 }
 
-void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
+void ExecutingGraph::initializeExecution(Queue & queue)
 {
     std::stack<uint64_t> stack;
 
@@ -197,12 +197,18 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         }
     }
 
+    Queue async_queue;
+
     while (!stack.empty())
     {
         uint64_t proc = stack.top();
         stack.pop();
 
         updateNode(proc, queue, async_queue);
+
+        if (!async_queue.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
+                            async_queue.front()->processor->getName());
     }
 }
 

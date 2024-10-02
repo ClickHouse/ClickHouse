@@ -112,12 +112,12 @@ public:
         }
         catch (...)
         {
-            [[maybe_unused]] int err = close(fd);
+            int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        [[maybe_unused]] int err = close(fd);
+        int err = close(fd);
         chassert(!err || errno == EINTR);
         return res;
     }
@@ -182,12 +182,12 @@ public:
         }
         catch (...)
         {
-            [[maybe_unused]] int err = close(fd);
+            int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        [[maybe_unused]] int err = close(fd);
+        int err = close(fd);
         chassert(!err || errno == EINTR);
     }
 

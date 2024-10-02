@@ -16,7 +16,7 @@ namespace DB
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
+Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
 Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation);
 
