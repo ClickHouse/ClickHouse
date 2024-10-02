@@ -500,6 +500,30 @@ Useful in table engine parameters of `CREATE TABLE` queries where you need to sp
 currentDatabase()
 ```
 
+**Arguments**
+
+None.
+
+**Returned value**
+
+- `value` returns the current database name. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT currentDatabase()
+```
+
+Result:
+
+```response
+┌─currentDatabase()─┐
+│ default           │
+└───────────────────┘
+```
+
 ## currentUser {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
@@ -2783,6 +2807,45 @@ Result:
 
 ```
 123
+```
+
+**See Also**
+
+- [Custom Settings](../../operations/settings/index.md#custom_settings)
+
+## getSettingOrDefault
+
+Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+
+**Syntax**
+
+```sql
+getSettingOrDefault('custom_setting', default_value);
+```
+
+**Parameter**
+
+- `custom_setting` — The setting name. [String](../data-types/string.md).
+- `default_value` — Value to return if custom_setting is not set. Value may be of any data type or Null.
+
+**Returned value**
+
+- The setting's current value or default_value if setting is not set.
+
+**Example**
+
+```sql
+SELECT getSettingOrDefault('custom_undef1', 'my_value');
+SELECT getSettingOrDefault('custom_undef2', 100);
+SELECT getSettingOrDefault('custom_undef3', NULL);
+```
+
+Result:
+
+```
+my_value
+100
+NULL
 ```
 
 **See Also**

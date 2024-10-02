@@ -35,6 +35,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
@@ -1365,6 +1366,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+            checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
             /// FIXME: Adding a new column of type Object(JSON) is broken.
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
@@ -1453,6 +1455,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.data_type)
             {
                 validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+                checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;

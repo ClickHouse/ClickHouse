@@ -90,7 +90,7 @@ def cleanup_environment():
                     nothrow=True,
                 )
                 logging.debug("Unstopped containers killed")
-                r = run_and_check(["docker-compose", "ps", "--services", "--all"])
+                r = run_and_check(["docker", "compose", "ps", "--services", "--all"])
                 logging.debug("Docker ps before start:%s", r.stdout)
         else:
             logging.debug("No running containers")
