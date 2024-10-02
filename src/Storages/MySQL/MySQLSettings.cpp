@@ -11,10 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsMySQLDataTypesSupport mysql_datatypes_support_level;
-}
 
 namespace ErrorCodes
 {
@@ -58,10 +54,10 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
 
     const Settings & settings = context->getQueryContext()->getSettingsRef();
 
-    if (settings[Setting::mysql_datatypes_support_level].value != mysql_datatypes_support_level.value)
+    if (settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
     {
         static constexpr auto setting_name = "mysql_datatypes_support_level";
-        set(setting_name, settings[Setting::mysql_datatypes_support_level].toString());
+        set(setting_name, settings.mysql_datatypes_support_level.toString());
 
         if (!storage_def.settings)
         {
@@ -75,7 +71,7 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
                 changes.begin(), changes.end(),
                 [](const SettingChange & c) { return c.name == setting_name; }))
         {
-            changes.push_back(SettingChange{setting_name, settings[Setting::mysql_datatypes_support_level].toString()});
+            changes.push_back(SettingChange{setting_name, settings.mysql_datatypes_support_level.toString()});
         }
     }
 }

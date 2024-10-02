@@ -1,6 +1,5 @@
-import logging
-
 import pytest
+import logging
 
 from helpers.cluster import ClickHouseCluster
 

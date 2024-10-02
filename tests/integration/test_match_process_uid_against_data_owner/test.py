@@ -1,9 +1,7 @@
 import os
 import pwd
 import re
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

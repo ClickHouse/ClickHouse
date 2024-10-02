@@ -178,7 +178,7 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Ephemeral:
+        case FileSegmentKind::Temporary:
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
@@ -198,13 +198,13 @@ String CacheMetadata::getFileSegmentPath(
 
 String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
 {
-    const auto key_str = key.toString();
     if (write_cache_per_user_directory)
     {
-        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
+        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key.toString();
     }
     else
     {
+        const auto key_str = key.toString();
         return fs::path(path) / key_str.substr(0, 3) / key_str;
     }
 }
@@ -423,8 +423,6 @@ CacheMetadata::removeEmptyKey(
             fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
         }
-
-        /// TODO: Remove empty user directories.
     }
     catch (...)
     {
@@ -707,8 +705,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     {
         auto size = reader->available();
 
-        std::string failure_reason;
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "
@@ -849,7 +846,7 @@ LockedKey::~LockedKey()
     /// See comment near cleanupThreadFunc() for more details.
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_TEST(key_metadata->logger(), "Submitting key {} for removal", getKey());
+    LOG_TRACE(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 

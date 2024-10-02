@@ -1,24 +1,29 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Core/ParallelReplicasMode.h>
+#include <Formats/FormatSettings.h>
+#include <IO/AsyncReadCounters.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Formats/FormatSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 
 #include "config.h"
@@ -29,11 +34,7 @@
 #include <optional>
 
 
-namespace Poco::Net
-{
-class IPAddress;
-class SocketAddress;
-}
+namespace Poco::Net { class IPAddress; }
 namespace zkutil
 {
     class ZooKeeper;
@@ -133,11 +134,10 @@ class ICompressionCodec;
 class AccessControl;
 class GSSAcceptorContext;
 struct Settings;
-struct SettingChange;
-class SettingsChanges;
 struct SettingsConstraintsAndProfileIDs;
 class SettingsProfileElements;
 class RemoteHostFilter;
+struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
@@ -152,9 +152,6 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
-class HTTPHeaderFilter;
-struct AsyncReadCounters;
-struct ICgroupsReader;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -495,8 +492,6 @@ public:
 
     KitchenSink kitchen_sink;
 
-    void resetSharedContext();
-
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -534,10 +529,6 @@ protected:
     mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
 
     mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
-
-    mutable std::mutex mutex_shared_context;    /// mutex to avoid accessing destroyed shared context pointer
-                                                /// some Context methods can be called after the shared context is destroyed
-                                                /// example, Context::handleCrash() method - called from signal handler
 };
 
 /** A set of known objects that can be used in the query.
@@ -1006,8 +997,6 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
-    /// If name == "default", same as getZooKeeper(), otherwise same as getAuxiliaryZooKeeper().
-    std::shared_ptr<zkutil::ZooKeeper> getDefaultOrAuxiliaryZooKeeper(const String & name) const;
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
@@ -1100,8 +1089,6 @@ public:
     /// in the way that its tasks are - wait for marks to be loaded
     /// and make a prefetch by putting a read task to threadpoolReader.
     size_t getPrefetchThreadpoolSize() const;
-
-    ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -1347,6 +1334,15 @@ public:
 
     ClusterPtr getClusterForParallelReplicas() const;
 
+    enum class ParallelReplicasMode : uint8_t
+    {
+        SAMPLE_KEY,
+        CUSTOM_KEY,
+        READ_TASKS,
+    };
+
+    ParallelReplicasMode getParallelReplicasMode() const;
+
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
@@ -1390,6 +1386,8 @@ private:
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> & lock);
+
+    void initGlobal();
 
     void setUserID(const UUID & user_id_);
     void setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user);

@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 
 import gzip
-import io
 import json
 import logging
 import os
+import io
 import random
 import threading
 import time
 
-import pytest
 from azure.storage.blob import BlobServiceClient
-
 import helpers.client
+import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
+from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
 
 

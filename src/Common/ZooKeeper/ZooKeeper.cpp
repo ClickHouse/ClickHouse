@@ -979,47 +979,18 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
     return removed_as_expected;
 }
 
-void ZooKeeper::removeRecursive(const std::string & path, uint32_t remove_nodes_limit)
+void ZooKeeper::removeRecursive(const std::string & path)
 {
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-    {
-        removeChildrenRecursive(path);
-        remove(path);
-        return;
-    }
-
-    check(tryRemoveRecursive(path, remove_nodes_limit), path);
+    removeChildrenRecursive(path);
+    remove(path);
 }
 
-Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit)
+void ZooKeeper::tryRemoveRecursive(const std::string & path)
 {
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-    {
-        tryRemoveChildrenRecursive(path);
-        return tryRemove(path);
-    }
-
-    auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::RemoveRecursiveResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->removeRecursive(path, remove_nodes_limit, std::move(callback));
-
-    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-    {
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::RemoveRecursive, path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future.get();
-        return response.error;
-    }
+    tryRemoveChildrenRecursive(path);
+    tryRemove(path);
 }
+
 
 namespace
 {
@@ -1565,7 +1536,7 @@ String ZooKeeper::getConnectedHostPort() const
     return impl->getConnectedHostPort();
 }
 
-int64_t ZooKeeper::getConnectionXid() const
+int32_t ZooKeeper::getConnectionXid() const
 {
     return impl->getConnectionXid();
 }
@@ -1648,14 +1619,6 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
     return request;
 }
 
-Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit)
-{
-    auto request = std::make_shared<Coordination::RemoveRecursiveRequest>();
-    request->path = path;
-    request->remove_nodes_limit = remove_nodes_limit;
-    return request;
-}
-
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {
     auto request = std::make_shared<Coordination::SetRequest>();
@@ -1723,10 +1686,11 @@ std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts
 
 String extractZooKeeperName(const String & path)
 {
+    static constexpr auto default_zookeeper_name = "default";
     if (path.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
     if (path[0] == '/')
-        return String(DEFAULT_ZOOKEEPER_NAME);
+        return default_zookeeper_name;
     auto pos = path.find(":/");
     if (pos != String::npos && pos < path.find('/'))
     {
@@ -1735,7 +1699,7 @@ String extractZooKeeperName(const String & path)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
         return zookeeper_name;
     }
-    return String(DEFAULT_ZOOKEEPER_NAME);
+    return default_zookeeper_name;
 }
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)

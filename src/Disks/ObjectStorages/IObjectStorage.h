@@ -146,14 +146,14 @@ public:
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
     /// Read multiple objects with common prefix
     virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const StoredObjects & objects,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 

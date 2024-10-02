@@ -1,6 +1,5 @@
 #include <memory>
 #include <stack>
-#include <unordered_set>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
@@ -47,7 +46,6 @@
 #include "Functions/IFunction.h"
 #include "Functions/IFunctionAdaptors.h"
 #include "Functions/indexHint.h"
-#include <IO/ReadBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
@@ -57,10 +55,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool use_hive_partitioning;
-}
 
 namespace ErrorCodes
 {
@@ -130,18 +124,9 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
     }
 }
 
-NamesAndTypesList getCommonVirtualsForFileLikeStorage()
-{
-    return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
-            {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
-}
-
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return getCommonVirtualsForFileLikeStorage().getNameSet();
+    return {"_path", "_file", "_size", "_time", "_etag"};
 }
 
 std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
@@ -169,13 +154,11 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 {
     VirtualColumnsDescription desc;
 
-    auto add_virtual = [&](const NameAndTypePair & pair)
+    auto add_virtual = [&](const auto & name, const auto & type)
     {
-        const auto & name = pair.getNameInStorage();
-        const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
-            if (!context->getSettingsRef()[Setting::use_hive_partitioning])
+            if (!context->getSettingsRef().use_hive_partitioning)
                 return;
 
             if (storage_columns.size() == 1)
@@ -189,10 +172,13 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
         desc.addEphemeral(name, type, "");
     };
 
-    for (const auto & item : getCommonVirtualsForFileLikeStorage())
-        add_virtual(item);
+    add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
+    add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
+    add_virtual("_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (context->getSettingsRef().use_hive_partitioning)
     {
         auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
@@ -202,16 +188,16 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
             if (type == nullptr)
                 type = std::make_shared<DataTypeString>();
             if (type->canBeInsideLowCardinality())
-                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)});
+                add_virtual(item.first, std::make_shared<DataTypeLowCardinality>(type));
             else
-                add_virtual({item.first, type});
+                add_virtual(item.first, type);
         }
     }
 
     return desc;
 }
 
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool use_hive_partitioning)
+static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -228,34 +214,18 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
-    if (use_hive_partitioning)
-    {
-        auto keys_and_values = parseHivePartitioningKeysAndValues(path);
-        for (const auto & [key, value] : keys_and_values)
-        {
-            if (const auto * column = block.findByName(key))
-            {
-                ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
-            }
-        }
-    }
-
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
 
     Block block;
-    NameSet common_virtuals;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path")
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -263,19 +233,18 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
     return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
 {
     Block block;
-    NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path")
             block.insert({column.type->createColumn(), column.type, column.name});
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef()[Setting::use_hive_partitioning]);
+        addPathAndFileToVirtualColumns(block, paths[i], i);
 
     filterBlockWithExpression(actions, block);
 
@@ -287,7 +256,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
     std::unordered_map<std::string, std::string> hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (context->getSettingsRef().use_hive_partitioning)
         hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
 
     for (const auto & virtual_column : requested_virtual_columns)

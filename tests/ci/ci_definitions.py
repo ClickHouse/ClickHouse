@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, List, Literal, Optional, Union
+from typing import List, Union, Iterable, Optional, Literal, Any
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
@@ -62,6 +62,7 @@ class Runners(metaclass=WithIter):
     STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
     FUNC_TESTER_ARM = "func-tester-aarch64"
+    STRESS_TESTER = "stress-tester"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -414,7 +415,6 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateless-test"],
@@ -431,7 +431,6 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateful-test"],
@@ -449,24 +448,23 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stress-test"],
         ),
         run_command="stress_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
         timeout=9000,
     )
     UPGRADE_TEST = JobConfig(
         job_name_keyword="upgrade",
         digest=DigestConfig(
-            include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"],
+            include_paths=["./tests/ci/upgrade_check.py"],
             exclude_files=[".md"],
-            docker=["clickhouse/stress-test"],
+            docker=["clickhouse/upgrade-check"],
         ),
         run_command="upgrade_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
         timeout=3600,
     )
     INTEGRATION_TEST = JobConfig(
@@ -481,7 +479,7 @@ class CommonJobConfigs:
             docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
@@ -516,7 +514,7 @@ class CommonJobConfigs:
             docker=["clickhouse/performance-comparison"],
         ),
         run_command="performance_comparison_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
     )
     SQLLANCER_TEST = JobConfig(
         job_name_keyword="lancer",

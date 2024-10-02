@@ -162,7 +162,7 @@ public:
         ContextPtr local_context,
         bool with_table_structure);
 
-    /// Storage type: s3, hdfs, azure, local.
+    /// Storage type: s3, hdfs, azure.
     virtual std::string getTypeName() const = 0;
     /// Engine name: S3, HDFS, Azure.
     virtual std::string getEngineName() const = 0;
@@ -180,9 +180,7 @@ public:
     virtual String getNamespace() const = 0;
 
     virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;
-
-    /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
-    virtual void addStructureAndFormatToArgsIfNeeded(
+    virtual void addStructureAndFormatToArgs(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
 
     bool withPartitionWildcard() const;

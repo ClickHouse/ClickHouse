@@ -1,5 +1,4 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -47,7 +46,7 @@ def test_create():
     def check():
         assert (
             instance.query("SHOW CREATE USER u1")
-            == "CREATE USER u1 IDENTIFIED WITH no_password SETTINGS PROFILE `s1`\n"
+            == "CREATE USER u1 SETTINGS PROFILE `s1`\n"
         )
         assert (
             instance.query("SHOW CREATE USER u2")
@@ -100,7 +99,7 @@ def test_alter():
     def check():
         assert (
             instance.query("SHOW CREATE USER u1")
-            == "CREATE USER u1 IDENTIFIED WITH no_password SETTINGS PROFILE `s1`\n"
+            == "CREATE USER u1 SETTINGS PROFILE `s1`\n"
         )
         assert (
             instance.query("SHOW CREATE USER u2")
@@ -148,10 +147,7 @@ def test_drop():
     instance.query("DROP SETTINGS PROFILE s1")
 
     def check():
-        assert (
-            instance.query("SHOW CREATE USER u1")
-            == "CREATE USER u1 IDENTIFIED WITH no_password\n"
-        )
+        assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1\n"
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")
             == "CREATE SETTINGS PROFILE `s2`\n"

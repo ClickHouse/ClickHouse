@@ -12,10 +12,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool cast_keep_nullable;
-}
 
 namespace ErrorCodes
 {
@@ -80,8 +76,7 @@ public:
         else
         {
             const auto & settings_ref = context->getSettingsRef();
-            return std::make_unique<CastOverloadResolverImpl>(
-                context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
+            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, settings_ref.cast_keep_nullable, DataTypeValidationSettings(settings_ref));
         }
     }
 

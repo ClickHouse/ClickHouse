@@ -18,13 +18,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_statistics_optimize;
-    extern const SettingsUInt64 log_queries_cut_to_length;
-    extern const SettingsBool move_all_conditions_to_prewhere;
-    extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
-}
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
@@ -97,11 +90,10 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = determineArrayJoinedNames(select);
-    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
-    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
-        = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
+    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef().allow_statistics_optimize;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -117,10 +109,8 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter_ast));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter_ast));
 
-    LOG_DEBUG(
-        log,
-        "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE",
-        select.prewhere()->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]));
+    UInt64 log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
@@ -131,11 +121,10 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = {};
-    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
-    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
-        = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
+    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = is_final;
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef().allow_statistics_optimize;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
