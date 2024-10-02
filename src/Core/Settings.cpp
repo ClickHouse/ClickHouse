@@ -918,8 +918,8 @@ namespace ErrorCodes
     M(Bool, restore_replace_external_table_functions_to_null, false, "Replace all table functions to Null on restore. Useful for testing purposes", 0) \
     M(Bool, restore_replace_external_dictionary_source_to_null, false, "Replace external dictionary sources to Null on restore. Useful for testing purposes", 0) \
     M(Bool, create_if_not_exists, false, "Enable IF NOT EXISTS for CREATE statements by default", 0) \
+    M(Bool, enable_secure_identifiers, false, "If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters", 0) \
     M(Bool, mongodb_throw_on_unsupported_query, true, "If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.", 0) \
-    \
     \
     /* ###################################### */ \
     /* ######## EXPERIMENTAL FEATURES ####### */ \
