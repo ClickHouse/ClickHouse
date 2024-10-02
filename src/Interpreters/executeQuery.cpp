@@ -457,6 +457,30 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
+void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, QueryStatusInfoPtr info)
+{
+    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
+    {
+        auto interval_milliseconds = getQueryMetricLogInterval(context);
+        if (info && interval_milliseconds > 0)
+        {
+            /// Only collect data on query finish if the elapsed time exceeds the interval to collect.
+            /// If we don't do this, it's counter-intuitive to have a single entry for every quick query
+            /// where the data is basically a subset of the query_log.
+            /// On the other hand, it's very convenient to have a new entry whenever the query finishes
+            /// so that we can get nice time-series querying only query_metric_log without the need
+            /// to query the final state in query_log.
+            auto collect_on_finish = info->elapsed_microseconds > interval_milliseconds * 1000;
+            auto query_info = collect_on_finish ? info : nullptr;
+            query_metric_log->finishQuery(query_id, query_info);
+        }
+        else
+        {
+            query_metric_log->finishQuery(query_id, nullptr);
+        }
+    }
+}
+
 void logQueryFinish(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -570,22 +594,7 @@ void logQueryFinish(
             }
         }
 
-        if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
-        {
-            auto interval_milliseconds = getQueryMetricLogInterval(context);
-            if (interval_milliseconds > 0)
-            {
-                /// Only collect data on query finish if the elapsed time exceeds the interval to collect.
-                /// If we don't do this, it's counter-intuitive to have a single entry for every quick query
-                /// where the data is basically a subset of the query_log.
-                /// On the other hand, it's very convenient to have a new entry whenever the query finishes
-                /// so that we can get nice time-series querying only query_metric_log without the need
-                /// to query the final state in query_log.
-                auto collect_on_finish = info.elapsed_microseconds > interval_milliseconds * 1000;
-                auto query_info = collect_on_finish ? std::make_shared<QueryStatusInfo>(info) : nullptr;
-                query_metric_log->finishQuery(elem.client_info.current_query_id, query_info);
-            }
-        }
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -630,10 +639,11 @@ void logQueryException(
     elem.event_time = timeInSeconds(time_now);
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
+    QueryStatusInfoPtr info;
     if (process_list_elem)
     {
-        QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events], false);
-        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
+        info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
+        addStatusInfoToQueryLogElement(elem, *info, query_ast, context);
     }
     else
     {
@@ -669,8 +679,7 @@ void logQueryException(
         query_span->finish();
     }
 
-    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
-        query_metric_log->finishQuery(elem.client_info.current_query_id);
+    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, info);
 }
 
 void logExceptionBeforeStart(
@@ -769,8 +778,7 @@ void logExceptionBeforeStart(
         }
     }
 
-    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log)
-        query_metric_log->finishQuery(elem.client_info.current_query_id);
+    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, nullptr);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
