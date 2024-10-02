@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int QUERY_WAS_CANCELLED;
-}
-
 void BlockIO::reset()
 {
     /** process_list_entry should be destroyed after in, after out and after pipeline,
@@ -70,10 +65,6 @@ void BlockIO::onException()
 
 void BlockIO::onCancelOrConnectionLoss()
 {
-    /// Query was not finished gracefully, so we should call exception_callback
-    // if (exception_callback)
-    //     exception_callback(/* log_error */ false);
-
     pipeline.cancel();
     pipeline.reset();
 }
