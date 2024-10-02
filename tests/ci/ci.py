@@ -1131,6 +1131,10 @@ def main() -> int:
             ci_cache.filter_out_not_affected_jobs()
             ci_cache.print_status()
 
+        if pr_info.is_release and not pr_info.is_master:
+            ### FIXME bug with Docs check in ci_cache.jobs_to_wait in release branches
+            ci_cache.jobs_to_wait.pop(CI.JobNames.DOCS_CHECK)
+
         if IS_CI and not pr_info.is_merge_queue:
 
             if pr_info.is_release and pr_info.is_push_event:
