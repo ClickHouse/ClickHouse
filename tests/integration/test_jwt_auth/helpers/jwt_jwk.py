@@ -9,7 +9,7 @@ import jwt
 """
 Only RS* family algorithms are supported!!!
 """
-with open("./jwtRS256.key", "rb") as key_file:
+with open("./private_key_2", "rb") as key_file:
     private_key = serialization.load_pem_private_key(
         key_file.read(),
         password=None,
@@ -31,7 +31,7 @@ def rsa_key_to_jwk(private_key=None, public_key=None):
 
         jwk = {
             "kty": "RSA",
-            "alg": "RS256",
+            "alg": "RS512",
             "kid": "mykid",
             "n": to_base64_url(
                 public_numbers.n.to_bytes(
@@ -80,7 +80,7 @@ def rsa_key_to_jwk(private_key=None, public_key=None):
 
         jwk = {
             "kty": "RSA",
-            "alg": "RS256",
+            "alg": "RS512",
             "kid": "mykid",
             "n": to_base64_url(
                 public_numbers.n.to_bytes(
@@ -109,5 +109,5 @@ print(f"Public JWK:\n{json.dumps(jwk_public)}\n")
 payload = {"sub": "jwt_user", "iss": "test_iss"}
 
 # Create a JWT
-token = jwt.encode(payload, private_key, headers={"kid": "mykid"}, algorithm="RS256")
+token = jwt.encode(payload, private_key, headers={"kid": "mykid"}, algorithm="RS512")
 print(f"JWT:\n{token}")

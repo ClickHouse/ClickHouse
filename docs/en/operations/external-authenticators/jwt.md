@@ -94,7 +94,7 @@ Only one of `static_jwks` or `static_jwks_file` keys must be present in one veri
     <!- ... -->
     <jwt_validators>
         <basic_auth_server>
-          <uri>http://localhost:8000/jwks.json</uri>
+          <uri>http://localhost:8000/.well-known/jwks.json</uri>
           <connection_timeout_ms>1000</connection_timeout_ms>
           <receive_timeout_ms>1000</receive_timeout_ms>
           <send_timeout_ms>1000</send_timeout_ms>
