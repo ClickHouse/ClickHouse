@@ -261,7 +261,7 @@ class CI:
                 compiler="clang-18",
                 package_type="fuzzers",
             ),
-            run_by_label=Tags.libFuzzer,
+            run_by_labels=[Tags.libFuzzer],
         ),
         JobNames.BUILD_CHECK: CommonJobConfigs.BUILD_REPORT.with_properties(),
         JobNames.INSTALL_TEST_AMD: CommonJobConfigs.INSTALL_TEST.with_properties(
@@ -479,13 +479,13 @@ class CI:
         ),
         JobNames.JEPSEN_KEEPER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_label="jepsen-test",
+            run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py keeper",
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.JEPSEN_SERVER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_label="jepsen-test",
+            run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py server",
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
@@ -495,7 +495,7 @@ class CI:
         JobNames.PERFORMANCE_TEST_ARM64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=4,
-            run_by_label="pr-performance",
+            run_by_labels=[Labels.PR_PERFORMANCE],
             runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.SQLANCER: CommonJobConfigs.SQLLANCER_TEST.with_properties(
@@ -520,7 +520,7 @@ class CI:
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
-            run_by_label=Tags.libFuzzer,
+            run_by_labels=[Tags.libFuzzer],
             timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             runner_type=Runners.STYLE_CHECKER,
@@ -557,7 +557,7 @@ class CI:
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
-            run_by_label="pr-bugfix",
+            run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
             run_command="bugfix_validate_check.py",
             timeout=2400,
             runner_type=Runners.STYLE_CHECKER,
