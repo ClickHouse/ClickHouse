@@ -154,6 +154,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool enable_secure_identifiers;
 }
 
 namespace ErrorCodes
@@ -997,6 +998,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
 
+        if (settings[Setting::enable_secure_identifiers])
+        {
+            WriteBufferFromOwnString buf;
+            IAST::FormatSettings enable_secure_identifiers_settings(buf, true);
+            enable_secure_identifiers_settings.enable_secure_identifiers = true;
+            ast->format(enable_secure_identifiers_settings);
+        }
+
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
 
@@ -1259,7 +1268,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
-
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
