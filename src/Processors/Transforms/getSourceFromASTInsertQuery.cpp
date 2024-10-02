@@ -20,11 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool input_format_defaults_for_omitted_fields;
-    extern const SettingsUInt64 max_insert_block_size;
-}
 
 namespace ErrorCodes
 {
@@ -66,7 +61,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
-    auto source = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
+    auto source = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef().max_insert_block_size);
     source->addBuffer(std::move(input_buffer));
     return source;
 }
@@ -80,7 +75,7 @@ Pipe getSourceFromInputFormat(
     Pipe pipe(format);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
-    if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && ast_insert_query->table_id && !input_function)
+    if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();

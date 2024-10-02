@@ -26,12 +26,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsBool optimize_count_from_files;
-    extern const SettingsBool use_hive_partitioning;
-}
 
 namespace ErrorCodes
 {
@@ -47,7 +41,7 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
     query_settings.throw_on_zero_files_match = false;
 
     bool local_distributed_processing = distributed_processing;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (context->getSettingsRef().use_hive_partitioning)
         local_distributed_processing = false;
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
@@ -97,7 +91,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
@@ -183,7 +177,7 @@ public:
 
         Pipes pipes;
         auto context = getContext();
-        const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
+        const size_t max_threads = context->getSettingsRef().max_threads;
         size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
         if (estimated_keys_count > 1)
@@ -247,9 +241,9 @@ ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr local_context)
+    ContextPtr /* local_context */)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
 }
 
 void StorageObjectStorage::read(
@@ -273,7 +267,7 @@ void StorageObjectStorage::read(
     const auto read_from_format_info = prepareReadingFromFormat(
         column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+        && local_context->getSettingsRef().optimize_count_from_files;
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
@@ -469,12 +463,6 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
             context->getConfigRef().getUInt(
                 "schema_inference_cache_max_elements_for_azure",
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
-        return schema_cache;
-    }
-    else if (storage_type_name == "local")
-    {
-        static SchemaCache schema_cache(
-            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     else

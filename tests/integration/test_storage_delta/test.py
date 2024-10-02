@@ -1,46 +1,44 @@
-import glob
-import json
-import logging
-import os
-import random
-import string
-import time
-from datetime import datetime
-
-import delta
-import pyarrow as pa
-import pyarrow.parquet as pq
-import pyspark
-import pytest
-from delta import *
-from deltalake.writer import write_deltalake
-from minio.deleteobjects import DeleteObject
-from pyspark.sql.functions import (
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
-from pyspark.sql.types import (
-    ArrayType,
-    BooleanType,
-    DateType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
-from pyspark.sql.window import Window
-
 import helpers.client
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
+
+import pytest
+import logging
+import os
+import json
+import time
+import glob
+import random
+import string
+
+import pyspark
+import delta
+from delta import *
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    DateType,
+    TimestampType,
+    BooleanType,
+    ArrayType,
+)
+from pyspark.sql.functions import current_timestamp
+from datetime import datetime
+from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.window import Window
+from minio.deleteobjects import DeleteObject
+import pyarrow as pa
+import pyarrow.parquet as pq
+from deltalake.writer import write_deltalake
+
 from helpers.s3_tools import (
-    get_file_contents,
-    list_s3_objects,
     prepare_s3_bucket,
     upload_directory,
+    get_file_contents,
+    list_s3_objects,
 )
-from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -577,7 +575,7 @@ def test_partition_columns(started_cluster):
                 "test" + str(i),
                 datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
                 i,
-                False if i % 2 == 0 else True,
+                False,
             )
         ]
         df = spark.createDataFrame(data=data, schema=schema)
@@ -627,15 +625,15 @@ def test_partition_columns(started_cluster):
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
     )
     assert (
-        """1	test1	2000-01-01	1	true
+        """1	test1	2000-01-01	1	false
 2	test2	2000-01-02	2	false
-3	test3	2000-01-03	3	true
+3	test3	2000-01-03	3	false
 4	test4	2000-01-04	4	false
-5	test5	2000-01-05	5	true
+5	test5	2000-01-05	5	false
 6	test6	2000-01-06	6	false
-7	test7	2000-01-07	7	true
+7	test7	2000-01-07	7	false
 8	test8	2000-01-08	8	false
-9	test9	2000-01-09	9	true"""
+9	test9	2000-01-09	9	false"""
         == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
     )
 
@@ -675,7 +673,7 @@ test9	2000-01-09	9"""
                 "test" + str(i),
                 datetime.strptime(f"2000-01-{i}", "%Y-%m-%d"),
                 i,
-                False if i % 2 == 0 else True,
+                False,
             )
         ]
         df = spark.createDataFrame(data=data, schema=schema)
@@ -701,23 +699,23 @@ test9	2000-01-09	9"""
     assert result == num_rows * 2
 
     assert (
-        """1	test1	2000-01-01	1	true
+        """1	test1	2000-01-01	1	false
 2	test2	2000-01-02	2	false
-3	test3	2000-01-03	3	true
+3	test3	2000-01-03	3	false
 4	test4	2000-01-04	4	false
-5	test5	2000-01-05	5	true
+5	test5	2000-01-05	5	false
 6	test6	2000-01-06	6	false
-7	test7	2000-01-07	7	true
+7	test7	2000-01-07	7	false
 8	test8	2000-01-08	8	false
-9	test9	2000-01-09	9	true
+9	test9	2000-01-09	9	false
 10	test10	2000-01-10	10	false
-11	test11	2000-01-11	11	true
+11	test11	2000-01-11	11	false
 12	test12	2000-01-12	12	false
-13	test13	2000-01-13	13	true
+13	test13	2000-01-13	13	false
 14	test14	2000-01-14	14	false
-15	test15	2000-01-15	15	true
+15	test15	2000-01-15	15	false
 16	test16	2000-01-16	16	false
-17	test17	2000-01-17	17	true
+17	test17	2000-01-17	17	false
 18	test18	2000-01-18	18	false"""
         == instance.query(
             f"""

@@ -1,23 +1,17 @@
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <Common/assert_cast.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
-
 namespace
 {
 
@@ -28,10 +22,7 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
-    }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIsNotNull>(context->getSettingsRef().allow_experimental_analyzer); }
 
     explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 

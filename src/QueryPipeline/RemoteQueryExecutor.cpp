@@ -25,6 +25,7 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
+
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;
@@ -35,15 +36,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool enable_scalar_subquery_optimization;
-    extern const SettingsSeconds max_execution_time;
-    extern const SettingsSeconds max_estimated_execution_time;
-    extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsBool use_hedged_requests;
-}
 
 namespace ErrorCodes
 {
@@ -212,7 +204,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
 #if defined(OS_LINUX)
-        if (current_settings[Setting::use_hedged_requests])
+        if (current_settings.use_hedged_requests)
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
             if (main_table)
@@ -403,7 +395,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     established = false;
     sent_query = true;
 
-    if (settings[Setting::enable_scalar_subquery_optimization])
+    if (settings.enable_scalar_subquery_optimization)
         sendScalars();
     sendExternalTables();
 }
@@ -454,7 +446,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     {
         sendQuery();
 
-        if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
+        if (context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()))
             return ReadResult(Block());
     }
 
@@ -830,9 +822,9 @@ void RemoteQueryExecutor::sendExternalTables()
         StreamLocalLimits limits;
         const auto & settings = context->getSettingsRef();
         limits.mode = LimitsMode::LIMITS_TOTAL;
-        limits.speed_limits.max_execution_time = settings[Setting::max_execution_time];
-        limits.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
-        limits.speed_limits.max_estimated_execution_time = settings[Setting::max_estimated_execution_time];
+        limits.speed_limits.max_execution_time = settings.max_execution_time;
+        limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+        limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
         for (size_t i = 0; i < count; ++i)
         {
@@ -929,7 +921,7 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 
 bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 {
-    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
+    return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

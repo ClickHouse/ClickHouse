@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 
-import os
+from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
+import pytest
 import random
-import socket
 import string
-import threading
+import os
 import time
 from io import StringIO
+import socket
+import threading
 
-import pytest
-
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)

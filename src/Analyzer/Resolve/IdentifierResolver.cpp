@@ -30,12 +30,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool single_join_prefer_left_table;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
@@ -423,18 +417,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
-    if (!storage && storage_id.hasUUID())
-    {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
-    }
     if (!storage)
         return {};
 
-    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
@@ -1169,7 +1155,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
                 resolved_identifier = left_resolved_identifier;
             }
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
+        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;

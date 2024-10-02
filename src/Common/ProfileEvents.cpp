@@ -86,20 +86,6 @@
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     \
-    M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.") \
-    M(GlobalThreadPoolShrinks, "Counts the total number of times the global thread pool has shrunk by removing threads. This occurs when the number of idle threads exceeds max_thread_pool_free_size, indicating adjustments in the global thread pool size in response to decreased thread utilization.") \
-    M(GlobalThreadPoolThreadCreationMicroseconds, "Total time spent waiting for new threads to start.") \
-    M(GlobalThreadPoolLockWaitMicroseconds, "Total time threads have spent waiting for locks in the global thread pool.") \
-    M(GlobalThreadPoolJobs, "Counts the number of jobs that have been pushed to the global thread pool.") \
-    M(GlobalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.") \
-    M(LocalThreadPoolExpansions, "Counts the total number of times threads have been borrowed from the global thread pool to expand local thread pools.") \
-    M(LocalThreadPoolShrinks, "Counts the total number of times threads have been returned to the global thread pool from local thread pools.") \
-    M(LocalThreadPoolThreadCreationMicroseconds, "Total time local thread pools have spent waiting to borrow a thread from the global pool.") \
-    M(LocalThreadPoolLockWaitMicroseconds, "Total time threads have spent waiting for locks in the local thread pools.") \
-    M(LocalThreadPoolJobs, "Counts the number of jobs that have been pushed to the local thread pools.") \
-    M(LocalThreadPoolBusyMicroseconds, "Total time threads have spent executing the actual work.") \
-    M(LocalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.") \
-    \
     M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler.") \
     M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.") \
     M(DiskS3PutRequestThrottlerCount, "Number of DiskS3 PUT, COPY, POST and LIST requests passed through throttler.") \
@@ -119,13 +105,6 @@
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.") \
     M(PartsWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly") \
     M(MutationsAppliedOnFlyInAllParts, "The sum of number of applied mutations on-fly for part among all read parts") \
-    \
-    M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.") \
-    M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.") \
-    M(SchedulerIOReadWaitMicroseconds, "Total time a query was waiting on resource requests for IO reads.") \
-    M(SchedulerIOWriteRequests, "Resource requests passed through scheduler for IO writes.") \
-    M(SchedulerIOWriteBytes, "Bytes passed through scheduler for IO writes.") \
-    M(SchedulerIOWriteWaitMicroseconds, "Total time a query was waiting on resource requests for IO writes.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
@@ -372,13 +351,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas") \
     M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements") \
-    M(ParallelReplicasAnnouncementMicroseconds, "Time spent to send an announcement") \
-    M(ParallelReplicasReadRequestMicroseconds, "Time spent for read requests") \
     \
     M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash") \
     M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled") \
     M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash") \
-    M(ParallelReplicasReadMarks, "How many marks were read by the given replica") \
     \
     M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash") \
     M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts") \
@@ -532,7 +508,6 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
-    M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data") \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time") \
@@ -831,9 +806,6 @@ The server successfully detected this situation and will download merged part fr
     M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
     M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
     M(GWPAsanFree, "Number of free operations done by GWPAsan") \
-    \
-    M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background") \
-    M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

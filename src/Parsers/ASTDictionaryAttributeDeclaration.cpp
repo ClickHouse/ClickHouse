@@ -35,7 +35,7 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
 {
     frame.need_parens = false;
 
-    settings.writeIdentifier(name, /*ambiguous=*/true);
+    settings.ostr << backQuote(name);
 
     if (type)
     {

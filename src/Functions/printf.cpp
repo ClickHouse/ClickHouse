@@ -50,6 +50,13 @@ private:
                 return executeNonconstant(input);
         }
 
+        [[maybe_unused]] String toString() const
+        {
+            WriteBufferFromOwnString buf;
+            buf << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure() << "\n";
+            return buf.str();
+        }
+
     private:
         ColumnWithTypeAndName executeLiteral(std::string_view literal) const
         {
@@ -224,7 +231,9 @@ public:
             const auto & instruction = instructions[i];
             try
             {
+                // std::cout << "instruction[" << i << "]:" << instructions[i].toString() << std::endl;
                 concat_args[i] = instruction.execute();
+                // std::cout << "concat_args[" << i << "]:" << concat_args[i].dumpStructure() << std::endl;
             }
             catch (const fmt::v9::format_error & e)
             {
@@ -349,14 +358,7 @@ private:
 
 REGISTER_FUNCTION(Printf)
 {
-    factory.registerFunction<FunctionPrintf>(
-        FunctionDocumentation{.description=R"(
-The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++.
-The format string can contain format specifiers starting with `%` character.
-Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
-Literal `%` character can be escaped by `%%`.)", .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, .categories{"String"}
-});
-
+    factory.registerFunction<FunctionPrintf>();
 }
 
 }

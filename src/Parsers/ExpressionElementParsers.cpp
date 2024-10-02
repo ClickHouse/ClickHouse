@@ -853,10 +853,9 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     /// Parse numbers (including decimals), strings, arrays and tuples of them.
 
-    Pos begin = pos;
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
-    ASTPtr string_literal;
+    bool is_string_literal = pos->type == StringLiteral;
 
     if (pos->type == Minus)
     {
@@ -867,14 +866,9 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         data_end = pos->end;
         ++pos;
     }
-    else if (pos->type == Number)
+    else if (pos->type == Number || is_string_literal)
     {
         ++pos;
-    }
-    else if (pos->type == StringLiteral)
-    {
-        if (!ParserStringLiteral().parse(begin, string_literal, expected))
-            return false;
     }
     else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
@@ -943,18 +937,20 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (ParserToken(DoubleColon).ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
+        String s;
         size_t data_size = data_end - data_begin;
-        if (string_literal)
+        if (is_string_literal)
         {
-            node = createFunctionCast(string_literal, type_ast);
-            return true;
+            ReadBufferFromMemory buf(data_begin, data_size);
+            readQuotedStringWithSQLStyle(s, buf);
+            assert(buf.count() == data_size);
         }
         else
-        {
-            auto literal = std::make_shared<ASTLiteral>(String(data_begin, data_size));
-            node = createFunctionCast(literal, type_ast);
-            return true;
-        }
+            s = String(data_begin, data_size);
+
+        auto literal = std::make_shared<ASTLiteral>(std::move(s));
+        node = createFunctionCast(literal, type_ast);
+        return true;
     }
 
     return false;
@@ -1607,7 +1603,7 @@ const char * ParserAlias::restricted_keywords[] =
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_as(Keyword::AS);
-    ParserIdentifier id_p{true, Highlight::alias};
+    ParserIdentifier id_p(false, Highlight::alias);
 
     bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
@@ -2154,10 +2150,6 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
-
-            // the alias is parametrised and will be resolved later when the query context is known
-            if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())
-                ast_with_alias->parametrised_alias = std::dynamic_pointer_cast<ASTQueryParameter>(alias_node->children.front());
         }
         else
         {

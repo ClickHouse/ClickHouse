@@ -47,12 +47,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_nondeterministic_mutations;
-    extern const SettingsUInt64 max_block_size;
-}
 
 namespace ErrorCodes
 {
@@ -153,7 +147,6 @@ ColumnDependencies getAllColumnDependencies(
 
 bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context)
@@ -161,7 +154,7 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
     bool all_commands_can_be_skipped = true;
 
     for (const auto & command : commands)
@@ -195,7 +188,7 @@ bool isStorageTouchedByMutations(
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
@@ -292,13 +285,8 @@ MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(st
 {
 }
 
-MutationsInterpreter::Source::Source(
-    MergeTreeData & storage_,
-    MergeTreeData::DataPartPtr source_part_,
-    AlterConversionsPtr alter_conversions_)
-    : data(&storage_)
-    , part(std::move(source_part_))
-    , alter_conversions(std::move(alter_conversions_))
+MutationsInterpreter::Source::Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_)
+    : data(&storage_), part(std::move(source_part_))
 {
 }
 
@@ -398,14 +386,13 @@ MutationsInterpreter::MutationsInterpreter(
 MutationsInterpreter::MutationsInterpreter(
     MergeTreeData & storage_,
     MergeTreeData::DataPartPtr source_part_,
-    AlterConversionsPtr alter_conversions_,
     StorageMetadataPtr metadata_snapshot_,
     MutationCommands commands_,
     Names available_columns_,
     ContextPtr context_,
     Settings settings_)
     : MutationsInterpreter(
-        Source(storage_, std::move(source_part_), std::move(alter_conversions_)),
+        Source(storage_, std::move(source_part_)),
         std::move(metadata_snapshot_), std::move(commands_),
         std::move(available_columns_), std::move(context_), std::move(settings_))
 {
@@ -427,7 +414,7 @@ MutationsInterpreter::MutationsInterpreter(
     , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
-    if (new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (new_context->getSettingsRef().allow_experimental_analyzer)
     {
         new_context->setSetting("allow_experimental_analyzer", false);
         LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
@@ -857,10 +844,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = source.getMergeTreeData()->getSettings()->ttl_only_drop_parts
-                && metadata_snapshot->hasOnlyRowsTTL();
-
-            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
+            if (materialize_ttl_recalculate_only)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -1227,18 +1211,9 @@ void MutationsInterpreter::Source::read(
 
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
-            plan,
-            *data,
-            storage_snapshot,
-            part,
-            alter_conversions,
-            required_columns,
-            nullptr,
-            apply_deleted_mask_,
-            std::move(filter),
-            false,
-            false,
-            context_,
+            plan, *data, storage_snapshot,
+            part, required_columns,
+            apply_deleted_mask_, std::move(filter), context_,
             getLogger("MutationsInterpreter"));
     }
     else
@@ -1273,7 +1248,7 @@ void MutationsInterpreter::Source::read(
         SelectQueryInfo query_info;
         query_info.query = std::move(select);
 
-        size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
+        size_t max_block_size = context_->getSettingsRef().max_block_size;
         size_t max_streams = 1;
         storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, max_streams);
 
@@ -1343,7 +1318,7 @@ void MutationsInterpreter::validate()
 {
     /// For Replicated* storages mutations cannot employ non-deterministic functions
     /// because that produces inconsistencies between replicas
-    if (startsWith(source.getStorage()->getName(), "Replicated") && !context->getSettingsRef()[Setting::allow_nondeterministic_mutations])
+    if (startsWith(source.getStorage()->getName(), "Replicated") && !context->getSettingsRef().allow_nondeterministic_mutations)
     {
         for (const auto & command : commands)
         {

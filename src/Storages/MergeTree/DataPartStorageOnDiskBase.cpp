@@ -59,16 +59,6 @@ std::string DataPartStorageOnDiskBase::getRelativePath() const
     return fs::path(root_path) / part_dir / "";
 }
 
-std::string DataPartStorageOnDiskBase::getParentDirectory() const
-{
-    /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
-    fs::path part_dir_without_slash = part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir;
-
-    if (part_dir_without_slash.has_parent_path())
-        return part_dir_without_slash.parent_path();
-    return "";
-}
-
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
@@ -302,7 +292,6 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
     ReplicatedFilesDescription description;
     auto relative_path = fs::path(root_path) / part_dir;
     auto disk = volume->getDisk();
-    auto read_settings = getReadSettings();
 
     auto actual_file_names = getActualFileNamesOnDisk(file_names);
     for (const auto & name : actual_file_names)
@@ -313,9 +302,9 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         auto & file_desc = description.files[name];
 
         file_desc.file_size = file_size;
-        file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
+        file_desc.input_buffer_getter = [disk, path, file_size]
         {
-            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size, file_size);
+            return disk->readFile(path, ReadSettings{}.adjustBufferSize(file_size), file_size, file_size);
         };
     }
 
@@ -710,9 +699,9 @@ void DataPartStorageOnDiskBase::remove(
 
     if (!has_delete_prefix)
     {
-        auto parent_path = getParentDirectory();
-        if (!parent_path.empty())
+        if (part_dir_without_slash.has_parent_path())
         {
+            auto parent_path = part_dir_without_slash.parent_path();
             if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -720,7 +709,7 @@ void DataPartStorageOnDiskBase::remove(
                     part_dir,
                     root_path);
 
-            part_dir_without_slash = fs::path(parent_path) / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+            part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
         }
         else
         {

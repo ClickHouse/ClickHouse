@@ -26,7 +26,7 @@ StatisticsUniq::~StatisticsUniq()
     collector->destroy(data);
 }
 
-void StatisticsUniq::build(const ColumnPtr & column)
+void StatisticsUniq::update(const ColumnPtr & column)
 {
     /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
     /// Here we intend to avoid crash in CI.
@@ -56,7 +56,7 @@ void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
+    if (!inner_data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
