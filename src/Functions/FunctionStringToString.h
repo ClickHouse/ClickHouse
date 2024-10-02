@@ -6,7 +6,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
 
 
 namespace DB
