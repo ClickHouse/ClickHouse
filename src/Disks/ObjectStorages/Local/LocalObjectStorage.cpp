@@ -43,21 +43,8 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     auto modified_settings{read_settings};
-    /// For now we cannot allow asynchronous reader from local filesystem when CachedObjectStorage is used.
-    switch (modified_settings.local_fs_method)
-    {
-        case LocalFSReadMethod::pread_threadpool:
-        case LocalFSReadMethod::pread_fake_async:
-        {
-            modified_settings.local_fs_method = LocalFSReadMethod::pread;
-            LOG_INFO(log, "Changing local filesystem read method to `pread`");
-            break;
-        }
-        default:
-        {
-            break;
-        }
-    }
+    /// Other options might break assertions in AsynchronousBoundedReadBuffer.
+    modified_settings.local_fs_method = LocalFSReadMethod::pread;
     modified_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }
