@@ -2045,7 +2045,7 @@ Possible values:
 - 0 - Disabled.
 - 1 - Enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
 
