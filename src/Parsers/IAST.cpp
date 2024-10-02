@@ -8,6 +8,7 @@
 #include <Poco/String.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
     extern const int UNKNOWN_ELEMENT_IN_AST;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -220,6 +222,7 @@ String IAST::getColumnNameWithoutAlias() const
 
 void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
 {
+    checkIdentifier(name);
     bool must_quote
         = (identifier_quoting_rule == IdentifierQuotingRule::Always
            || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary));
@@ -256,6 +259,21 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) 
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
+        }
+    }
+}
+
+void IAST::FormatSettings::checkIdentifier(const String & name) const
+{
+    if (enable_secure_identifiers)
+    {
+        bool is_secure_identifier = std::all_of(name.begin(), name.end(), [](char ch) { return std::isalnum(ch) || ch == '_'; });
+        if (!is_secure_identifier)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Not a secure identifier: `{}`, a secure identifier must contain only underscore and alphanumeric characters",
+                name);
         }
     }
 }
