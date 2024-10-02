@@ -17,7 +17,6 @@
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
@@ -1904,6 +1903,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (num_parts == 0 && unexpected_parts_to_load.empty())
     {
         resetObjectColumnsFromActiveParts(part_lock);
+        resetSerializationHints(part_lock);
         LOG_DEBUG(log, "There are no data parts");
         return;
     }
@@ -1950,6 +1950,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
 
     resetObjectColumnsFromActiveParts(part_lock);
+    resetSerializationHints(part_lock);
     calculateColumnAndSecondaryIndexSizesImpl();
 
     PartLoadingTreeNodes unloaded_parts;
@@ -6908,6 +6909,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 }
             }
 
+            data.updateSerializationHints(precommitted_parts, total_covered_parts, parts_lock);
+
             if (reduce_parts == 0)
             {
                 for (const auto & part : precommitted_parts)
@@ -8569,6 +8572,66 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
         return;
 
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
+}
+
+template <typename DataPartPtr>
+static void updateSerializationHintsForPart(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, bool remove)
+{
+    const auto & part_columns = part->getColumnsDescription();
+    for (const auto & [name, info] : part->getSerializationInfos())
+    {
+        auto new_hint = hints.tryGet(name);
+        if (!new_hint)
+            continue;
+
+        /// Structure may change after alter. Do not add info for such items.
+        /// Instead it will be updated on commit of the result part of alter.
+        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
+            continue;
+
+        chassert(new_hint->structureEquals(*info));
+        if (remove)
+            new_hint->remove(*info);
+        else
+            new_hint->add(*info);
+    }
+}
+
+void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
+{
+    SerializationInfo::Settings settings =
+    {
+        .ratio_of_defaults_for_sparse = getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .choose_kind = true,
+    };
+
+    const auto & storage_columns = getInMemoryMetadataPtr()->getColumns();
+    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
+    auto range = getDataPartsStateRange(DataPartState::Active);
+
+    for (const auto & part : range)
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+}
+
+template <typename AddedParts, typename RemovedParts>
+void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & /*lock*/)
+{
+    const auto & storage_columns = getInMemoryMetadataPtr()->getColumns();
+
+    for (const auto & part : added_parts)
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+
+    for (const auto & part : removed_parts)
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
+}
+
+SerializationInfoByName MergeTreeData::getSerializationHints() const
+{
+    auto lock = lockParts();
+    SerializationInfoByName res;
+    for (const auto & [name, info] : serialization_hints)
+        res.emplace(name, info->clone());
+    return res;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
