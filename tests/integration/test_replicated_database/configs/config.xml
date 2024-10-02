@@ -7,4 +7,7 @@
     <max_database_replicated_create_table_thread_pool_size>50</max_database_replicated_create_table_thread_pool_size>
     <allow_experimental_transactions>42</allow_experimental_transactions>
     <async_load_databases>false</async_load_databases>
+    <zookeeper>
+        <connection_timeout_ms>200</connection_timeout_ms>
+    </zookeeper>
 </clickhouse>
