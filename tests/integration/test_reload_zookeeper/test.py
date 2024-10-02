@@ -31,19 +31,6 @@ def start_cluster():
 
 
 def test_reload_zookeeper(start_cluster):
-    def wait_zookeeper_node_to_start(zk_nodes, timeout=60):
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                for instance in zk_nodes:
-                    conn = start_cluster.get_kazoo_client(instance)
-                    conn.get_children("/")
-                print("All instances of ZooKeeper started")
-                return
-            except Exception as ex:
-                print(("Can't connect to ZooKeeper " + str(ex)))
-                time.sleep(0.5)
-
     node.query(
         "INSERT INTO test_table(date, id) select today(), number FROM numbers(1000)"
     )
@@ -78,7 +65,7 @@ def test_reload_zookeeper(start_cluster):
 
     ## start zoo2, zoo3, table will be readonly too, because it only connect to zoo1
     cluster.start_zookeeper_nodes(["zoo2", "zoo3"])
-    wait_zookeeper_node_to_start(["zoo2", "zoo3"])
+    cluster.wait_zookeeper_nodes_to_start(["zoo2", "zoo3"])
     node.query("SELECT COUNT() FROM test_table")
     with pytest.raises(QueryRuntimeException):
         node.query(

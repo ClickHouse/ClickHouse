@@ -2398,39 +2398,35 @@ class ClickHouseCluster:
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                for instance in ["zoo1", "zoo2", "zoo3"]:
-                    conn = self.get_kazoo_client(instance)
-                    conn.get_children("/")
-                    conn.stop()
-                logging.debug("All instances of ZooKeeper Secure started")
-                return
-            except Exception as ex:
-                logging.debug("Can't connect to ZooKeeper secure " + str(ex))
-                time.sleep(0.5)
+        nodes = ["zoo1", "zoo2", "zoo3"]
+        self.wait_zookeeper_nodes_to_start(nodes, timeout)
 
-        raise Exception("Cannot wait ZooKeeper secure container")
-
-    def wait_zookeeper_to_start(self, timeout=180):
+    def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
         logging.debug("Wait ZooKeeper to start")
+        nodes = ["zoo1", "zoo2", "zoo3"]
+        self.wait_zookeeper_nodes_to_start(nodes, timeout)
+
+    def wait_zookeeper_nodes_to_start(
+        self, nodes: List[str], timeout: float = 60
+    ) -> None:
         start = time.time()
+        err = Exception("")
         while time.time() - start < timeout:
             try:
-                for instance in ["zoo1", "zoo2", "zoo3"]:
-                    conn = self.get_kazoo_client(instance)
+                for node in nodes:
+                    conn = self.get_kazoo_client(node)
                     conn.get_children("/")
                     conn.stop()
-                logging.debug("All instances of ZooKeeper started")
+                logging.debug("All instances of ZooKeeper started: %s", nodes)
                 return
             except Exception as ex:
-                logging.debug(f"Can't connect to ZooKeeper {instance}: {ex}")
+                logging.debug("Can't connect to ZooKeeper %s: %s", node, ex)
+                err = ex
                 time.sleep(0.5)
 
         raise Exception(
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
-        )
+        ) from err
 
     def make_hdfs_api(self, timeout=180, kerberized=False):
         if kerberized:

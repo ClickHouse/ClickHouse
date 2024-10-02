@@ -40,20 +40,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-def wait_zookeeper_node_to_start(zk_nodes, timeout=60):
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            for instance in zk_nodes:
-                conn = cluster.get_kazoo_client(instance)
-                conn.get_children("/")
-            print("All instances of ZooKeeper started")
-            return
-        except Exception as ex:
-            print(("Can't connect to ZooKeeper " + str(ex)))
-            time.sleep(0.5)
-
-
 def replace_zookeeper_config(new_config):
     node1.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
     node2.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
@@ -228,7 +214,7 @@ def test_reload_zookeeper():
 
     # start zoo2, zoo3, user-defined functions will be readonly too, because it only connect to zoo1
     cluster.start_zookeeper_nodes(["zoo2", "zoo3"])
-    wait_zookeeper_node_to_start(["zoo2", "zoo3"])
+    cluster.wait_zookeeper_nodes_to_start(["zoo2", "zoo3"])
     assert node2.query(
         "SELECT name FROM system.functions WHERE name IN ['f1', 'f2', 'f3'] ORDER BY name"
     ) == TSV(["f1", "f2"])
@@ -295,7 +281,7 @@ def test_start_without_zookeeper():
     )
 
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    wait_zookeeper_node_to_start(["zoo1", "zoo2", "zoo3"])
+    cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
 
     assert_eq_with_retry(
         node2,
