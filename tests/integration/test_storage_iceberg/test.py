@@ -102,7 +102,7 @@ def started_cluster():
             cluster.blob_service_client, cluster.azure_container_name
         )
 
-        cluster.default_hdfs_uploader = HDFSUploader(cluster.instances["node1"])
+        cluster.default_hdfs_uploader = HDFSUploader(cluster)
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
 
