@@ -3,7 +3,6 @@
 #include <Core/Settings.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <__algorithm/ranges_max_element.h>
 
 namespace DB
 {
@@ -81,6 +80,8 @@ calculateMinMarksPerTask(
     size_t min_marks_per_task
         = std::max<size_t>(settings[Setting::merge_tree_min_read_task_size], pool_settings.min_marks_for_concurrent_read);
     size_t avg_mark_bytes = 0;
+    /// It is important to obtain marks count from the part itself instead of calling `part.getMarksCount()`,
+    /// because `part` will report number of marks selected from this part by the query.
     const size_t part_marks_count = part.data_part->getMarksCount();
     if (part_marks_count)
     {

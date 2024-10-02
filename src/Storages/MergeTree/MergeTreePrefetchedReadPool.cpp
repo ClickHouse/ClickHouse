@@ -313,14 +313,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, 
     return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, previous_task);
 }
 
-size_t getApproximateSizeOfGranule(const IMergeTreeDataPart & part, const Names & columns_to_read)
-{
-    ColumnSize columns_size{};
-    for (const auto & col_name : columns_to_read)
-        columns_size.add(part.getColumnSize(col_name));
-    return columns_size.data_compressed / part.getMarksCount();
-}
-
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 {
     per_part_statistics.clear();
