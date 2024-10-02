@@ -7,9 +7,6 @@ import re
 import subprocess
 from pathlib import Path
 
-from ci.env_helper import S3_BUILDS_BUCKET
-from ci.s3_helper import S3Helper
-
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
 
@@ -174,4 +171,9 @@ def main():
 
 
 if __name__ == "__main__":
+    from os import sys, path
+    ACTIVE_DIR = path.dirname(path.abspath(__file__))
+    sys.path.append(path.dirname(ACTIVE_DIR))
+    from ci.env_helper import S3_BUILDS_BUCKET
+    from ci.s3_helper import S3Helper
     main()
