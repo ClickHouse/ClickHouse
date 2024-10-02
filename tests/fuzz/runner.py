@@ -24,42 +24,34 @@ def process_fuzzer_output(output: str):
 
 
 def process_error(error: str):
-    ERROR = r"^==\d+== ERROR: (\S+): (.*)"
+    ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
     error_source = ""
     error_reason = ""
-    SUMMARY = r"^SUMMARY: "
     TEST_UNIT_LINE = r"artifact_prefix='.*/'; Test unit written to (.*)"
-    test_unit = ""
-    CALL_STACK_LINE = r"^\s+(#\d+.*)"
     call_stack = []
     is_call_stack = False
 
     # pylint: disable=unused-variable
     for line_num, line in enumerate(error.splitlines(), 1):
-
         if is_call_stack:
-            match = re.search(CALL_STACK_LINE, line)
-            if match:
-                call_stack.append(match.group(1))
-                continue
-
-            if re.search(SUMMARY, line):
+            if re.search(r"^==\d+==", line):
                 is_call_stack = False
+                continue
+            call_stack.append(line)
             continue
 
-        if not call_stack and not is_call_stack:
-            match = re.search(ERROR, line)
+        if call_stack:
+            match = re.search(TEST_UNIT_LINE, line)
             if match:
-                error_source = match.group(1)
-                error_reason = match.group(2)
-                is_call_stack = True
-                continue
+                report(error_source, error_reason, call_stack, match.group(1))
+                call_stack.clear()
+            continue
 
-        match = re.search(TEST_UNIT_LINE, line)
+        match = re.search(ERROR, line)
         if match:
-            test_unit = match.group(1)
-
-    report(error_source, error_reason, call_stack, test_unit)
+            error_source = match.group(1)
+            error_reason = match.group(2)
+            is_call_stack = True
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
