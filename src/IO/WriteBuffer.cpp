@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// Calling finalize() in the destructor of derived classes is a bad practice.
 /// This causes objects to be left on the remote FS when a write operation is rolled back.
 /// Do call finalize() explicitly, before this call you have no guarantee that the file has been written
