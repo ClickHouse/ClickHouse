@@ -96,7 +96,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"join_to_sort_maximum_table_rows", 0, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join"},
             {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
-            {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"}
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "Maintain some free disk space bytes from inserts while still allowing for temporary writing."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "Maintain some free disk space bytes expressed as ratio to total disk space from inserts while still allowing for temporary writing."},
         }
