@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
 import gzip
+import io
 import json
 import logging
 import os
-import io
-import re
 import random
+import re
 import threading
 import time
 
-from azure.storage.blob import BlobServiceClient
 import pytest
+from azure.storage.blob import BlobServiceClient
+
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.test_tools import assert_logs_contain_with_retry
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_logs_contain_with_retry
 
 
 @pytest.fixture(scope="module")
