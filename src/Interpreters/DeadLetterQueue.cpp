@@ -33,17 +33,17 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
         {"error", std::make_shared<DataTypeString>(), "Error text."},
         {"raw_message", std::make_shared<DataTypeString>(), "Message body."},
 
-        {"topic_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Kafka topic name."},
-        {"partition", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Kafka partition."},
-        {"offset", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Kafka offset."},
+        {"kafka_topic_name", std::make_shared<DataTypeString>(), "Kafka topic name."},
+        {"kafka_partition", std::make_shared<DataTypeUInt64>(), "Kafka partition."},
+        {"kafka_offset", std::make_shared<DataTypeUInt64>(), "Kafka offset."},
         /* 3 */
 
-        {"exchange_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ exchange name."},
-        {"message_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ message id."},
-        {"message_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "RabbitMQ message timestamp."},
-        {"message_redelivered", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "RabbitMQ redelivered flag."},
-        {"message_delivery_tag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "RabbitMQ delivery tag."},
-        {"channel_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "RabbitMQ channel id."},
+        {"rabbitmq_exchange_name", std::make_shared<DataTypeString>(), "RabbitMQ exchange name."},
+        {"rabbitmq_message_id", std::make_shared<DataTypeString>(), "RabbitMQ message id."},
+        {"rabbitmq_message_timestamp", std::make_shared<DataTypeDateTime>(), "RabbitMQ message timestamp."},
+        {"rabbitmq_message_redelivered", std::make_shared<DataTypeUInt8>(), "RabbitMQ redelivered flag."},
+        {"rabbitmq_message_delivery_tag", std::make_shared<DataTypeUInt64>(), "RabbitMQ delivery tag."},
+        {"rabbitmq_channel_id", std::make_shared<DataTypeString>(), "RabbitMQ channel id."},
         /* 9 */
 
     };
