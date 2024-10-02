@@ -1,60 +1,62 @@
 import base64
 import errno
-from functools import cache
 import http.client
 import logging
 import os
 import platform
-import stat
-import os.path as p
 import pprint
 import pwd
 import re
+import shlex
 import shutil
 import socket
+import stat
 import subprocess
 import time
 import traceback
 import urllib.parse
-import shlex
-import urllib3
+from functools import cache
+from os import path as p
+from pathlib import Path
+from typing import List, Sequence, Tuple, Union
+
 import requests
+import urllib3
 
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
     # without installing tons of unneeded packages that may be not so easy to install.
     import asyncio
-    from cassandra.policies import RoundRobinPolicy
+    import ssl
+
     import cassandra.cluster
+    import nats
     import psycopg2
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
-    import nats
-    import ssl
+    from cassandra.policies import RoundRobinPolicy
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
     from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
+import docker
 from dict2xml import dict2xml
+from helpers import pytest_xdist_logging_to_separate_files
+from helpers.client import QueryRuntimeException
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
-from helpers import pytest_xdist_logging_to_separate_files
-from helpers.client import QueryRuntimeException
-
-import docker
-
 from .client import Client
-from .retry_decorator import retry
-
 from .config_cluster import *
+from .retry_decorator import retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -79,7 +81,7 @@ CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
-    logging.debug(f"Env {variables} stored in {path}")
+    logging.debug("Env %s stored in %s", variables, path)
     with open(path, "w") as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
@@ -87,7 +89,7 @@ def _create_env_file(path, variables):
 
 
 def run_and_check(
-    args,
+    args: Union[Sequence[str], str],
     env=None,
     shell=False,
     stdout=subprocess.PIPE,
@@ -95,7 +97,16 @@ def run_and_check(
     timeout=300,
     nothrow=False,
     detach=False,
-):
+) -> str:
+    if shell:
+        if isinstance(args, str):
+            shell_args = args
+        else:
+            shell_args = next(a for a in args)
+    else:
+        shell_args = " ".join(args)
+
+    logging.debug("Command:[%s]", shell_args)
     if detach:
         subprocess.Popen(
             args,
@@ -104,26 +115,31 @@ def run_and_check(
             env=env,
             shell=shell,
         )
-        return
+        return ""
 
-    logging.debug(f"Command:{args}")
     res = subprocess.run(
-        args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout
+        args,
+        stdout=stdout,
+        stderr=stderr,
+        env=env,
+        shell=shell,
+        timeout=timeout,
+        check=False,
     )
     out = res.stdout.decode("utf-8", "ignore")
     err = res.stderr.decode("utf-8", "ignore")
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
-        logging.debug(f"Stdout:{outline}")
+        logging.debug("Stdout:%s", outline)
     for errline in err.splitlines():
-        logging.debug(f"Stderr:{errline}")
+        logging.debug("Stderr:%s", errline)
     if res.returncode != 0:
-        logging.debug(f"Exitcode:{res.returncode}")
+        logging.debug("Exitcode:%s", res.returncode)
         if env:
-            logging.debug(f"Env:{env}")
+            logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
             )
     return out
 
@@ -179,6 +195,11 @@ class PortPoolManager:
     def return_used_ports(self):
         self.free_ports.extend(self.used_ports)
         self.used_ports.clear()
+
+
+def docker_exec(*args: str) -> Tuple[str, ...]:
+    "Function to ease the `docker exec -i...`"
+    return ("docker", "exec", "-i", *args)
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
@@ -238,10 +259,7 @@ def get_docker_compose_path():
 
 def check_kafka_is_available(kafka_id, kafka_port):
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
-            "-i",
+        docker_exec(
             kafka_id,
             "/usr/bin/kafka-broker-api-versions",
             "--bootstrap-server",
@@ -256,14 +274,7 @@ def check_kafka_is_available(kafka_id, kafka_port):
 
 def check_kerberos_kdc_is_available(kerberos_kdc_id):
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
-            "-i",
-            kerberos_kdc_id,
-            "/etc/rc.d/init.d/krb5kdc",
-            "status",
-        ),
+        docker_exec(kerberos_kdc_id, "/etc/rc.d/init.d/krb5kdc", "status"),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -273,7 +284,7 @@ def check_kerberos_kdc_is_available(kerberos_kdc_id):
 
 def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
-        ("docker", "exec", "-i", postgresql_java_client_id, "java", "-version"),
+        docker_exec(postgresql_java_client_id, "java", "-version"),
         stdout=subprocess.PIPE,
     )
     p.communicate()
@@ -282,12 +293,9 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
 
 def check_rabbitmq_is_available(rabbitmq_id, cookie):
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
+        docker_exec(
             "-e",
             f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
             rabbitmq_id,
             "rabbitmqctl",
             "await_startup",
@@ -300,12 +308,9 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
+        docker_exec(
             "-e",
             f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
             rabbitmq_id,
             "rabbitmq-diagnostics",
             "status",
@@ -315,12 +320,9 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
+        docker_exec(
             "-e",
             f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
             rabbitmq_id,
             "rabbitmq-diagnostics",
             "listeners",
@@ -330,12 +332,9 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
+        docker_exec(
             "-e",
             f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
             rabbitmq_id,
             "rabbitmq-diagnostics",
             "environment",
@@ -370,12 +369,9 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
 
 def enable_consistent_hash_plugin(rabbitmq_id, cookie):
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
+        docker_exec(
             "-e",
             f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
             rabbitmq_id,
             "rabbitmq-plugins",
             "enable",
@@ -393,10 +389,10 @@ def get_instances_dir(name):
     run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
 
     if name:
-        instances_dir_name += "_" + name
+        instances_dir_name += "-" + name
 
     if run_id:
-        instances_dir_name += "_" + shlex.quote(run_id)
+        instances_dir_name += "-" + shlex.quote(run_id)
 
     return instances_dir_name
 
@@ -483,8 +479,8 @@ class ClickHouseCluster:
         self.instances_dir_name = get_instances_dir(self.name)
         xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
         if xdist_worker:
-            self.project_name += f"_{xdist_worker}"
-            self.instances_dir_name += f"_{xdist_worker}"
+            self.project_name += f"-{xdist_worker}"
+            self.instances_dir_name += f"-{xdist_worker}"
 
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
@@ -505,7 +501,7 @@ class ClickHouseCluster:
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
         self.docker_base_tag = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-        self.base_cmd = ["docker-compose"]
+        self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
             self.base_cmd += ["--host", custom_dockerd_host]
         self.base_cmd += ["--env-file", self.env_file]
@@ -783,6 +779,9 @@ class ClickHouseCluster:
 
         self.port_pool = PortPoolManager()
 
+    def compose_cmd(self, *args: str) -> List[str]:
+        return ["docker", "compose", "--project-name", self.project_name, *args]
+
     @property
     def kafka_port(self):
         if self._kafka_port:
@@ -931,7 +930,7 @@ class ClickHouseCluster:
             logging.debug("Trying to prune unused volumes...")
 
             result = run_and_check(["docker volume ls | wc -l"], shell=True)
-            if int(result > 0):
+            if int(result) > 1:
                 run_and_check(["docker", "volume", "prune", "-f"])
             logging.debug(f"Volumes pruned: {result}")
         except:
@@ -957,10 +956,10 @@ class ClickHouseCluster:
     # Returns the list of currently running docker containers corresponding to this ClickHouseCluster.
     def get_running_containers(self):
         # docker-compose names containers using the following formula:
-        # container_name = project_name + '_' + instance_name + '_1'
+        # container_name = project_name + '-' + instance_name + '-1'
         # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
         # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
-        filter_name = f"^/{self.project_name}_.*_1$"
+        filter_name = f"^/{self.project_name}-.*-1$"
         # We want the command "docker container list" to show only containers' ID and their names, separated by colon.
         format = "{{.ID}}:{{.Names}}"
         containers = run_and_check(
@@ -1006,15 +1005,12 @@ class ClickHouseCluster:
 
         self.with_zookeeper_secure = True
         self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
-        self.base_zookeeper_cmd = [
-            "docker-compose",
+        self.base_zookeeper_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             zookeeper_docker_compose_path,
-        ]
+        )
         return self.base_zookeeper_cmd
 
     def setup_zookeeper_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1038,15 +1034,12 @@ class ClickHouseCluster:
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
-        self.base_zookeeper_cmd = [
-            "docker-compose",
+        self.base_zookeeper_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             zookeeper_docker_compose_path,
-        ]
+        )
         return self.base_zookeeper_cmd
 
     def setup_keeper_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1086,15 +1079,12 @@ class ClickHouseCluster:
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
-        self.base_zookeeper_cmd = [
-            "docker-compose",
+        self.base_zookeeper_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             keeper_docker_compose_path,
-        ]
+        )
         return self.base_zookeeper_cmd
 
     def setup_mysql_client_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1105,15 +1095,12 @@ class ClickHouseCluster:
                 p.join(docker_compose_yml_dir, "docker_compose_mysql_client.yml"),
             ]
         )
-        self.base_mysql_client_cmd = [
-            "docker-compose",
+        self.base_mysql_client_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql_client.yml"),
-        ]
+        )
 
         return self.base_mysql_client_cmd
 
@@ -1129,15 +1116,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
         )
-        self.base_mysql57_cmd = [
-            "docker-compose",
+        self.base_mysql57_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql.yml"),
-        ]
+        )
 
         return self.base_mysql57_cmd
 
@@ -1153,15 +1137,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml")]
         )
-        self.base_mysql8_cmd = [
-            "docker-compose",
+        self.base_mysql8_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml"),
-        ]
+        )
 
         return self.base_mysql8_cmd
 
@@ -1179,15 +1160,12 @@ class ClickHouseCluster:
                 p.join(docker_compose_yml_dir, "docker_compose_mysql_cluster.yml"),
             ]
         )
-        self.base_mysql_cluster_cmd = [
-            "docker-compose",
+        self.base_mysql_cluster_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mysql_cluster.yml"),
-        ]
+        )
 
         return self.base_mysql_cluster_cmd
 
@@ -1200,15 +1178,12 @@ class ClickHouseCluster:
         env_variables["POSTGRES_LOGS_FS"] = "bind"
 
         self.with_postgres = True
-        self.base_postgres_cmd = [
-            "docker-compose",
+        self.base_postgres_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
-        ]
+        )
         return self.base_postgres_cmd
 
     def setup_postgres_cluster_cmd(
@@ -1226,15 +1201,12 @@ class ClickHouseCluster:
                 p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
             ]
         )
-        self.base_postgres_cluster_cmd = [
-            "docker-compose",
+        self.base_postgres_cluster_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
-        ]
+        )
 
     def setup_postgresql_java_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
@@ -1248,15 +1220,12 @@ class ClickHouseCluster:
                 ),
             ]
         )
-        self.base_postgresql_java_client_cmd = [
-            "docker-compose",
+        self.base_postgresql_java_client_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
-        ]
+        )
 
     def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hdfs = True
@@ -1268,15 +1237,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml")]
         )
-        self.base_hdfs_cmd = [
-            "docker-compose",
+        self.base_hdfs_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml"),
-        ]
+        )
         logging.debug("HDFS BASE CMD:{self.base_hdfs_cmd)}")
         return self.base_hdfs_cmd
 
@@ -1296,15 +1262,12 @@ class ClickHouseCluster:
                 p.join(docker_compose_yml_dir, "docker_compose_kerberized_hdfs.yml"),
             ]
         )
-        self.base_kerberized_hdfs_cmd = [
-            "docker-compose",
+        self.base_kerberized_hdfs_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kerberized_hdfs.yml"),
-        ]
+        )
         return self.base_kerberized_hdfs_cmd
 
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1319,15 +1282,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
-        self.base_kafka_cmd = [
-            "docker-compose",
+        self.base_kafka_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kafka.yml"),
-        ]
+        )
         return self.base_kafka_cmd
 
     def setup_kerberized_kafka_cmd(
@@ -1345,15 +1305,12 @@ class ClickHouseCluster:
                 p.join(docker_compose_yml_dir, "docker_compose_kerberized_kafka.yml"),
             ]
         )
-        self.base_kerberized_kafka_cmd = [
-            "docker-compose",
+        self.base_kerberized_kafka_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kerberized_kafka.yml"),
-        ]
+        )
         return self.base_kerberized_kafka_cmd
 
     def setup_kerberos_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1366,15 +1323,12 @@ class ClickHouseCluster:
                 p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
             ]
         )
-        self.base_kerberos_kdc_cmd = [
-            "docker-compose",
+        self.base_kerberos_kdc_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
-        ]
+        )
         return self.base_kerberos_kdc_cmd
 
     def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1386,15 +1340,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_redis.yml")]
         )
-        self.base_redis_cmd = [
-            "docker-compose",
+        self.base_redis_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_redis.yml"),
-        ]
+        )
         return self.base_redis_cmd
 
     def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1410,15 +1361,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml")]
         )
-        self.base_rabbitmq_cmd = [
-            "docker-compose",
+        self.base_rabbitmq_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml"),
-        ]
+        )
         return self.base_rabbitmq_cmd
 
     def setup_nats_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1431,15 +1379,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
         )
-        self.base_nats_cmd = [
-            "docker-compose",
+        self.base_nats_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_nats.yml"),
-        ]
+        )
         return self.base_nats_cmd
 
     def setup_mongo_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1475,15 +1420,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mongo.yml")]
         )
-        self.base_mongo_cmd = [
-            "docker-compose",
+        self.base_mongo_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_mongo.yml"),
-        ]
+        )
         return self.base_mongo_cmd
 
     def setup_coredns_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1493,15 +1435,12 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_coredns.yml")]
         )
 
-        self.base_coredns_cmd = [
-            "docker-compose",
+        self.base_coredns_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_coredns.yml"),
-        ]
+        )
 
         return self.base_coredns_cmd
 
@@ -1516,15 +1455,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
         )
-        self.base_minio_cmd = [
-            "docker-compose",
+        self.base_minio_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_minio.yml"),
-        ]
+        )
         return self.base_minio_cmd
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1542,15 +1478,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
         )
-        self.base_azurite_cmd = [
-            "docker-compose",
+        self.base_azurite_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_azurite.yml"),
-        ]
+        )
         return self.base_azurite_cmd
 
     def setup_cassandra_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1559,15 +1492,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml")]
         )
-        self.base_cassandra_cmd = [
-            "docker-compose",
+        self.base_cassandra_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml"),
-        ]
+        )
         return self.base_cassandra_cmd
 
     def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1576,15 +1506,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ldap.yml")]
         )
-        self.base_ldap_cmd = [
-            "docker-compose",
+        self.base_ldap_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_ldap.yml"),
-        ]
+        )
         return self.base_ldap_cmd
 
     def setup_jdbc_bridge_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1594,15 +1521,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml")]
         )
-        self.base_jdbc_bridge_cmd = [
-            "docker-compose",
+        self.base_jdbc_bridge_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml"),
-        ]
+        )
         return self.base_jdbc_bridge_cmd
 
     def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1611,15 +1535,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nginx.yml")]
         )
-        self.base_nginx_cmd = [
-            "docker-compose",
+        self.base_nginx_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_nginx.yml"),
-        ]
+        )
         return self.base_nginx_cmd
 
     def setup_hive(self, instance, env_variables, docker_compose_yml_dir):
@@ -1627,15 +1548,12 @@ class ClickHouseCluster:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_hive.yml")]
         )
-        self.base_hive_cmd = [
-            "docker-compose",
+        self.base_hive_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
-            "--project-name",
-            self.project_name,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_hive.yml"),
-        ]
+        )
         return self.base_hive_cmd
 
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1663,15 +1581,12 @@ class ClickHouseCluster:
                     p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
                 ]
             )
-            self.base_prometheus_cmd = [
-                "docker-compose",
+            self.base_prometheus_cmd = self.compose_cmd(
                 "--env-file",
                 instance.env_file,
-                "--project-name",
-                self.project_name,
                 "--file",
                 p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
-            ]
+            )
         return self.base_prometheus_cmd
 
     def add_instance(
@@ -1846,13 +1761,15 @@ class ClickHouseCluster:
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
+        docker_compose_net = p.join(docker_compose_yml_dir, "docker_compose_net.yml")
 
         self.instances[name] = instance
-        if ipv4_address is not None or ipv6_address is not None:
+        if not self.with_net_trics and (
+            ipv4_address is not None or ipv6_address is not None
+        ):
+            # docker compose v2 does not accept more than one argument `-f net.yml`
             self.with_net_trics = True
-            self.base_cmd.extend(
-                ["--file", p.join(docker_compose_yml_dir, "docker_compose_net.yml")]
-            )
+            self.base_cmd.extend(["--file", docker_compose_net])
 
         self.base_cmd.extend(["--file", instance.docker_compose_path])
 
@@ -2002,12 +1919,6 @@ class ClickHouseCluster:
                 self.setup_coredns_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if self.with_net_trics:
-            for cmd in cmds:
-                cmd.extend(
-                    ["--file", p.join(docker_compose_yml_dir, "docker_compose_net.yml")]
-                )
-
         if with_redis and not self.with_redis:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -2070,6 +1981,13 @@ class ClickHouseCluster:
                 )
             )
 
+        ### !!!! This is the last step after combining all cmds, don't put anything after
+        if self.with_net_trics:
+            for cmd in cmds:
+                # Again, adding it only once
+                if docker_compose_net not in cmd:
+                    cmd.extend(["--file", docker_compose_net])
+
         logging.debug(
             "Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
                 self.name,
@@ -2084,7 +2002,7 @@ class ClickHouseCluster:
 
     def get_instance_docker_id(self, instance_name):
         # According to how docker-compose names containers.
-        return self.project_name + "_" + instance_name + "_1"
+        return self.project_name + "-" + instance_name + "-1"
 
     def _replace(self, path, what, to):
         with open(path, "r") as p:
@@ -2823,7 +2741,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images)(run_and_check)(images_pull_cmd)
+            retry(log_function=logging_pulling_images)(run_and_check, images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3104,9 +3022,7 @@ class ClickHouseCluster:
 
                 retry(
                     log_function=logging_azurite_initialization,
-                )(
-                    run_and_check
-                )(azurite_start_cmd)
+                )(run_and_check, azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
@@ -3237,7 +3153,7 @@ class ClickHouseCluster:
                 )
         else:
             logging.warning(
-                "docker-compose up was not called. Trying to export docker.log for running containers"
+                "docker compose up was not called. Trying to export docker.log for running containers"
             )
 
         self.cleanup()
@@ -3324,8 +3240,7 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
 
-DOCKER_COMPOSE_TEMPLATE = """
-version: '2.3'
+DOCKER_COMPOSE_TEMPLATE = """---
 services:
     {name}:
         image: {image}:{tag}
