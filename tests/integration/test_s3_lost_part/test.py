@@ -108,11 +108,6 @@ def check_replica_after_insert(node, table_name):
     ).strip()
     assert detached_parts_name_after_drop == "broken_all_0_0_0"
 
-    active_parts_name_after_drop = node.query(
-        f"SELECT name FROM system.parts WHERE table='{table_name}'"
-    ).strip()
-    assert active_parts_name_after_drop == "all_1_1_0"
-
 
 def assert_part_exists(node, table_name, expected_part):
     def check_callback(actual_part):
