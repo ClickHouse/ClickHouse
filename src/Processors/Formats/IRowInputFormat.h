@@ -5,7 +5,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 class Stopwatch;
 
@@ -85,7 +84,6 @@ protected:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
     void setRowsReadBefore(size_t rows) override { total_rows = rows; }
-    void setSerializationHints(const SerializationInfoByName & hints) override;
 
     Serializations serializations;
 

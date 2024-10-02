@@ -165,6 +165,7 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
     String build_id;
+    String git_hash;
     String stored_binary_hash;
 
     bool should_setup_watchdog = false;

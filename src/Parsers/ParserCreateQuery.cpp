@@ -675,7 +675,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool if_not_exists = false;
     bool is_temporary = false;
     bool is_create_empty = false;
-    bool is_clone_as = false;
 
     if (s_create.ignore(pos, expected))
     {
@@ -760,16 +759,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return true;
     };
 
-    auto need_parse_as_select = [&is_create_empty, &is_clone_as, &pos, &expected]()
+    auto need_parse_as_select = [&is_create_empty, &pos, &expected]()
     {
         if (ParserKeyword{Keyword::EMPTY_AS}.ignore(pos, expected))
         {
             is_create_empty = true;
-            return true;
-        }
-        if (ParserKeyword{Keyword::CLONE_AS}.ignore(pos, expected))
-        {
-            is_clone_as = true;
             return true;
         }
 
@@ -899,7 +893,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->select, select);
     query->set(query->targets, targets);
     query->is_create_empty = is_create_empty;
-    query->is_clone_as = is_clone_as;
 
     if (from_path)
         query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();

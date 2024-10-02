@@ -7,10 +7,9 @@ import subprocess
 import time
 import typing as tp
 
-from kazoo.client import KazooClient
-
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from kazoo.client import KazooClient
 
 ss_established = [
     "ss",

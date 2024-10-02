@@ -35,9 +35,6 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
-class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
-
 namespace ClusterProxy
 {
 
@@ -57,8 +54,6 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 AdditionalShardFilterGenerator
 getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context, const ColumnsDescription & columns);
-
-bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
@@ -86,8 +81,7 @@ void executeQueryWithParallelReplicas(
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree = nullptr);
+    std::shared_ptr<const StorageLimitsList> storage_limits);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
@@ -104,8 +98,7 @@ void executeQueryWithParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree);
+    std::shared_ptr<const StorageLimitsList> storage_limits);
 
 void executeQueryWithParallelReplicasCustomKey(
     QueryPlan & query_plan,

@@ -17,10 +17,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool log_queries;
-}
 
 namespace ErrorCodes
 {
@@ -225,7 +221,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+            if (query_context && query_context->getSettingsRef().log_queries)
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
             return &it->second;
         }
@@ -237,7 +233,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+            if (query_context && query_context->getSettingsRef().log_queries)
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
             return &it->second;
         }

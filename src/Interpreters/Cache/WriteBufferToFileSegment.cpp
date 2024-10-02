@@ -16,10 +16,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
-}
 
 namespace ErrorCodes
 {
@@ -33,10 +29,9 @@ namespace
     {
         auto query_context = CurrentThread::getQueryContext();
         if (query_context)
-            return query_context->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
+            return query_context->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
         else
-            return Context::getGlobalContextInstance()
-                ->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
+            return Context::getGlobalContextInstance()->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
     }
 }
 
@@ -80,8 +75,7 @@ void WriteBufferToFileSegment::nextImpl()
     FileCacheReserveStat reserve_stat;
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
-    std::string failure_reason;
-    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason, &reserve_stat);
+    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, &reserve_stat);
 
     if (!ok)
     {
@@ -90,10 +84,9 @@ void WriteBufferToFileSegment::nextImpl()
             reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
                 toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
 
-        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: reason {}, {}(segment info: {})",
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: {}(segment info: {})",
             bytes_to_write,
-            file_segment->getKind() == FileSegmentKind::Ephemeral ? "temporary file" : "the file in cache",
-            failure_reason,
+            file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
             reserve_stat_msg,
             file_segment->getInfoForLog()
         );

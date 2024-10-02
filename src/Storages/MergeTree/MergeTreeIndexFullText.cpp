@@ -128,14 +128,14 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
                 "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
-    auto start_row_id = store->getNextRowIDRange(rows_read);
+    auto row_id = store->getNextRowIDRange(rows_read);
+    auto start_row_id = row_id;
 
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
         const auto & column_with_type = block.getByName(index_columns[col]);
         const auto & column = column_with_type.column;
         size_t current_position = *pos;
-        auto row_id = start_row_id;
 
         bool need_to_write = false;
         if (isArray(column_with_type.type))

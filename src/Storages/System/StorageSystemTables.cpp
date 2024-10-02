@@ -2,7 +2,6 @@
 
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -32,12 +31,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
-}
 
 namespace
 {
@@ -57,9 +50,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     }
     return false;
 }
-
 }
-
 
 namespace detail
 {
@@ -401,7 +392,8 @@ protected:
                     static const size_t DATA_PATHS_INDEX = 5;
                     if (columns_mask[DATA_PATHS_INDEX])
                     {
-                        lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                        lock = table->tryLockForShare(context->getCurrentQueryId(),
+                                                      context->getSettingsRef().lock_acquire_timeout);
                         if (!lock)
                             // Table was dropped while acquiring the lock, skipping table
                             continue;
@@ -489,7 +481,7 @@ protected:
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
-                    if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
+                    if (ast_create && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
                         ast_create->uuid = UUIDHelpers::Nil;
                         if (ast_create->targets)
@@ -569,7 +561,7 @@ protected:
                 }
 
                 auto settings = context->getSettingsRef();
-                settings[Setting::select_sequential_consistency] = 0;
+                settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
                     auto total_rows = table ? table->totalRows(settings) : std::nullopt;

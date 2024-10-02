@@ -1,7 +1,6 @@
 #include "ClickHouseDictionarySource.h"
 #include <memory>
 #include <Client/ConnectionPool.h>
-#include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/ActionsDAG.h>
@@ -52,8 +51,6 @@ namespace
             configuration.db,
             configuration.user,
             configuration.password,
-            configuration.proto_send_chunked,
-            configuration.proto_recv_chunked,
             configuration.quota_key,
             "", /* cluster */
             "", /* cluster_secret */
@@ -225,7 +222,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         {
             validateNamedCollection(
                 *named_collection, {}, ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
-                    "secure", "host", "hostname", "port", "user", "username", "password", "proto_send_chunked", "proto_recv_chunked", "quota_key", "name",
+                    "secure", "host", "hostname", "port", "user", "username", "password", "quota_key", "name",
                     "db", "database", "table","query", "where", "invalidate_query", "update_field", "update_lag"});
 
             const auto secure = named_collection->getOrDefault("secure", false);
@@ -237,8 +234,6 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .host = host,
                 .user = named_collection->getAnyOrDefault<String>({"user", "username"}, "default"),
                 .password = named_collection->getOrDefault<String>("password", ""),
-                .proto_send_chunked = named_collection->getOrDefault<String>("proto_send_chunked", "notchunked"),
-                .proto_recv_chunked = named_collection->getOrDefault<String>("proto_recv_chunked", "notchunked"),
                 .quota_key = named_collection->getOrDefault<String>("quota_key", ""),
                 .db = named_collection->getAnyOrDefault<String>({"db", "database"}, default_database),
                 .table = named_collection->getOrDefault<String>("table", ""),
@@ -263,8 +258,6 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .host = host,
                 .user = config.getString(settings_config_prefix + ".user", "default"),
                 .password = config.getString(settings_config_prefix + ".password", ""),
-                .proto_send_chunked = config.getString(settings_config_prefix + ".proto_caps.send", "notchunked"),
-                .proto_recv_chunked = config.getString(settings_config_prefix + ".proto_caps.recv", "notchunked"),
                 .quota_key = config.getString(settings_config_prefix + ".quota_key", ""),
                 .db = config.getString(settings_config_prefix + ".db", default_database),
                 .table = config.getString(settings_config_prefix + ".table", ""),

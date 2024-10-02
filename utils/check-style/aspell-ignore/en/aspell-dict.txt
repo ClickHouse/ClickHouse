@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 2942
 AArch
 ACLs
 ALTERs
@@ -47,7 +47,6 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
-AzureQueue
 BIGINT
 BIGSERIAL
 BORO
@@ -100,7 +99,6 @@ BlockWriteBytes
 BlockWriteMerges
 BlockWriteOps
 BlockWriteTime
-Boncz
 Bool
 BrokenDistributedFilesToInsert
 Bugfix
@@ -116,7 +114,6 @@ CESU
 CIDR
 CIDRToRange
 CKMAN
-CKibana
 CLOB
 CLion
 CMPLNT
@@ -186,7 +183,6 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
-CountMin
 Covid
 Cramer's
 Criteo
@@ -249,7 +245,6 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
-Dresseler
 Durre
 ECMA
 ETag
@@ -257,7 +252,6 @@ Ecto
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
-ElasticSearch
 EmbeddedRocksDB
 Embeddings
 Encodings
@@ -391,18 +385,6 @@ IntelliJ
 IntelliSense
 InterserverConnection
 InterserverThreads
-IntervalDay
-IntervalHour
-IntervalMicrosecond
-IntervalMillisecond
-IntervalMilliseconds
-IntervalMinute
-IntervalMonth
-IntervalNanosecond
-IntervalQuarter
-IntervalSecond
-IntervalWeek
-IntervalYear
 IsPentagon
 IsResClassIII
 IsValid
@@ -425,7 +407,6 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
-JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
 JSONEachRow
@@ -444,11 +425,11 @@ JSONExtractUInt
 JSONHas
 JSONLength
 JSONObjectEachRow
-JSONSharedDataPaths
-JSONSharedDataPathsWithTypes
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -478,7 +459,6 @@ KeeperMap
 KeeperOutstandingRequests
 Kerberos
 Khanna
-Kibana
 KittenHouse
 Klickhouse
 Kolmogorov
@@ -488,7 +468,6 @@ Kubernetes
 LDAP
 LGPL
 LIMITs
-LINEITEM
 LLDB
 LLVM's
 LOCALTIME
@@ -586,7 +565,6 @@ MinHash
 MinIO
 MinMax
 MindsDB
-Mongo
 Mongodb
 Monotonicity
 MsgPack
@@ -615,7 +593,6 @@ NVMe
 NYPD
 NaNs
 Nagios
-Nambiar
 Namenode
 NamesAndTypesList
 Nano
@@ -739,18 +716,15 @@ PartsPreActive
 PartsPreCommitted
 PartsTemporary
 PartsWide
-PeerDB
 PendingAsyncInsert
 Percona
 PhpStorm
 PlantUML
-Poess
 PointDistKm
 PointDistM
 PointDistRads
 PostHistory
 PostLink
-PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -808,7 +782,6 @@ RWLockActiveWriters
 RWLockWaitingReaders
 RWLockWaitingWriters
 RabbitMQ
-Rabl
 RangeHashed
 RawBLOB
 ReDoS
@@ -853,7 +826,6 @@ RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
 RestoreThreadsActive
-RIPEMD
 RoaringBitmap
 RocksDB
 Rollup
@@ -991,8 +963,6 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
-TimeSeries
-TimescaleDB's
 Timeunit
 TinyLog
 Tkachenko
@@ -1134,12 +1104,12 @@ addressToLineWithInlines
 addressToSymbol
 adviced
 agg
-aggThrow
 aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
 aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1174,7 +1144,6 @@ arrayDifference
 arrayDistinct
 arrayDotProduct
 arrayElement
-arrayElementOrNull
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -1224,11 +1193,9 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip
-arrayZipUnaligned
 ascii
 asin
 asinh
@@ -1386,7 +1353,6 @@ cipherList
 ciphertext
 cityHash
 cityhash
-ckibana
 ckman
 clangd
 cli
@@ -1559,7 +1525,6 @@ dequeues
 deserialization
 deserialized
 deserializing
-dest
 destructor
 destructors
 detectCharset
@@ -1585,11 +1550,6 @@ disjunction
 disjunctions
 displayName
 displaySecretsInShowAndSelect
-distinctDynamicTypes
-distinctJSONPaths
-distinctJSONPathsAndTypes
-distinctdynamictypes
-distinctjsonpaths
 distro
 divideDecimal
 dmesg
@@ -1747,7 +1707,6 @@ getMacro
 getOSKernelVersion
 getServerPort
 getSetting
-getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -1924,8 +1883,8 @@ joinGet
 joinGetOrNull
 json
 jsonMergePatch
-jsonasobject
 jsonasstring
+jsonasobject
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -1966,8 +1925,8 @@ kurtSamp
 kurtosis
 kurtpop
 kurtsamp
-lagInFrame
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
@@ -2012,7 +1971,6 @@ linearizable
 linearized
 lineasstring
 linefeeds
-lineitem
 lineorder
 linestring
 linux
@@ -2070,6 +2028,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2086,7 +2045,6 @@ metasymbols
 metrica
 metroHash
 mfedotov
-mflix
 minMap
 minMappedArrays
 minSampleSizeContinuous
@@ -2107,8 +2065,6 @@ mmapped
 modularization
 moduli
 moduloOrZero
-mongoc
-mongocxx
 mongodb
 monotonicity
 monthName
@@ -2171,7 +2127,6 @@ namespace
 namespaces
 natively
 nats
-ness
 nestjs
 netloc
 newjson
@@ -2242,7 +2197,6 @@ outfile
 overcommit
 overcommitted
 overfitting
-overlayUTF
 overparallelization
 packetpool
 packetsize
@@ -2269,8 +2223,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
-partitionID
 partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2750,6 +2704,7 @@ themself
 threadpool
 throwIf
 timeDiff
+TimeSeries
 timeSeriesData
 timeSeriesMetrics
 timeSeriesTags
@@ -2761,7 +2716,6 @@ timeZoneOffset
 timezones
 tinylog
 tmp
-toBool
 toColumnTypeName
 toDate
 toDateOrDefault
@@ -2785,17 +2739,6 @@ toISOWeek
 toISOYear
 toInt
 toInterval
-toIntervalDay
-toIntervalHour
-toIntervalMicrosecond
-toIntervalMillisecond
-toIntervalMinute
-toIntervalMonth
-toIntervalNanosecond
-toIntervalQuarter
-toIntervalSecond
-toIntervalWeek
-toIntervalYear
 toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
@@ -2866,8 +2809,6 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
-tpcds
-tpch
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
@@ -3051,4 +2992,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-postgres

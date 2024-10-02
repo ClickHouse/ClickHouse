@@ -57,11 +57,10 @@ public:
         enum class DistanceFunction : uint8_t
         {
             Unknown,
-            L2,
-            Cosine
+            L2
         };
 
-        std::vector<Float64> reference_vector;
+        std::vector<Float32> reference_vector;
         DistanceFunction distance_function;
         String column_name;
         UInt64 limit;
@@ -69,9 +68,9 @@ public:
     };
 
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
-    bool alwaysUnknownOrTrue(const String & distance_function) const;
+    bool alwaysUnknownOrTrue(String distance_function) const;
 
-    std::vector<Float64> getReferenceVector() const;
+    std::vector<float> getReferenceVector() const;
     size_t getDimensions() const;
     String getColumnName() const;
     Info::DistanceFunction getDistanceFunction() const;
@@ -142,11 +141,17 @@ private:
     /// Traverses the AST of ORDERBY section
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
+    /// Returns true and stores ANNExpr if the query has valid WHERE section
+    static bool matchRPNWhere(RPN & rpn, Info & info);
+
     /// Returns true and stores ANNExpr if the query has valid ORDERBY section
     static bool matchRPNOrderBy(RPN & rpn, Info & info);
 
     /// Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
+
+    /// Matches dist function, reference vector, column name
+    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, Info & info);
 
     /// Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(const RPN::iterator& iter);

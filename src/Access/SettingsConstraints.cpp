@@ -10,15 +10,10 @@
 #include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_ddl;
-    extern const SettingsUInt64 readonly;
-}
-
 namespace ErrorCodes
 {
     extern const int READONLY;
@@ -169,7 +164,7 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (element.writability)
             new_value = *element.writability;
 
-        auto setting_name = Settings::resolveName(element.setting_name);
+        auto setting_name = Settings::Traits::resolveName(element.setting_name);
         auto it = constraints.find(setting_name);
         if (it != constraints.end())
             old_value = it->second.writability;
@@ -260,7 +255,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     ReactionOnViolation reaction,
                                     SettingSource source) const
 {
-    std::string_view setting_name = Settings::resolveName(change.name);
+    std::string_view setting_name = Settings::Traits::resolveName(change.name);
 
     if (setting_name == "profile")
         return true;
@@ -398,7 +393,7 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
 SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
 {
     auto resolved_name = resolveSettingNameWithCache(setting_name);
-    if (!current_settings[Setting::allow_ddl] && resolved_name == "allow_ddl")
+    if (!current_settings.allow_ddl && resolved_name == "allow_ddl")
         return Checker(PreformattedMessage::create("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user"),
                        ErrorCodes::QUERY_IS_PROHIBITED);
 
@@ -408,11 +403,11 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
       * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
       */
 
-    if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
+    if (current_settings.readonly > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
     auto it = constraints.find(resolved_name);
-    if (current_settings[Setting::readonly] == 1)
+    if (current_settings.readonly == 1)
     {
         if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
@@ -421,9 +416,9 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     else // For both readonly=0 and readonly=2
     {
         if (it == constraints.end())
-            return Checker(Settings::resolveName); // Allowed
+            return Checker(Settings::Traits::resolveName); // Allowed
     }
-    return Checker(it->second, Settings::resolveName);
+    return Checker(it->second, Settings::Traits::resolveName);
 }
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const

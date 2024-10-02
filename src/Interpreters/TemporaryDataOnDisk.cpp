@@ -65,7 +65,7 @@ TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, Cu
 
 std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(size_t max_file_size)
 {
-    if (file_cache && file_cache->isInitialized())
+    if (file_cache)
     {
         auto holder = createCacheFile(max_file_size);
         return std::make_unique<WriteBufferToFileSegment>(std::move(holder));
@@ -81,7 +81,7 @@ std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(si
 
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
-    if (file_cache && file_cache->isInitialized())
+    if (file_cache)
     {
         auto holder = createCacheFile(max_file_size);
 
@@ -110,7 +110,7 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
     const auto key = FileSegment::Key::random();
     auto holder = file_cache->set(
         key, 0, std::max(10_MiB, max_file_size),
-        CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
+        CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true), FileCache::getCommonUser());
 
     chassert(holder->size() == 1);
     holder->back().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);

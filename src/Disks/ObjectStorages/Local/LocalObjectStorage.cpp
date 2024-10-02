@@ -43,21 +43,39 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
     auto modified_settings = patchSettings(read_settings);
     auto global_context = Context::getGlobalContextInstance();
-    auto read_buffer_creator = [=](bool /* restricted_seek */, const StoredObject & object) -> std::unique_ptr<ReadBufferFromFileBase>
-    { return std::make_unique<ReadBufferFromFile>(object.remote_path); };
+    auto read_buffer_creator =
+        [=] (bool /* restricted_seek */, const StoredObject & object)
+        -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return createReadBufferFromFileBase(object.remote_path, modified_settings, read_hint, file_size);
+    };
 
-    return std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        objects,
-        "file:",
-        modified_settings,
-        global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */ false);
+    switch (read_settings.remote_fs_method)
+    {
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator), objects, "file:", modified_settings,
+                global_context->getFilesystemCacheLog(), /* use_external_buffer */false);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator), objects, "file:", modified_settings,
+                global_context->getFilesystemCacheLog(), /* use_external_buffer */true);
+
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
+    }
 }
 
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const

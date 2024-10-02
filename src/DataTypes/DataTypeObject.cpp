@@ -20,25 +20,16 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 
-#include "config.h"
-
 #if USE_SIMDJSON
-#  include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 #endif
 #if USE_RAPIDJSON
-#  include <Common/JSONParsers/RapidJSONParser.h>
-#else
-#  include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 #endif
+#include <Common/JSONParsers/DummyJSONParser.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool use_json_alias_for_old_object_type;
-    extern const SettingsBool allow_simdjson;
-}
 
 namespace ErrorCodes
 {
@@ -128,19 +119,13 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     switch (schema_format)
     {
         case SchemaFormat::JSON:
-#if USE_SIMDJSON
-            auto context = CurrentThread::getQueryContext();
-            if (!context)
-                context = Context::getGlobalContextInstance();
-            if (context->getSettingsRef()[Setting::allow_simdjson])
-                return std::make_shared<SerializationJSON<SimdJSONParser>>(
-                    std::move(typed_path_serializations),
-                    paths_to_skip,
-                    path_regexps_to_skip,
-                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
-#endif
-
-#if USE_RAPIDJSON
+#ifdef USE_SIMDJSON
+            return std::make_shared<SerializationJSON<SimdJSONParser>>(
+                std::move(typed_path_serializations),
+                paths_to_skip,
+                path_regexps_to_skip,
+                buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
+#elif USE_RAPIDJSON
             return std::make_shared<SerializationJSON<RapidJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,
@@ -532,7 +517,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
     if (!context)
         context = Context::getGlobalContextInstance();
 
-    if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
+    if (context->getSettingsRef().allow_experimental_object_type && context->getSettingsRef().use_json_alias_for_old_object_type)
     {
         if (arguments && !arguments->children.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings allow_experimental_json_type = 1 and use_json_alias_for_old_object_type = 0");

@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
 import gzip
-import io
 import json
 import logging
 import os
-import random
+import io
 import re
+import random
 import threading
 import time
 
-import pytest
 from azure.storage.blob import BlobServiceClient
-
+import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.test_tools import TSV, assert_logs_contain_with_retry
+from helpers.test_tools import assert_logs_contain_with_retry
+from helpers.test_tools import TSV
 
 
 @pytest.fixture(scope="module")
@@ -1587,7 +1587,7 @@ def test_hive_partitioning_without_setting(cluster):
         f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
     pattern = re.compile(
-        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+        r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
     )
 
     with pytest.raises(Exception, match=pattern):

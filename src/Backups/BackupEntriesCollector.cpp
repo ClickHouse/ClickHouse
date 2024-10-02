@@ -1,5 +1,4 @@
 #include <Access/Common/AccessEntityType.h>
-#include <Access/AccessControl.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -36,13 +35,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
-    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 backup_restore_keeper_max_retries;
-    extern const SettingsSeconds lock_acquire_timeout;
-}
 
 namespace ErrorCodes
 {
@@ -113,9 +105,9 @@ BackupEntriesCollector::BackupEntriesCollector(
     , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
     , log(getLogger("BackupEntriesCollector"))
     , global_zookeeper_retries_info(
-          context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
-          context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
-          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms])
+          context->getSettingsRef().backup_restore_keeper_max_retries,
+          context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+          context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
     , threadpool(threadpool_)
 {
 }
@@ -661,7 +653,7 @@ void BackupEntriesCollector::lockTablesForReading()
 
         checkIsQueryCancelled();
 
-        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     }
 
     std::erase_if(
@@ -911,20 +903,11 @@ void BackupEntriesCollector::runPostTasks()
     LOG_TRACE(log, "All post tasks successfully executed");
 }
 
-std::unordered_map<UUID, AccessEntityPtr> BackupEntriesCollector::getAllAccessEntities()
+size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
 {
     std::lock_guard lock(mutex);
-    if (!all_access_entities)
-    {
-        all_access_entities.emplace();
-        auto entities_with_ids = context->getAccessControl().readAllWithIDs();
-        for (const auto & [id, entity] : entities_with_ids)
-        {
-            if (entity->isBackupAllowed())
-                all_access_entities->emplace(id, entity);
-        }
-    }
-    return *all_access_entities;
+    access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
+    return access_counters[static_cast<size_t>(type)]++;
 }
 
 }

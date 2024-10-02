@@ -3,7 +3,6 @@ import time
 from dataclasses import dataclass
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.keeper_utils import get_active_zk_connections
 from helpers.test_tools import TSV, assert_eq_with_retry

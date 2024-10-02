@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -20,8 +21,6 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
-
-struct MergeTreeWriterSettings;
 
 namespace ErrorCodes
 {

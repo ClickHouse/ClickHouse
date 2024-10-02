@@ -20,10 +20,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool traverse_shadow_remote_data_paths;
-}
 
 namespace ErrorCodes
 {
@@ -220,7 +216,7 @@ bool SystemRemoteDataPathsSource::nextDisk()
         /// cases when children of a directory get deleted while traversal is running.
         current.names.push_back({"store", nullptr});
         current.names.push_back({"data", nullptr});
-        if (context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths])
+        if (context->getSettingsRef().traverse_shadow_remote_data_paths)
             current.names.push_back({"shadow", skipPredicateForShadowDir});
 
         /// Start and move to the first file

@@ -9,8 +9,6 @@ system flush logs;
 drop table if exists logs;
 create view logs as select * from system.text_log where now() - toIntervalMinute(120) < event_time;
 
-SET max_rows_to_read = 0;
-
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
 WITH 0.001 AS threshold

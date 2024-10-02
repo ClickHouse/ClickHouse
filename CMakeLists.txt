@@ -322,21 +322,17 @@ if (DISABLE_OMIT_FRAME_POINTER)
     set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
 endif()
 
-# Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
-# https://stackoverflow.com/questions/63386189/whats-the-difference-between-a-compilers-o0-option-and-og-option/63386263#63386263
-set(DEBUG_O_LEVEL "g" CACHE STRING "The -Ox level used for debug builds")
-
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
-set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
+set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -Og ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
-set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -Og ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 
 set (CMAKE_ASM_FLAGS                     "${CMAKE_ASM_FLAGS} ${COMPILER_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
-set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
+set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -Og ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 
 if (OS_DARWIN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -605,9 +601,7 @@ if (NATIVE_BUILD_TARGETS
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
-        COMMAND_ECHO STDOUT
-        COMMAND_ERROR_IS_FATAL ANY
-    )
+        COMMAND_ECHO STDOUT)
 
     execute_process(
         COMMAND ${CMAKE_COMMAND}
@@ -619,13 +613,9 @@ if (NATIVE_BUILD_TARGETS
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
-        COMMAND_ECHO STDOUT
-        COMMAND_ERROR_IS_FATAL ANY
-    )
+        COMMAND_ECHO STDOUT)
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" --target ${NATIVE_BUILD_TARGETS}
-        COMMAND_ECHO STDOUT
-        COMMAND_ERROR_IS_FATAL ANY
-    )
+        COMMAND_ECHO STDOUT)
 endif ()

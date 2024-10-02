@@ -218,7 +218,11 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
 
             if (col_ast->statistics_desc)
+            {
                 statistics = ColumnStatisticsDescription::fromColumnDeclaration(*col_ast, type);
+                /// every column has name `x` here, so we have to set the name manually.
+                statistics.column_name = name;
+            }
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");

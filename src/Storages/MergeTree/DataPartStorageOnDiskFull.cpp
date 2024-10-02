@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Disks/SingleDiskVolume.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -96,18 +95,22 @@ UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
     return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
 }
 
-std::vector<std::string> DataPartStorageOnDiskFull::getRemotePaths(const std::string & file_name) const
+std::string DataPartStorageOnDiskFull::getRemotePath(const std::string & file_name, bool if_exists) const
 {
     const std::string path = fs::path(root_path) / part_dir / file_name;
     auto objects = volume->getDisk()->getStorageObjects(path);
 
-    std::vector<std::string> remote_paths;
-    remote_paths.reserve(objects.size());
+    if (objects.empty() && if_exists)
+        return "";
 
-    for (const auto & object : objects)
-        remote_paths.push_back(object.remote_path);
+    if (objects.size() != 1)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "One file must be mapped to one object on blob storage by path {} in MergeTree tables, have {}.",
+                        path, objects.size());
+    }
 
-    return remote_paths;
+    return objects[0].remote_path;
 }
 
 String DataPartStorageOnDiskFull::getUniqueId() const
@@ -204,8 +207,7 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
     source_on_disk->getDisk()->copyFile(
         fs::path(source_on_disk->getRelativePath()) / from,
         *volume->getDisk(),
-        fs::path(root_path) / part_dir / to,
-        getReadSettings());
+        fs::path(root_path) / part_dir / to);
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

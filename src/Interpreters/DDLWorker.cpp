@@ -52,12 +52,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool implicit_transaction;
-    extern const SettingsUInt64 readonly;
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-}
 
 namespace ErrorCodes
 {
@@ -121,7 +115,7 @@ DDLWorker::DDLWorker(
             context->setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context->getSettingsRef()[Setting::readonly])
+    if (context->getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
@@ -489,9 +483,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         auto query_context = task.makeQueryContext(context, zookeeper);
 
         chassert(!query_context->getCurrentTransaction());
-        if (query_context->getSettingsRef()[Setting::implicit_transaction])
+        if (query_context->getSettingsRef().implicit_transaction)
         {
-            if (query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+            if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot begin an implicit transaction inside distributed DDL query");
             query_context->setSetting("implicit_transaction", Field{0});
         }
@@ -1045,7 +1039,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     if (is_currently_deleting)
     {
         cleanup_event->set();
-        throw Exception(ErrorCodes::UNFINISHED, "Cannot create znodes (status) for {} in [Zoo]Keeper, "
+        throw Exception(ErrorCodes::UNFINISHED, "Cannot create status dirs for {}, "
                         "most likely because someone is deleting it concurrently", node_path);
     }
 

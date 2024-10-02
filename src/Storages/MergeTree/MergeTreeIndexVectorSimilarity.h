@@ -4,9 +4,12 @@
 
 #if USE_USEARCH
 
-#include <Storages/MergeTree/VectorSimilarityCondition.h>
-#include <Common/Logger.h>
-#include <usearch/index_dense.hpp>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
+#  include <Storages/MergeTree/VectorSimilarityCondition.h>
+#  include <Common/Logger.h>
+#  include <usearch/index_dense.hpp>
+#pragma clang diagnostic pop
 
 namespace DB
 {
@@ -18,7 +21,7 @@ struct UsearchHnswParams
     size_t ef_search = unum::usearch::default_expansion_search();
 };
 
-using USearchIndex = unum::usearch::index_dense_t;
+using USearchIndex = unum::usearch::index_dense_gt</*key_at*/ uint32_t, /*compressed_slot_at*/ uint32_t>;
 
 class USearchIndexWithSerialization : public USearchIndex
 {
@@ -38,18 +41,13 @@ public:
     {
         size_t max_level;
         size_t connectivity;
-        size_t size;                /// number of indexed vectors
-        size_t capacity;            /// reserved number of indexed vectors
-        size_t memory_usage;        /// byte size (not exact)
+        size_t size;
+        size_t capacity;
+        size_t memory_usage;
+        /// advanced stats:
         size_t bytes_per_vector;
         size_t scalar_words;
-        size_t nodes;
-        size_t edges;
-        size_t max_edges;
-
-        std::vector<USearchIndex::stats_t> level_stats; /// for debugging, excluded from getStatistics()
-
-        String toString() const;
+        Base::stats_t statistics;
     };
 
     Statistics getStatistics() const;

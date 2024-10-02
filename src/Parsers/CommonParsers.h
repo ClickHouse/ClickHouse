@@ -4,7 +4,6 @@
 
 #include <cassert>
 #include <string_view>
-#include <unordered_set>
 
 namespace DB
 {
@@ -85,7 +84,6 @@ namespace DB
     MR_MACROS(CLEAR_INDEX, "CLEAR INDEX") \
     MR_MACROS(CLEAR_PROJECTION, "CLEAR PROJECTION") \
     MR_MACROS(CLEAR_STATISTICS, "CLEAR STATISTICS") \
-    MR_MACROS(CLONE_AS, "CLONE AS") \
     MR_MACROS(CLUSTER, "CLUSTER") \
     MR_MACROS(CLUSTERS, "CLUSTERS") \
     MR_MACROS(CN, "CN") \
@@ -409,7 +407,6 @@ namespace DB
     MR_MACROS(REPLACE_PARTITION, "REPLACE PARTITION") \
     MR_MACROS(REPLACE, "REPLACE") \
     MR_MACROS(RESET_SETTING, "RESET SETTING") \
-    MR_MACROS(RESET_AUTHENTICATION_METHODS_TO_NEW, "RESET AUTHENTICATION METHODS TO NEW") \
     MR_MACROS(RESPECT_NULLS, "RESPECT NULLS") \
     MR_MACROS(RESTORE, "RESTORE") \
     MR_MACROS(RESTRICT, "RESTRICT") \
@@ -589,8 +586,6 @@ enum class Keyword : size_t
 std::string_view toStringView(Keyword type);
 
 const std::vector<String> & getAllKeyWords();
-
-const std::unordered_set<std::string> & getKeyWordSet();
 
 
 /** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.

@@ -1,9 +1,7 @@
 import logging
 import re
 import time
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.keeper_utils import ss_established
 from helpers.network import PartitionManager

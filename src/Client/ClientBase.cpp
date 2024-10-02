@@ -7,12 +7,13 @@
 
 #include <base/safeExit.h>
 #include <Core/Block.h>
+#include <Core/BaseSettingsProgramOptions.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
@@ -33,7 +34,6 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -73,11 +73,9 @@
 #include <limits>
 #include <map>
 #include <memory>
-#include <string_view>
 #include <unordered_map>
 
 #include <Common/config_version.h>
-#include <base/find_symbols.h>
 #include "config.h"
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -92,21 +90,6 @@ using namespace std::literals;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_settings_after_format_in_insert;
-    extern const SettingsBool async_insert;
-    extern const SettingsDialect dialect;
-    extern const SettingsUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 output_format_pretty_max_rows;
-    extern const SettingsUInt64 output_format_pretty_max_value_width;
-    extern const SettingsBool partial_result_on_first_cancel;
-    extern const SettingsBool throw_if_no_data_to_insert;
-}
 
 namespace ErrorCodes
 {
@@ -309,24 +292,24 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     size_t max_length = 0;
 
     if (!allow_multi_statements)
-        max_length = settings[Setting::max_query_size];
+        max_length = settings.max_query_size;
 
-    const Dialect dialect = settings[Setting::dialect];
+    const Dialect & dialect = settings.dialect;
 
     if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        parser = std::make_unique<ParserQuery>(end, settings.allow_settings_after_format_in_insert);
 
     if (is_interactive || ignore_error)
     {
         String message;
         if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
         else
-            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
         if (!res)
         {
@@ -337,20 +320,16 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     else
     {
         if (dialect == Dialect::kusto)
-            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
         else
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     }
 
     if (is_interactive)
     {
         output_stream << std::endl;
         WriteBufferFromOStream res_buf(output_stream, 4096);
-        IAST::FormatSettings format_settings(res_buf, /* one_line */ false);
-        format_settings.hilite = true;
-        format_settings.show_secrets = true;
-        format_settings.print_pretty_type_names = true;
-        res->format(format_settings);
+        formatAST(*res, res_buf);
         res_buf.finalize();
         output_stream << std::endl << std::endl;
     }
@@ -360,8 +339,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
 
 /// Consumes trailing semicolons and tries to consume the same-line trailing comment.
-void ClientBase::adjustQueryEnd(
-    const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks)
+void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks)
 {
     // We have to skip the trailing semicolon that might be left
     // after VALUES parsing or just after a normal semicolon-terminated query.
@@ -687,16 +665,16 @@ void ClientBase::adjustSettings()
     /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
     if (!pager.empty() || !stdout_is_a_tty)
     {
-        if (!global_context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
+        if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
         {
-            settings[Setting::output_format_pretty_max_rows] = std::numeric_limits<UInt64>::max();
-            settings[Setting::output_format_pretty_max_rows].changed = false;
+            settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
+            settings.output_format_pretty_max_rows.changed = false;
         }
 
-        if (!global_context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
+        if (!global_context->getSettingsRef().output_format_pretty_max_value_width.changed)
         {
-            settings[Setting::output_format_pretty_max_value_width] = std::numeric_limits<UInt64>::max();
-            settings[Setting::output_format_pretty_max_value_width].changed = false;
+            settings.output_format_pretty_max_value_width = std::numeric_limits<UInt64>::max();
+            settings.output_format_pretty_max_value_width.changed = false;
         }
     }
 
@@ -782,17 +760,18 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_format = "TSV";
     }
 
-    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size", global_context->getSettingsRef()[Setting::max_block_size]);
+    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size",
+        global_context->getSettingsRef().max_block_size);
 
     /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef()[Setting::max_insert_block_size].changed)
+    if (global_context->getSettingsRef().max_insert_block_size.changed)
     {
-        insert_format_max_block_size = global_context->getSettingsRef()[Setting::max_insert_block_size];
+        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
     }
     else
     {
-        insert_format_max_block_size
-            = getClientConfiguration().getUInt64("insert_format_max_block_size", global_context->getSettingsRef()[Setting::max_insert_block_size]);
+        insert_format_max_block_size = getClientConfiguration().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
     }
 }
 
@@ -892,7 +871,7 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
     if (insert_query.settings_ast)
         settings.applyChanges(insert_query.settings_ast->as<ASTSetQuery>()->changes);
 
-    return !settings[Setting::async_insert];
+    return !settings.async_insert;
 }
 
 void ClientBase::processTextAsSingleQuery(const String & full_query)
@@ -935,8 +914,6 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     }
     catch (Exception & e)
     {
-        if (server_exception)
-            server_exception->rethrow();
         if (!is_interactive)
             e.addMessage("(in query: {})", full_query);
         throw;
@@ -1045,7 +1022,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     }
 
     const auto & settings = client_context->getSettingsRef();
-    const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
+    const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
 
     int retries_left = 10;
     while (retries_left)
@@ -1055,29 +1032,20 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
-            try {
-                connection->sendQuery(
-                    connection_parameters.timeouts,
-                    query,
-                    query_parameters,
-                    client_context->getCurrentQueryId(),
-                    query_processing_stage,
-                    &client_context->getSettingsRef(),
-                    &client_context->getClientInfo(),
-                    true,
-                    [&](const Progress & progress) { onProgress(progress); });
+            connection->sendQuery(
+                connection_parameters.timeouts,
+                query,
+                query_parameters,
+                client_context->getCurrentQueryId(),
+                query_processing_stage,
+                &client_context->getSettingsRef(),
+                &client_context->getClientInfo(),
+                true,
+                [&](const Progress & progress) { onProgress(progress); });
 
-                if (send_external_tables)
-                    sendExternalTables(parsed_query);
-            }
-            catch (const NetException &)
-            {
-                // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
-                receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
-                throw;
-            }
-
-            receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+            if (send_external_tables)
+                sendExternalTables(parsed_query);
+            receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
         }
@@ -1505,7 +1473,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
     {
         const auto & settings = client_context->getSettingsRef();
-        if (settings[Setting::throw_if_no_data_to_insert])
+        if (settings.throw_if_no_data_to_insert)
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
         else
             return;
@@ -1623,14 +1591,14 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             auto metadata = storage->getInMemoryMetadataPtr();
             QueryPlan plan;
             storage->read(
-                plan,
-                sample.getNames(),
-                storage->getStorageSnapshot(metadata, client_context),
-                query_info,
-                client_context,
-                {},
-                client_context->getSettingsRef()[Setting::max_block_size],
-                getNumberOfCPUCoresToUse());
+                    plan,
+                    sample.getNames(),
+                    storage->getStorageSnapshot(metadata, client_context),
+                    query_info,
+                    client_context,
+                    {},
+                    client_context->getSettingsRef().max_block_size,
+                    getNumberOfPhysicalCPUCores());
 
             auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(client_context),
@@ -1889,11 +1857,11 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && !create_user_query->authentication_methods.empty())
+        if (!create_user_query->attach && create_user_query->auth_data)
         {
-            for (const auto & authentication_method : create_user_query->authentication_methods)
+            if (const auto * auth_data = create_user_query->auth_data->as<ASTAuthenticationData>())
             {
-                auto password = authentication_method->getPassword();
+                auto password = auth_data->getPassword();
 
                 if (password)
                     client_context->getAccessControl().checkPasswordComplexityRules(*password);
@@ -1910,21 +1878,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         /// Temporarily apply query settings to context.
         std::optional<Settings> old_settings;
         SCOPE_EXIT_SAFE({
-            try
-            {
-                /// We need to park ParallelFormating threads,
-                /// because they can use settings from global context
-                /// and it can lead to data race with `setSettings`
-                resetOutput();
-            }
-            catch (...)
-            {
-                if (!have_error)
-                {
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
-                    have_error = true;
-                }
-            }
             if (old_settings)
                 client_context->setSettings(*old_settings);
         });
@@ -1967,7 +1920,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert] && insert && insert->hasInlinedData();
+        bool is_async_insert_with_inlined_data = client_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
         if (is_async_insert_with_inlined_data)
         {
@@ -2052,11 +2005,11 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             error_stream << progress_indication.elapsedSeconds() << "\n";
 
         const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
-        auto peak_memory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
+        auto peak_memeory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
         if (print_memory_mode == "default")
-            error_stream << peak_memory_usage << "\n";
+            error_stream << peak_memeory_usage << "\n";
         else if (print_memory_mode == "readable")
-            error_stream << formatReadableSizeWithBinarySuffix(peak_memory_usage) << "\n";
+            error_stream << formatReadableSizeWithBinarySuffix(peak_memeory_usage) << "\n";
     }
 
     if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
@@ -2089,8 +2042,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
-    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
-    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef().max_parser_depth);
+    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef().max_parser_backtracks);
 
     // If there are only comments left until the end of file, we just
     // stop. The parser can't handle this situation because it always
@@ -2141,15 +2094,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
     //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
-    if (!insert_ast)
-    {
-        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
-        if (explain_ast && explain_ast->getExplainedQuery())
-        {
-            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
-        }
-    }
     const char * query_to_execute_end = this_query_end;
     if (insert_ast && insert_ast->data)
     {
@@ -2414,10 +2358,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(
-                        this_query_end,
-                        all_queries_end,
-                        static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
-                        static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
+                        this_query_end, all_queries_end,
+                        static_cast<unsigned>(client_context->getSettingsRef().max_parser_depth),
+                        static_cast<unsigned>(client_context->getSettingsRef().max_parser_backtracks));
                 }
 
                 // Report error.
@@ -2594,7 +2537,6 @@ void ClientBase::runInteractive()
         *suggest,
         history_file,
         getClientConfiguration().has("multiline"),
-        getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,
         query_delimiters,
         word_break_characters,
@@ -2729,6 +2671,14 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
+    if (!getClientConfiguration().has("log_comment"))
+    {
+        Settings settings = client_context->getSettingsCopy();
+        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
+        settings.log_comment = fs::absolute(fs::path(file_name));
+        client_context->setSettings(settings);
+    }
+
     return executeMultiQuery(queries_from_file);
 }
 
@@ -2825,12 +2775,11 @@ void ClientBase::runLibFuzzer() {}
 
 void ClientBase::clearTerminal()
 {
-    /// Move to the beginning of the line
-    /// and clear until end of screen.
+    /// Clear from cursor until end of screen.
     /// It is needed if garbage is left in terminal.
     /// Show cursor. It can be left hidden by invocation of previous programs.
     /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    output_stream << "\r" "\033[0J" "\033[?25h";
+    output_stream << "\033[0J" "\033[?25h";
 }
 
 void ClientBase::showClientVersion()

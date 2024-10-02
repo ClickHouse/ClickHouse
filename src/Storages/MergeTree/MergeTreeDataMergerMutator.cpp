@@ -671,7 +671,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry * merge_entry,
     std::unique_ptr<MergeListElement> projection_merge_list_element,
-    TableLockHolder & holder,
+    TableLockHolder,
     time_t time_of_merge,
     ContextPtr context,
     ReservationSharedPtr space_reservation,
@@ -691,7 +691,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         std::move(projection_merge_list_element),
         time_of_merge,
         context,
-        holder,
         space_reservation,
         deduplicate,
         deduplicate_by_columns,
@@ -750,10 +749,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                                              "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, /*rename_in_transaction=*/ true);
-
-    /// Explicitly rename part while still holding the lock for tmp folder to avoid cleanup
-    out_transaction.renameParts();
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction);
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())
@@ -783,14 +779,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}\n"
-            "Replaced parts:\n{}\n"
-            "Parts:\n{}\n",
-            new_data_part->name,
-            replaced_parts.size(),
-            parts.size(),
-            fmt::join(getPartsNames(replaced_parts), "\n"),
-            fmt::join(getPartsNames(parts), "\n"));
+        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}", new_data_part->name, replaced_parts.size(), parts.size());
     }
     else
     {

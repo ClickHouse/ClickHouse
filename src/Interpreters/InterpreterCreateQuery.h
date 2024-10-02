@@ -90,7 +90,6 @@ private:
         IndicesDescription indices;
         ConstraintsDescription constraints;
         ProjectionsDescription projections;
-        bool columns_inferred_from_select_query = false;
     };
 
     BlockIO createDatabase(ASTCreateQuery & create);
@@ -99,7 +98,6 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
-    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 

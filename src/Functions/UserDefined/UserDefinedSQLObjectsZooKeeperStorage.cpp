@@ -18,11 +18,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-extern const SettingsUInt64 max_parser_backtracks;
-extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -317,8 +312,8 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                global_context->getSettingsRef()[Setting::max_parser_depth],
-                global_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                global_context->getSettingsRef().max_parser_depth,
+                global_context->getSettingsRef().max_parser_backtracks);
             return ast;
         }
     }
@@ -411,7 +406,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::syncObjects(const zkutil::ZooKeeperP
     LOG_DEBUG(log, "Syncing user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
-    auto lock = getLock();
+    getLock();
 
     /// Remove stale objects
     removeAllObjectsExcept(object_names);

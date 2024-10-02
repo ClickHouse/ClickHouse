@@ -27,8 +27,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return createImpl(); }
-    static FunctionPtr createImpl()
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionStringOrArrayToT>();
     }

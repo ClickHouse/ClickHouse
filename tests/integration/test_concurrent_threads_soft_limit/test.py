@@ -1,10 +1,9 @@
+import pytest
+from helpers.cluster import ClickHouseCluster
+
 import threading
 import time
-
-import pytest
-
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
