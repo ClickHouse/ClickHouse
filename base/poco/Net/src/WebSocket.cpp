@@ -176,7 +176,7 @@ WebSocketImpl* WebSocket::connect(HTTPClientSession& cs, HTTPRequest& request, H
 	request.set("Sec-WebSocket-Key", key);
 	request.setChunkedTransferEncoding(false);
 	cs.setKeepAlive(true);
-	cs.sendRequest(request, nullptr, nullptr);
+	cs.sendRequest(request);
 	std::istream& istr = cs.receiveResponse(response);
 	if (response.getStatus() == HTTPResponse::HTTP_SWITCHING_PROTOCOLS)
 	{
@@ -194,7 +194,7 @@ WebSocketImpl* WebSocket::connect(HTTPClientSession& cs, HTTPRequest& request, H
 				cs.reset();
 				cs.proxyTunnel();
 			}
-			cs.sendRequest(request, nullptr, nullptr);
+			cs.sendRequest(request);
 			cs.receiveResponse(response);
 			if (response.getStatus() == HTTPResponse::HTTP_SWITCHING_PROTOCOLS)
 			{

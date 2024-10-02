@@ -244,7 +244,7 @@ void echoRequest(String data, HTTPSession & session)
     {
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
         request.setContentLength(data.size());
-        std::ostream & ostream = session.sendRequest(request, nullptr, nullptr);
+        std::ostream & ostream = session.sendRequest(request);
         ostream << data;
     }
 
@@ -695,7 +695,7 @@ TEST_F(ConnectionPoolTest, NoReceiveCall)
             auto data = String("Hello");
             Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
             request.setContentLength(data.size());
-            std::ostream & ostream = connection->sendRequest(request, nullptr, nullptr);
+            std::ostream & ostream = connection->sendRequest(request);
             ostream << data;
         }
 

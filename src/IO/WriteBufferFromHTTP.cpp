@@ -37,7 +37,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
 
     LOG_TRACE((getLogger("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
 
-    ostr = &session->sendRequest(request, nullptr, nullptr);
+    ostr = &session->sendRequest(request);
 }
 
 void WriteBufferFromHTTP::finalizeImpl()
