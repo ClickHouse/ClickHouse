@@ -18,7 +18,7 @@ import traceback
 import urllib.parse
 from functools import cache
 from pathlib import Path
-from typing import List, Sequence, Tuple, Union
+from typing import Any, List, Sequence, Tuple, Union
 
 import requests
 import urllib3
@@ -228,7 +228,9 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
     raise StopIteration("Function did not finished successfully")
 
 
-def subprocess_check_call(args, detach=False, nothrow=False):
+def subprocess_check_call(
+    args: Union[Sequence[str], str], detach: bool = False, nothrow: bool = False
+) -> str:
     # Uncomment for debugging
     # logging.info('run:' + ' '.join(args))
     return run_and_check(args, detach=detach, nothrow=nothrow)
@@ -2059,8 +2061,14 @@ class ClickHouseCluster:
         return self.docker_client.api.logs(container_id).decode()
 
     def exec_in_container(
-        self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs
-    ):
+        self,
+        container_id: str,
+        cmd: Sequence[str],
+        detach: bool = False,
+        nothrow: bool = False,
+        use_cli: bool = True,
+        **kwargs: Any,
+    ) -> str:
         if use_cli:
             logging.debug(
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
@@ -2071,10 +2079,11 @@ class ClickHouseCluster:
             if "privileged" in kwargs:
                 exec_cmd += ["--privileged"]
             result = subprocess_check_call(
-                exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
+                exec_cmd + [container_id] + list(cmd), detach=detach, nothrow=nothrow
             )
             return result
         else:
+            assert self.docker_client is not None
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
@@ -2083,16 +2092,15 @@ class ClickHouseCluster:
                 container_info = self.docker_client.api.inspect_container(container_id)
                 image_id = container_info.get("Image")
                 image_info = self.docker_client.api.inspect_image(image_id)
-                logging.debug(("Command failed in container {}: ".format(container_id)))
+                logging.debug("Command failed in container %s: ", container_id)
                 pprint.pprint(container_info)
                 logging.debug("")
-                logging.debug(
-                    ("Container {} uses image {}: ".format(container_id, image_id))
-                )
+                logging.debug("Container %s uses image %s: ", container_id, image_id)
                 pprint.pprint(image_info)
                 logging.debug("")
-                message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(
-                    " ".join(cmd), container_id, exit_code, output
+                message = (
+                    f'Cmd "{" ".join(cmd)}" failed in container {container_id}. '
+                    f"Return code {exit_code}. Output: {output}"
                 )
                 if nothrow:
                     logging.debug(message)
@@ -3367,7 +3375,7 @@ class ClickHouseInstance:
         self.name = name
         self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
-        self.cluster = cluster
+        self.cluster = cluster  # type: ClickHouseCluster
         self.hostname = hostname if hostname is not None else self.name
 
         self.external_dirs = external_dirs
@@ -3978,7 +3986,13 @@ class ClickHouseInstance:
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
-    def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
+    def exec_in_container(
+        self,
+        cmd: Sequence[str],
+        detach: bool = False,
+        nothrow: bool = False,
+        **kwargs: Any,
+    ) -> str:
         return self.cluster.exec_in_container(
             self.docker_id, cmd, detach, nothrow, **kwargs
         )
