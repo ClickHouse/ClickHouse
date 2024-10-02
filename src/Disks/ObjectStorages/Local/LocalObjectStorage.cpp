@@ -58,6 +58,7 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
             break;
         }
     }
+    modified_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }
 
