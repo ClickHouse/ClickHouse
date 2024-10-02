@@ -100,7 +100,10 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     size_t rows_to_read = field_rows.get<size_t>();
 
     if (rows_to_read == 0)
+    {
+        block.clear();
         return;
+    }
 
     size_t num_columns = block.columns();
 
