@@ -670,6 +670,7 @@ def test_python_client(started_cluster):
     cursor.execute("INSERT INTO table1 VALUES (1), (4)")
     cursor.execute("SELECT * FROM table1 ORDER BY a")
     assert cursor.fetchall() == [{"a": 1}, {"a": 1}, {"a": 3}, {"a": 4}]
+    cursor.execute("DROP DATABASE x")
 
 
 def test_golang_client(started_cluster, golang_container):
