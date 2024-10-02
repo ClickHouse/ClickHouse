@@ -172,8 +172,10 @@ def main():
 
 if __name__ == "__main__":
     from os import path, sys
+
     ACTIVE_DIR = path.dirname(path.abspath(__file__))
     sys.path.append(path.dirname(ACTIVE_DIR))
     from ci.env_helper import S3_BUILDS_BUCKET
     from ci.s3_helper import S3Helper
+
     main()
