@@ -141,6 +141,14 @@ Type: UInt64
 
 Default: 16
 
+## background_query_metric_log_schedule_pool_size
+
+The maximum number of threads that will be used for [query metric log](#query_metric_log).
+
+Type: UInt64
+
+Default: 8
+
 ## background_schedule_pool_size
 
 The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.

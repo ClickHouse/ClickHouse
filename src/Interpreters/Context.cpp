@@ -149,6 +149,8 @@ namespace CurrentMetrics
     extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
     extern const Metric BackgroundCommonPoolSize;
+    extern const Metric BackgroundQueryMetricLogSchedulePoolTask;
+    extern const Metric BackgroundQueryMetricLogSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
     extern const Metric MarksLoaderThreadsActive;
     extern const Metric MarksLoaderThreadsScheduled;
@@ -387,6 +389,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     OnceFlag message_broker_schedule_pool_initialized;
     mutable std::unique_ptr<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+    OnceFlag query_metric_log_schedule_pool_initialized;
+    mutable std::unique_ptr<BackgroundSchedulePool> query_metric_log_schedule_pool; /// A thread pool that can do background query metric logging.
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -3472,6 +3476,19 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     });
 
     return *shared->message_broker_schedule_pool;
+}
+
+BackgroundSchedulePool & Context::getQueryMetricLogPool() const
+{
+    callOnce(shared->query_metric_log_schedule_pool_initialized, [&] {
+        shared->query_metric_log_schedule_pool = std::make_unique<BackgroundSchedulePool>(
+            shared->server_settings.background_query_metric_log_schedule_pool_size,
+            CurrentMetrics::BackgroundQueryMetricLogSchedulePoolTask,
+            CurrentMetrics::BackgroundQueryMetricLogSchedulePoolSize,
+            "BgQMLSchPool");
+    });
+
+    return *shared->query_metric_log_schedule_pool;
 }
 
 ThrottlerPtr Context::getReplicatedFetchesThrottler() const

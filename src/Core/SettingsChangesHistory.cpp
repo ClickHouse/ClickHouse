@@ -75,6 +75,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
             {"query_metric_log_interval", 0, -1, "New setting."},
+            {"background_query_metric_log_schedule_pool_size", 0, 8, "New setting."},
             {"enable_secure_identifiers", false, false, "New setting."},
         }
     },
