@@ -1985,6 +1985,18 @@ Read data types in [binary format](../../sql-reference/data-types/data-types-bin
 
 Disabled by default.
 
+### output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
+
+Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
+
+Disabled by default.
+
+### input_format_binary_read_json_as_string {#input_format_binary_read_json_as_string}
+
+Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
+
+Disabled by default.
+
 ## Native format settings {#native-format-settings}
 
 ### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
