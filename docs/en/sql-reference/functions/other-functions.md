@@ -500,6 +500,30 @@ Useful in table engine parameters of `CREATE TABLE` queries where you need to sp
 currentDatabase()
 ```
 
+**Arguments**
+
+None.
+
+**Returned value**
+
+- `value` returns the current database name. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT currentDatabase()
+```
+
+Result:
+
+```response
+┌─currentDatabase()─┐
+│ default           │
+└───────────────────┘
+```
+
 ## currentUser {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
