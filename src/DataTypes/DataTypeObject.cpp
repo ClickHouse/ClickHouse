@@ -21,12 +21,13 @@
 #include <IO/Operators.h>
 
 #if USE_SIMDJSON
-#include <Common/JSONParsers/SimdJSONParser.h>
+#  include <Common/JSONParsers/SimdJSONParser.h>
 #endif
 #if USE_RAPIDJSON
-#include <Common/JSONParsers/RapidJSONParser.h>
+#  include <Common/JSONParsers/RapidJSONParser.h>
+#else
+#  include <Common/JSONParsers/DummyJSONParser.h>
 #endif
-#include <Common/JSONParsers/DummyJSONParser.h>
 
 namespace DB
 {
@@ -119,13 +120,19 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     switch (schema_format)
     {
         case SchemaFormat::JSON:
-#ifdef USE_SIMDJSON
-            return std::make_shared<SerializationJSON<SimdJSONParser>>(
-                std::move(typed_path_serializations),
-                paths_to_skip,
-                path_regexps_to_skip,
-                buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
-#elif USE_RAPIDJSON
+#if USE_SIMDJSON
+            auto context = CurrentThread::getQueryContext();
+            if (!context)
+                context = Context::getGlobalContextInstance();
+            if (context->getSettingsRef().allow_simdjson)
+                return std::make_shared<SerializationJSON<SimdJSONParser>>(
+                    std::move(typed_path_serializations),
+                    paths_to_skip,
+                    path_regexps_to_skip,
+                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
+#endif
+
+#if USE_RAPIDJSON
             return std::make_shared<SerializationJSON<RapidJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,
