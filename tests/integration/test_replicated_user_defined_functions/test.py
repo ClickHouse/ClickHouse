@@ -1,17 +1,19 @@
 import inspect
-import os.path
-import time
 from contextlib import nullcontext as does_not_raise
+from os import path as p
 
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.keeper_utils import get_active_zk_connections
+from helpers.keeper_utils import (
+    get_active_zk_connections,
+    replace_zookeeper_config,
+    reset_zookeeper_config,
+)
 from helpers.test_tools import TSV, assert_eq_with_retry
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
+default_zk_config = p.join(p.dirname(p.realpath(__file__)), "configs/zookeeper.xml")
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
 node1 = cluster.add_instance(
@@ -38,32 +40,6 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
-def wait_zookeeper_node_to_start(zk_nodes, timeout=60):
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            for instance in zk_nodes:
-                conn = cluster.get_kazoo_client(instance)
-                conn.get_children("/")
-            print("All instances of ZooKeeper started")
-            return
-        except Exception as ex:
-            print(("Can't connect to ZooKeeper " + str(ex)))
-            time.sleep(0.5)
-
-
-def replace_zookeeper_config(new_config):
-    node1.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
-    node2.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
-    node1.query("SYSTEM RELOAD CONFIG")
-    node2.query("SYSTEM RELOAD CONFIG")
-
-
-def revert_zookeeper_config():
-    with open(os.path.join(SCRIPT_DIR, "configs/zookeeper.xml"), "r") as f:
-        replace_zookeeper_config(f.read())
 
 
 def test_create_and_drop():
@@ -192,6 +168,7 @@ def test_reload_zookeeper():
 
     # remove zoo2, zoo3 from configs
     replace_zookeeper_config(
+        (node1, node2),
         inspect.cleandoc(
             """
             <clickhouse>
@@ -204,7 +181,7 @@ def test_reload_zookeeper():
                 </zookeeper>
             </clickhouse>
             """
-        )
+        ),
     )
 
     # config reloads, but can still work
@@ -228,7 +205,7 @@ def test_reload_zookeeper():
 
     # start zoo2, zoo3, user-defined functions will be readonly too, because it only connect to zoo1
     cluster.start_zookeeper_nodes(["zoo2", "zoo3"])
-    wait_zookeeper_node_to_start(["zoo2", "zoo3"])
+    cluster.wait_zookeeper_nodes_to_start(["zoo2", "zoo3"])
     assert node2.query(
         "SELECT name FROM system.functions WHERE name IN ['f1', 'f2', 'f3'] ORDER BY name"
     ) == TSV(["f1", "f2"])
@@ -238,6 +215,7 @@ def test_reload_zookeeper():
 
     # set config to zoo2, server will be normal
     replace_zookeeper_config(
+        (node1, node2),
         inspect.cleandoc(
             """
             <clickhouse>
@@ -250,7 +228,7 @@ def test_reload_zookeeper():
                 </zookeeper>
             </clickhouse>
             """
-        )
+        ),
     )
 
     active_zk_connections = get_active_zk_connections(node1)
@@ -278,7 +256,7 @@ def test_reload_zookeeper():
 
     # switch to the original version of zookeeper config
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    revert_zookeeper_config()
+    reset_zookeeper_config((node1, node2), default_zk_config)
 
 
 # Start without ZooKeeper must be possible, user-defined functions will be loaded after connecting to ZooKeeper.
@@ -295,7 +273,7 @@ def test_start_without_zookeeper():
     )
 
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    wait_zookeeper_node_to_start(["zoo1", "zoo2", "zoo3"])
+    cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
 
     assert_eq_with_retry(
         node2,
