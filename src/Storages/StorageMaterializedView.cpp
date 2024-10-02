@@ -425,6 +425,10 @@ void StorageMaterializedView::alter(
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
         new_metadata.columns = target_table_metadata->columns;
     }
+    else
+    {
+        checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
+    }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
