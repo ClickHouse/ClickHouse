@@ -1,14 +1,14 @@
 -- set max_block_size = 30000;
--- DROP TABLE test_table;
+DROP TABLE IF EXISTS test_table_h;
 -- DROP TABLE test_table_100k;
 
-CREATE TABLE test_table (
+CREATE TABLE test_table_h (
     id UInt64,
     data String
 ) ENGINE = MergeTree()
 ORDER BY id;
 
-INSERT INTO test_table
+INSERT INTO test_table_h
 SELECT number AS id, concat('data_', toString(number)) AS data
 FROM numbers(4);
 
@@ -25,22 +25,22 @@ FROM numbers(4);
 -- Only FROM expression is provided:
 SELECT '[FROM] Query 1 result:';
 
-SELECT * FROM test_table
+SELECT * FROM test_table_h
 LIMIT INRANGE FROM id = 0;
 
 SELECT '[FROM] Query 2 result:';
 
-SELECT * FROM test_table
+SELECT * FROM test_table_h
 LIMIT INRANGE FROM id = 3;
 
 SELECT '[FROM] Query 3 result:';
 
-SELECT * FROM test_table
+SELECT * FROM test_table_h
 LIMIT INRANGE FROM data LIKE 'data_2';
 
 SELECT '[FROM] Query 4 result:';
 
-SELECT * FROM test_table
+SELECT * FROM test_table_h
 LIMIT INRANGE FROM id = -1; 
 
 
@@ -50,22 +50,22 @@ SELECT '--------------------';
 -- Only TO expression is provided:
 SELECT '[TO] Query 1 result:';
 
-SELECT * FROM test_table
+SELECT * FROM test_table_h
 LIMIT INRANGE TO id = 0;
 
 SELECT '[TO] Query 2 result:';
 
-SELECT * FROM test_table
+SELECT * FROM test_table_h
 LIMIT INRANGE TO id = 3;
 
 SELECT '[TO] Query 3 result:';
 
-SELECT * FROM test_table
+SELECT * FROM test_table_h
 LIMIT INRANGE TO data LIKE 'data_2';
 
 -- SELECT '[TO] Query 4 result:';
 
--- SELECT * FROM test_table
+-- SELECT * FROM test_table_h
 -- LIMIT INRANGE TO id = -1; -- all data returned, exception thrown.
 
 
