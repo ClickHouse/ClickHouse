@@ -194,7 +194,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* offset */0,
         /* read_until_position */0,
         read_settings.remote_read_buffer_restrict_seek,
-        object.bytes_size);
+        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
