@@ -171,19 +171,6 @@ def test_rename_replicated(started_cluster, entity):
 
 # ReplicatedAccessStorage must be able to continue working after reloading ZooKeeper.
 def test_reload_zookeeper(started_cluster):
-    def wait_zookeeper_node_to_start(zk_nodes, timeout=60):
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                for instance in zk_nodes:
-                    conn = cluster.get_kazoo_client(instance)
-                    conn.get_children("/")
-                print("All instances of ZooKeeper started")
-                return
-            except Exception as ex:
-                print(("Can't connect to ZooKeeper " + str(ex)))
-                time.sleep(0.5)
-
     def replace_zookeeper_config(new_config):
         node1.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
         node2.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
@@ -227,7 +214,7 @@ def test_reload_zookeeper(started_cluster):
 
     ## start zoo2, zoo3, users will be readonly too, because it only connect to zoo1
     cluster.start_zookeeper_nodes(["zoo2", "zoo3"])
-    wait_zookeeper_node_to_start(["zoo2", "zoo3"])
+    cluster.wait_zookeeper_nodes_to_start(["zoo2", "zoo3"])
     assert node2.query(
         "SELECT name FROM system.users WHERE name IN ['u1', 'u2'] ORDER BY name"
     ) == TSV(["u1", "u2"])
