@@ -4018,7 +4018,7 @@ def rabbitmq_reject_broken_messages(
     deadletter_queue = f"deadletter_queue_handle_error_mode_{handle_error_mode}"
     channel.exchange_declare(exchange=deadletter_exchange)
 
-    exchange = f"select_{handle_error_mode}"
+    exchange = f"select_{handle_error_mode}_{int(time.time())}"
 
     result = channel.queue_declare(queue=deadletter_queue)
     channel.queue_bind(
