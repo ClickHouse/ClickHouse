@@ -74,6 +74,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
+            {"output_format_pretty_max_column_name_width", 0, 100, "Truncate column name in middle"},
+            {"output_format_pretty_max_column_name_width_histeresis", 0, 10, "Truncate column name in middle"},
         }
     },
     {"24.9",
