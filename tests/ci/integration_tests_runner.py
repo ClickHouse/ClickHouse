@@ -17,7 +17,7 @@ import time
 import zlib  # for crc32
 from collections import defaultdict
 from itertools import chain
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ci_utils import kill_ci_runner
 from env_helper import IS_CI
@@ -255,7 +255,8 @@ def clear_ip_tables_and_restart_daemons():
 
 
 class ClickhouseIntegrationTestsRunner:
-    def __init__(self, result_path, params):
+    def __init__(self, repo_path: str, result_path: str, params: dict):
+        self.repo_path = repo_path
         self.result_path = result_path
         self.params = params
 
@@ -313,11 +314,11 @@ class ClickhouseIntegrationTestsRunner:
     def shuffle_test_groups(self):
         return self.shuffle_groups != 0
 
-    def _pre_pull_images(self, repo_path):
-        image_cmd = self._get_runner_image_cmd(repo_path)
+    def _pre_pull_images(self):
+        image_cmd = self._get_runner_image_cmd()
 
         cmd = (
-            f"cd {repo_path}/tests/integration && "
+            f"cd {self.repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
             "--pre-pull --command ' echo Pre Pull finished ' "
         )
@@ -422,12 +423,12 @@ class ClickhouseIntegrationTestsRunner:
 
         return " ".join(result)
 
-    def _get_all_tests(self, repo_path):
-        image_cmd = self._get_runner_image_cmd(repo_path)
+    def _get_all_tests(self) -> List[str]:
+        image_cmd = self._get_runner_image_cmd()
         runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
-            f"cd {repo_path}/tests/integration && "
+            f"cd {self.repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
         )
 
@@ -508,10 +509,10 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 main_counters[state].append(test)
 
-    def _get_runner_image_cmd(self, repo_path):
+    def _get_runner_image_cmd(self):
         image_cmd = ""
         if self._can_run_with(
-            os.path.join(repo_path, "tests/integration", "runner"),
+            os.path.join(self.repo_path, "tests/integration", "runner"),
             "--docker-image-version",
         ):
             for img in IMAGES:
@@ -523,7 +524,7 @@ class ClickhouseIntegrationTestsRunner:
                     image_cmd += f" --docker-image-version={runner_version} "
                 else:
                     if self._can_run_with(
-                        os.path.join(repo_path, "tests/integration", "runner"),
+                        os.path.join(self.repo_path, "tests/integration", "runner"),
                         "--docker-compose-images-tags",
                     ):
                         image_cmd += (
@@ -564,7 +565,6 @@ class ClickhouseIntegrationTestsRunner:
 
     def try_run_test_group(
         self,
-        repo_path,
         test_group,
         tests_in_group,
         num_tries,
@@ -573,7 +573,6 @@ class ClickhouseIntegrationTestsRunner:
     ):
         try:
             return self.run_test_group(
-                repo_path,
                 test_group,
                 tests_in_group,
                 num_tries,
@@ -596,7 +595,6 @@ class ClickhouseIntegrationTestsRunner:
 
     def run_test_group(
         self,
-        repo_path,
         test_group,
         tests_in_group,
         num_tries,
@@ -620,7 +618,7 @@ class ClickhouseIntegrationTestsRunner:
                 tests_times[test] = 0
             return counters, tests_times, []
 
-        image_cmd = self._get_runner_image_cmd(repo_path)
+        image_cmd = self._get_runner_image_cmd()
         test_group_str = test_group.replace("/", "_").replace(".", "_")
 
         log_paths = []
@@ -639,10 +637,10 @@ class ClickhouseIntegrationTestsRunner:
                     test_names.add(test_name)
 
             if i == 0:
-                test_data_dirs = self._find_test_data_dirs(repo_path, test_names)
+                test_data_dirs = self._find_test_data_dirs(self.repo_path, test_names)
 
             info_basename = test_group_str + "_" + str(i) + ".nfo"
-            info_path = os.path.join(repo_path, "tests/integration", info_basename)
+            info_path = os.path.join(self.repo_path, "tests/integration", info_basename)
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
@@ -653,7 +651,7 @@ class ClickhouseIntegrationTestsRunner:
             # -p -- (p)assed
             # -s -- (s)kipped
             cmd = (
-                f"cd {repo_path}/tests/integration && "
+                f"cd {self.repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
                 f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- -rfEps --run-id={i} "
                 f"--color=no --durations=0 {_get_deselect_option(self.should_skip_tests())} "
@@ -661,7 +659,7 @@ class ClickhouseIntegrationTestsRunner:
             )
 
             log_basename = test_group_str + "_" + str(i) + ".log"
-            log_path = os.path.join(repo_path, "tests/integration", log_basename)
+            log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             with open(log_path, "w", encoding="utf-8") as log:
                 logging.info("Executing cmd: %s", cmd)
                 # ignore retcode, since it meaningful due to pipe to tee
@@ -678,7 +676,7 @@ class ClickhouseIntegrationTestsRunner:
             log_paths.append(log_result_path)
 
             for pytest_log_path in glob.glob(
-                os.path.join(repo_path, "tests/integration/pytest*.log")
+                os.path.join(self.repo_path, "tests/integration/pytest*.log")
             ):
                 new_name = (
                     test_group_str
@@ -689,11 +687,13 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 os.rename(
                     pytest_log_path,
-                    os.path.join(repo_path, "tests/integration", new_name),
+                    os.path.join(self.repo_path, "tests/integration", new_name),
                 )
                 extra_logs_names.append(new_name)
 
-            dockerd_log_path = os.path.join(repo_path, "tests/integration/dockerd.log")
+            dockerd_log_path = os.path.join(
+                self.repo_path, "tests/integration/dockerd.log"
+            )
             if os.path.exists(dockerd_log_path):
                 new_name = (
                     test_group_str
@@ -704,7 +704,7 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 os.rename(
                     dockerd_log_path,
-                    os.path.join(repo_path, "tests/integration", new_name),
+                    os.path.join(self.repo_path, "tests/integration", new_name),
                 )
                 extra_logs_names.append(new_name)
 
@@ -721,7 +721,7 @@ class ClickhouseIntegrationTestsRunner:
                 for test_name, test_time in new_tests_times.items():
                     tests_times[test_name] = test_time
 
-            test_data_dirs_new = self._find_test_data_dirs(repo_path, test_names)
+            test_data_dirs_new = self._find_test_data_dirs(self.repo_path, test_names)
             test_data_dirs_diff = self._get_test_data_dirs_difference(
                 test_data_dirs_new, test_data_dirs
             )
@@ -733,7 +733,7 @@ class ClickhouseIntegrationTestsRunner:
                     "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
                 )
                 self._compress_logs(
-                    os.path.join(repo_path, "tests/integration"),
+                    os.path.join(self.repo_path, "tests/integration"),
                     extra_logs_names + list(test_data_dirs_diff),
                     extras_result_path,
                 )
@@ -773,10 +773,10 @@ class ClickhouseIntegrationTestsRunner:
 
         return counters, tests_times, log_paths
 
-    def run_flaky_check(self, repo_path, build_path, should_fail=False):
+    def run_flaky_check(self, build_path, should_fail=False):
         pr_info = self.params["pr_info"]
 
-        tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
+        tests_to_run = get_changed_tests_to_run(pr_info, self.repo_path)
         if not tests_to_run:
             logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
@@ -807,7 +807,6 @@ class ClickhouseIntegrationTestsRunner:
                 final_retry += 1
                 logging.info("Running tests for the %s time", i)
                 group_counters, group_test_times, log_paths = self.try_run_test_group(
-                    repo_path,
                     f"bugfix_{id_counter}" if should_fail else f"flaky{id_counter}",
                     [test_to_run],
                     1,
@@ -873,17 +872,15 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
-    def run_impl(self, repo_path, build_path):
+    def run_impl(self, build_path):
         stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
             result_state, status_text, test_result, tests_log_paths = (
-                self.run_flaky_check(
-                    repo_path, build_path, should_fail=self.bugfix_validate_check
-                )
+                self.run_flaky_check(build_path, should_fail=self.bugfix_validate_check)
             )
         else:
             result_state, status_text, test_result, tests_log_paths = (
-                self.run_normal_check(build_path, repo_path)
+                self.run_normal_check(build_path)
             )
 
         if self.soft_deadline_time < time.time():
@@ -906,15 +903,15 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
-    def run_normal_check(self, build_path, repo_path):
+    def run_normal_check(self, build_path):
         self._install_clickhouse(build_path)
         logging.info("Pulling images")
-        self._pre_pull_images(repo_path)
+        self._pre_pull_images()
         logging.info(
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
         )
-        all_tests = self._get_all_tests(repo_path)
+        all_tests = self._get_all_tests()
         if self.run_by_hash_total != 0:
             grouped_tests = self.group_test_by_file(all_tests)
             all_filtered_by_hash_tests = []
@@ -922,7 +919,7 @@ class ClickhouseIntegrationTestsRunner:
                 if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
                     all_filtered_by_hash_tests += tests_in_group
             all_tests = all_filtered_by_hash_tests
-        parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
+        parallel_skip_tests = self._get_parallel_tests_skip_list(self.repo_path)
         logging.info(
             "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
         )
@@ -980,7 +977,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                repo_path, group, tests, MAX_RETRY, NUM_WORKERS, 0
+                group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():
@@ -1051,15 +1048,16 @@ def run():
     signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
-    repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH")
-    build_path = os.environ.get("CLICKHOUSE_TESTS_BUILD_PATH")
-    result_path = os.environ.get("CLICKHOUSE_TESTS_RESULT_PATH")
-    params_path = os.environ.get("CLICKHOUSE_TESTS_JSON_PARAMS_PATH")
+    repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH", "")
+    build_path = os.environ.get("CLICKHOUSE_TESTS_BUILD_PATH", "")
+    result_path = os.environ.get("CLICKHOUSE_TESTS_RESULT_PATH", "")
+    params_path = os.environ.get("CLICKHOUSE_TESTS_JSON_PARAMS_PATH", "")
 
-    assert params_path
+    assert all((repo_path, build_path, result_path, params_path))
+
     with open(params_path, "r", encoding="utf-8") as jfd:
         params = json.loads(jfd.read())
-    runner = ClickhouseIntegrationTestsRunner(result_path, params)
+    runner = ClickhouseIntegrationTestsRunner(repo_path, result_path, params)
 
     logging.info("Running tests")
 
@@ -1068,9 +1066,7 @@ def run():
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
 
-    state, description, test_results, _test_log_paths = runner.run_impl(
-        repo_path, build_path
-    )
+    state, description, test_results, _test_log_paths = runner.run_impl(build_path)
     logging.info("Tests finished")
 
     if IS_CI:
