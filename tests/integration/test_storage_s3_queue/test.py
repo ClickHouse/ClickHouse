@@ -3,6 +3,7 @@ import logging
 import random
 import string
 import time
+import uuid
 
 import pytest
 from helpers.client import QueryRuntimeException
@@ -960,7 +961,7 @@ def test_max_set_age(started_cluster):
     ).encode()
 
     # use a different filename for each test to allow running a bunch of them sequentially with --count
-    file_with_error = f"max_set_age_fail_{uuid4().hex[:8]}.csv"
+    file_with_error = f"max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
     wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
@@ -1892,10 +1893,10 @@ def test_commit_on_limit(started_cluster):
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
 
-    table_name = f"test_upgrade_2_{uuid4().hex[:8]}"
+    table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
@@ -1930,3 +1931,61 @@ def test_upgrade_2(started_cluster):
 
     node.restart_with_latest_version()
     assert table_name in node.query("SHOW TABLES")
+
+
+def test_replicated(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
+    )
+    node2.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+        database_name="r",
+    )
+
+    assert '"processing_threads_num":16' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
