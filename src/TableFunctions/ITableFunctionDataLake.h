@@ -106,7 +106,6 @@ struct TableFunctionHudiName
     static constexpr auto name = "hudi";
 };
 
-
 #if USE_AVRO
 #    if USE_AWS_S3
 using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3>;
