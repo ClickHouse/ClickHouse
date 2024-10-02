@@ -634,6 +634,8 @@ static void buildORCSearchArgumentImpl(
         }
         /// There is no optimization with space-filling curves for ORC.
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+        /// There is no optimization with pointInPolygon for ORC.
+        case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
         case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
         {
             builder.literal(orc::TruthValue::YES_NO_NULL);

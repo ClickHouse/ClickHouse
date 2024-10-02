@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsWriteFormat.h>
+#include <Core/ParallelReplicasMode.h>
 #include <base/types.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
@@ -58,6 +59,7 @@ class WriteBuffer;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \
@@ -78,6 +80,7 @@ class WriteBuffer;
     M(CLASS_NAME, ORCCompression) \
     M(CLASS_NAME, OverflowMode) \
     M(CLASS_NAME, OverflowModeGroupBy) \
+    M(CLASS_NAME, ParallelReplicasMode) \
     M(CLASS_NAME, ParallelReplicasCustomKeyFilterType) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \

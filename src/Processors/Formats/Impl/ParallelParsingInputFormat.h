@@ -130,6 +130,11 @@ public:
         return &last_block_missing_values;
     }
 
+    void setSerializationHints(const SerializationInfoByName & hints) override
+    {
+        serialization_hints = hints;
+    }
+
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
 
     String getName() const final { return "ParallelParsingBlockInputFormat"; }
@@ -208,6 +213,7 @@ private:
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
+    SerializationInfoByName serialization_hints;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
