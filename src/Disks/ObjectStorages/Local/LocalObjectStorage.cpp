@@ -42,9 +42,6 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
 
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    if (!read_settings.enable_filesystem_cache)
-        return IObjectStorage::patchSettings(read_settings);
-
     auto modified_settings{read_settings};
     /// For now we cannot allow asynchronous reader from local filesystem when CachedObjectStorage is used.
     switch (modified_settings.local_fs_method)
