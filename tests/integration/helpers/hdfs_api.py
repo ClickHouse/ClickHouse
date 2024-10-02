@@ -252,7 +252,7 @@ class HDFSApi(object):
             )
             logging.debug(f"{response.content} {response.headers}")
 
-    def write_data(self, path, local_path):
+    def write_file(self, path, local_path):
         logging.debug(
             "write_data protocol:{} host:{} port:{} path: {} user:{}, principal:{}".format(
                 self.protocol,
