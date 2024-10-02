@@ -12,7 +12,6 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
-    extern const SettingsBool merge_tree_flag;
 }
 
 namespace ErrorCodes
@@ -30,7 +29,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & pool_settings_,
-    const MergeTreeReadTask::BlockSizeParams & params_,
+    const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const ContextPtr & context_)
     : WithContext(context_)
     , parts_ranges(std::move(parts_))
@@ -42,7 +41,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , reader_settings(reader_settings_)
     , column_names(column_names_)
     , pool_settings(pool_settings_)
-    , params(params_)
+    , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
@@ -215,16 +214,8 @@ MergeTreeReadPoolBase::createTask(MergeTreeReadTaskInfoPtr read_info, MergeTreeR
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
         : nullptr; /// make a copy
 
-    const auto & settings = getContext()->getSettingsRef();
-    auto block_size_copy = params;
-    /// I strongly suspect this should be removed now
-    if (settings[Setting::merge_tree_flag])
-        block_size_copy.min_marks_to_read = read_info->min_marks_per_task;
-    else
-        block_size_copy.min_marks_to_read = 0;
-
     return std::make_unique<MergeTreeReadTask>(
-        read_info, std::move(task_readers), std::move(ranges), block_size_copy, std::move(task_size_predictor));
+        read_info, std::move(task_readers), std::move(ranges), block_size_params, std::move(task_size_predictor));
 }
 
 MergeTreeReadTaskPtr

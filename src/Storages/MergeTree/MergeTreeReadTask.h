@@ -111,7 +111,6 @@ public:
         UInt64 max_block_size_rows = DEFAULT_BLOCK_SIZE;
         UInt64 preferred_block_size_bytes = 1000000;
         UInt64 preferred_max_column_in_block_size_bytes = 0;
-        UInt64 min_marks_to_read = 0;
         double min_filtration_ratio = 0.00001;
     };
 
@@ -133,13 +132,12 @@ public:
 
     void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions);
 
-    BlockAndProgress read(const BlockSizeParams & params);
+    BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && range_readers.main.isCurrentRangeFinished(); }
 
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
     const MergeTreeRangeReader & getMainRangeReader() const { return range_readers.main; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
-    const BlockSizeParams & getBlockSizeParams() const { return block_size_params; }
 
     Readers releaseReaders() { return std::move(readers); }
 
@@ -147,7 +145,7 @@ public:
     static RangeReaders createRangeReaders(const Readers & readers, const PrewhereExprInfo & prewhere_actions);
 
 private:
-    UInt64 estimateNumRows(const BlockSizeParams & params) const;
+    UInt64 estimateNumRows() const;
 
     /// Shared information required for reading.
     MergeTreeReadTaskInfoPtr info;

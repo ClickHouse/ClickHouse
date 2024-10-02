@@ -188,7 +188,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
 
-        auto res = algorithm->readFromTask(*task, task->getBlockSizeParams());
+        auto res = algorithm->readFromTask(*task);
 
         if (res.row_count)
         {
