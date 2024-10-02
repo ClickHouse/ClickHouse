@@ -213,7 +213,8 @@ bool ASTAuthenticationData::hasSecretParts() const
     auto auth_type = *type;
     if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
         || (auth_type == AuthenticationType::SHA256_PASSWORD)
-        || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD))
+        || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD)
+        || (auth_type == AuthenticationType::BCRYPT_PASSWORD))
         return true;
 
     return childrenHaveSecretParts();
