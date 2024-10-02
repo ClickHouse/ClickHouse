@@ -2,6 +2,7 @@ import io
 import logging
 import random
 import time
+import uuid
 
 import pytest
 from helpers.client import QueryRuntimeException
@@ -924,7 +925,7 @@ def test_max_set_age(started_cluster):
     ).encode()
 
     # use a different filename for each test to allow running a bunch of them sequentially with --count
-    file_with_error = f"max_set_age_fail_{uuid4().hex[:8]}.csv"
+    file_with_error = f"max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
     wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
@@ -1814,10 +1815,10 @@ def test_commit_on_limit(started_cluster):
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
 
-    table_name = f"test_upgrade_2_{uuid4().hex[:8]}"
+    table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
