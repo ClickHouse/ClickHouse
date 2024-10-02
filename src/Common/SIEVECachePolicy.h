@@ -46,13 +46,13 @@ public:
     void setMaxCount(size_t max_count_) override
     {
         max_count = max_count_;
-        removeOverflow();
+        removeOverflow(false);
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
         max_size_in_bytes = max_size_in_bytes_;
-        removeOverflow();
+        removeOverflow(false);
     }
 
     void clear() override
@@ -153,7 +153,7 @@ public:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size_in_bytes += cell.size;
 
-        removeOverflow();
+        removeOverflow(true);
     }
 
     std::vector<KeyMapped> dump() const override
@@ -161,6 +161,14 @@ public:
         std::vector<KeyMapped> res;
         for (const auto & [key, cell] : cells)
             res.push_back({key, cell.value});
+        return res;
+    }
+
+    std::vector<Key> dumpQueue() const
+    {
+        std::vector<Key> res;
+        for (const auto & key : queue)
+            res.push_back(key);
         return res;
     }
 
@@ -172,6 +180,13 @@ public:
             return std::nullopt;
         const Cell & cell = it->second;
         return cell.visited;
+    }
+
+    std::optional<Key> getHand() const
+    {
+        if (hand == queue.end())
+            return std::nullopt;
+        return *hand;
     }
 
 private:
@@ -199,7 +214,7 @@ private:
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
 
-    void removeOverflow()
+    void removeOverflow(bool ignore_last_element)
     {
         /// SIEVE algorithm:
         /// `hand` goes through the queue.
@@ -207,12 +222,12 @@ private:
         /// If it sees a cell with visited = false, it evicts this cell.
 
         size_t current_weight_lost = 0;
-        size_t queue_size = cells.size();
 
-        while (queue_size > 0
-               && (current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue_size > max_count)))
+        while (queue.size() > 0
+               && (current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue.size() > max_count)))
         {
-            if (hand == queue.end())
+            if (hand == queue.end()
+                || (ignore_last_element && queue.size() > 1 && hand == std::prev(queue.end())))
             {
                 /// Reset hand to the start if we reach the end.
                 hand = queue.begin();
@@ -220,7 +235,6 @@ private:
 
             const Key & key = *hand;
             auto it = cells.find(key);
-
             if (it == cells.end())
             {
                 std::terminate(); // Queue became inconsistent
@@ -235,7 +249,6 @@ private:
 
                 hand = queue.erase(hand);
                 cells.erase(it);
-                --queue_size;
             }
             else
             {
@@ -243,6 +256,9 @@ private:
                 ++hand;
             }
         }
+
+        if (hand == queue.end())
+            hand = queue.begin();
 
         on_weight_loss_function(current_weight_lost);
 
