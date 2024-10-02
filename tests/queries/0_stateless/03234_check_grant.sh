@@ -28,6 +28,8 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=user_03234" --data-binary "SET RO
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=user_03234" --data-binary "CHECK GRANT SELECT ON ${db}.tb"
 
 # wildcard
-# expected to 1
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${db}.tbb* TO user_03234;"
+# expected to 1
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=user_03234" --data-binary "CHECK GRANT SELECT ON ${db}.tbb1"
+# expected to 1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=user_03234" --data-binary "CHECK GRANT SELECT ON ${db}.tbb2*"
