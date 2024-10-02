@@ -411,7 +411,9 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalLogDisk", path);
+        auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
+        disk->startup(Context::getGlobalContextInstance(), false);
+        return disk;
     };
 
     /// the most specialized path
@@ -437,7 +439,9 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
+        auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
+        disk->startup(Context::getGlobalContextInstance(), false);
+        return disk;
     };
 
     /// the most specialized path
@@ -463,7 +467,9 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalStateFileDisk", path);
+        auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
+        disk->startup(Context::getGlobalContextInstance(), false);
+        return disk;
     };
 
     if (config.has("keeper_server.state_storage_disk"))
