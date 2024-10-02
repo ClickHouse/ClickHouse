@@ -304,7 +304,7 @@ class TestCIConfig(unittest.TestCase):
         for job, config in CI.JOB_CONFIGS.items():
             if (
                 CI.is_build_job(job)
-                and not config.run_by_label
+                and not config.run_by_labels
                 and job not in expected_jobs_to_do
             ):
                 # expected to run all builds jobs
@@ -358,7 +358,7 @@ class TestCIConfig(unittest.TestCase):
                 continue
             if config.release_only:
                 continue
-            if config.run_by_label:
+            if config.run_by_labels:
                 continue
             expected_jobs_to_do.append(job)
 
@@ -391,7 +391,7 @@ class TestCIConfig(unittest.TestCase):
         for job, config in CI.JOB_CONFIGS.items():
             if config.pr_only:
                 continue
-            if config.run_by_label:
+            if config.run_by_labels:
                 continue
             if job in CI.MQ_JOBS:
                 continue
