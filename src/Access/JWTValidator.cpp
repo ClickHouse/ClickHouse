@@ -1,4 +1,4 @@
-#include "JWTVerifier.h"
+#include "JWTValidator.h"
 
 #include <exception>
 #include <fstream>
@@ -228,17 +228,17 @@ std::map<String, Field> stringify_params(const picojson::value &params, const St
 }
 }
 
-void IJWTVerifier::init(const JWTVerifierParams &_params)
+void IJWTValidator::init(const JWTValidator &_params)
 {
     params = _params;
 }
 
-bool IJWTVerifier::verify(const String &claims, const String &token, SettingsChanges & settings) const
+bool IJWTValidator::verify(const String &claims, const String &token, SettingsChanges & settings) const
 {
     try
     {
         auto decoded_jwt = jwt::decode(token);
-        if (!verify_impl(decoded_jwt))
+        if (!verifyImpl(decoded_jwt))
             return false;
         if (!check_claims(claims, decoded_jwt.get_payload_json()))
             return false;
@@ -258,7 +258,7 @@ bool IJWTVerifier::verify(const String &claims, const String &token, SettingsCha
     }
 }
 
-void SimpleJWTVerifierParams::validate() const
+void SimpleJWTValidatorParams::validate() const
 {
     auto lower_algo = Poco::toLower(algo);
     if (lower_algo == "none")
@@ -286,24 +286,24 @@ void SimpleJWTVerifierParams::validate() const
         algo == "hs384"   ||
         algo == "hs512"   )
     {
-        if (!single_key.empty())
+        if (!static_key.empty())
             return;
-        throw DB::Exception(ErrorCodes::JWT_ERROR, "`single_key` parameter required for {}", algo);
+        throw DB::Exception(ErrorCodes::JWT_ERROR, "`static_key` parameter required for {}", algo);
     }
 
     throw DB::Exception(ErrorCodes::JWT_ERROR, "Unknown algorithm {}", algo);
 }
 
-SimpleJWTVerifier::SimpleJWTVerifier(const String & _name)
-    : IJWTVerifier(_name)
+SimpleJWTValidator::SimpleJWTValidator(const String & _name)
+    : IJWTValidator(_name)
     , verifier(jwt::verify())
 {}
 
-void SimpleJWTVerifier::init(const SimpleJWTVerifierParams & _params)
+void SimpleJWTValidator::init(const SimpleJWTValidatorParams & _params)
 {
     auto algo = Poco::toLower(_params.algo);
 
-    IJWTVerifier::init(_params);
+    IJWTValidator::init(_params);
     verifier = jwt::verify();
     if (algo == "none")
         verifier = verifier.allow_algorithm(jwt::algorithm::none());
@@ -333,8 +333,8 @@ void SimpleJWTVerifier::init(const SimpleJWTVerifierParams & _params)
         verifier = verifier.allow_algorithm(jwt::algorithm::es512(_params.public_key, _params.private_key, _params.private_key_password, _params.private_key_password));
     else if (algo.starts_with("hs"))
     {
-        auto key = _params.single_key;
-        if (_params.single_key_in_base64)
+        auto key = _params.static_key;
+        if (_params.static_key_in_base64)
             key = base64Decode(key);
         if (algo == "hs256")
             verifier = verifier.allow_algorithm(jwt::algorithm::hs256(key));
@@ -349,18 +349,18 @@ void SimpleJWTVerifier::init(const SimpleJWTVerifierParams & _params)
         throw Exception(ErrorCodes::JWT_ERROR, "Unknown algorithm {}", _params.algo);
 }
 
-bool SimpleJWTVerifier::verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const
+bool SimpleJWTValidator::verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const
 {
     verifier.verify(token);
     return true;
 }
 
-JWKSVerifier::JWKSVerifier(const String & _name, std::shared_ptr<IJWKSProvider> _provider)
-    : IJWTVerifier(_name)
+JWKSValidator::JWKSValidator(const String & _name, std::shared_ptr<IJWKSProvider> _provider)
+    : IJWTValidator(_name)
     , provider(_provider)
 {}
 
-bool JWKSVerifier::verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const
+bool JWKSValidator::verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const
 {
     auto jwk = provider->getJWKS().get_jwk(token.get_key_id());
     auto subject = token.get_subject();

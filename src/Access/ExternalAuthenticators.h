@@ -3,8 +3,8 @@
 #include <Access/Credentials.h>
 #include <Access/GSSAcceptor.h>
 #include <Access/HTTPAuthClient.h>
+#include <Access/JWTValidator.h>
 #include <Access/LDAPClient.h>
-#include <Access/JWTVerifier.h>
 #include <base/defines.h>
 #include <base/extended_types.h>
 #include <base/types.h>
@@ -71,7 +71,7 @@ private:
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;
     std::unordered_map<String, HTTPAuthClientParams> http_auth_servers TSA_GUARDED_BY(mutex) ;
-    std::unordered_map<String, std::unique_ptr<IJWTVerifier>> jwt_verifiers TSA_GUARDED_BY(mutex) ;
+    std::unordered_map<String, std::unique_ptr<IJWTValidator>> jwt_validators TSA_GUARDED_BY(mutex) ;
 
     void resetImpl() TSA_REQUIRES(mutex);
 };

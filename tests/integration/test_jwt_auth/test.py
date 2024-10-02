@@ -32,7 +32,7 @@ def curl_with_jwt(token, ip, https=False):
     return curl
 
 
-# See helpers.py if you need to re-create tokens
+# See helpers/ directory if you need to re-create tokens (or understand how they are created)
 def test_static_key(started_cluster):
     res = client.exec_in_container(
         [

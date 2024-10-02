@@ -16,32 +16,32 @@ namespace DB
 
 class SettingsChanges;
 
-struct JWTVerifierParams
+struct JWTValidator
 {
     String settings_key;
 };
 
-class IJWTVerifier
+class IJWTValidator
 {
 public:
-    explicit IJWTVerifier(const String & _name)
+    explicit IJWTValidator(const String & _name)
         : name(_name)
     {}
-    void init(const JWTVerifierParams &_params);
+    void init(const JWTValidator &_params);
     bool verify(const String &claims, const String &token, SettingsChanges & settings) const;
-    virtual ~IJWTVerifier() = default;
+    virtual ~IJWTValidator() = default;
 protected:
-    virtual bool verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const = 0;
-    JWTVerifierParams params;
+    virtual bool verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const = 0;
+    JWTValidator params;
     const String name;
 };
 
-struct SimpleJWTVerifierParams:
-    public JWTVerifierParams
+struct SimpleJWTValidatorParams :
+    public JWTValidator
 {
     String algo;
-    String single_key;
-    bool single_key_in_base64;
+    String static_key;
+    bool static_key_in_base64;
     String public_key;
     String private_key;
     String public_key_password;
@@ -49,13 +49,13 @@ struct SimpleJWTVerifierParams:
     void validate() const;
 };
 
-class SimpleJWTVerifier: public IJWTVerifier
+class SimpleJWTValidator : public IJWTValidator
 {
 public:
-    explicit SimpleJWTVerifier(const String & _name);
-    void init(const SimpleJWTVerifierParams & _params);
+    explicit SimpleJWTValidator(const String & _name);
+    void init(const SimpleJWTValidatorParams & _params);
 private:
-    bool verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const override;
+    bool verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const override;
     jwt::verifier<jwt::default_clock, jwt::traits::kazuho_picojson> verifier;
 };
 
@@ -66,12 +66,12 @@ public:
     virtual jwt::jwks<jwt::traits::kazuho_picojson> getJWKS() = 0;
 };
 
-class JWKSVerifier: public IJWTVerifier
+class JWKSValidator : public IJWTValidator
 {
 public:
-    explicit JWKSVerifier(const String & _name, std::shared_ptr<IJWKSProvider> _provider);
+    explicit JWKSValidator(const String & _name, std::shared_ptr<IJWKSProvider> _provider);
 private:
-    bool verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const override;
+    bool verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const override;
 
     std::shared_ptr<IJWKSProvider> provider;
 };

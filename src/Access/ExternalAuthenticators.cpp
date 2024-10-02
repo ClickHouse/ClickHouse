@@ -10,7 +10,7 @@
 #include <Common/quoteString.h>
 #include "Access/AccessControl.h"
 #include "Access/Credentials.h"
-#include "Access/JWTVerifier.h"
+#include "Access/JWTValidator.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -261,7 +261,7 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     return http_auth_params;
 }
 
-std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConfiguration & config, const String & prefix, const String &name, const String &global_settings_key)
+std::unique_ptr<DB::IJWTValidator> makeJWTValidator(const Poco::Util::AbstractConfiguration & config, const String & prefix, const String &name, const String &global_settings_key)
 {
     auto settings_key = String(global_settings_key);
     if (config.hasProperty(prefix + ".settings_key"))
@@ -269,17 +269,17 @@ std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConf
 
     if (config.hasProperty(prefix + ".algo"))
     {
-        SimpleJWTVerifierParams params = {};
+        SimpleJWTValidatorParams params = {};
         params.settings_key = settings_key;
         params.algo = config.getString(prefix + ".algo");
-        params.single_key = config.getString(prefix + ".single_key", "");
-        params.single_key_in_base64 = config.getBool(prefix + ".single_key_in_base64", false);
+        params.static_key = config.getString(prefix + ".static_key", "");
+        params.static_key_in_base64 = config.getBool(prefix + ".static_key_in_base64", false);
         params.public_key = config.getString(prefix + ".public_key", "");
         params.private_key = config.getString(prefix + ".private_key", "");
         params.public_key_password = config.getString(prefix + ".public_key_password", "");
         params.private_key_password = config.getString(prefix + ".private_key_password", "");
         params.validate();
-        auto result = std::make_unique<SimpleJWTVerifier>(name);
+        auto result = std::make_unique<SimpleJWTValidator>(name);
         result->init(params);
         return result;
     }
@@ -317,8 +317,8 @@ std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConf
     }
     else
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported configuration");
-    auto result = std::make_unique<JWKSVerifier>(name, provider);
-    JWTVerifierParams params = {.settings_key = settings_key};
+    auto result = std::make_unique<JWKSValidator>(name, provider);
+    JWTValidator params = {.settings_key = settings_key};
     result->init(params);
     return result;
 }
@@ -340,13 +340,13 @@ void ExternalAuthenticators::resetImpl()
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
-    jwt_verifiers.clear();
+    jwt_validators.clear();
 }
 
 bool ExternalAuthenticators::isJWTAllowed() const
 {
     std::lock_guard lock(mutex);
-    return !jwt_verifiers.empty();
+    return !jwt_validators.empty();
 }
 
 void ExternalAuthenticators::reset()
@@ -366,10 +366,10 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::size_t ldap_servers_key_count = 0;
     std::size_t kerberos_keys_count = 0;
     std::size_t http_auth_server_keys_count = 0;
-    std::size_t jwt_verifiers_count = 0;
+    std::size_t jwt_validators_count = 0;
 
     const String http_auth_servers_config = "http_authentication_servers";
-    const String jwt_verifiers_config = "jwt_verifiers";
+    const String jwt_validators_config = "jwt_validators";
 
     for (auto key : all_keys)
     {
@@ -382,7 +382,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");
         http_auth_server_keys_count += (key == http_auth_servers_config);
-        jwt_verifiers_count += (key == jwt_verifiers_config);
+        jwt_validators_count += (key == jwt_validators_config);
     }
 
     if (ldap_servers_key_count > 1)
@@ -394,8 +394,8 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     if (http_auth_server_keys_count > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple http_authentication_servers sections are not allowed");
 
-    if (jwt_verifiers_count > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple jwt_verifiers sections are not allowed");
+    if (jwt_validators_count > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple jwt_validators sections are not allowed");
 
     Poco::Util::AbstractConfiguration::Keys http_auth_server_names;
     config.keys(http_auth_servers_config, http_auth_server_names);
@@ -452,23 +452,23 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         tryLogCurrentException(log, "Could not parse Kerberos section");
     }
 
-    Poco::Util::AbstractConfiguration::Keys jwt_verifiers_keys;
-    config.keys(jwt_verifiers_config, jwt_verifiers_keys);
-    jwt_verifiers.clear();
-    String jwt_verifier_settings_key;
-    if (config.has(jwt_verifiers_config + ".settings_key"))
-        jwt_verifier_settings_key = config.getString(jwt_verifiers_config + ".settings_key");
-    for (const auto & jwt_verifier : jwt_verifiers_keys)
+    Poco::Util::AbstractConfiguration::Keys jwt_validators_keys;
+    config.keys(jwt_validators_config, jwt_validators_keys);
+    jwt_validators.clear();
+    String jwt_validator_settings_key;
+    if (config.has(jwt_validators_config + ".settings_key"))
+        jwt_validator_settings_key = config.getString(jwt_validators_config + ".settings_key");
+    for (const auto & jwt_validator : jwt_validators_keys)
     {
-        if (jwt_verifier == "settings_key") continue;
-        String prefix = fmt::format("{}.{}", jwt_verifiers_config, jwt_verifier);
+        if (jwt_validator == "settings_key") continue;
+        String prefix = fmt::format("{}.{}", jwt_validators_config, jwt_validator);
         try
         {
-            jwt_verifiers[jwt_verifier] = makeJWTVerifier(config, prefix, jwt_verifier, jwt_verifier_settings_key);
+            jwt_validators[jwt_validator] = makeJWTValidator(config, prefix, jwt_validator, jwt_validator_settings_key);
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Could not parse JWT verifier" + backQuote(jwt_verifier));
+            tryLogCurrentException(log, "Could not parse JWT verifier" + backQuote(jwt_validator));
         }
     }
 }
@@ -656,7 +656,7 @@ bool ExternalAuthenticators::checkJWTCredentials(const String &claims, const JWT
     const auto token = String(credentials.getToken());
     const auto &user_name = credentials.getUserName();
 
-    for (const auto &it : jwt_verifiers)
+    for (const auto &it : jwt_validators)
     {
         if (it.second->verify(claims, token, settings))
         {
