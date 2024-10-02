@@ -151,11 +151,12 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         }
         column_permutation.resize(n);
 
-        pipeline->addSimpleTransform([column_perm = std::move(column_permutation)](const Block & header) mutable
+        pipeline->addSimpleTransform([&column_permutation](const Block & header)
         {
-            return std::make_shared<ColumnPermuteTransform>(header, std::move(column_perm));
+            return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
         });
     }
+
 
     return pipeline;
 }
