@@ -39,7 +39,7 @@ EOF
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(obj)) as path FROM t_json_13 order by path;"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(obj.key1[]))) as path FROM t_json_13 order by path;"
 
-$CLICKHOUSE_CLIENT -q "SELECT obj FROM t_json_13 ORDER BY obj.id FORMAT JSONEachRow" --output_format_json_named_tuples_as_objects 1
+$CLICKHOUSE_CLIENT -q "SELECT obj FROM t_json_13 ORDER BY obj.id FORMAT JSONEachRow" --output_format_json_named_tuples_as_objects 1 --allow_suspicious_types_in_order_by 1
 $CLICKHOUSE_CLIENT -q "SELECT \
     obj.key_1.key_2.key_3.key_8, \
     obj.key_1.key_2.key_3.key_4.key_5, \
