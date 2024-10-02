@@ -41,8 +41,8 @@ private:
     size_t to_filter_column_position = 0;
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
-    std::atomic<bool> from_index_found;
-    std::atomic<bool> to_index_found;
+    bool from_index_found;
+    bool to_index_found;
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
