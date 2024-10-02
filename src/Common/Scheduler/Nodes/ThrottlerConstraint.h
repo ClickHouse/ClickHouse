@@ -38,6 +38,10 @@ public:
     {
         // We should cancel event on destruction to avoid dangling references from event queue
         event_queue->cancelPostponed(postponed);
+
+        // We need to clear `parent` in child to avoid dangling reference
+        if (child)
+            removeChild(child.get());
     }
 
     const String & getTypeName() const override

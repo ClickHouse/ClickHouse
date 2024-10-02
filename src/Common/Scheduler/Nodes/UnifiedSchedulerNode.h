@@ -67,6 +67,7 @@ private:
     /// Helper function for managing a parent of a node
     static void reparent(const SchedulerNodePtr & node, ISchedulerNode * new_parent)
     {
+        chassert(node);
         chassert(new_parent);
         if (new_parent == node->parent)
             return;
@@ -139,7 +140,8 @@ private:
             {
                 // Remove fair if the only child has left
                 chassert(root);
-                root.reset(); // it will be still alive because it is attached to hierarchy for now
+                detach(root);
+                root.reset();
                 return children.begin()->second; // The last child is a new root now
             }
             else if (children.empty())
@@ -216,7 +218,8 @@ private:
                 {
                     // Remove priority node if the only child-branch has left
                     chassert(root);
-                    root.reset(); // it will be still alive because it is attached to hierarchy for now
+                    detach(root);
+                    root.reset();
                     return branches.begin()->second.getRoot(); // The last child-branch is a new root now
                 }
                 else if (branches.empty())
@@ -359,6 +362,13 @@ public:
     {
         immediate_child = impl.initialize(event_queue, settings);
         reparent(immediate_child, this);
+    }
+
+    ~UnifiedSchedulerNode() override
+    {
+        // We need to clear `parent` in child to avoid dangling references
+        if (immediate_child)
+            removeChild(immediate_child.get());
     }
 
     /// Attaches a unified child as a leaf of internal subtree and insert or update all the intermediate nodes

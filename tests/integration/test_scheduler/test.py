@@ -5,6 +5,7 @@
 import time
 import threading
 import pytest
+import random
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -646,6 +647,68 @@ def test_create_workload():
     node.restart_clickhouse() # Check that workloads persist
     do_checks()
 
+
+def test_workload_hierarchy_changes():
+    node.query("create resource io_write (write disk s3_no_resource);")
+    node.query("create resource io_read (read disk s3_no_resource);")
+    queries = [
+        "create workload all;",
+        "create workload X in all settings priority = 0;",
+        "create workload Y in all settings priority = 1;",
+        "create workload A1 in X settings priority = -1;",
+        "create workload B1 in X settings priority = 1;",
+        "create workload C1 in Y settings priority = -1;",
+        "create workload D1 in Y settings priority = 1;",
+        "create workload A2 in X settings priority = -1;",
+        "create workload B2 in X settings priority = 1;",
+        "create workload C2 in Y settings priority = -1;",
+        "create workload D2 in Y settings priority = 1;",
+        "drop workload A1;",
+        "drop workload A2;",
+        "drop workload B1;",
+        "drop workload B2;",
+        "drop workload C1;",
+        "drop workload C2;",
+        "drop workload D1;",
+        "drop workload D2;",
+        "create workload Z in all;",
+        "create workload A1 in Z settings priority = -1;",
+        "create workload A2 in Z settings priority = -1;",
+        "create workload A3 in Z settings priority = -1;",
+        "create workload B1 in Z settings priority = 1;",
+        "create workload B2 in Z settings priority = 1;",
+        "create workload B3 in Z settings priority = 1;",
+        "create workload C1 in X settings priority = -1;",
+        "create workload C2 in X settings priority = -1;",
+        "create workload C3 in X settings priority = -1;",
+        "create workload D1 in X settings priority = 1;",
+        "create workload D2 in X settings priority = 1;",
+        "create workload D3 in X settings priority = 1;",
+        "drop workload A1;",
+        "drop workload B1;",
+        "drop workload C1;",
+        "drop workload D1;",
+        "drop workload A2;",
+        "drop workload B2;",
+        "drop workload C2;",
+        "drop workload D2;",
+        "drop workload A3;",
+        "drop workload B3;",
+        "drop workload C3;",
+        "drop workload D3;",
+        "drop workload X;",
+        "drop workload Y;",
+        "drop workload Z;",
+        "drop workload all;",
+    ]
+    for iteration in range(3):
+        split_idx = random.randint(1, len(queries) - 2)
+        for query_idx in range(0, split_idx):
+            node.query(queries[query_idx])
+        node.query("create resource io_test (write disk non_existent_disk, read disk non_existent_disk);")
+        node.query("drop resource io_test;")
+        for query_idx in range(split_idx, len(queries)):
+            node.query(queries[query_idx])
 
 
 def test_resource_read_and_write():

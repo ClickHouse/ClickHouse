@@ -125,6 +125,8 @@ void IOResourceManager::Resource::deleteNode(const NodeInfo & info)
             root_node.reset();
         }
 
+        node_for_workload.erase(info.name);
+
         updateCurrentVersion();
     });
 }

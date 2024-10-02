@@ -31,6 +31,13 @@ public:
         , max_cost(max_cost_)
     {}
 
+    ~SemaphoreConstraint() override
+    {
+        // We need to clear `parent` in child to avoid dangling references
+        if (child)
+            removeChild(child.get());
+    }
+
     const String & getTypeName() const override
     {
         static String type_name("inflight_limit");

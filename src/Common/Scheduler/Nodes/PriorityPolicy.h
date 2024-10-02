@@ -43,6 +43,13 @@ public:
         : ISchedulerNode(event_queue_, node_info)
     {}
 
+    ~PriorityPolicy() override
+    {
+        // We need to clear `parent` in all children to avoid dangling references
+        while (!children.empty())
+            removeChild(children.begin()->second.get());
+    }
+
     const String & getTypeName() const override
     {
         static String type_name("priority");
