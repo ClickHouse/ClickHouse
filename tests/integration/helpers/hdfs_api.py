@@ -227,8 +227,6 @@ class HDFSApi(object):
 
         logging.debug("HDFS api response:{}".format(response.headers))
 
-        # additional_params = '&'.join(
-        #     response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
         if self.kerberized:
             location = response.headers["Location"].replace(
                 "kerberizedhdfs1:1006", "{}:{}".format(self.hdfs_ip, self.data_port)
@@ -285,8 +283,6 @@ class HDFSApi(object):
 
         logging.debug("HDFS api response:{}".format(response.headers))
 
-        # additional_params = '&'.join(
-        #     response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
         if self.kerberized:
             location = response.headers["Location"].replace(
                 "kerberizedhdfs1:1006", "{}:{}".format(self.hdfs_ip, self.data_port)
