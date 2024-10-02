@@ -5,8 +5,8 @@ import shutil
 from enum import Enum
 
 from minio import Minio
-
 from pyhdfs import HdfsClient
+
 
 class CloudUploader:
 
