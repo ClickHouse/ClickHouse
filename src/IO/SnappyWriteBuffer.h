@@ -11,7 +11,7 @@ namespace DB
 /// Performs compression using snappy library and write compressed data to the underlying buffer.
 class SnappyWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
-    using BASE = BufferWithOwnMemory<WriteBuffer>;
+    using Base = BufferWithOwnMemory<WriteBuffer>;
 public:
     explicit SnappyWriteBuffer(
         std::unique_ptr<WriteBuffer> out_,

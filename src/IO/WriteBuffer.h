@@ -124,6 +124,9 @@ public:
         if (finalized)
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
 
+        if (canceled)
+            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to canceled buffer"};
+
         nextIfAtEnd();
         *pos = x;
         ++pos;
@@ -214,10 +217,10 @@ private:
 };
 
 
-// AutoCancelWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
-// AutoCancelWriteBuffer could not be inherited.
-// Otherwise cancel method could not call proper cancelImpl because inheritor is destroyed already.
-// But the ussage of final inheritance is avoided in faivor to keep the possibility to use std::make_shared.
+// AutoCanceledWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
+// AutoCanceledWriteBuffer could not be inherited.
+// Otherwise cancel method could not call proper cancelImpl ьуерщв because inheritor is destroyed already.
+// But the ussage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
 template<class Base>
 class AutoCanceledWriteBuffer final : public Base
 {
@@ -234,12 +237,12 @@ public:
 };
 
 
-/// That class is applied only by
-// AutoCancelWriteBuffer could not be inherited.
+/// That class is applied only in 2 folloving cases
 // case 1 - HTTPServerResponse. The external interface HTTPResponse forces that.
-// case 3 - WriteBufferFromVector, WriteBufferFromString. It is safe to make them autofinaliziable.
+// case 2 - WriteBufferFromVector, WriteBufferFromString. It is safe to make them autofinaliziable.
+// AutoFinalizedWriteBuffer could not be inherited due to a restriction on polymorphics call in d-tor.
 template<class Base>
-class AutoFinalizedWriteBuffer final: public Base
+class AutoFinalizedWriteBuffer final : public Base
 {
     static_assert(std::derived_from<Base, WriteBuffer>);
 

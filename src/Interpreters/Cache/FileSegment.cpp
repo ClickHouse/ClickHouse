@@ -979,6 +979,7 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     if (cache_writer)
         cache_writer->cancel();
     cache_writer.reset();
+    remote_file_reader.reset();
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)

@@ -44,11 +44,12 @@ public:
     }
 
 private:
-    void finalizeImpl() override;
     void nextImpl() override;
     /// finalize call does not affect the out buffer.
-    /// That is made in order to handle the usecase when several CompressedWriteBuffer's write to the one file
-    /// cancel call canecels the out buffer
+    /// That is made in order to handle the use case when several CompressedWriteBuffers write to the one file.
+    /// Usually the CompressedWriteBuffer does not own the out buffer.
+    void finalizeImpl() override;
+    /// cancel call cancels the out buffer.
     void cancelImpl() noexcept override;
 
     WriteBuffer & out;

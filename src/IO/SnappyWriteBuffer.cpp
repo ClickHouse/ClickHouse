@@ -73,13 +73,13 @@ void SnappyWriteBuffer::finishImpl()
 
 void SnappyWriteBuffer::cancelImpl() noexcept
 {
-    BASE::cancelImpl();
+    Base::cancelImpl();
     out->cancel();
 }
 
 void SnappyWriteBuffer::finalizeImpl()
 {
-    BASE::finalizeImpl();
+    Base::finalizeImpl();
     finish();
 }
 

@@ -12,16 +12,15 @@ namespace DB
 WriteBuffer::~WriteBuffer()
 {
     // That destructor could be call with finalized=false in case of exceptions
-    if (!finalized && !canceled  && !isStackUnwinding())
+    if (!finalized && !canceled && !isStackUnwinding())
     {
         LoggerPtr log = getLogger("WriteBuffer");
         LOG_ERROR(
             log,
             "WriteBuffer is neither finalized nor canceled when destructor is called. "
             "No exceptions in flight are detected. "
-            "The file might not be written at all or might be truncated. exception_level at c-tor {} ar d-tor {}."
+            "The file might not be written at all or might be truncated."
             "Stack trace: {}",
-            exception_level, std::uncaught_exceptions(),
             StackTrace().toString());
         chassert(false && "WriteBuffer is not finalized in destructor.");
     }
