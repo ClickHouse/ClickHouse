@@ -33,26 +33,49 @@ template <typename T, bool strict_once>
 struct AggregateFunctionWindowFunnelData
 {
     constexpr static bool strict_once_enabled = strict_once;
+    using TimeType = T;
 
-    struct TimestampEvent
+    struct TimestampEventSimple
     {
         T timestamp;
         UInt8 event_type;
-        UInt64 unique_id [[ maybe_unused ]];
 
-        TimestampEvent() = default;
-        TimestampEvent(T timestamp_, UInt8 event_type_, UInt64 unique_id_)
-            : timestamp(timestamp_), event_type(event_type_), unique_id(unique_id_) {}
+        TimestampEventSimple(T timestamp_, UInt8 event_type_, UInt64)
+            : timestamp(timestamp_), event_type(event_type_) {}
 
         // Comparison operator for sorting events
-        bool operator<(const TimestampEvent & other) const
+        bool operator<(const TimestampEventSimple & other) const
         {
-            if constexpr (strict_once_enabled)
-                return std::tie(timestamp, event_type, unique_id) < std::tie(other.timestamp, other.event_type, other.unique_id);
-            else
-                return std::tie(timestamp, event_type) < std::tie(other.timestamp, other.event_type);
+            return std::tie(timestamp, event_type) < std::tie(other.timestamp, other.event_type);
+        }
+
+        bool operator<=(const TimestampEventSimple & other) const
+        {
+            return std::tie(timestamp, event_type) <= std::tie(other.timestamp, other.event_type);
         }
     };
+
+    struct TimestampEventWithId
+    {
+        T timestamp;
+        UInt8 event_type;
+        UInt64 unique_id;
+
+        TimestampEventWithId(T timestamp_, UInt8 event_type_, UInt64 unique_id_)
+            : timestamp(timestamp_), event_type(event_type_), unique_id(unique_id_) {}
+
+        bool operator<(const TimestampEventWithId & other) const
+        {
+            return std::tie(timestamp, event_type, unique_id) < std::tie(other.timestamp, other.event_type, other.unique_id);
+        }
+
+        bool operator<=(const TimestampEventWithId & other) const
+        {
+            return std::tie(timestamp, event_type, unique_id) <= std::tie(other.timestamp, other.event_type, other.unique_id);
+        }
+    };
+
+    using TimestampEvent = std::conditional_t<strict_once_enabled, TimestampEventWithId, TimestampEventSimple>;
 
     using TimestampEvents = PODArrayWithStackMemory<TimestampEvent, 64>;
     TimestampEvents events_list;
@@ -78,7 +101,7 @@ struct AggregateFunctionWindowFunnelData
         TimestampEvent new_event(timestamp, event_type, next_unique_id);
         /// Check if the new event maintains the sorted order
         if (sorted && !events_list.empty())
-            sorted = events_list.back() < new_event;
+            sorted = events_list.back() <= new_event;
         events_list.push_back(new_event);
     }
 
@@ -88,9 +111,10 @@ struct AggregateFunctionWindowFunnelData
             return;
 
         const auto current_size = events_list.size();
-        UInt64 new_next_unique_id = next_unique_id;
+
         if constexpr (strict_once_enabled)
         {
+            UInt64 new_next_unique_id = next_unique_id;
             events_list.reserve(current_size + other.events_list.size());
             for (auto other_event : other.events_list)
             {
@@ -103,19 +127,16 @@ struct AggregateFunctionWindowFunnelData
         }
         else
         {
-            events_list.insert(events_list.end(), other.events_list.begin(), other.events_list.end());
+            events_list.insert(std::begin(other.events_list), std::end(other.events_list));
         }
-
-        /// Sort the combined events list
+        /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-        {
-            std::stable_sort(events_list.begin(), events_list.end());
-        }
+            std::stable_sort(std::begin(events_list), std::end(events_list));
         else
         {
-            auto begin = events_list.begin();
-            auto middle = begin + current_size;
-            auto end = events_list.end();
+            const auto begin = std::begin(events_list);
+            const auto middle = std::next(begin, current_size);
+            const auto end = std::end(events_list);
 
             if (!sorted)
                 std::stable_sort(begin, middle);
@@ -133,7 +154,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::stable_sort(events_list.begin(), events_list.end());
+            std::stable_sort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -190,6 +211,46 @@ using AggregateFunctionWindowFunnelDataStrict = AggregateFunctionWindowFunnelDat
 template <typename T>
 using AggregateFunctionWindowFunnelDataNonStrict = AggregateFunctionWindowFunnelData<T, false>;
 
+
+template <typename T, bool strict_once>
+struct EventMatchSequence;
+
+template <typename T>
+struct EventMatchSequence<T, false>
+{
+    std::optional<std::pair<UInt64, UInt64>> match;
+    ALWAYS_INLINE bool empty() const { return !match.has_value(); }
+    ALWAYS_INLINE auto & add(UInt64 first_ts, UInt64 last_ts) { return match.emplace(first_ts, last_ts); }
+};
+
+template <typename T>
+struct EventMatchSequence<T, true>
+{
+    struct EventMatchTimeWindow
+    {
+        T first_timestamp;
+        T last_timestamp;
+        std::array<UInt64, MAX_EVENTS> event_path;
+
+        EventMatchTimeWindow(T first_ts, T last_ts)
+            : first_timestamp(first_ts), last_timestamp(last_ts) {}
+    };
+
+    /// We track all possible event sequences up to the current event.
+    /// It's required because one event can meet several conditions.
+    /// For example: for events 'start', 'a', 'b', 'a', 'end'.
+    /// The second occurrence of 'a' should be counted only once in one sequence.
+    /// However, we do not know in advance if the next event will be 'b' or 'end', so we try to keep both paths.
+    std::list<EventMatchTimeWindow> match;
+
+    bool empty() const { return match.empty(); }
+    auto & add (T first_ts, T last_ts) { return match.emplace_back(first_ts, last_ts); }
+    auto begin() { return match.begin(); }
+    auto end() { return match.end(); }
+    auto erase(auto it) { return match.erase(it); }
+    auto size() const { return match.size(); }
+};
+
 /** Calculates the max event level in a sliding window.
   * The max size of events is 32, that's enough for funnel analytics
   *
@@ -226,25 +287,8 @@ private:
 
         data.sort();
 
-        constexpr size_t max_events_size = std::conditional_t<Data::strict_once_enabled, std::integral_constant<size_t, MAX_EVENTS>, std::integral_constant<size_t, 0>>{};
         /// Stores the timestamp of the first and last i-th level event happen within time window
-        struct EventMatchTimeWindow
-        {
-            UInt64 first_timestamp;
-            UInt64 last_timestamp;
-            std::array<UInt64, max_events_size> event_path;
-
-            EventMatchTimeWindow() = default;
-            EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
-                : first_timestamp(first_ts), last_timestamp(last_ts) {}
-        };
-
-        /// We track all possible event sequences up to the current event.
-        /// It's required because one event can meet several conditions.
-        /// For example: for events 'start', 'a', 'b', 'a', 'end'.
-        /// The second occurrence of 'a' should be counted only once in one sequence.
-        /// However, we do not know in advance if the next event will be 'b' or 'end', so we try to keep both paths.
-        std::vector<std::list<EventMatchTimeWindow>> event_sequences(events_size);
+        std::vector<EventMatchSequence<typename Data::TimeType, Data::strict_once_enabled>> event_sequences(events_size);
 
         bool has_first_event = false;
         for (size_t i = 0; i < data.events_list.size(); ++i)
@@ -252,7 +296,6 @@ private:
             const auto & current_event = data.events_list[i];
             auto timestamp = current_event.timestamp;
             Int64 event_idx = current_event.event_type - 1;
-            UInt64 unique_id = current_event.unique_id;
 
             if (strict_order && event_idx == -1)
             {
@@ -263,13 +306,9 @@ private:
             }
             else if (event_idx == 0)
             {
-                if constexpr (!Data::strict_once_enabled)
-                    /// Do not keep all sequences, when mode is disabled
-                    event_sequences[0].clear();
-
-                auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
+                auto & event_seq = event_sequences[0].add(timestamp, timestamp);
                 if constexpr (Data::strict_once_enabled)
-                    event_seq.event_path[0] = unique_id;
+                    event_seq.event_path[0] = current_event.unique_id;
                 has_first_event = true;
             }
             else if (strict_deduplication && !event_sequences[event_idx].empty())
@@ -286,49 +325,63 @@ private:
             }
             else if (!event_sequences[event_idx - 1].empty())
             {
-                auto & prev_level = event_sequences[event_idx - 1];
-                for (auto it = prev_level.begin(); it != prev_level.end();)
+                if constexpr (Data::strict_once_enabled)
                 {
-                    auto first_ts = it->first_timestamp;
-                    bool time_matched = timestamp <= first_ts + window;
-                    if (!time_matched && prev_level.size() > 1)
+                    auto & prev_level = event_sequences[event_idx - 1];
+                    for (auto it = prev_level.begin(); it != prev_level.end();)
                     {
-                        // Remove old events that are out of the window, but keep at least one
-                        it = prev_level.erase(it);
-                        continue;
-                    }
-
-                    auto prev_path = it->event_path;
-                    chassert(event_idx > 0);
-
-                    if constexpr (Data::strict_once_enabled)
-                    {
-                        /// Ensure the unique_id hasn't been used in the path already
-                        for (size_t j = 0; j < static_cast<size_t>(event_idx); ++j)
+                        auto first_ts = it->first_timestamp;
+                        bool time_matched = timestamp <= first_ts + window;
+                        if (!time_matched && prev_level.size() > 1)
                         {
-                            if (!time_matched)
-                                break;
-                            time_matched = prev_path[j] != unique_id;
+                            // Remove old events that are out of the window, but keep at least one
+                            it = prev_level.erase(it);
+                            continue;
                         }
+
+                        auto prev_path = it->event_path;
+                        chassert(event_idx > 0);
+
+                        if constexpr (Data::strict_once_enabled)
+                        {
+                            /// Ensure the unique_id hasn't been used in the path already
+                            for (size_t j = 0; j < static_cast<size_t>(event_idx); ++j)
+                            {
+                                if (!time_matched)
+                                    break;
+                                time_matched = prev_path[j] != current_event.unique_id;
+                            }
+                        }
+
+                        if (time_matched && strict_increase)
+                            time_matched = it->last_timestamp < timestamp;
+
+                        if (time_matched)
+                        {
+                            if constexpr (Data::strict_once_enabled)
+                                prev_path[event_idx] = current_event.unique_id;
+
+                            auto & new_seq = event_sequences[event_idx].add(first_ts, timestamp);
+                            new_seq.event_path = std::move(prev_path);
+                            if (event_idx + 1 == events_size)
+                                return events_size;
+                        }
+                        ++it;
                     }
-
-                    if (time_matched && strict_increase)
-                        time_matched = it->last_timestamp < timestamp;
-
+                }
+                else
+                {
+                    const auto & match = event_sequences[event_idx - 1].match;
+                    auto first_timestamp = match->first;
+                    bool time_matched = timestamp <= first_timestamp + window;
+                    if (strict_increase)
+                        time_matched = time_matched && match->second < timestamp;
                     if (time_matched)
                     {
-                        if constexpr (Data::strict_once_enabled)
-                            prev_path[event_idx] = unique_id;
-                        else
-                            /// Do not keep all sequences, when mode is disabled
-                            event_sequences[event_idx].clear();
-
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
-                        new_seq.event_path = std::move(prev_path);
+                        event_sequences[event_idx].add(first_timestamp, timestamp);
                         if (event_idx + 1 == events_size)
                             return events_size;
                     }
-                    ++it;
                 }
             }
         }
@@ -381,7 +434,7 @@ public:
     {
         bool has_event = false;
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
-        for (size_t i = 1; i <= events_size; ++i)
+        for (auto i = events_size; i > 0; --i)
         {
             UInt8 event_occurred = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event_occurred)
