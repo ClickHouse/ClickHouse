@@ -33,9 +33,9 @@ void permuteChunk(Chunk & chunk, const std::vector<size_t> & permutation)
 
 }
 
-ColumnPermuteTransform::ColumnPermuteTransform(const Block & header_, std::vector<size_t> permutation_)
+ColumnPermuteTransform::ColumnPermuteTransform(const Block & header_, const std::vector<size_t> & permutation_)
     : ISimpleTransform(header_, permuteBlock(header_, permutation_), false)
-    , permutation(std::move(permutation_))
+    , permutation(permutation_)
 {
 }
 
