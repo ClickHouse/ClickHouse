@@ -69,7 +69,7 @@ struct QueryStatusInfo
     std::string current_database;
 };
 
-using QueryStatusInfoPtr = std::shared_ptr<QueryStatusInfo>;
+using QueryStatusInfoPtr = std::shared_ptr<const QueryStatusInfo>;
 
 /// Query and information about its execution.
 class QueryStatus : public WithContext
