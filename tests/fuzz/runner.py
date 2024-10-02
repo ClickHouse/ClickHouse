@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+
 from tests.ci.env_helper import S3_BUILDS_BUCKET
 from tests.ci.s3_helper import S3Helper
 
@@ -68,9 +69,10 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     active_corpus_dir = f"{fuzzer}.corpus"
     s3.download_files(bucket=S3_BUILDS_BUCKET,
-            s3_path=f"fuzzer/corpus/{fuzzer}/",
-            file_suffix="",
-            local_directory=active_corpus_dir,)
+        s3_path=f"fuzzer/corpus/{fuzzer}/",
+        file_suffix="",
+        local_directory=active_corpus_dir,
+    )
 
     new_corpus_dir = f"{fuzzer}.corpus_new"
     if not os.path.exists(new_corpus_dir):
@@ -111,9 +113,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     for key, value in parser["fuzzer_arguments"].items()
                 )
 
-    cmd_line = (
-        f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {new_corpus_dir} {active_corpus_dir} {seed_corpus_dir}"
-    )
+    cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {new_corpus_dir} {active_corpus_dir} {seed_corpus_dir}"
+
     if custom_libfuzzer_options:
         cmd_line += f" {custom_libfuzzer_options}"
     if fuzzer_arguments:
