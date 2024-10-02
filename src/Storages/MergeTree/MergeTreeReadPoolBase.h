@@ -49,7 +49,7 @@ protected:
     const MergeTreeReaderSettings reader_settings;
     const Names column_names;
     const PoolSettings pool_settings;
-    const MergeTreeReadTask::BlockSizeParams params;
+    const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
     const Block header;

@@ -30,7 +30,8 @@ MergeTreeReadTaskPtr MergeTreeInReverseOrderSelectAlgorithm::getNewTask(IMergeTr
     return pool.getTask(part_idx, previous_task);
 }
 
-MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task, const BlockSizeParams & params)
+MergeTreeReadTask::BlockAndProgress
+MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task)
 {
     MergeTreeReadTask::BlockAndProgress res;
 
@@ -42,7 +43,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::read
     }
 
     while (!task.isFinished())
-        chunks.push_back(task.read(params));
+        chunks.push_back(task.read());
 
     if (chunks.empty())
         return {};
