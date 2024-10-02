@@ -15,36 +15,30 @@ static const auto MAX_BUFFERED = 131072;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_CONNECT_NATS;
     extern const int LOGICAL_ERROR;
 }
 
 NATSProducer::NATSProducer(
     const NATSConfiguration & configuration_,
-    NATSOptionsPtr options_,
     const String & subject_,
-    LoggerPtr log_,
-    ReconnectCallback reconnect_callback_)
+    LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
-    , connection(std::make_shared<NATSConnection>(configuration_, log_, std::move(options_)))
+    , connection(configuration_, log_)
     , subject(subject_)
-    , reconnect_callback(std::move(reconnect_callback_))
     , payloads(BATCH)
 {
-}
-NATSProducer::~NATSProducer()
-{
-    LOG_DEBUG(log, "Destroy producer to subject '{}'", subject);
 }
 
 void NATSProducer::initialize()
 {
-    if (!connection->isConnected())
-        reconnect_callback(connection);
+    if (!connection.connect())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS {}", connection.connectionInfoForLog());
 }
 
 void NATSProducer::finishImpl()
 {
-    connection->disconnect();
+    connection.disconnect();
 }
 
 
@@ -61,14 +55,14 @@ void NATSProducer::publish()
     natsStatus status;
     while (!payloads.empty())
     {
-        if (natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
+        if (natsConnection_Buffered(connection.getConnection()) > MAX_BUFFERED)
             break;
         bool pop_result = payloads.pop(payload);
 
         if (!pop_result)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
 
-        status = natsConnection_Publish(connection->getConnection(), subject.c_str(), payload.c_str(), static_cast<int>(payload.size()));
+        status = natsConnection_Publish(connection.getConnection(), subject.c_str(), payload.c_str(), static_cast<int>(payload.size()));
 
         if (status != NATS_OK)
         {
@@ -90,11 +84,9 @@ void NATSProducer::startProducingTaskLoop()
 {
     try
     {
-        while ((!payloads.isFinishedAndEmpty() || natsConnection_Buffered(connection->getConnection()) != 0))
+        while ((!payloads.isFinishedAndEmpty() || natsConnection_Buffered(connection.getConnection()) > 0))
         {
-            if (!connection->isConnected())
-                reconnect_callback(connection);
-            else
+            if (connection.isConnected() || connection.reconnect())
                 publish();
         }
     }

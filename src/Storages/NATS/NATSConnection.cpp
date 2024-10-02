@@ -5,19 +5,31 @@
 
 #include <boost/algorithm/string/join.hpp>
 
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_CONNECT_NATS;
+}
 
 /// disconnectedCallback may be called after connection destroy
 LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
 
-NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
+NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_)
     : configuration(configuration_)
     , log(std::move(log_))
-    , options(std::move(options_))
+    , options(nullptr, &natsOptions_Destroy)
     , connection(nullptr, &natsConnection_Destroy)
 {
+    natsOptions * options_ptr = nullptr;
+    auto er = natsOptions_Create(&options_ptr);
+    if (er)
+    {
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Can not initialize NATS options. Nats error: {}", natsStatus_GetText(er));
+    }
+    options.reset(options_ptr);
+
     if (!configuration.username.empty() && !configuration.password.empty())
         natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
@@ -55,17 +67,10 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
     natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
-}
-NATSConnection::~NATSConnection()
-{
-    if (!isDisconnectedImpl())
-    {
-        natsConnection_Close(connection.get());
-    }
 
-    LOG_DEBUG(log, "Destroy connection {} to {}", static_cast<void*>(this), connectionInfoForLog());
+    natsOptions_SetIOBufSize(options.get(), DBMS_DEFAULT_BUFFER_SIZE);
+    natsOptions_SetSendAsap(options.get(), true);
 }
-
 
 String NATSConnection::connectionInfoForLog() const
 {
@@ -141,15 +146,15 @@ bool NATSConnection::isClosedImpl() const
 
 void NATSConnection::connectImpl()
 {
-    natsConnection * new_conection = nullptr;
-    natsStatus status = natsConnection_Connect(&new_conection, options.get());
+    natsConnection * conection_ptr = nullptr;
+    natsStatus status = natsConnection_Connect(&conection_ptr, options.get());
     if (status != NATS_OK)
     {
         LOG_DEBUG(log, "New connection {} to {} failed. Nats status text: {}. Last error message: {}",
                   static_cast<void*>(this), connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
         return;
     }
-    connection.reset(new_conection);
+    connection.reset(conection_ptr);
 
     LOG_DEBUG(log, "New connection {} to {} connected.", static_cast<void*>(this), connectionInfoForLog());
 }

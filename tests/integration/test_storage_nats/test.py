@@ -855,6 +855,10 @@ def test_nats_many_inserts(nats_cluster):
         logging.debug("Table test.nats_consume is not yet ready")
         time.sleep(0.5)
 
+    while not check_table_is_ready(instance, "test.nats_many"):
+        logging.debug("Table test.nats_many is not yet ready")
+        time.sleep(0.5)
+
     messages_num = 10000
     values = []
     for i in range(messages_num):
@@ -940,6 +944,10 @@ def test_nats_overloaded_insert(nats_cluster):
     )
     while not check_table_is_ready(instance, "test.nats_consume"):
         logging.debug("Table test.nats_consume is not yet ready")
+        time.sleep(0.5)
+
+    while not check_table_is_ready(instance, "test.nats_overload"):
+        logging.debug("Table test.nats_overload is not yet ready")
         time.sleep(0.5)
 
     messages_num = 100000
@@ -1236,6 +1244,10 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
         logging.debug("Table test.consume is not yet ready")
         time.sleep(0.5)
 
+    while not check_table_is_ready(instance, "test.producer_reconnect"):
+        logging.debug("Table test.producer_reconnect is not yet ready")
+        time.sleep(0.5)
+
     messages_num = 100000
     values = []
     for i in range(messages_num):
@@ -1281,7 +1293,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
     nats_cluster.pause_container("nats1")
-    instance.query(
+    instance.query_and_get_error(
         """
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = NATS
@@ -1292,7 +1304,6 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
                      nats_row_delimiter = '\\n';
     """
     )
-    instance.query_and_get_error("SELECT count() FROM test.cs")
     nats_cluster.unpause_container("nats1")
 
 

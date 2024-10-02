@@ -2,7 +2,7 @@
 
 #include <Common/Logger.h>
 
-#include <Storages/NATS/NATSHandler.h>
+#include <nats.h>
 
 #include <mutex>
 
@@ -27,9 +27,10 @@ struct NATSConfiguration
 
 class NATSConnection
 {
+    using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
+
 public:
-    NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_);
-    ~NATSConnection();
+    NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_);
 
     bool isConnected();
     bool isDisconnected();
