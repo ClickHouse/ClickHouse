@@ -18,8 +18,7 @@ public:
         String from_filter_column_name_,
         String to_filter_column_name_,
         bool remove_filter_column_,
-        bool on_totals_,
-        std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr);
+        bool on_totals_);
 
     static Block
     transformHeader(Block header, const String & from_filter_column_name, const String & to_filter_column_name, bool remove_filter_column);
@@ -40,7 +39,6 @@ private:
     size_t from_filter_column_position = 0;
     size_t to_filter_column_position = 0;
 
-    std::shared_ptr<std::atomic<size_t>> rows_filtered;
     bool from_index_found = false;
     bool to_index_found = false;
     /// Header after expression, but before removing filter column.
