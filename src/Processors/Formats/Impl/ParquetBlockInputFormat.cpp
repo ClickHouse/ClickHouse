@@ -441,6 +441,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , max_decoding_threads(max_decoding_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
+    , previous_block_missing_values(getPort().getHeader().columns())
 {
     if (max_decoding_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
@@ -680,23 +681,19 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         // reached. Wake up read() instead.
         condvar.notify_all();
     };
-    auto get_pending_chunk = [&](size_t num_rows, Chunk chunk = {})
+
+    auto get_approx_original_chunk_size = [&](size_t num_rows)
     {
-        size_t approx_chunk_original_size = static_cast<size_t>(std::ceil(
-                static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
-        return PendingChunk{
-                .chunk = std::move(chunk),
-                .block_missing_values = {},
-                .chunk_idx = row_group_batch.next_chunk_idx,
-                .row_group_batch_idx = row_group_batch_idx,
-                .approx_original_chunk_size = approx_chunk_original_size
-        };
+        return static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
     };
 
     if (!row_group_batch.record_batch_reader && !row_group_batch.native_record_reader)
         initializeRowGroupBatchReader(row_group_batch_idx);
 
-    PendingChunk res;
+    PendingChunk res(getPort().getHeader().columns());
+    res.chunk_idx = row_group_batch.next_chunk_idx;
+    res.row_group_batch_idx = row_group_batch_idx;
+
     if (format_settings.parquet.use_native_reader)
     {
         auto chunk = row_group_batch.native_record_reader->readChunk();
@@ -706,9 +703,9 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
             return;
         }
 
-        // TODO support defaults_for_omitted_fields feature when supporting nested columns
-        auto num_rows = chunk.getNumRows();
-        res = get_pending_chunk(num_rows, std::move(chunk));
+        /// TODO: support defaults_for_omitted_fields feature when supporting nested columns
+        res.approx_original_chunk_size = get_approx_original_chunk_size(chunk.getNumRows());
+        res.chunk = std::move(chunk);
     }
     else
     {
@@ -723,11 +720,11 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         }
 
         auto tmp_table = arrow::Table::FromRecordBatches({*batch});
-        res = get_pending_chunk((*tmp_table)->num_rows());
 
         /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
         /// Otherwise fill the missing columns with zero values of its type.
         BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &res.block_missing_values : nullptr;
+        res.approx_original_chunk_size = get_approx_original_chunk_size((*tmp_table)->num_rows());
         res.chunk = row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(*tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
     }
 
@@ -841,9 +838,9 @@ void ParquetBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 }
 
-const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
+const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
 {
-    return previous_block_missing_values;
+    return &previous_block_missing_values;
 }
 
 ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

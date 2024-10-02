@@ -1565,7 +1565,7 @@ String ZooKeeper::getConnectedHostPort() const
     return impl->getConnectedHostPort();
 }
 
-int32_t ZooKeeper::getConnectionXid() const
+int64_t ZooKeeper::getConnectionXid() const
 {
     return impl->getConnectionXid();
 }
