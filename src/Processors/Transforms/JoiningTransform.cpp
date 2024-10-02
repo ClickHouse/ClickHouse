@@ -75,8 +75,9 @@ IProcessor::Status JoiningTransform::prepare()
     /// Output if has data.
     if (has_output)
     {
-        output.push(std::move(output_chunk));
-        has_output = false;
+        output.push(std::move(output_chunks.front()));
+        output_chunks.pop_front();
+        has_output = !output_chunks.empty();
 
         return Status::PortFull;
     }
@@ -122,10 +123,10 @@ void JoiningTransform::work()
 {
     if (has_input)
     {
+        chassert(output_chunks.empty());
         transform(input_chunk);
-        output_chunk.swap(input_chunk);
         has_input = not_processed != nullptr;
-        has_output = !output_chunk.empty();
+        has_output = !output_chunks.empty();
     }
     else
     {
@@ -153,8 +154,7 @@ void JoiningTransform::work()
             return;
         }
 
-        auto rows = block.rows();
-        output_chunk.setColumns(block.getColumns(), rows);
+        output_chunks.emplace_back(block.getColumns(), block.rows());
         has_output = true;
     }
 }
@@ -173,7 +173,7 @@ void JoiningTransform::transform(Chunk & chunk)
         }
     }
 
-    Block block;
+    Blocks res;
     if (on_totals)
     {
         const auto & left_totals = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
@@ -184,39 +184,52 @@ void JoiningTransform::transform(Chunk & chunk)
         if (default_totals && !right_totals)
             return;
 
-        block = outputs.front().getHeader().cloneEmpty();
-        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), block);
+        res.emplace_back();
+        res.back() = outputs.front().getHeader().cloneEmpty();
+        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res.back());
     }
     else
-        block = readExecute(chunk);
-    auto num_rows = block.rows();
-    chunk.setColumns(block.getColumns(), num_rows);
+        res = readExecute(chunk);
+
+    std::ranges::for_each(res, [this](Block & block) { output_chunks.emplace_back(block.getColumns(), block.rows()); });
 }
 
-Block JoiningTransform::readExecute(Chunk & chunk)
+Blocks JoiningTransform::readExecute(Chunk & chunk)
 {
-    Block res;
+    Blocks res;
+    Block block;
+
+    auto join_block = [&]()
+    {
+        if (join->supportsJoinWithManyResultBlocks())
+            join->joinBlock(block, res, not_processed);
+        else
+        {
+            join->joinBlock(block, not_processed);
+            res.push_back(std::move(block));
+        }
+    };
 
     if (!not_processed)
     {
         if (chunk.hasColumns())
-            res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
-        if (res)
-            join->joinBlock(res, not_processed);
+        if (block)
+            join_block();
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
         if (chunk.hasColumns())
-            res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
         not_processed.reset();
-        join->joinBlock(res, not_processed);
+        join_block();
     }
     else
     {
-        res = std::move(not_processed->block);
-        join->joinBlock(res, not_processed);
+        block = std::move(not_processed->block);
+        join_block();
     }
 
     return res;

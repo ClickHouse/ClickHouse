@@ -146,6 +146,8 @@ public:
 
     void checkTypesOfKeys(const Block & block) const override;
 
+    using IJoin::joinBlock;
+
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */

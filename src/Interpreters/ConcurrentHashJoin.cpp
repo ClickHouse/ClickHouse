@@ -56,17 +56,6 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
-Block concatenateBlocks(const ScatteredBlocks & blocks)
-{
-    Blocks inner_blocks;
-    for (const auto & block : blocks)
-    {
-        chassert(!block.wasScattered(), "Not scattered blocks are expected in join result");
-        inner_blocks.push_back(block.getSourceBlock());
-    }
-    return concatenateBlocks(inner_blocks);
-}
-
 }
 
 namespace DB
@@ -228,6 +217,14 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
+    Blocks res;
+    std::shared_ptr<ExtraBlock> not_processed;
+    joinBlock(block, res, not_processed);
+    block = concatenateBlocks(res);
+}
+
+void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std::shared_ptr<ExtraBlock> & /*not_processed*/)
+{
     hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
 
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
@@ -242,7 +239,11 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    block = ::concatenateBlocks(dispatched_blocks);
+    chassert(res.empty());
+    res.clear();
+    res.reserve(dispatched_blocks.size());
+    std::ranges::transform(
+        dispatched_blocks, std::back_inserter(res), [](ScatteredBlock & res_block) { return std::move(res_block).getSourceBlock(); });
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const

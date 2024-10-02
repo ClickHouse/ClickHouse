@@ -57,6 +57,9 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
+    bool supportsJoinWithManyResultBlocks() const override { return true; }
+    void joinBlock(Block & block, std::vector<Block> & res, std::shared_ptr<ExtraBlock> & not_processed) override;
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
