@@ -1,5 +1,5 @@
 -- set max_block_size = 30000;
--- DROP TABLE test_table;
+DROP TABLE IF EXISTS test_table;
 
 CREATE TABLE test_table
 (
