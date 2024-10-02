@@ -11,6 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -514,7 +515,24 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
         read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        return object_storage->readObject(object_, read_settings, read_hint, file_size);
+        auto impl = object_storage->readObject(object_, read_settings, read_hint, file_size);
+
+        if ((!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
+            && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
+        {
+            /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
+            /// former doesn't support seeks.
+            auto cache_path_prefix = fmt::format("{}:", magic_enum::enum_name(object_storage->getType()));
+            const auto object_namespace = object_storage->getObjectsNamespace();
+            if (!object_namespace.empty())
+                cache_path_prefix += object_namespace + "/";
+
+            const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_.remote_path };
+
+            impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
+                cache_key, read_settings.page_cache, std::move(impl), read_settings);
+        }
+        return impl;
     };
 
     const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;

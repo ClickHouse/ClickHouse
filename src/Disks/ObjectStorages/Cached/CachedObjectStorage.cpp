@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
-#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -99,22 +98,6 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         {
             cache->throwInitExceptionIfNeeded();
         }
-    }
-
-    /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
-    /// former doesn't support seeks.
-    if (read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
-    {
-        auto cache_path_prefix = fmt::format("{}:", magic_enum::enum_name(object_storage->getType()));
-        const auto object_namespace = object_storage->getObjectsNamespace();
-        if (!object_namespace.empty())
-            cache_path_prefix += object_namespace + "/";
-
-        const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object.remote_path };
-        auto impl = object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
-
-        return std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_key, read_settings.page_cache, std::move(impl), read_settings);
     }
 
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
