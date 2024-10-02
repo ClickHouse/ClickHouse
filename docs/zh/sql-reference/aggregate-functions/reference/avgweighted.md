@@ -21,8 +21,7 @@ avgWeighted(x, weight)
 
 `x` 和 `weight` 的类型必须是
 [整数](../../../sql-reference/data-types/int-uint.md), 或
-[浮点数](../../../sql-reference/data-types/float.md), 或
-[定点数](../../../sql-reference/data-types/decimal.md),
+[浮点数](../../../sql-reference/data-types/float.md),
 但是可以不一样。
 
 **返回值**
