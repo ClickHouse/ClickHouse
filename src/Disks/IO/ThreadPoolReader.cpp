@@ -159,7 +159,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
             if (-1 == res)
             {
-                LOG_INFO(getLogger("HELP"), "Errno for preadv2 is {} ({})", errnoToString(errno), errno);
+                LOG_INFO(getLogger("HELP"), "Errno for preadv2 is {} ({}), Stacktrace: {}", errnoToString(errno), errno, StackTrace().toString());
 
                 if (errno == ENOSYS || errno == EOPNOTSUPP)
                 {
