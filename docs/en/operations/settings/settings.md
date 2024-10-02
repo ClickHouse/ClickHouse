@@ -2055,7 +2055,7 @@ Possible values:
 - 0 - Disabled.
 - 1 - Enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
 
@@ -5690,6 +5690,12 @@ Default value: `0`.
 ## create_if_not_exists
 
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
+
+Default value: `false`.
+
+## enable_secure_identifiers
+
+If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
 
 Default value: `false`.
 
