@@ -257,11 +257,11 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
         {
             data_sent |= (compression_buffer->count() != compression_buffer->offset());
             if (!data_sent)
-                compression_discarded_data = compression_buffer->rejectDataSafe();
+                compression_discarded_data = compression_buffer->rejectBufferedDataSave();
         }
         data_sent |= (count() != offset());
         if (!data_sent)
-            discarded_data = rejectDataSafe();
+            discarded_data = rejectBufferedDataSave();
 
         bool is_response_sent = response.sent();
         // proper senging bad http code

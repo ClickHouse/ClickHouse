@@ -673,6 +673,7 @@ void TCPHandler::runImpl()
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             /// Also it resets socket's timeouts.
+            state.finalizeOut();
             state.reset();
             last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
             query_scope.reset();
@@ -817,6 +818,8 @@ void TCPHandler::runImpl()
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
+
+        state.cancelOut();
         state.reset();
         query_scope.reset();
         thread_trace_context.reset();
@@ -2219,6 +2222,8 @@ void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
+        state.raw_out = out;
+
         const Settings & query_settings = query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
@@ -2419,6 +2424,9 @@ void TCPHandler::sendLogData(const Block & block)
 {
     initLogsBlockOutput(block);
 
+    if (out->isCanceled())
+        return;
+
     writeVarUInt(Protocol::Server::Log, *out);
     /// Send log tag (empty tag is the default tag)
     writeStringBinary("", *out);
@@ -2444,6 +2452,9 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
     state.io.setAllDataSent();
+
+    if (out->isCanceled())
+        return;
 
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
@@ -2526,6 +2537,8 @@ void TCPHandler::run()
     }
     catch (Poco::Exception & e)
     {
+        state.cancelOut();
+
         /// Timeout - not an error.
         if (e.what() == "Timeout"sv)
         {

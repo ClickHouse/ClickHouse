@@ -71,8 +71,8 @@ void BlockIO::onException()
 void BlockIO::onCancelOrConnectionLoss()
 {
     /// Query was not finished gracefully, so we should call exception_callback
-    if (exception_callback)
-        exception_callback(/* log_error */ false);
+    // if (exception_callback)
+    //     exception_callback(/* log_error */ false);
 
     pipeline.cancel();
     pipeline.reset();

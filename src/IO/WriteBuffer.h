@@ -51,6 +51,9 @@ public:
       */
     void next()
     {
+        if (canceled)
+            return;
+
         if (!offset())
             return;
 
@@ -136,34 +139,11 @@ public:
     virtual void preFinalize() { next(); }
 
     /// Write the last data.
-    void finalize()
-    {
-        if (finalized)
-            return;
-
-        if (canceled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancellation.");
-
-        LockMemoryExceptionInThread lock(VariableContext::Global);
-        try
-        {
-            finalizeImpl();
-            finalized = true;
-        }
-        catch (...)
-        {
-            pos = working_buffer.begin();
-
-            cancel();
-
-            throw;
-        }
-    }
+    void finalize();
+    void cancel() noexcept;
 
     bool isFinalized() const { return finalized; }
     bool isCanceled() const { return canceled; }
-
-    void cancel() noexcept;
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
@@ -172,48 +152,20 @@ public:
         next();
     }
 
-    size_t rejectDataSafe()
+    size_t rejectBufferedDataSave()
     {
         size_t before = count();
-        if (count() == offset())
+        bool data_has_been_sent = count() != offset();
+        if (!data_has_been_sent)
             position() -= offset();
-        return before - count();
-    }
-
-    size_t rejectDataSafe(size_t partial_data_to_reject)
-    {
-        size_t before = count();
-        if (count() == offset() && offset() >= partial_data_to_reject)
-            position() -= partial_data_to_reject;
-        return before - count();
-    }
-
-    bool rejectDataHard()
-    {
-        size_t before = count();
-        position() -= offset();
-        return before - count();
-    }
-
-     size_t rejectDataHard(size_t partial_data_to_reject)
-    {
-        size_t before = count();
-        if (offset() >= partial_data_to_reject)
-        {
-            position() -= partial_data_to_reject;
-        }
         return before - count();
     }
 
 protected:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
 
-    virtual void finalizeImpl()
-    {
-        next();
-    }
-
-    virtual void cancelImpl() noexcept;
+    virtual void finalizeImpl() { next(); }
+    virtual void cancelImpl() noexcept { }
 
     bool finalized = false;
     bool canceled = false;

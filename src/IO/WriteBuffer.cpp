@@ -37,10 +37,27 @@ void WriteBuffer::cancel() noexcept
     canceled = true;
 }
 
-void WriteBuffer::cancelImpl() noexcept
+void WriteBuffer::finalize()
 {
-    LoggerPtr log = getLogger("WriteBuffer");
-    LOG_DEBUG(log, "cancelImpl at: {}", StackTrace().toString());
-}
+    if (finalized)
+        return;
 
+    if (canceled)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancellation.");
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+    try
+    {
+        finalizeImpl();
+        finalized = true;
+    }
+    catch (...)
+    {
+        pos = working_buffer.begin();
+
+        cancel();
+
+        throw;
+    }
+}
 }

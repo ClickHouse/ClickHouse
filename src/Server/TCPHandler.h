@@ -70,6 +70,7 @@ struct QueryState
     std::unique_ptr<NativeReader> block_in;
 
     /// Where to write result data.
+    std::shared_ptr<WriteBuffer> raw_out;
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
@@ -123,11 +124,21 @@ struct QueryState
 
     void reset()
     {
-        /// we have to finalize only compression buffer and leave the tcp write buffer intact
-        if (maybe_compressed_out && !maybe_compressed_out->isCanceled() && maybe_compressed_out.unique())
-            maybe_compressed_out->finalize();
-
         *this = QueryState();
+    }
+
+    void finalizeOut()
+    {
+        if (maybe_compressed_out && maybe_compressed_out != raw_out)
+            maybe_compressed_out->finalize();
+        if (raw_out)
+            raw_out->next();
+    }
+
+    void cancelOut()
+    {
+        if (maybe_compressed_out && maybe_compressed_out != raw_out)
+            maybe_compressed_out->cancel();
     }
 
     bool empty() const
