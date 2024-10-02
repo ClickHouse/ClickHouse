@@ -1176,7 +1176,14 @@ void DDLWorker::runMainThread()
             }
 
             cleanup_event->set();
-            markReplicasActive(reinitialized);
+            try
+            {
+                markReplicasActive(reinitialized);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "An error occurred when markReplicasActive: ");
+            }
             scheduleTasks(reinitialized);
             subsequent_errors_count = 0;
 

@@ -617,7 +617,7 @@ def test_alters_from_different_replicas(started_cluster):
     )
 
     # test_replica_restart
-    main_node.restart_clickhouse()
+    main_node.restart_clickhouse(stop_start_wait_sec=120)
 
     expected = (
         "CREATE TABLE alters_from_different_replicas.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
@@ -1125,7 +1125,7 @@ def test_startup_without_zk(started_cluster):
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
-        main_node.restart_clickhouse(stop_start_wait_sec=60)
+        main_node.restart_clickhouse(stop_start_wait_sec=120)
         assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
 
     # we need to wait until the table is not readonly
@@ -1143,7 +1143,7 @@ def test_server_uuid(started_cluster):
     uuid1 = main_node.query("select serverUUID()")
     uuid2 = dummy_node.query("select serverUUID()")
     assert uuid1 != uuid2
-    main_node.restart_clickhouse()
+    main_node.restart_clickhouse(stop_start_wait_sec=120)
     uuid1_after_restart = main_node.query("select serverUUID()")
     assert uuid1 == uuid1_after_restart
 
@@ -1408,14 +1408,14 @@ def test_modify_comment(started_cluster):
     )
 
     def restart_verify_not_readonly():
-        main_node.restart_clickhouse()
+        main_node.restart_clickhouse(stop_start_wait_sec=120)
         assert (
             main_node.query(
                 "SELECT is_readonly FROM system.replicas WHERE table = 'modify_comment_table'"
             )
             == "0\n"
         )
-        dummy_node.restart_clickhouse()
+        dummy_node.restart_clickhouse(stop_start_wait_sec=120)
         assert (
             dummy_node.query(
                 "SELECT is_readonly FROM system.replicas WHERE table = 'modify_comment_table'"

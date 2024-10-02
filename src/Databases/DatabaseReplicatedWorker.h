@@ -41,6 +41,10 @@ public:
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;
+
+    void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
+    void markReplicasActive(bool) override { }
+
     void initializeLogPointer(const String & processed_entry_name);
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
