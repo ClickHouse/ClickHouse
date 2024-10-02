@@ -6,6 +6,8 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from tests.ci.env_helper import S3_BUILDS_BUCKET
+from tests.ci.s3_helper import S3Helper
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
@@ -55,6 +57,8 @@ def process_error(error: str):
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
+    s3 = S3Helper()
+
     logging.info("Running fuzzer %s...", fuzzer)
 
     seed_corpus_dir = f"{fuzzer}.in"
@@ -63,8 +67,14 @@ def run_fuzzer(fuzzer: str, timeout: int):
             seed_corpus_dir = ""
 
     active_corpus_dir = f"{fuzzer}.corpus"
-    if not os.path.exists(active_corpus_dir):
-        os.makedirs(active_corpus_dir)
+    s3.download_files(bucket=S3_BUILDS_BUCKET,
+            s3_path=f"fuzzer/corpus/{fuzzer}/",
+            file_suffix="",
+            local_directory=active_corpus_dir,)
+
+    new_corpus_dir = f"{fuzzer}.corpus_new"
+    if not os.path.exists(new_corpus_dir):
+        os.makedirs(new_corpus_dir)
 
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
@@ -102,7 +112,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 )
 
     cmd_line = (
-        f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {active_corpus_dir} {seed_corpus_dir}"
+        f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {new_corpus_dir} {active_corpus_dir} {seed_corpus_dir}"
     )
     if custom_libfuzzer_options:
         cmd_line += f" {custom_libfuzzer_options}"
@@ -133,10 +143,16 @@ def run_fuzzer(fuzzer: str, timeout: int):
         print("Stderr output: ", e.stderr)
         process_error(e.stderr)
     except subprocess.TimeoutExpired as e:
-        print("Timeout for %s", cmd_line)
+        print("Timeout for ", cmd_line)
         process_fuzzer_output(e.stderr)
     else:
         process_fuzzer_output(result.stderr)
+
+    f = open(f"{new_corpus_dir}/testfile", "a")
+    f.write("Now the file has more content!")
+    f.close()
+
+    s3.upload_build_directory_to_s3(new_corpus_dir, "fuzzer/corpus/")
 
 
 def main():
