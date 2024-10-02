@@ -78,7 +78,7 @@ protected:
 
     void logError();
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getRowNum() const { return total_rows; }
 

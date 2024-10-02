@@ -6,6 +6,7 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Core/BlockMissingValues.h>
 
 
 namespace DB
@@ -43,11 +44,7 @@ public:
     virtual void setReadBuffer(ReadBuffer & in_);
     virtual void resetReadBuffer() { in = nullptr; }
 
-    virtual const BlockMissingValues & getMissingValues() const
-    {
-        static const BlockMissingValues none;
-        return none;
-    }
+    virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
     /// Must be called from ParallelParsingInputFormat after readSuffix
     ColumnMappingPtr getColumnMapping() const { return column_mapping; }
