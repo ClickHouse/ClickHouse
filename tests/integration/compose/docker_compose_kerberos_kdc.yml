@@ -1,5 +1,3 @@
-version: '2.3'
-
 services:
   kerberoskdc:
     image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
