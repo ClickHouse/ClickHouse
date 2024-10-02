@@ -63,9 +63,6 @@ void NATSConsumer::subscribe()
 
 void NATSConsumer::unsubscribe()
 {
-    for (const auto & subscription : subscriptions)
-        natsSubscription_Unsubscribe(subscription.get());
-
     subscriptions.clear();
 }
 
