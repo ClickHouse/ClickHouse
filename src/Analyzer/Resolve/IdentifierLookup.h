@@ -166,7 +166,6 @@ struct IdentifierResolveResult
 
 struct IdentifierResolveState
 {
-    IdentifierResolveResult resolve_result;
     size_t count = 1;
 };
 

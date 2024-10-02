@@ -1156,6 +1156,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     QueryTreeNodePtr alias_node = *it;
 
+    auto node_type = alias_node->getNodeType();
+    if (node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
+        alias_node = alias_node->clone();
+
     if (!alias_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Node with alias {} is not valid. In scope {}",
@@ -1180,8 +1184,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         return {};
     }
 
-    auto node_type = alias_node->getNodeType();
-
     auto * scope_to_resolve_alias_expression = &scope;
     if (identifier_resolve_context.scope_to_resolve_alias_expression)
     {
@@ -1192,6 +1194,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     {
         LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Didn't change scope_to_resolve_alias_expression");
     }
+
+    scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
 
     LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Scope to resolve expressions:\n{}", scope_to_resolve_alias_expression->dump());
 
@@ -1400,11 +1404,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_settings)
 {
-    auto it = scope.identifier_lookup_to_resolve_state.find(identifier_lookup);
+    auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
     LOG_DEBUG(&Poco::Logger::get("tryResolveIdentifier"), "Resolving '{}' in scope:\n{}\nHAVE ANOTHER SCOPE FOR EXPRESSIONS: {}", identifier_lookup.dump(), scope.dump(), identifier_resolve_settings.scope_to_resolve_alias_expression != nullptr);
 
     bool already_in_resolve_process = false;
-    if (it != scope.identifier_lookup_to_resolve_state.end())
+    if (it != scope.identifier_in_lookup_process.end())
     {
         LOG_DEBUG(&Poco::Logger::get("tryResolveIdentifier"), "Found {} in cache", identifier_lookup.dump());
         it->second.count++;
@@ -1435,7 +1439,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
     else
     {
-        auto [insert_it, _] = scope.identifier_lookup_to_resolve_state.insert({identifier_lookup, IdentifierResolveState()});
+        if (!identifier_resolve_settings.scope_to_resolve_alias_expression)
+        {
+            auto jt = scope.identifier_lookup_to_resolve_result.find(identifier_lookup);
+            if (jt != scope.identifier_lookup_to_resolve_result.end() &&
+                scope.use_identifier_lookup_to_result_cache &&
+                !scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup))
+                return jt->second;
+        }
+
+        auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
         it = insert_it;
     }
 
@@ -1527,16 +1540,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
-    /// Try to resolve table identifier from database catalog
-    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
-    {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope);
-    }
-
     /// Try to resolve identifier from parent scopes
     if (!resolve_result.resolved_identifier)
     {
         resolve_result = tryResolveIdentifierInParentScopes(identifier_lookup, scope, identifier_resolve_settings);
+    }
+
+    /// Try to resolve table identifier from database catalog
+    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
+    {
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope);
     }
 
     it->second.count--;
@@ -1545,7 +1558,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
       * or identifier caching was disabled in resolve scope we remove identifier lookup result from identifier lookup to result table.
       */
     if (it->second.count == 0)
-        scope.identifier_lookup_to_resolve_state.erase(it);
+    {
+        scope.identifier_in_lookup_process.erase(it);
+
+        if (!identifier_resolve_settings.scope_to_resolve_alias_expression &&
+            !scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup)
+            && resolve_result.isResolved())
+            scope.identifier_lookup_to_resolve_result[identifier_lookup] = resolve_result;
+    }
 
     return resolve_result;
 }
@@ -3593,6 +3613,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 {
     checkStackSize();
 
+    LOG_DEBUG(getLogger("resolveExpressionNode"), "Resolve node:\n{}", node->dumpTree());
+
     auto resolved_expression_it = resolved_expressions.find(node);
     if (resolved_expression_it != resolved_expressions.end())
     {
@@ -3639,28 +3661,28 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
       * To support both (SELECT 1) AS expression in projection and (SELECT 1) as subquery in IN, do not use
       * alias table because in alias table subquery could be evaluated as scalar.
       */
-    bool use_alias_table = !ignore_alias;
-    if (is_duplicated_alias || (allow_table_expression && IdentifierResolver::isSubqueryNodeType(node->getNodeType())))
-        use_alias_table = false;
+    // bool use_alias_table = !ignore_alias;
+    // if (is_duplicated_alias || (allow_table_expression && IdentifierResolver::isSubqueryNodeType(node->getNodeType())))
+    //     use_alias_table = false;
 
-    if (!node_alias.empty() && use_alias_table)
-    {
-        /** Node could be potentially resolved by resolving other nodes.
-          * SELECT b, a as b FROM test_table;
-          *
-          * To resolve b we need to resolve a.
-          */
-        auto it = scope.aliases.alias_name_to_expression_node.find(node_alias);
-        if (it != scope.aliases.alias_name_to_expression_node.end())
-            node = it->second->clone();
+    // if (!node_alias.empty() && use_alias_table)
+    // {
+    //     /** Node could be potentially resolved by resolving other nodes.
+    //       * SELECT b, a as b FROM test_table;
+    //       *
+    //       * To resolve b we need to resolve a.
+    //       */
+    //     auto it = scope.aliases.alias_name_to_expression_node.find(node_alias);
+    //     if (it != scope.aliases.alias_name_to_expression_node.end())
+    //         node = it->second->clone();
 
-        if (allow_lambda_expression)
-        {
-            it = scope.aliases.alias_name_to_lambda_node.find(node_alias);
-            if (it != scope.aliases.alias_name_to_lambda_node.end())
-                node = it->second->clone();
-        }
-    }
+    //     if (allow_lambda_expression)
+    //     {
+    //         it = scope.aliases.alias_name_to_lambda_node.find(node_alias);
+    //         if (it != scope.aliases.alias_name_to_lambda_node.end())
+    //             node = it->second->clone();
+    //     }
+    // }
 
     scope.pushExpressionNode(node);
 
@@ -3910,11 +3932,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     if (!in_aggregate_function_scope)
     {
+        LOG_DEBUG(getLogger("resolveExpressionNode"), "Looking for GROUP BY key:\n{}", node->dumpTree());
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
             auto it = scope_ptr->nullable_group_by_keys.find(node);
             if (it != scope_ptr->nullable_group_by_keys.end())
             {
+                LOG_DEBUG(getLogger("resolveExpressionNode"), "Found GROUP BY key");
+
                 node = it->node->clone();
                 node->convertToNullable();
                 break;
@@ -4169,6 +4194,9 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                 scope.nullable_group_by_keys.insert(group_by_elem);
         }
     }
+
+    if (scope.group_by_use_nulls)
+        scope.identifier_lookup_to_resolve_result.clear();
 }
 
 /** Resolve interpolate columns nodes list.
@@ -5666,6 +5694,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     query_node_typed.getWindow().getNodes().clear();
 
     /// Remove aliases from expression and lambda nodes
+
+    for (auto & node : scope.aliases.node_to_remove_aliases)
+        node->removeAlias();
 
     for (auto & [_, node] : scope.aliases.alias_name_to_expression_node)
         node->removeAlias();

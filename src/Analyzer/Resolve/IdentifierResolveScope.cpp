@@ -135,11 +135,11 @@ void IdentifierResolveScope::popExpressionNode()
         buffer << '\n';
     }
 
-    buffer << "Identifier lookup to resolve state " << identifier_lookup_to_resolve_state.size() << '\n';
-    for (const auto & [identifier, state] : identifier_lookup_to_resolve_state)
+    buffer << "Identifier lookup to resolve state " << identifier_in_lookup_process.size() << '\n';
+    for (const auto & [identifier, state] : identifier_in_lookup_process)
     {
-        buffer << "Identifier " << identifier.dump() << " resolve result ";
-        state.resolve_result.dump(buffer);
+        buffer << "Identifier " << identifier.dump() << " count ";
+        buffer << state.count;
         buffer << '\n';
     }
 
