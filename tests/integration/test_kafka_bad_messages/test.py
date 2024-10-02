@@ -186,7 +186,7 @@ def bad_messages_parsing_mode(
         "MySQLDump",
     ]:
         print(format_name)
-        topic_name = f"{format_name}_{handle_error_mode}_err"
+        topic_name = f"{format_name}_{handle_error_mode}_err_{int(time.time())}"
 
         kafka_create_topic(admin_client, f"{topic_name}")
 
