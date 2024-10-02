@@ -5683,6 +5683,12 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 
 Default value: `false`.
 
+## enable_secure_identifiers
+
+If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+
+Default value: `false`.
+
 ## show_create_query_identifier_quoting_rule
 
 Define identifier quoting behavior of the show create query result:
