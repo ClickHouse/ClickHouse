@@ -29,14 +29,16 @@ namespace
 
 constexpr size_t MAX_EVENTS = 32;
 
-template <typename T>
+template <typename T, bool strict_once>
 struct AggregateFunctionWindowFunnelData
 {
+    constexpr static bool strict_once_enabled = strict_once;
+
     struct TimestampEvent
     {
         T timestamp;
         UInt8 event_type;
-        UInt64 unique_id;
+        UInt64 unique_id [[ maybe_unused ]];
 
         TimestampEvent() = default;
         TimestampEvent(T timestamp_, UInt8 event_type_, UInt64 unique_id_)
@@ -45,7 +47,10 @@ struct AggregateFunctionWindowFunnelData
         // Comparison operator for sorting events
         bool operator<(const TimestampEvent & other) const
         {
-            return std::tie(timestamp, event_type, unique_id) < std::tie(other.timestamp, other.event_type, other.unique_id);
+            if constexpr (strict_once_enabled)
+                return std::tie(timestamp, event_type, unique_id) < std::tie(other.timestamp, other.event_type, other.unique_id);
+            else
+                return std::tie(timestamp, event_type) < std::tie(other.timestamp, other.event_type);
         }
     };
 
@@ -64,8 +69,10 @@ struct AggregateFunctionWindowFunnelData
 
     void advanceId()
     {
-        ++next_unique_id;
+        if constexpr (strict_once_enabled)
+            ++next_unique_id;
     }
+
     void add(T timestamp, UInt8 event_type)
     {
         TimestampEvent new_event(timestamp, event_type, next_unique_id);
@@ -82,15 +89,22 @@ struct AggregateFunctionWindowFunnelData
 
         const auto current_size = events_list.size();
         UInt64 new_next_unique_id = next_unique_id;
-
-        for (auto other_event : other.events_list)
+        if constexpr (strict_once_enabled)
         {
-            /// Assign unique IDs to the new events to prevent conflicts
-            other_event.unique_id += next_unique_id;
-            new_next_unique_id = std::max(new_next_unique_id, other_event.unique_id + 1);
-            events_list.push_back(other_event);
+            events_list.reserve(current_size + other.events_list.size());
+            for (auto other_event : other.events_list)
+            {
+                /// Assign unique IDs to the new events to prevent conflicts
+                other_event.unique_id += next_unique_id;
+                new_next_unique_id = std::max(new_next_unique_id, other_event.unique_id + 1);
+                events_list.push_back(other_event);
+            }
+            next_unique_id = new_next_unique_id;
         }
-        next_unique_id = new_next_unique_id;
+        else
+        {
+            events_list.insert(events_list.end(), other.events_list.begin(), other.events_list.end());
+        }
 
         /// Sort the combined events list
         if (!sorted && !other.sorted)
@@ -124,8 +138,7 @@ struct AggregateFunctionWindowFunnelData
         }
     }
 
-    /// Param match_each_once indicates whether to write the unique_id.
-    void serialize(WriteBuffer & buf, bool match_each_once) const
+    void serialize(WriteBuffer & buf) const
     {
         writeBinary(sorted, buf);
         writeBinary(events_list.size(), buf);
@@ -134,12 +147,12 @@ struct AggregateFunctionWindowFunnelData
         {
             writeBinary(event.timestamp, buf);
             writeBinary(event.event_type, buf);
-            if (match_each_once)
+            if constexpr (strict_once_enabled)
                 writeBinary(event.unique_id, buf);
         }
     }
 
-    void deserialize(ReadBuffer & buf, bool match_each_once)
+    void deserialize(ReadBuffer & buf)
     {
         readBinary(sorted, buf);
 
@@ -154,22 +167,28 @@ struct AggregateFunctionWindowFunnelData
 
         T timestamp;
         UInt8 event_type;
-        UInt64 unique_id;
+        UInt64 unique_id = 0;
 
         for (size_t i = 0; i < events_size; ++i)
         {
             readBinary(timestamp, buf);
             readBinary(event_type, buf);
-            if (match_each_once)
+            if constexpr (strict_once_enabled)
+            {
                 readBinary(unique_id, buf);
-            else
-                unique_id = next_unique_id;
-
+                next_unique_id = std::max(next_unique_id, unique_id + 1);
+            }
             events_list.emplace_back(timestamp, event_type, unique_id);
-            next_unique_id = std::max(next_unique_id, unique_id + 1);
         }
     }
 };
+
+
+template <typename T>
+using AggregateFunctionWindowFunnelDataStrict = AggregateFunctionWindowFunnelData<T, true>;
+
+template <typename T>
+using AggregateFunctionWindowFunnelDataNonStrict = AggregateFunctionWindowFunnelData<T, false>;
 
 /** Calculates the max event level in a sliding window.
   * The max size of events is 32, that's enough for funnel analytics
@@ -194,9 +213,6 @@ private:
     /// Applies conditions only to events with strictly increasing timestamps
     bool strict_increase;
 
-    /// Count each event only once in the chain even if it meets the condition several times
-    bool strict_once;
-
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
@@ -210,12 +226,13 @@ private:
 
         data.sort();
 
+        constexpr size_t max_events_size = std::conditional_t<Data::strict_once_enabled, std::integral_constant<size_t, MAX_EVENTS>, std::integral_constant<size_t, 0>>{};
         /// Stores the timestamp of the first and last i-th level event happen within time window
         struct EventMatchTimeWindow
         {
             UInt64 first_timestamp;
             UInt64 last_timestamp;
-            std::array<UInt64, MAX_EVENTS> event_path;
+            std::array<UInt64, max_events_size> event_path;
 
             EventMatchTimeWindow() = default;
             EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
@@ -246,12 +263,13 @@ private:
             }
             else if (event_idx == 0)
             {
-                if (!strict_once)
+                if constexpr (!Data::strict_once_enabled)
                     /// Do not keep all sequences, when mode is disabled
                     event_sequences[0].clear();
 
                 auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
-                event_seq.event_path[0] = unique_id;
+                if constexpr (Data::strict_once_enabled)
+                    event_seq.event_path[0] = unique_id;
                 has_first_event = true;
             }
             else if (strict_deduplication && !event_sequences[event_idx].empty())
@@ -283,12 +301,15 @@ private:
                     auto prev_path = it->event_path;
                     chassert(event_idx > 0);
 
-                    /// Ensure the unique_id hasn't been used in the path already
-                    for (size_t j = 0; j < static_cast<size_t>(event_idx); ++j)
+                    if constexpr (Data::strict_once_enabled)
                     {
-                        if (!time_matched)
-                            break;
-                        time_matched = prev_path[j] != unique_id;
+                        /// Ensure the unique_id hasn't been used in the path already
+                        for (size_t j = 0; j < static_cast<size_t>(event_idx); ++j)
+                        {
+                            if (!time_matched)
+                                break;
+                            time_matched = prev_path[j] != unique_id;
+                        }
                     }
 
                     if (time_matched && strict_increase)
@@ -296,8 +317,9 @@ private:
 
                     if (time_matched)
                     {
-                        prev_path[event_idx] = unique_id;
-                        if (!strict_once)
+                        if constexpr (Data::strict_once_enabled)
+                            prev_path[event_idx] = unique_id;
+                        else
                             /// Do not keep all sequences, when mode is disabled
                             event_sequences[event_idx].clear();
 
@@ -334,7 +356,6 @@ public:
         strict_deduplication = false;
         strict_order = false;
         strict_increase = false;
-        strict_once = false;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
@@ -345,7 +366,8 @@ public:
             else if (option == "strict_increase")
                 strict_increase = true;
             else if (option == "strict_once")
-                strict_once = true;
+                /// Handled in the factory
+                chassert(Data::strict_once_enabled);
             else if (option == "strict")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter 'strict' is replaced with 'strict_deduplication' in Aggregate function {}", getName());
             else
@@ -365,8 +387,6 @@ public:
             if (event_occurred)
             {
                 this->data(place).add(timestamp, i);
-                if (!strict_once)
-                    this->data(place).advanceId();
                 has_event = true;
             }
         }
@@ -385,12 +405,12 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
-        this->data(place).serialize(buf, strict_once);
+        this->data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
-        this->data(place).deserialize(buf, strict_once);
+        this->data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -400,7 +420,6 @@ public:
 };
 
 
-template <template <typename> class Data>
 AggregateFunctionPtr
 createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
@@ -425,14 +444,29 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
                             cond_arg->getName(), i + 1, name);
     }
 
-    AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionWindowFunnel, Data>(*arguments[0], arguments, params));
-    WhichDataType which(arguments.front().get());
-    if (res)
-        return res;
-    else if (which.isDate())
-        return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(arguments, params);
-    else if (which.isDateTime())
-        return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(arguments, params);
+    bool strict_once = params.size() > 1 && std::any_of(params.begin() + 1, params.end(), [](const auto & f) { return f.template safeGet<String>() == "strict_once"; });
+    if (strict_once)
+    {
+        AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionWindowFunnel, AggregateFunctionWindowFunnelDataStrict>(*arguments[0], arguments, params));
+        WhichDataType which(arguments.front().get());
+        if (res)
+            return res;
+        else if (which.isDate())
+            return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, AggregateFunctionWindowFunnelDataStrict<DataTypeDate::FieldType>>>(arguments, params);
+        else if (which.isDateTime())
+            return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, AggregateFunctionWindowFunnelDataStrict<DataTypeDateTime::FieldType>>>(arguments, params);
+    }
+    else
+    {
+        AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionWindowFunnel, AggregateFunctionWindowFunnelDataNonStrict>(*arguments[0], arguments, params));
+        WhichDataType which(arguments.front().get());
+        if (res)
+            return res;
+        else if (which.isDate())
+            return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, AggregateFunctionWindowFunnelDataNonStrict<DataTypeDate::FieldType>>>(arguments, params);
+        else if (which.isDateTime())
+            return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, AggregateFunctionWindowFunnelDataNonStrict<DataTypeDateTime::FieldType>>>(arguments, params);
+    }
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
@@ -443,7 +477,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel<AggregateFunctionWindowFunnelData>);
+    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel);
 }
 
 }
