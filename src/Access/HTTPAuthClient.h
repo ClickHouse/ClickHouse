@@ -45,7 +45,7 @@ public:
             bool last_attempt = attempt + 1 >= max_tries;
             try
             {
-                session->sendRequest(request, nullptr, nullptr);
+                session->sendRequest(request);
                 auto & body_stream = session->receiveResponse(response);
                 return parser.parse(response, &body_stream);
             }

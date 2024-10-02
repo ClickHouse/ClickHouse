@@ -1075,7 +1075,7 @@ private:
                 }
 
                 auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, timeouts);
-                session->sendRequest(request, nullptr, nullptr);
+                session->sendRequest(request);
 
                 Poco::Net::HTTPResponse response;
                 std::istream * response_body = receiveResponse(*session, request, response, false);

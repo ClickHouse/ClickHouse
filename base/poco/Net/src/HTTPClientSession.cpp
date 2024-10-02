@@ -557,7 +557,7 @@ StreamSocket HTTPClientSession::proxyConnect()
 	proxyRequest.set("Host", targetAddress);
 	proxyAuthenticateImpl(proxyRequest);
 	proxySession->setKeepAlive(true);
-	proxySession->sendRequest(proxyRequest, nullptr, nullptr);
+	proxySession->sendRequest(proxyRequest);
 	proxySession->receiveResponse(proxyResponse);
 	if (proxyResponse.getStatus() != HTTPResponse::HTTP_OK)
 		throw HTTPException("Cannot establish proxy connection", proxyResponse.getReason());

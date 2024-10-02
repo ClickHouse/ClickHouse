@@ -246,6 +246,8 @@ namespace Net
         /// to ensure a new connection will be set up
         /// for the next request.
 
+        std::ostream & sendRequest(HTTPRequest & request) { return sendRequest(request, nullptr, nullptr); }
+
         virtual std::istream & receiveResponse(HTTPResponse & response);
         /// Receives the header for the response to the previous
         /// HTTP request.

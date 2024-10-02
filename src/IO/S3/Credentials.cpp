@@ -270,7 +270,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 
     Poco::Net::HTTPResponse response;
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
-    session.sendRequest(request, nullptr, nullptr);
+    session.sendRequest(request);
 
     std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
@@ -290,7 +290,7 @@ String getGCPAvailabilityZoneOrException()
     Poco::Net::HTTPResponse response;
     request.set("Metadata-Flavor", "Google");
 
-    session.sendRequest(request, nullptr, nullptr);
+    session.sendRequest(request);
     std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
