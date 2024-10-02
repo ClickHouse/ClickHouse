@@ -144,13 +144,13 @@ def dead_letter_queue_test(expected_num_messages, topic_name):
     instance.query("SYSTEM FLUSH LOGS")
 
     result = instance.query(
-        f"SELECT * FROM system.dead_letter_queue WHERE topic_name = '{topic_name}' FORMAT Vertical"
+        f"SELECT * FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
     )
     logging.debug(f"system.dead_letter_queue contains {result}")
 
     rows = int(
         instance.query(
-            f"SELECT count() FROM system.dead_letter_queue WHERE topic_name = '{topic_name}'"
+            f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'"
         )
     )
     assert rows == expected_num_messages

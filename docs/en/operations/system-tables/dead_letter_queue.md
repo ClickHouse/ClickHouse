@@ -21,15 +21,15 @@ Columns:
 - `table_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse table name.
 - `error` ([String](../../sql-reference/data-types/string.md)) - Error text.
 - `raw_message` ([String](../../sql-reference/data-types/string.md)) - Message body.
-- `topic_name` ([Nullable(String)](../../sql-reference/data-types/nullable.md)) - Kafka topic name.
-- `partition` ([Nullable(UInt64)](../../sql-reference/data-types/nullable.md)) - Kafka partition.
-- `offset` ([Nullable(UInt64)](../../sql-reference/data-types/nullable.md)) - Kafka offset.
-- `exchange_name` ([Nullable(String)](../../sql-reference/data-types/nullable.md)) - RabbitMQ exchange name.
-- `message_id` ([Nullable(String)](../../sql-reference/data-types/nullable.md)) - RabbitMQ message id.
-- `message_timestamp` ([Nullable(DateTime)](../../sql-reference/data-types/nullable.md)) - RabbitMQ message timestamp.
-- `message_redelivered` ([Nullable(UInt8)](../../sql-reference/data-types/nullable.md)) - RabbitMQ redelivered flag.
-- `message_delivery_tag` ([Nullable(UInt64)](../../sql-reference/data-types/nullable.md)) - RabbitMQ delivery tag.
-- `channel_id` ([Nullable(String)](../../sql-reference/data-types/nullable.md)) - RabbitMQ channel id.
+- `kafka_topic_name` ([String](../../sql-reference/data-types/string.md)) - Kafka topic name.
+- `kafka_partition` ([UInt64](../../sql-reference/data-types/int-uint.md)) - Kafka partition.
+- `kafka_offset` ([UInt64](../../sql-reference/data-types/int-uint.md)) - Kafka offset.
+- `rabbitmq_exchange_name` ([String](../../sql-reference/data-types/string.md)) - RabbitMQ exchange name.
+- `rabbitmq_message_id` ([String](../../sql-reference/data-types/string.md)) - RabbitMQ message id.
+- `rabbitmq_message_timestamp` ([DateTime](../../sql-reference/data-types/datetime.md)) - RabbitMQ message timestamp.
+- `rabbitmq_message_redelivered` ([UInt8](../../sql-reference/data-types/int-uint.md)) - RabbitMQ redelivered flag.
+- `rabbitmq_message_delivery_tag` ([UInt64](../../sql-reference/data-types/int-uint.md)) - RabbitMQ delivery tag.
+- `rabbitmq_channel_id` ([String](../../sql-reference/data-types/string.md)) - RabbitMQ channel id.
 
 
 **Example**
@@ -45,66 +45,24 @@ Result:
 ``` text
 Row 1:
 ──────
-stream_type:             Kafka
-event_date:              2024-09-26
-event_time:              2024-09-26 20:21:27
-event_time_microseconds: 2024-09-26 20:21:27.472622
-database_name:           default
-table_name:              kafka
-error:                   Message has too many segments. Most likely, data was corrupted: (at row 1)
+stream_type:                   Kafka
+event_date:                    2024-10-02
+event_time:                    2024-10-02 16:39:18
+event_time_microseconds:       2024-10-02 16:39:18.603790
+database_name:                 default
+table_name:                    kafka
+error:                         Message has too many segments. Most likely, data was corrupted: (at row 1)
 
-raw_message:             qwertyuiop
-topic_name:              CapnProto_dead_letter_queue_err
-partition:               0
-offset:                  0
-exchange_name:           ᴺᵁᴸᴸ
-message_id:              ᴺᵁᴸᴸ
-message_timestamp:       ᴺᵁᴸᴸ
-message_redelivered:     ᴺᵁᴸᴸ
-message_delivery_tag:    ᴺᵁᴸᴸ
-channel_id:              ᴺᵁᴸᴸ
-
-Row 2:
-──────
-stream_type:             Kafka
-event_date:              2024-09-26
-event_time:              2024-09-26 20:21:27
-event_time_microseconds: 2024-09-26 20:21:27.472838
-database_name:           default
-table_name:              kafka
-error:                   Message has too many segments. Most likely, data was corrupted: (at row 1)
-
-raw_message:             asdfghjkl
-topic_name:              CapnProto_dead_letter_queue_err
-partition:               0
-offset:                  0
-exchange_name:           ᴺᵁᴸᴸ
-message_id:              ᴺᵁᴸᴸ
-message_timestamp:       ᴺᵁᴸᴸ
-message_redelivered:     ᴺᵁᴸᴸ
-message_delivery_tag:    ᴺᵁᴸᴸ
-channel_id:              ᴺᵁᴸᴸ
-
-Row 3:
-──────
-stream_type:             Kafka
-event_date:              2024-09-26
-event_time:              2024-09-26 20:21:27
-event_time_microseconds: 2024-09-26 20:21:27.473047
-database_name:           default
-table_name:              kafka
-error:                   Message has too many segments. Most likely, data was corrupted: (at row 1)
-
-raw_message:             zxcvbnm
-topic_name:              CapnProto_dead_letter_queue_err
-partition:               0
-offset:                  0
-exchange_name:           ᴺᵁᴸᴸ
-message_id:              ᴺᵁᴸᴸ
-message_timestamp:       ᴺᵁᴸᴸ
-message_redelivered:     ᴺᵁᴸᴸ
-message_delivery_tag:    ᴺᵁᴸᴸ
-channel_id:              ᴺᵁᴸᴸ
+raw_message:                   qwertyuiop
+kafka_topic_name:              CapnProto_dead_letter_queue_err
+kafka_partition:               0
+kafka_offset:                  0
+rabbitmq_exchange_name:
+rabbitmq_message_id:
+rabbitmq_message_timestamp:    1970-01-01 00:00:00
+rabbitmq_message_redelivered:  0
+rabbitmq_message_delivery_tag: 0
+rabbitmq_channel_id:
 ```
 
 **See Also**

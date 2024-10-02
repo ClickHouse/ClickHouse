@@ -3998,7 +3998,7 @@ def dead_letter_queue_test(expected_num_messages, exchange_name):
 
     rows = int(
         instance.query(
-            f"SELECT count() FROM system.dead_letter_queue WHERE exchange_name = '{exchange_name}'"
+            f"SELECT count() FROM system.dead_letter_queue WHERE rabbitmq_exchange_name = '{exchange_name}'"
         )
     )
     assert rows == expected_num_messages
