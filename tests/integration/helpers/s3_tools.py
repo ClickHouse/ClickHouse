@@ -66,18 +66,18 @@ class LocalUploader(CloudUploader):
 
 class HDFSUploader(CloudUploader):
 
-    def __init__(self, clickhouse_node):
-        self.clickhouse_node = clickhouse_node
+    def __init__(self, started_cluster):
+        self.started_cluster = started_cluster
 
     def upload_file(self, local_path, remote_blob_path):
         dir_path = os.path.dirname(remote_blob_path)
-        fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+        fs = HdfsClient(hosts=self.started_cluster.hdfs_ip)
 
         exists = fs.exists(dir_path)
         if not exists:
             fs.mkdirs(dir_path)
 
-        hdfs_api = self.clickhouse_node.hdfs_api
+        hdfs_api = self.started_cluster.hdfs_api
         hdfs_api.write_file(remote_blob_path, local_path)
 
 
