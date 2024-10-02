@@ -14,7 +14,6 @@ import string
 import subprocess
 import sys
 import time
-import zlib  # for crc32
 from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict, List, Optional
@@ -42,10 +41,6 @@ MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 
 NO_CHANGES_MSG = "Nothing to run"
-
-
-def stringhash(s):
-    return zlib.crc32(s.encode("utf-8"))
 
 
 # Search test by the common prefix.
@@ -903,6 +898,25 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
+    def _get_tests_by_hash(self) -> List[str]:
+        "Tries it's best to group the tests equally between groups"
+        all_tests = self._get_all_tests()
+        if self.run_by_hash_total == 0:
+            return all_tests
+        grouped_tests = self.group_test_by_file(all_tests)
+        groups_by_hash = {
+            g: [] for g in range(self.run_by_hash_total)
+        }  # type: Dict[int, List[str]]
+        for tests_in_group in grouped_tests.values():
+            # It should work determenistic, because it searches groups with min tests
+            min_group = min(len(tests) for tests in groups_by_hash.values())
+            # And then it takes a group with min index
+            group_to_increase = min(
+                g for g, t in groups_by_hash.items() if len(t) == min_group
+            )
+            groups_by_hash[group_to_increase].extend(tests_in_group)
+        return groups_by_hash[self.run_by_hash_num]
+
     def run_normal_check(self, build_path):
         self._install_clickhouse(build_path)
         logging.info("Pulling images")
@@ -911,14 +925,7 @@ class ClickhouseIntegrationTestsRunner:
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
         )
-        all_tests = self._get_all_tests()
-        if self.run_by_hash_total != 0:
-            grouped_tests = self.group_test_by_file(all_tests)
-            all_filtered_by_hash_tests = []
-            for group, tests_in_group in grouped_tests.items():
-                if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
-                    all_filtered_by_hash_tests += tests_in_group
-            all_tests = all_filtered_by_hash_tests
+        all_tests = self._get_tests_by_hash()
         parallel_skip_tests = self._get_parallel_tests_skip_list(self.repo_path)
         logging.info(
             "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
