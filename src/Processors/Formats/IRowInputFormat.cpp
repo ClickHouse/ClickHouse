@@ -106,7 +106,10 @@ Chunk IRowInputFormat::read()
     const Block & header = getPort().getHeader();
 
     size_t num_columns = header.columns();
-    MutableColumns columns = header.cloneEmptyColumns();
+    MutableColumns columns(num_columns);
+
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = header.getByPosition(i).type->createColumn(*serializations[i]);
 
     block_missing_values.clear();
 
@@ -267,6 +270,11 @@ void IRowInputFormat::resetParser()
 size_t IRowInputFormat::countRows(size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
+}
+
+void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)
+{
+    serializations = getPort().getHeader().getSerializations(hints);
 }
 
 

@@ -427,7 +427,7 @@ def _mark_success_action(
         # do nothing, exit without failure
         print(f"ERROR: no status file for job [{job}]")
 
-    if job_config.run_by_label or not job_config.has_digest():
+    if job_config.run_by_labels or not job_config.has_digest():
         print(f"Job [{job}] has no digest or run by label in CI - do not cache")
     else:
         if pr_info.is_master:
@@ -995,7 +995,7 @@ def _run_test(job_name: str, run_command: str) -> int:
             jr = JobReport.load()
             if jr.dummy:
                 print(
-                    f"ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
+                    "ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
                 )
                 jr.test_results = [TestResult.create_check_timeout_expired()]
                 jr.duration = stopwatch.duration_seconds
@@ -1305,7 +1305,7 @@ def main() -> int:
         elif job_report.job_skipped:
             print(f"Skipped after rerun check {[args.job_name]} - do nothing")
         else:
-            print(f"ERROR: Job was killed - generate evidence")
+            print("ERROR: Job was killed - generate evidence")
             job_report.update_duration()
             ret_code = os.getenv("JOB_EXIT_CODE", "")
             if ret_code:
