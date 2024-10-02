@@ -56,12 +56,14 @@ LimitInRangeTransform::LimitInRangeTransform(
     String from_filter_column_name_,
     String to_filter_column_name_,
     bool remove_filter_column_,
-    bool on_totals_)
+    bool on_totals_,
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
     : ISimpleTransform(header_, transformHeader(header_, from_filter_column_name_, to_filter_column_name_, remove_filter_column_), true)
     , from_filter_column_name(std::move(from_filter_column_name_))
     , to_filter_column_name(std::move(to_filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
+    , rows_filtered(rows_filtered_)
 {
     transformed_header = getInputPort().getHeader();
 
@@ -190,12 +192,15 @@ std::optional<size_t> findFirstMatchingIndex(const IColumn::Filter * filter, siz
 
 void LimitInRangeTransform::transform(Chunk & chunk)
 {
+    auto chunk_rows_before = chunk.getNumRows();
     if (!from_filter_column_name.empty() && !to_filter_column_name.empty())
         doFromAndToTransform(chunk);
     else if (!from_filter_column_name.empty())
         doFromTransform(chunk);
     else if (!to_filter_column_name.empty())
         doToTransform(chunk);
+    if (rows_filtered)
+         *rows_filtered += chunk_rows_before - chunk.getNumRows();
 }
 
 void LimitInRangeTransform::doFromTransform(Chunk & chunk)
