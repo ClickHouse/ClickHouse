@@ -170,18 +170,18 @@ struct ArrayAggregateImpl
 
         /// TODO: Introduce row_begin and row_end to getPermutation or an equivalent function to use that instead
         /// (same use case as SingleValueDataBase::getSmallestIndex)
-        size_t start = 0;
-        for (size_t offset = 0; offset < offsets.size(); ++offset)
+        UInt64 start_of_array = 0;
+        for (auto end_of_array : offsets)
         {
             /// Array is empty
-            if (offsets[offset] == start)
+            if (start_of_array == end_of_array)
             {
                 res_column->insertDefault();
                 continue;
             }
 
-            size_t index = start;
-            for (size_t i = index + 1; i < offsets[offset]; i++)
+            UInt64 index = start_of_array;
+            for (UInt64 i = index + 1; i < end_of_array; i++)
             {
                 if constexpr (aggregate_operation == AggregateOperation::min)
                 {
@@ -196,7 +196,7 @@ struct ArrayAggregateImpl
             }
 
             res_column->insertFrom(*mapped, index);
-            start = offsets[offset];
+            start_of_array = end_of_array;
         }
 
         chassert(res_column->size() == offsets.size());
