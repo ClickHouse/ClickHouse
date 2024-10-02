@@ -755,7 +755,7 @@ void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 inter
     if (!process)
         return;
 
-    process->query_metric_log_task = std::make_unique<BackgroundSchedulePool::TaskHolder>(process->getContext()->getSchedulePool().createTask("QueryMetricLog", function));
+    process->query_metric_log_task = std::make_unique<BackgroundSchedulePool::TaskHolder>(process->getContext()->getQueryMetricLogPool().createTask("QueryMetricLog", function));
     (*process->query_metric_log_task)->scheduleAfter(interval_milliseconds);
 }
 
