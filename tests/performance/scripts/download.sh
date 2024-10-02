@@ -44,8 +44,14 @@ function download
     # Might have the same version on left and right (for testing) -- in this case we just copy
     # already downloaded 'right' to the 'left. There is the third case when we don't have to
     # download anything, for example in some manual runs. In this case, SHAs are not set.
-    mkdir left ||:
-    cp -an right/* left &
+    if ! [ "$left_sha" = "$right_sha" ]
+    then
+        wget -nv -nd -c "$left_path" -O- | tar -C left --no-same-owner --strip-components=1 --zstd --extract --verbose  &
+    elif [ "$right_sha" != "" ]
+    then
+        mkdir left ||:
+        cp -an right/* left &
+    fi
 
     for dataset_name in $datasets
     do
