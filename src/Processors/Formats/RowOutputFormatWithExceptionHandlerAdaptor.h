@@ -70,7 +70,7 @@ public:
 
     void finalizeBuffers() override
     {
-        if (peekable_out)
+        if (peekable_out && !peekable_out->isCanceled())
             peekable_out->finalize();
         Base::finalizeBuffers();
     }
@@ -103,4 +103,3 @@ private:
 };
 
 }
-
