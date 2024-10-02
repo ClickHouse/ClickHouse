@@ -12,7 +12,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
@@ -1630,7 +1630,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 client_context,
                 {},
                 client_context->getSettingsRef()[Setting::max_block_size],
-                getNumberOfCPUCoresToUse());
+                getNumberOfPhysicalCPUCores());
 
             auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(client_context),
@@ -2825,12 +2825,11 @@ void ClientBase::runLibFuzzer() {}
 
 void ClientBase::clearTerminal()
 {
-    /// Move to the beginning of the line
-    /// and clear until end of screen.
+    /// Clear from cursor until end of screen.
     /// It is needed if garbage is left in terminal.
     /// Show cursor. It can be left hidden by invocation of previous programs.
     /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    output_stream << "\r" "\033[0J" "\033[?25h";
+    output_stream << "\033[0J" "\033[?25h";
 }
 
 void ClientBase::showClientVersion()

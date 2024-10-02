@@ -221,47 +221,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
     return result;
 }
 
-namespace
-{
-
-union XidHelper
-{
-    struct
-    {
-        uint32_t lower;
-        uint32_t upper;
-    } parts;
-    int64_t xid;
-};
-
-};
-
-// Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperStorageBase::RequestForSession & request_for_session)
-{
-    DB::WriteBufferFromNuraftBuffer write_buf;
-    DB::writeIntBinary(request_for_session.session_id, write_buf);
-
-    const auto & request = request_for_session.request;
-    size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
-    Coordination::write(static_cast<int32_t>(request_size), write_buf);
-    XidHelper xid_helper{.xid = request->xid};
-    Coordination::write(xid_helper.parts.lower, write_buf);
-    Coordination::write(request->getOpNum(), write_buf);
-    request->writeImpl(write_buf);
-
-    DB::writeIntBinary(request_for_session.time, write_buf);
-    /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
-    DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
-    DB::writeIntBinary(KeeperStorageBase::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
-    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
-    Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
-    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
-    return write_buf.getBuffer();
-}
-
-std::shared_ptr<KeeperStorageBase::RequestForSession>
-IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
+std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
 {
     ReadBufferFromNuraftBuffer buffer(data);
     auto request_for_session = std::make_shared<KeeperStorageBase::RequestForSession>();
@@ -270,62 +230,14 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
     int32_t length;
     Coordination::read(length, buffer);
 
-    /// because of backwards compatibility, only 32bit xid could be written
-    /// for that reason we serialize XID in 2 parts:
-    /// - lower: 32 least significant bits of 64bit XID OR 32bit XID
-    /// - upper: 32 most significant bits of 64bit XID
-    XidHelper xid_helper;
-    Coordination::read(xid_helper.parts.lower, buffer);
-
-    /// go to end of the buffer and read extra information including second part of XID
-    auto buffer_position = buffer.getPosition();
-    buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
-
-    using enum ZooKeeperLogSerializationVersion;
-    ZooKeeperLogSerializationVersion version = INITIAL;
-
-    if (!buffer.eof())
-    {
-        version = WITH_TIME;
-        readIntBinary(request_for_session->time, buffer);
-    }
-    else
-        request_for_session->time
-            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-    if (!buffer.eof())
-    {
-        version = WITH_ZXID_DIGEST;
-
-        readIntBinary(request_for_session->zxid, buffer);
-
-        chassert(!buffer.eof());
-
-        request_for_session->digest.emplace();
-        readIntBinary(request_for_session->digest->version, buffer);
-        if (request_for_session->digest->version != KeeperStorageBase::DigestVersion::NO_DIGEST || !buffer.eof())
-            readIntBinary(request_for_session->digest->value, buffer);
-    }
-
-    if (!buffer.eof())
-    {
-        version = WITH_XID_64;
-        Coordination::read(xid_helper.parts.upper, buffer);
-    }
-
-    if (serialization_version)
-        *serialization_version = version;
-
-    int64_t xid = xid_helper.xid;
-
-    buffer.seek(buffer_position, SEEK_SET);
+    int32_t xid;
+    Coordination::read(xid, buffer);
 
     static constexpr std::array non_cacheable_xids{
         Coordination::WATCH_XID,
         Coordination::PING_XID,
         Coordination::AUTH_XID,
         Coordination::CLOSE_XID,
-        Coordination::CLOSE_XID_64,
     };
 
     const bool should_cache
@@ -354,12 +266,43 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
         }
     }
 
+
     Coordination::OpNum opnum;
+
     Coordination::read(opnum, buffer);
 
     request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request_for_session->request->xid = xid;
     request_for_session->request->readImpl(buffer);
+
+    using enum ZooKeeperLogSerializationVersion;
+    ZooKeeperLogSerializationVersion version = INITIAL;
+
+    if (!buffer.eof())
+    {
+        version = WITH_TIME;
+        readIntBinary(request_for_session->time, buffer);
+    }
+    else
+        request_for_session->time
+            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    if (!buffer.eof())
+    {
+        version = WITH_ZXID_DIGEST;
+
+        readIntBinary(request_for_session->zxid, buffer);
+
+        chassert(!buffer.eof());
+
+        request_for_session->digest.emplace();
+        readIntBinary(request_for_session->digest->version, buffer);
+        if (request_for_session->digest->version != KeeperStorageBase::DigestVersion::NO_DIGEST || !buffer.eof())
+            readIntBinary(request_for_session->digest->value, buffer);
+    }
+
+    if (serialization_version)
+        *serialization_version = version;
 
     if (should_cache && !final)
     {
@@ -834,14 +777,14 @@ static int bufferFromFile(LoggerPtr log, const std::string & path, nuraft::ptr<n
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        [[maybe_unused]] int err = ::close(fd);
+        int err = ::close(fd);
         chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    [[maybe_unused]] int err = ::close(fd);
+    int err = ::close(fd);
     chassert(!err || errno == EINTR);
     return 0;
 }

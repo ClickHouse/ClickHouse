@@ -144,22 +144,22 @@ private:
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
-    template <bool throw_if_denied, bool grant_option, bool wildcard>
+    template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags) const;
 
-    template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
+    template <bool throw_if_denied, bool grant_option, typename... Args>
     bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags, std::string_view database, const Args &... args) const;
 
-    template <bool throw_if_denied, bool grant_option, bool wildcard>
+    template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const ContextPtr & context, const AccessRightsElement & element) const;
 
-    template <bool throw_if_denied, bool grant_option, bool wildcard>
+    template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const ContextPtr & context, const AccessRightsElements & elements) const;
 
-    template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
+    template <bool throw_if_denied, bool grant_option, typename... Args>
     bool checkAccessImplHelper(const ContextPtr & context, AccessFlags flags, const Args &... args) const;
 
-    template <bool throw_if_denied, bool grant_option, bool wildcard>
+    template <bool throw_if_denied, bool grant_option>
     bool checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const;
 
     template <bool throw_if_denied>

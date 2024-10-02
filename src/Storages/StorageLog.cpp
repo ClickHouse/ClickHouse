@@ -694,7 +694,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         for (auto & data_file : data_files)
             data_file.marks.resize(num_marks);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, getReadSettings().adjustBufferSize(32768));
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, ReadSettings().adjustBufferSize(32768));
         for (size_t i = 0; i != num_marks; ++i)
         {
             for (auto & data_file : data_files)

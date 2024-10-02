@@ -310,7 +310,7 @@ namespace
 size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/)
 {
     bool applied = false;
-    for (auto & node : parent_node->children)
+    for (const auto * node : parent_node->children)
     {
         /// check if it is distinct node
         if (typeid_cast<const DistinctStep *>(node->step.get()) == nullptr)
@@ -320,7 +320,7 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
         {
             /// remove current distinct
             chassert(!node->children.empty());
-            node = node->children.front();
+            parent_node->children[0] = node->children.front();
             applied = true;
         }
     }

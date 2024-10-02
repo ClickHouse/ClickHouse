@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
@@ -179,7 +178,7 @@ struct ToStartOfDayImpl
     }
     static Int64 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(time_zone.fromDayNum(ExtendedDayNum(d)), DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale));
+        return time_zone.fromDayNum(ExtendedDayNum(d)) * DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale);
     }
 
     using FactorTransform = ZeroTransform;
@@ -1981,19 +1980,22 @@ struct ToRelativeSubsecondNumImpl
             return t.value;
         if (scale > scale_multiplier)
             return t.value / (scale / scale_multiplier);
-        return common::mulIgnoreOverflow(t.value, scale_multiplier / scale);
+        return static_cast<UInt128>(t.value) * static_cast<UInt128>((scale_multiplier / scale));
+        /// Casting ^^: All integers are Int64, yet if t.value is big enough the multiplication can still
+        /// overflow which is UB. This place is too low-level and generic to check if t.value is sane.
+        /// Therefore just let it overflow safely and don't bother further.
     }
     static Int64 execute(UInt32 t, const DateLUTImpl &)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(t), scale_multiplier);
+        return t * scale_multiplier;
     }
     static Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))), scale_multiplier);
+        return static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))) * scale_multiplier;
     }
     static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(DayNum(d))), scale_multiplier);
+        return static_cast<Int64>(time_zone.fromDayNum(DayNum(d)) * scale_multiplier);
     }
 
     using FactorTransform = ZeroTransform;

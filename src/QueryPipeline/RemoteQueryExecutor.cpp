@@ -25,6 +25,7 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
+
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;

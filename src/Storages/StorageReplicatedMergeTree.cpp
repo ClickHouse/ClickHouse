@@ -562,14 +562,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         if (!is_first_replica)
             createReplica(metadata_snapshot);
-
-        createNewZooKeeperNodes();
-        syncPinnedPartUUIDs();
-
-        if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
-            createTableSharedID();
-
-
     }
     catch (...)
     {
@@ -577,6 +569,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         dropIfEmpty();
         throw;
     }
+
+    createNewZooKeeperNodes();
+    syncPinnedPartUUIDs();
+
+    if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
+        createTableSharedID();
 
     initialization_done = true;
 }
@@ -2128,8 +2126,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-            renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
-            transaction.renameParts();
+            renameTempPartAndReplace(part, transaction);
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
@@ -2918,11 +2915,11 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         Coordination::Requests ops;
         for (PartDescriptionPtr & part_desc : final_parts)
         {
-            renameTempPartAndReplace(part_desc->res_part, transaction, /*rename_in_transaction=*/ true);
+            renameTempPartAndReplace(part_desc->res_part, transaction);
             getCommitPartOps(ops, part_desc->res_part);
-            lockSharedData(*part_desc->res_part, /*replace_existing_lock=*/ true, part_desc->hardlinked_files);
+
+            lockSharedData(*part_desc->res_part, /* replace_existing_lock */ true, part_desc->hardlinked_files);
         }
-        transaction.renameParts();
 
 
         if (!ops.empty())
@@ -4994,8 +4991,7 @@ bool StorageReplicatedMergeTree::fetchPart(
         if (!to_detached)
         {
             Transaction transaction(*this, NO_TRANSACTION_RAW);
-            renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
-            transaction.renameParts();
+            renameTempPartAndReplace(part, transaction);
 
             chassert(!part_to_clone || !is_zero_copy_part(part));
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
@@ -6076,7 +6072,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         /// Object may be added or dropped by alter.
         auto parts_lock = lockParts();
         resetObjectColumnsFromActiveParts(parts_lock);
-        resetSerializationHints(parts_lock);
     }
 
     return true;
@@ -8332,9 +8327,8 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             {
                 auto data_parts_lock = lockParts();
                 for (auto & part : dst_parts)
-                    renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ true);
+                    renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock);
             }
-            transaction.renameParts();
 
             for (const auto & dst_part : dst_parts)
                 lockSharedData(*dst_part, false, /*hardlinked_files*/ {});
@@ -8603,7 +8597,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 auto dest_data_parts_lock = dest_table_storage->lockParts();
 
                 for (auto & part : dst_parts)
-                    dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
+                    dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock);
 
                 for (const auto & dst_part : dst_parts)
                     dest_table_storage->lockSharedData(*dst_part, false, /*hardlinked_files*/ {});
@@ -10234,8 +10228,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     try
     {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        auto replaced_parts = renameTempPartAndReplace(new_data_part, transaction, /*rename_in_transaction=*/ true);
-        transaction.renameParts();
+        auto replaced_parts = renameTempPartAndReplace(new_data_part, transaction);
 
         if (!replaced_parts.empty())
         {

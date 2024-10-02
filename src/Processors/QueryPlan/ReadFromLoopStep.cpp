@@ -63,20 +63,17 @@ namespace DB
                             processed_stage,
                             max_block_size,
                             num_streams);
-                    if (plan.isInitialized())
-                    {
-                        auto builder = plan.buildQueryPipeline(
-                                QueryPlanOptimizationSettings::fromContext(context),
-                                BuildQueryPipelineSettings::fromContext(context));
-                        QueryPlanResourceHolder resources;
-                        auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
-                        query_pipeline = QueryPipeline(std::move(pipe));
-                        executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
-                    }
+                    auto builder = plan.buildQueryPipeline(
+                            QueryPlanOptimizationSettings::fromContext(context),
+                            BuildQueryPipelineSettings::fromContext(context));
+                    QueryPlanResourceHolder resources;
+                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
+                    query_pipeline = QueryPipeline(std::move(pipe));
+                    executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
                     loop = true;
                 }
                 Chunk chunk;
-                if (executor && executor->pull(chunk))
+                if (executor->pull(chunk))
                 {
                     if (chunk)
                     {

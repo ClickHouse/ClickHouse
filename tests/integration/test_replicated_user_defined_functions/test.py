@@ -4,7 +4,6 @@ import time
 from contextlib import nullcontext as does_not_raise
 
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.keeper_utils import get_active_zk_connections

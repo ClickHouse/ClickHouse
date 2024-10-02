@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
 }

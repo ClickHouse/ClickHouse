@@ -666,7 +666,7 @@ class ClickhouseIntegrationTestsRunner:
                 logging.info("Executing cmd: %s", cmd)
                 # ignore retcode, since it meaningful due to pipe to tee
                 with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as proc:
-                    global runner_subprocess  # pylint:disable=global-statement
+                    global runner_subprocess
                     runner_subprocess = proc
                     proc.wait()
 
@@ -1090,9 +1090,8 @@ runner_subprocess = None  # type:Optional[subprocess.Popen]
 
 
 def handle_sigterm(signum, _frame):
-    # TODO: think on how to process it without globals?
     print(f"WARNING: Received signal {signum}")
-    global timeout_expired  # pylint:disable=global-statement
+    global timeout_expired
     timeout_expired = True
     if runner_subprocess:
         runner_subprocess.send_signal(signal.SIGTERM)

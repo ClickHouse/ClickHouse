@@ -67,7 +67,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_query_deduplication;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -76,13 +75,11 @@ namespace Setting
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_threads_for_indexes;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
 namespace ErrorCodes
@@ -297,14 +294,10 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
         */
 
-    const bool can_use_sampling_key_parallel_replicas =
-        settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && settings[Setting::max_parallel_replicas] > 1
-        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY;
-
+    auto parallel_replicas_mode = context->getParallelReplicasMode();
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
-    if (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1
+    if (settings[Setting::parallel_replicas_count] > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
         && !data.supportsSampling() && settings[Setting::parallel_replica_offset] > 0)
     {
         LOG_DEBUG(
@@ -315,7 +308,9 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         return sampling;
     }
 
-    sampling.use_sampling = relative_sample_size > 0 || (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1 && data.supportsSampling());
+    sampling.use_sampling = relative_sample_size > 0
+        || (settings[Setting::parallel_replicas_count] > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
+            && data.supportsSampling());
     bool no_data = false; /// There is nothing left after sampling.
 
     if (sampling.use_sampling)

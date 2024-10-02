@@ -218,28 +218,6 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 }
 
-void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
-{
-    IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
-
-    if (!scope.context)
-        scope.context = context;
-
-    auto node_type = node->getNodeType();
-
-    if (table_expression && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
-    {
-        scope.expression_join_tree_node = table_expression;
-        validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
-        initializeTableExpressionData(scope.expression_join_tree_node, scope);
-    }
-
-    if (node_type == QueryTreeNodeType::LIST)
-        resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    else
-        resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-}
-
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
 {
     if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)

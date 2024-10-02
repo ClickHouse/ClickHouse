@@ -296,9 +296,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
     if (settings.rewrite_primary_key)
-        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+        primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
 
-    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation);
+    Block skip_indexes_block = getBlockAndPermute(block, getSkipIndicesColumns(), permutation);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)

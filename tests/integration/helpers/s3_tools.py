@@ -1,10 +1,11 @@
-import glob
-import json
-import os
-import shutil
-from enum import Enum
-
 from minio import Minio
+import glob
+import os
+import json
+import shutil
+
+
+from enum import Enum
 
 
 class CloudUploader:

@@ -3433,7 +3433,6 @@ template<typename Container>
 void KeeperStorage<Container>::clearGarbageAfterSnapshot()
 {
     container.clearOutdatedNodes();
-    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
 /// Introspection functions mostly used in 4-letter commands
@@ -3603,7 +3602,6 @@ template<typename Container>
 void KeeperStorage<Container>::recalculateStats()
 {
     container.recalculateDataSize();
-    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
 bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)

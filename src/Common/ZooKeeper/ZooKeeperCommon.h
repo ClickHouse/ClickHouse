@@ -28,7 +28,7 @@ struct ZooKeeperResponse : virtual Response
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;
     virtual size_t sizeImpl() const = 0;
-    virtual void write(WriteBuffer & out, bool use_xid_64) const;
+    virtual void write(WriteBuffer & out) const;
     virtual OpNum getOpNum() const = 0;
     virtual void fillLogElements(LogElements & elems, size_t idx) const;
     virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
@@ -56,7 +56,7 @@ struct ZooKeeperRequest : virtual Request
     virtual OpNum getOpNum() const = 0;
 
     /// Writes length, xid, op_num, then the rest.
-    void write(WriteBuffer & out, bool use_xid_64) const;
+    void write(WriteBuffer & out) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
@@ -155,7 +155,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
 
-    void write(WriteBuffer & out, bool use_xid_64) const override;
+    void write(WriteBuffer & out) const override;
 
     OpNum getOpNum() const override
     {

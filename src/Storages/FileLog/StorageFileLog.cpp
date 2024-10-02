@@ -27,7 +27,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 
 #include <sys/stat.h>
@@ -558,9 +558,7 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
             filename, metadata_base_path);
     }
 
-    auto read_settings = getReadSettings();
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
-    auto in = disk->readFile(full_path, read_settings);
+    auto in = disk->readFile(full_path);
     FileMeta metadata;
     UInt64 inode, last_written_pos;
 
@@ -822,17 +820,17 @@ void registerStorageFileLog(StorageFactory & factory)
             filelog_settings->loadFromQuery(*args.storage_def);
         }
 
-        auto cpu_cores = getNumberOfCPUCoresToUse();
+        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
         auto num_threads = filelog_settings->max_threads.value;
 
         if (!num_threads) /// Default
         {
-            num_threads = std::max(1U, cpu_cores / 4);
+            num_threads = std::max(1U, physical_cpu_cores / 4);
             filelog_settings->set("max_threads", num_threads);
         }
-        else if (num_threads > cpu_cores)
+        else if (num_threads > physical_cpu_cores)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", cpu_cores);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", physical_cpu_cores);
         }
         else if (num_threads < 1)
         {

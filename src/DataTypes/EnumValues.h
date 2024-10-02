@@ -4,7 +4,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NamePrompter.h>
 
-
 namespace DB
 {
 
@@ -65,8 +64,8 @@ public:
         return true;
     }
 
-    T getValue(StringRef field_name) const;
-    bool tryGetValue(T & x, StringRef field_name) const;
+    T getValue(StringRef field_name, bool try_treat_as_id = false) const;
+    bool tryGetValue(T & x, StringRef field_name, bool try_treat_as_id = false) const;
 
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const
@@ -94,3 +93,4 @@ public:
 };
 
 }
+

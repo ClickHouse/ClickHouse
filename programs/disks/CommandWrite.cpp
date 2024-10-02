@@ -39,7 +39,7 @@ public:
             else
             {
                 String relative_path_from = disk.getRelativeFromRoot(path_from.value());
-                return disk.getDisk()->readFile(relative_path_from, getReadSettings());
+                return disk.getDisk()->readFile(relative_path_from);
             }
         }();
 

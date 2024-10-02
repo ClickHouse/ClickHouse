@@ -1045,7 +1045,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     if (is_currently_deleting)
     {
         cleanup_event->set();
-        throw Exception(ErrorCodes::UNFINISHED, "Cannot create znodes (status) for {} in [Zoo]Keeper, "
+        throw Exception(ErrorCodes::UNFINISHED, "Cannot create status dirs for {}, "
                         "most likely because someone is deleting it concurrently", node_path);
     }
 
