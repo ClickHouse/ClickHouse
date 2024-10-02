@@ -1,4 +1,3 @@
-version: '2.3'
 services:
     hdfs1:
         image: prasanthj/docker-hadoop:2.6.0

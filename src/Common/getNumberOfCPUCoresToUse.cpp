@@ -1,4 +1,4 @@
-#include "getNumberOfPhysicalCPUCores.h"
+#include "getNumberOfCPUCoresToUse.h"
 
 #if defined(OS_LINUX)
 #    include <cmath>
@@ -165,7 +165,7 @@ catch (...)
 }
 #endif
 
-unsigned getNumberOfPhysicalCPUCoresImpl()
+unsigned getNumberOfCPUCoresToUseImpl()
 {
     unsigned cores = std::thread::hardware_concurrency(); /// logical cores (with SMT/HyperThreading)
 
@@ -189,9 +189,9 @@ unsigned getNumberOfPhysicalCPUCoresImpl()
 
 }
 
-unsigned getNumberOfPhysicalCPUCores()
+unsigned getNumberOfCPUCoresToUse()
 {
     /// Calculate once.
-    static auto cores = getNumberOfPhysicalCPUCoresImpl();
+    static const unsigned cores = getNumberOfCPUCoresToUseImpl();
     return cores;
 }

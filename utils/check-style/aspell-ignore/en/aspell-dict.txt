@@ -750,6 +750,7 @@ PointDistM
 PointDistRads
 PostHistory
 PostLink
+PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -1746,6 +1747,7 @@ getMacro
 getOSKernelVersion
 getServerPort
 getSetting
+getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams

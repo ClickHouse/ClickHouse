@@ -5,6 +5,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.keeper_utils import get_active_zk_connections
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
@@ -85,19 +86,6 @@ def test_reload_zookeeper(start_cluster):
             settings={"select_sequential_consistency": 1},
         )
 
-    def get_active_zk_connections():
-        return str(
-            node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "lsof -a -i4 -i6 -itcp -w | grep 2181 | grep ESTABLISHED | wc -l",
-                ],
-                privileged=True,
-                user="root",
-            )
-        ).strip()
-
     ## set config to zoo2, server will be normal
     new_config = """
 <clickhouse>
@@ -113,16 +101,16 @@ def test_reload_zookeeper(start_cluster):
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
     node.query("SYSTEM RELOAD CONFIG")
 
-    active_zk_connections = get_active_zk_connections()
+    active_zk_connections = get_active_zk_connections(node)
     assert (
-        active_zk_connections == "1"
+        len(active_zk_connections) == 1
     ), "Total connections to ZooKeeper not equal to 1, {}".format(active_zk_connections)
 
     assert_eq_with_retry(
         node, "SELECT COUNT() FROM test_table", "1000", retry_count=120, sleep_time=0.5
     )
 
-    active_zk_connections = get_active_zk_connections()
+    active_zk_connections = get_active_zk_connections(node)
     assert (
-        active_zk_connections == "1"
+        len(active_zk_connections) == 1
     ), "Total connections to ZooKeeper not equal to 1, {}".format(active_zk_connections)
