@@ -16,6 +16,7 @@ def test_startup_scripts():
     try:
         cluster.start()
         assert node.query("SHOW TABLES") == "TestTable\n"
+        assert node.query("SELECT value, changed FROM system.settings WHERE name = 'skip_unavailable_shards'") == "0\t0\n"
 
     finally:
         cluster.shutdown()
