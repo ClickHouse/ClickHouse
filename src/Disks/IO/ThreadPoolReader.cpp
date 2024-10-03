@@ -116,104 +116,96 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     if (has_pread_nowait_support)
     {
-        auto fd_flags = fcntl(fd, F_GETFL);
+        /// It reports real time spent including the time spent while thread was preempted doing nothing.
+        /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
+        /// (NetlinkMetricsProvider has about 500K RPS).
+        Stopwatch watch(CLOCK_MONOTONIC);
 
-        /// preadv2 with RWF_NOWAIT works only for nonblocking FD, otherwise EOPNOTSUPP will be returned
-        if (fd_flags != -1 && fd_flags & O_NONBLOCK)
+        SCOPE_EXIT({
+            watch.stop();
+
+            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+        });
+
+        std::promise<Result> promise;
+        std::future<Result> future = promise.get_future();
+
+        size_t bytes_read = 0;
+        while (!bytes_read)
         {
-            /// It reports real time spent including the time spent while thread was preempted doing nothing.
-            /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-            /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-            /// (NetlinkMetricsProvider has about 500K RPS).
-            Stopwatch watch(CLOCK_MONOTONIC);
+            ssize_t res = 0;
 
-            SCOPE_EXIT({
-                watch.stop();
-
-                ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
-                ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
-            });
-
-            std::promise<Result> promise;
-            std::future<Result> future = promise.get_future();
-
-            size_t bytes_read = 0;
-            while (!bytes_read)
             {
-                ssize_t res = 0;
+                CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
-                {
-                    CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-
-                    struct iovec io_vec{ .iov_base = request.buf, .iov_len = request.size };
-                    res = syscall(
-                        SYS_preadv2, fd,
-                        &io_vec, 1,
-                        /// This is kind of weird calling convention for syscall.
-                        static_cast<int64_t>(request.offset), static_cast<int64_t>(request.offset >> 32),
-                        /// This flag forces read from page cache or returning EAGAIN.
-                        RWF_NOWAIT);
-                }
-
-                if (!res)
-                {
-                    /// The file has ended.
-                    promise.set_value({0, 0, nullptr});
-                    return future;
-                }
-
-                if (-1 == res)
-                {
-                    if (errno == ENOSYS || errno == EOPNOTSUPP)
-                    {
-                        LOG_ERROR(
-                            getLogger("ThreadPoolReader"),
-                            "Unexpected errno for preadv2 with RWF_NOWAIT, {} ({}). File descriptor flags: {:#x}",
-                            errnoToString(errno),
-                            errno,
-                            fd_flags);
-                        chassert(false);
-                        /// No support for the syscall or the flag in the Linux kernel.
-                        /// It shouldn't happen because we check the kernel version but let's
-                        /// fallback to the thread pool.
-                        break;
-                    }
-
-                    if (errno == EAGAIN)
-                    {
-                        /// Data is not available in page cache. Will hand off to thread pool.
-                        break;
-                    }
-
-                    if (errno == EINTR)
-                    {
-                        /// Interrupted by a signal.
-                        continue;
-                    }
-
-                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                    promise.set_exception(std::make_exception_ptr(
-                        ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
-                    return future;
-                }
-                else
-                {
-                    bytes_read += res;
-                    __msan_unpoison(request.buf, res);
-                }
+                struct iovec io_vec{ .iov_base = request.buf, .iov_len = request.size };
+                res = syscall(
+                    SYS_preadv2, fd,
+                    &io_vec, 1,
+                    /// This is kind of weird calling convention for syscall.
+                    static_cast<int64_t>(request.offset), static_cast<int64_t>(request.offset >> 32),
+                    /// This flag forces read from page cache or returning EAGAIN.
+                    RWF_NOWAIT);
             }
 
-            if (bytes_read)
+            if (!res)
             {
-                /// Read successfully from page cache.
-                ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHit);
-                ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitBytes, bytes_read);
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-                ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
-
-                promise.set_value({bytes_read, request.ignore, nullptr});
+                /// The file has ended.
+                promise.set_value({0, 0, nullptr});
                 return future;
             }
+
+            if (-1 == res)
+            {
+                if (errno == ENOSYS || errno == EOPNOTSUPP)
+                {
+                    LOG_INFO(
+                        getLogger("ThreadPoolReader"),
+                        "Unexpected errno for preadv2 with RWF_NOWAIT, {} ({})",
+                        errnoToString(errno),
+                        errno);
+                    /// No support for the syscall or the flag in the Linux kernel.
+                    /// It shouldn't happen because we check the kernel version but let's
+                    /// fallback to the thread pool.
+                    break;
+                }
+
+                if (errno == EAGAIN)
+                {
+                    /// Data is not available in page cache. Will hand off to thread pool.
+                    break;
+                }
+
+                if (errno == EINTR)
+                {
+                    /// Interrupted by a signal.
+                    continue;
+                }
+
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                promise.set_exception(std::make_exception_ptr(
+                    ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                return future;
+            }
+            else
+            {
+                bytes_read += res;
+                __msan_unpoison(request.buf, res);
+            }
+        }
+
+        if (bytes_read)
+        {
+            /// Read successfully from page cache.
+            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHit);
+            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitBytes, bytes_read);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
+            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
+
+            promise.set_value({bytes_read, request.ignore, nullptr});
+            return future;
         }
     }
 #endif
