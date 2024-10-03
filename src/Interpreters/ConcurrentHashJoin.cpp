@@ -349,7 +349,7 @@ ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selecto
     for (size_t i = 0; i < from_block.columns(); ++i)
     {
         auto dispatched_columns = from_block.getByPosition(i).column->scatter(num_shards, selector);
-        assert(result.size() == dispatched_columns.size());
+        chassert(blocks.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
             blocks[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
