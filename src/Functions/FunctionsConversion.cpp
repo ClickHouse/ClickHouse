@@ -4669,23 +4669,17 @@ private:
             auto result_dynamic_column = ColumnDynamic::create(result_variant_type->createColumn(), result_variant_type, to_max_types, to_max_types);
             const auto & result_variant_info = result_dynamic_column->getVariantInfo();
             auto & result_variant_column = result_dynamic_column->getVariantColumn();
+            auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
             /// Create mapping from old discriminators to the new ones.
             std::vector<ColumnVariant::Discriminator> old_to_new_discriminators;
-            old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size());
-            auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
-            for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
+            old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size(), result_shared_variant_discr);
+            for (const auto & [name, discr] : result_variant_info.variant_name_to_discriminator)
             {
-                auto it = result_variant_info.variant_name_to_discriminator.find(name);
-                if (it != result_variant_info.variant_name_to_discriminator.end())
-                {
-                    old_to_new_discriminators[discr] = it->second;
-                    result_variant_column.getVariantPtrByGlobalDiscriminator(it->second) = variant_column.getVariantPtrByGlobalDiscriminator(discr);
-                }
-                /// If there is no such variant in the resulting column, it will go to the shared variant.
-                else
-                {
-                    old_to_new_discriminators[discr] = result_shared_variant_discr;
-                }
+                auto old_discr = variant_info.variant_name_to_discriminator.at(name);
+                old_to_new_discriminators[old_discr] = discr;
+                /// Reuse old variant column if it's not shared variant.
+                if (discr != result_shared_variant_discr)
+                    result_variant_column.getVariantPtrByGlobalDiscriminator(discr) = variant_column.getVariantPtrByGlobalDiscriminator(old_discr);
             }
 
             const auto & local_discriminators = variant_column.getLocalDiscriminators();
