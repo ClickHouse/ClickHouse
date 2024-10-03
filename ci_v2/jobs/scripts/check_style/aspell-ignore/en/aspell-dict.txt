@@ -1696,7 +1696,6 @@ formatReadableSize
 formatReadableTimeDelta
 formatRow
 formatRowNoNewline
-formated
 formatschema
 formatter
 formatters
