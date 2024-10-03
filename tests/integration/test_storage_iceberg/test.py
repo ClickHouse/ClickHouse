@@ -204,13 +204,13 @@ def get_creation_expression(
     elif storage_type == "hdfs":
         if table_function:
             return f"""
-                icebergHDFS(hdfs, path = 'hdfs://hdfs1:9000/iceberg_data/default/{table_name}/', format={format})
+                icebergHDFS(hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
             """
         else:
             return f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
-                ENGINE=IcebergHDFS(hdfs, path = 'hdfs://hdfs1:9000/iceberg_data/default/{table_name}/', format={format});"""
+                ENGINE=IcebergHDFS(hdfs, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/');"""
     elif storage_type == "local":
         if table_function:
             return f"""
