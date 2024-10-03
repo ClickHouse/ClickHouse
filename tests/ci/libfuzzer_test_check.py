@@ -59,7 +59,7 @@ def get_run_command(
 
     envs = [
         # a static link, don't use S3_URL or S3_DOWNLOAD
-        '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
+        '-e S3_URL="https://s3.amazonaws.com"',
     ]
 
     envs += [f"-e {e}" for e in additional_envs]
