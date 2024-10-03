@@ -247,9 +247,9 @@ ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr /* local_context */)
+    ContextPtr local_context)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
 }
 
 void StorageObjectStorage::read(
