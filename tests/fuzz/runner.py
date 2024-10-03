@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import botocore
 import configparser
 import logging
 import os
@@ -65,12 +66,15 @@ def run_fuzzer(fuzzer: str, timeout: int):
             seed_corpus_dir = ""
 
     active_corpus_dir = f"{fuzzer}.corpus"
-    s3.download_files(
-        bucket=S3_BUILDS_BUCKET,
-        s3_path=f"fuzzer/corpus/{fuzzer}/",
-        file_suffix="",
-        local_directory=active_corpus_dir,
-    )
+    try:
+        s3.download_files(
+            bucket=S3_BUILDS_BUCKET,
+            s3_path=f"fuzzer/corpus/{fuzzer}/",
+            file_suffix="",
+            local_directory=active_corpus_dir,
+        )
+    except botocore.errorfactory.NoSuchKey as e:
+        logging.debug("No active corpus exists for %s", fuzzer)
 
     new_corpus_dir = f"{fuzzer}.corpus_new"
     if not os.path.exists(new_corpus_dir):
