@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-import botocore
 import configparser
 import logging
 import os
 import re
 import subprocess
 from pathlib import Path
+
+import botocore
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
