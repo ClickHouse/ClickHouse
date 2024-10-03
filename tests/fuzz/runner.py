@@ -155,7 +155,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
     else:
         process_fuzzer_output(result.stderr)
 
-    s3.upload_build_directory_to_s3(Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False)
+    s3.upload_build_directory_to_s3(
+        Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False
+    )
 
 
 def main():
