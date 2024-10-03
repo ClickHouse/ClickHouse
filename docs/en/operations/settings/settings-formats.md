@@ -2246,7 +2246,7 @@ z	IPv4
 ```
 
 :::note
-If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
+If the `schema_inference_hints` is not formatted properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
 :::
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
