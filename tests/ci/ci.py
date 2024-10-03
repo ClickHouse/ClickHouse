@@ -1137,12 +1137,15 @@ def main() -> int:
 
         if IS_CI and not pr_info.is_merge_queue:
 
-            if pr_info.is_release and pr_info.is_push_event:
+            if pr_info.is_master and pr_info.is_push_event:
                 print("Release/master: CI Cache add pending records for all todo jobs")
                 ci_cache.push_pending_all(pr_info.is_release)
 
-            # wait for pending jobs to be finished, await_jobs is a long blocking call
-            ci_cache.await_pending_jobs(pr_info.is_release)
+            if pr_info.is_master or pr_info.is_pr:
+                # - wait for pending jobs to be finished, await_jobs is a long blocking call
+                # - don't wait for release CI because some jobs may not be present there
+                #   and we may wait until timeout in vain
+                ci_cache.await_pending_jobs(pr_info.is_release)
 
         # conclude results
         result["git_ref"] = git_ref
