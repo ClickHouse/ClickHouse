@@ -147,7 +147,7 @@ The maximum number of threads that will be used for [query metric log](#query_me
 
 Type: UInt64
 
-Default: 8
+Default: 4
 
 ## background_schedule_pool_size
 
