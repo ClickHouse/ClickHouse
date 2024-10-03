@@ -6,6 +6,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.utility import random_string
 
 cluster = ClickHouseCluster(__file__)
 
@@ -95,12 +96,12 @@ def check_replica_after_broke_s3(node, table_name):
         regexp=REMOVED_PART_MSG_LOG, timeout=60, repetitions=2, look_behind_lines=2000
     )
 
-    data = node.query("SELECT * FROM no_key_found_disk_repl").strip()
+    data = node.query(f"SELECT * FROM {table_name}").strip()
     assert data == ""
 
 
 def check_replica_after_insert(node, table_name):
-    data = node.query("SELECT * FROM no_key_found_disk_repl").strip()
+    data = node.query(f"SELECT * FROM {table_name}").strip()
     assert data == "2"
 
     detached_parts_name_after_drop = node.query(
@@ -121,7 +122,7 @@ def assert_part_exists(node, table_name, expected_part):
 
 
 def test_corrupted_blob(start_cluster):
-    table_name = "no_key_found_disk_repl"
+    table_name = "corrupted_blob_" + random_string(8)
     create_replicated_table(replica1, table_name)
     create_replicated_table(replica2, table_name)
 
@@ -164,14 +165,14 @@ def test_corrupted_blob(start_cluster):
     check_replica_after_broke_s3(replica1, table_name)
     check_replica_after_broke_s3(replica2, table_name)
 
-    replica1.query("INSERT INTO no_key_found_disk_repl VALUES (2)")
+    replica1.query(f"INSERT INTO {table_name} VALUES (2)")
 
     check_replica_after_insert(replica1, table_name)
     check_replica_after_insert(replica2, table_name)
 
 
 def test_no_metadata_file(start_cluster):
-    table_name = "no_metadata_file"
+    table_name = "no_metadata_file_" + random_string(8)
     create_replicated_table(replica1, table_name)
     create_replicated_table(replica2, table_name)
 
@@ -210,7 +211,7 @@ def test_no_metadata_file(start_cluster):
 
 
 def test_broken_metadata_file(start_cluster):
-    table_name = "broken_metadata_file"
+    table_name = "broken_metadata_file_" + random_string(8)
     create_replicated_table(replica1, table_name)
     create_replicated_table(replica2, table_name)
 
@@ -229,7 +230,6 @@ def test_broken_metadata_file(start_cluster):
     ).strip()
 
     original_path = table_metadata_path + "data.bin"
-    new_path = table_metadata_path + "old_data.bin"
 
     replica1.exec_in_container(["bash", "-c", f"echo 3 > {original_path}"])
 
