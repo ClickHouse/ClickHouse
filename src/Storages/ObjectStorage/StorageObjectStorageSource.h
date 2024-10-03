@@ -67,7 +67,7 @@ public:
         bool include_connection_info = true);
 
     static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-        const ObjectInfo & object_info,
+        ObjectInfo & object_info,
         const ObjectStoragePtr & object_storage,
         const ContextPtr & context_,
         const LoggerPtr & log);

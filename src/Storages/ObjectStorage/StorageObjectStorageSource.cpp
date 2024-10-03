@@ -426,35 +426,51 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
 }
 
 std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBuffer(
-    const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
+    ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
 {
-    const auto & object_size = object_info.metadata->size_bytes;
     const auto & settings = context_->getSettingsRef();
+    const auto & read_settings = context_->getReadSettings();
 
-    auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
+    const auto filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
+    bool use_cache = read_settings.enable_filesystem_cache
+        && !filesystem_cache_name.empty()
+        && (object_storage->getType() == ObjectStorageType::Azure
+            || object_storage->getType() == ObjectStorageType::S3);
+
+    if (!object_info.metadata)
+    {
+        if (!use_cache)
+        {
+            return object_storage->readObject(StoredObject(object_info.getPath()), read_settings);
+        }
+        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
+    }
+
+    const auto & object_size = object_info.metadata->size_bytes;
+
+    auto modified_read_settings = read_settings.adjustBufferSize(object_size);
     /// FIXME: Changing this setting to default value breaks something around parquet reading
-    read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
+    modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
-    read_settings.use_page_cache_for_disks_without_file_cache = false;
-
-    const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
-    const bool use_prefetch = object_too_small
-        && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
-        && read_settings.remote_fs_prefetch;
-
-    if (use_prefetch)
-        read_settings.remote_read_buffer_use_external_buffer = true;
-
-    auto impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
+    modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    if (!use_prefetch)
-        return impl;
+    const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
+    const bool use_prefetch = object_too_small
+        && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
+        && modified_read_settings.remote_fs_prefetch;
 
-    const auto filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
-    if (read_settings.enable_filesystem_cache && !filesystem_cache_name.empty())
+    /// FIXME: Use async buffer if use_cache,
+    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
+    const bool use_async_buffer = use_prefetch || use_cache;
+
+    if (use_async_buffer)
+        modified_read_settings.remote_read_buffer_use_external_buffer = true;
+
+    std::unique_ptr<ReadBufferFromFileBase> impl;
+    if (use_cache)
     {
         if (object_info.metadata->etag.empty())
         {
@@ -469,9 +485,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            auto read_buffer_creator = [path = object_info.getPath(), object_size, read_settings, object_storage]()
+            auto read_buffer_creator = [path = object_info.getPath(), object_size, modified_read_settings, object_storage]()
             {
-                return object_storage->readObject(StoredObject(path, "", object_size), read_settings);
+                return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
             };
 
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -480,10 +496,10 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                read_settings,
+                modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
-                /* allow_seeks */false,
+                /* allow_seeks */true,
                 /* use_external_buffer */true,
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
@@ -494,16 +510,25 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         }
     }
 
+    if (!impl)
+        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), modified_read_settings);
+
+    if (!use_async_buffer)
+        return impl;
+
     LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
-        std::move(impl), reader, read_settings,
+        std::move(impl), reader, modified_read_settings,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
-    impl->setReadUntilEnd();
-    impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
+    if (use_prefetch)
+    {
+        impl->setReadUntilEnd();
+        impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
+    }
     return impl;
 }
 
