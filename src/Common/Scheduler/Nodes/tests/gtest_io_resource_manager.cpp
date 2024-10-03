@@ -107,7 +107,8 @@ public:
                 parsed.resource_name,
                 throw_if_not_exists);
         }
-        FAIL();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query in WorkloadEntityTestStorage: {}", query);
     }
 
 private:
@@ -157,7 +158,7 @@ TEST(SchedulerIOResourceManager, Smoke)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE res1");
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
     t.query("CREATE WORKLOAD all SETTINGS max_requests = 10");
     t.query("CREATE WORKLOAD A in all");
     t.query("CREATE WORKLOAD B in all SETTINGS weight = 3");
@@ -195,7 +196,7 @@ TEST(SchedulerIOResourceManager, Fairness)
     int requests_per_thread = 100;
     ResourceTest t(2 * threads_per_queue + 1);
 
-    t.query("CREATE RESOURCE res1");
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
     t.query("CREATE WORKLOAD all SETTINGS max_requests = 1");
     t.query("CREATE WORKLOAD A in all");
     t.query("CREATE WORKLOAD B in all");
