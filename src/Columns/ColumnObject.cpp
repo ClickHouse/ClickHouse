@@ -88,7 +88,8 @@ ColumnObject::ColumnObject(
 }
 
 ColumnObject::ColumnObject(const ColumnObject & other)
-    : typed_paths(other.typed_paths)
+    : COWHelper<IColumnHelper<ColumnObject>, ColumnObject>(other)
+    , typed_paths(other.typed_paths)
     , dynamic_paths(other.dynamic_paths)
     , dynamic_paths_ptrs(other.dynamic_paths_ptrs)
     , shared_data(other.shared_data)
