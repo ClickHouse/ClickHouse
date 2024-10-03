@@ -305,9 +305,9 @@ desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings
 
 Result:
 ```sql
-x	UInt8
-y	Nullable(String)
-z	IPv4
+x   UInt8
+y   Nullable(String)
+z   IPv4
 ```
 
 :::note

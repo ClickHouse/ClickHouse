@@ -5410,7 +5410,7 @@ DESCRIBE TABLE test FORMAT TSVRaw SETTINGS print_pretty_type_names=1;
 ```
 
 ```
-a	Tuple(
+a   Tuple(
     b String,
     c Tuple(
         d Nullable(UInt64),
@@ -5591,15 +5591,15 @@ Possible values:
 Examples:
 
 ```sql
-SELECT timeZone(), serverTimeZone() FORMAT TSV
+SELECT timeZone(), serverTimeZone() FORMAT CSV
 
-Europe/Berlin	Europe/Berlin
+"Europe/Berlin","Europe/Berlin"
 ```
 
 ```sql
-SELECT timeZone(), serverTimeZone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
+SELECT timeZone(), serverTimeZone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT CSV
 
-Asia/Novosibirsk	Europe/Berlin
+"Asia/Novosibirsk","Europe/Berlin"
 ```
 
 Assign session time zone 'America/Denver' to the inner DateTime without explicitly specified time zone:
