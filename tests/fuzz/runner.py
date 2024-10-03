@@ -58,7 +58,7 @@ def process_error(error: str):
 
 
 def kill_fuzzer(fuzzer: str):
-    p = subprocess.Popen(['ps', '-A'], stdout=subprocess.PIPE)
+    p = subprocess.Popen(["ps", "-A"], stdout=subprocess.PIPE)
     out, err = p.communicate()
     for line in out.splitlines():
         if fuzzer in line:
