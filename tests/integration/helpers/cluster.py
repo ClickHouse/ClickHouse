@@ -4525,7 +4525,9 @@ class ClickHouseInstance:
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
         else:
-            print(f"XXXX Skip random settings for {self.name}, {self.randomize_settings} {self.image}:{self.tag} @ {self.base_config_dir} ?= {DEFAULT_BASE_CONFIG_DIR}")
+            print(
+                f"XXXX Skip random settings for {self.name}, {self.randomize_settings} {self.image}:{self.tag} @ {self.base_config_dir} ?= {DEFAULT_BASE_CONFIG_DIR}"
+            )
 
         version = None
         version_parts = self.tag.split(".")
