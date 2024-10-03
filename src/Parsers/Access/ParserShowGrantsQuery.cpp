@@ -31,8 +31,13 @@ bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         for_roles->current_user = true;
     }
 
+    bool with_implicit = false;
+    if (ParserKeyword{Keyword::WITH_IMPLICIT}.ignore(pos, expected))
+        with_implicit = true;
+
     auto query = std::make_shared<ASTShowGrantsQuery>();
     query->for_roles = std::move(for_roles);
+    query->with_implicit = with_implicit;
     node = query;
 
     return true;

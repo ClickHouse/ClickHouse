@@ -351,7 +351,7 @@ Shows privileges for a user.
 **Syntax**
 
 ``` sql
-SHOW GRANTS [FOR user1 [, user2 ...]]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT]
 ```
 
 If user is not specified, the query returns privileges for the current user.

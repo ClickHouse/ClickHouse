@@ -234,7 +234,7 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ### Синтаксис {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT]
 ```
 
 Если пользователь не задан, запрос возвращает привилегии текущего пользователя.

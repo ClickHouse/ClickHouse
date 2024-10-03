@@ -133,6 +133,8 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
+    static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
+
     ContextAccess(const AccessControl & access_control_, const Params & params_);
     ~ContextAccess();
 
