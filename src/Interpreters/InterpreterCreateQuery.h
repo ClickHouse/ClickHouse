@@ -82,6 +82,7 @@ public:
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
     static void processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
+    static String getRandomSuffix(size_t size);
 
 private:
     struct TableProperties
