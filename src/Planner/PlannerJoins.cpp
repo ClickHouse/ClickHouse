@@ -363,7 +363,7 @@ void buildJoinClause(
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not applicable.
             auto strictness = join_node.getStrictness();
             auto kind = join_node.getKind();
-            bool can_be_moved_out = (strictness == JoinStrictness::Any || strictness == JoinStrictness::All)
+            bool can_be_moved_out = strictness == JoinStrictness::All
                 && (kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma);
             if (can_be_moved_out || !join_use_nulls)
             {

@@ -1298,7 +1298,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected only one right pre-filter condition node. Actual [{}]", fmt::join(right_pre_filters | std::views::transform([](const auto & node) { return node->result_name; }), ", "));
 
         can_move_out_residuals = join_clauses_and_actions.join_clauses.size() == 1
-            && (join_strictness == JoinStrictness::Any || join_strictness == JoinStrictness::All)
+            && join_strictness == JoinStrictness::All
             && (join_kind == JoinKind::Inner || join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
             && (right_pre_filters.empty() || FilterStep::canUseType(right_pre_filters[0]->result_type))
             && (left_pre_filters.empty() || FilterStep::canUseType(left_pre_filters[0]->result_type));
@@ -1697,12 +1697,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         for (const auto * input_node : join_clauses_and_actions.mixed_join_expressions_actions->getInputs())
             join_clauses_and_actions.mixed_join_expressions_actions->addOrReplaceInOutputs(*input_node);
 
+        appendSetsFromActionsDAG(*join_clauses_and_actions.mixed_join_expressions_actions, left_join_tree_query_plan.useful_sets);
         auto filter_step = std::make_unique<FilterStep>(result_plan.getCurrentDataStream(),
             std::move(*join_clauses_and_actions.mixed_join_expressions_actions),
             outputs[0]->result_name,
             /* remove_column = */ false); /// Unused columns will be removed by next step
         filter_step->setStepDescription("Residual JOIN filter");
         result_plan.addStep(std::move(filter_step));
+
         join_clauses_and_actions.mixed_join_expressions_actions.reset();
     }
 
