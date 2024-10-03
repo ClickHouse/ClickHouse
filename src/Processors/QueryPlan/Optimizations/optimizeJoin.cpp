@@ -56,6 +56,11 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     const auto & table_join = join->getTableJoin();
+
+    /// Algorithms other than HashJoin may not support OUTER JOINs
+    if (table_join.kind() != JoinKind::Inner && !typeid_cast<const HashJoin *>(join.get()))
+        return;
+
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
     if (table_join.hasUsing() || table_join.strictness() != JoinStrictness::All)
