@@ -328,6 +328,12 @@ struct ResourceTestManager : public ResourceTestBase
         , busy_period(thread_count)
     {}
 
+    enum DoNotInitManagerEnum { DoNotInitManager };
+
+    explicit ResourceTestManager(size_t thread_count, DoNotInitManagerEnum)
+        : busy_period(thread_count)
+    {}
+
     ~ResourceTestManager()
     {
         for (auto & thread : threads)

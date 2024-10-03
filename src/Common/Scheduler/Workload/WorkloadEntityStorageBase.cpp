@@ -26,9 +26,8 @@ namespace ErrorCodes
 namespace
 {
 
-ASTPtr normalizeCreateWorkloadEntityQuery(const IAST & create_query, const ContextPtr & context)
+ASTPtr normalizeCreateWorkloadEntityQuery(const IAST & create_query)
 {
-    UNUSED(context);
     auto ptr = create_query.clone();
     if (auto * res = typeid_cast<ASTCreateWorkloadQuery *>(ptr.get()))
     {
@@ -201,7 +200,7 @@ bool WorkloadEntityStorageBase::storeEntity(
 
     std::unique_lock lock{mutex};
 
-    create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query, global_context);
+    create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query);
 
     if (auto it = entities.find(entity_name); it != entities.end())
     {
@@ -400,7 +399,7 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
 {
     std::unordered_map<String, ASTPtr> normalized_entities;
     for (const auto & [entity_name, create_query] : new_entities)
-        normalized_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query, global_context);
+        normalized_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
 
     // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
 
