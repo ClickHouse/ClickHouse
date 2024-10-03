@@ -56,7 +56,7 @@ public:
     CancellationChecker& operator=(const CancellationChecker&) = delete;
 
     // Method to add a new task to the multiset
-    void appendTask(const std::shared_ptr<QueryStatus> & query, const UInt64 & timeout);
+    void appendTask(const std::shared_ptr<QueryStatus> & query, const Int64 & timeout);
 
     // Used when some task is done
     void appendDoneTasks(const std::shared_ptr<QueryStatus> & query);

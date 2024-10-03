@@ -23,7 +23,7 @@ bool CompareEndTime::operator()(const QueryToTrack& a, const QueryToTrack& b) co
     if (a.endtime != b.endtime)
         return a.endtime < b.endtime;
     else
-        return a.query->getClientInfo().current_query_id < b.query->getClientInfo().current_query_id;
+        return a.query < b.query;
 }
 
 CancellationChecker::CancellationChecker() : stop_thread(false)
@@ -48,23 +48,23 @@ void CancellationChecker::cancelTask(std::shared_ptr<QueryStatus> query, CancelR
 
 bool CancellationChecker::removeQueryFromSet(std::shared_ptr<QueryStatus> query)
 {
-    for (auto it = querySet.begin(); it != querySet.end();)
+    auto it = std::find_if(querySet.begin(), querySet.end(), [&](const QueryToTrack& task) {
+        return task.query == query;
+    });
+
+    if (it != querySet.end())
     {
-        if (it->query == query)
-        {
-            LOG_TRACE(getLogger("CancellationChecker"), "Removing query {} from done tasks", query->getInfo().query);
-            it = querySet.erase(it);
-            return true;
-        }
-        else
-            ++it;
+        LOG_TRACE(getLogger("CancellationChecker"), "Removing query {} from done tasks", query->getInfo().query);
+        querySet.erase(it);
+        return true;
     }
+
     return false;
 }
 
-void CancellationChecker::appendTask(const std::shared_ptr<QueryStatus> & query, const UInt64 & timeout)
+void CancellationChecker::appendTask(const std::shared_ptr<QueryStatus> & query, const Int64 & timeout)
 {
-    if (timeout > 0) // Avoid cases when the timeout is less or equal zero
+    if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
     {
         LOG_TRACE(getLogger("CancellationChecker"), "Did not add the task because the timeout is 0. Query: {}", query->getInfo().query);
         return;
