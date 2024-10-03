@@ -158,7 +158,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     with open(f"{new_corpus_dir}/testfile", "a", encoding="ascii") as f:
         f.write("Now the file has more content!")
 
-    s3.upload_build_directory_to_s3(new_corpus_dir, Path("fuzzer/corpus/"))
+    s3.upload_build_directory_to_s3(Path(new_corpus_dir), "fuzzer/corpus/")
 
 
 def main():
