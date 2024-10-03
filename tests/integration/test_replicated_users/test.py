@@ -1,11 +1,10 @@
 import inspect
-import time
-from dataclasses import dataclass
-
 import pytest
+import time
+
+from dataclasses import dataclass
 from helpers.cluster import ClickHouseCluster
-from helpers.keeper_utils import get_active_zk_connections
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
@@ -189,6 +188,19 @@ def test_reload_zookeeper(started_cluster):
         node1.query("SYSTEM RELOAD CONFIG")
         node2.query("SYSTEM RELOAD CONFIG")
 
+    def get_active_zk_connections():
+        return str(
+            node1.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "lsof -a -i4 -i6 -itcp -w | grep 2181 | grep ESTABLISHED | wc -l",
+                ],
+                privileged=True,
+                user="root",
+            )
+        ).strip()
+
     node1.query("CREATE USER u1")
     assert_eq_with_retry(
         node2, "SELECT name FROM system.users WHERE name ='u1'", "u1\n"
@@ -247,9 +259,9 @@ def test_reload_zookeeper(started_cluster):
 """
     )
 
-    active_zk_connections = get_active_zk_connections(node1)
+    active_zk_connections = get_active_zk_connections()
     assert (
-        len(active_zk_connections) == 1
+        active_zk_connections == "1"
     ), "Total connections to ZooKeeper not equal to 1, {}".format(active_zk_connections)
 
     node1.query("CREATE USER u3")
@@ -259,7 +271,7 @@ def test_reload_zookeeper(started_cluster):
         TSV(["u1", "u2", "u3"]),
     )
 
-    active_zk_connections = get_active_zk_connections(node1)
+    active_zk_connections = get_active_zk_connections()
     assert (
-        len(active_zk_connections) == 1
+        active_zk_connections == "1"
     ), "Total connections to ZooKeeper not equal to 1, {}".format(active_zk_connections)

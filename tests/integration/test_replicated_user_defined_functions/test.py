@@ -1,13 +1,13 @@
 import inspect
-import os.path
-import time
 from contextlib import nullcontext as does_not_raise
 
 import pytest
-from helpers.client import QueryRuntimeException
+import time
+import os.path
+
 from helpers.cluster import ClickHouseCluster
-from helpers.keeper_utils import get_active_zk_connections
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.client import QueryRuntimeException
+from helpers.test_tools import assert_eq_with_retry, TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -63,6 +63,20 @@ def replace_zookeeper_config(new_config):
 def revert_zookeeper_config():
     with open(os.path.join(SCRIPT_DIR, "configs/zookeeper.xml"), "r") as f:
         replace_zookeeper_config(f.read())
+
+
+def get_active_zk_connections():
+    return str(
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "lsof -a -i4 -i6 -itcp -w | grep 2181 | grep ESTABLISHED | wc -l",
+            ],
+            privileged=True,
+            user="root",
+        )
+    ).strip()
 
 
 def test_create_and_drop():
@@ -252,9 +266,9 @@ def test_reload_zookeeper():
         )
     )
 
-    active_zk_connections = get_active_zk_connections(node1)
+    active_zk_connections = get_active_zk_connections()
     assert (
-        len(active_zk_connections) == 1
+        active_zk_connections == "1"
     ), "Total connections to ZooKeeper not equal to 1, {}".format(active_zk_connections)
 
     node1.query("CREATE FUNCTION f3 AS (x, y) -> x / y")
@@ -266,9 +280,9 @@ def test_reload_zookeeper():
 
     assert node2.query("SELECT f1(12, 3), f2(), f3(12, 3)") == TSV([[15, 2, 4]])
 
-    active_zk_connections = get_active_zk_connections(node1)
+    active_zk_connections = get_active_zk_connections()
     assert (
-        len(active_zk_connections) == 1
+        active_zk_connections == "1"
     ), "Total connections to ZooKeeper not equal to 1, {}".format(active_zk_connections)
 
     node1.query("DROP FUNCTION f1")
