@@ -4,6 +4,7 @@ import configparser
 import logging
 import os
 import re
+import signal
 import subprocess
 from pathlib import Path
 
@@ -54,6 +55,15 @@ def process_error(error: str):
             error_source = match.group(1)
             error_reason = match.group(2)
             is_call_stack = True
+
+
+def kill_fuzzer(fuzzer: str):
+    p = subprocess.Popen(['ps', '-A'], stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    for line in out.splitlines():
+        if fuzzer in line:
+            pid = int(line.split(None, 1)[0])
+            os.kill(pid, signal.SIGKILL)
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
@@ -151,6 +161,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         process_error(e.stderr)
     except subprocess.TimeoutExpired as e:
         print("Timeout for ", cmd_line)
+        kill_fuzzer(fuzzer)
         process_fuzzer_output(e.stderr)
     else:
         process_fuzzer_output(result.stderr)
