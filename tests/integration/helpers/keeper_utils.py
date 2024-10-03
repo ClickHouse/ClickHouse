@@ -1,46 +1,13 @@
-import contextlib
 import io
-import re
-import select
-import socket
 import subprocess
+import socket
 import time
 import typing as tp
-
-from helpers.client import CommandRequest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+import contextlib
+import select
 from kazoo.client import KazooClient
-
-ss_established = [
-    "ss",
-    "--resolve",
-    "--tcp",
-    "--no-header",
-    "state",
-    "ESTABLISHED",
-    "( dport = 2181 or sport = 2181 )",
-]
-
-
-def get_active_zk_connections(node: ClickHouseInstance) -> tp.List[str]:
-    return (
-        str(node.exec_in_container(ss_established, privileged=True, user="root"))
-        .strip()
-        .split("\n")
-    )
-
-
-def get_zookeeper_which_node_connected_to(node: ClickHouseInstance) -> str:
-    line = str(
-        node.exec_in_container(ss_established, privileged=True, user="root")
-    ).strip()
-
-    pattern = re.compile(r"zoo[0-9]+", re.IGNORECASE)
-    result = pattern.findall(line)
-    assert (
-        len(result) == 1
-    ), "ClickHouse must be connected only to one Zookeeper at a time"
-    return result[0]
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.client import CommandRequest
 
 
 def execute_keeper_client_query(
