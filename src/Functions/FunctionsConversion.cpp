@@ -4679,7 +4679,7 @@ private:
                 if (it != result_variant_info.variant_name_to_discriminator.end())
                 {
                     old_to_new_discriminators[discr] = it->second;
-                    result_variant_column.getVariantPtrByGlobalDiscriminator(it->second) = IColumn::mutate(variant_column.getVariantPtrByGlobalDiscriminator(discr));
+                    result_variant_column.getVariantPtrByGlobalDiscriminator(it->second) = variant_column.getVariantPtrByGlobalDiscriminator(discr);
                 }
                 /// If there is no such variant in the resulting column, it will go to the shared variant.
                 else
