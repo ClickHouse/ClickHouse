@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
     ACTIVE_DIR = path.dirname(path.abspath(__file__))
     sys.path.append(path.dirname(ACTIVE_DIR))
-    from ci.env_helper import S3_BUILDS_BUCKET  # pylint: disable=import-error
-    from ci.s3_helper import S3Helper  # pylint: disable=import-error
+    from ci.env_helper import S3_BUILDS_BUCKET  # pylint: disable=import-error,no-name-in-module
+    from ci.s3_helper import S3Helper  # pylint: disable=import-error,no-name-in-module
 
     main()
