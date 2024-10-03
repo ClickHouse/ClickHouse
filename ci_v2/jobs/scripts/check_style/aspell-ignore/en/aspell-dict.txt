@@ -1420,8 +1420,6 @@ config
 configs
 conformant
 congruential
-conjuction
-conjuctive
 connectionId
 const
 contrib
