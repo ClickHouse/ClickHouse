@@ -393,6 +393,8 @@ void TCPHandler::runImpl()
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
                     LOG_TRACE(log, "Closing idle connection");
+                    state.cancelOut();
+                    state.reset();
                     return;
                 }
             }
@@ -402,13 +404,16 @@ void TCPHandler::runImpl()
         if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
         {
             LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
-            break;
+            state.cancelOut();
+            state.reset();
+            return;
         }
 
         state.reset();
 
         /// Initialized later.
         std::optional<CurrentThread::QueryScope> query_scope;
+        /// This is bag prone part. The lifetime of thread_trace_context has to be longer than Spans inside `QueryState::BlockIO`
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
         /** An exception during the execution of request (it must be sent over the network to the client).
@@ -593,7 +598,11 @@ void TCPHandler::runImpl()
             auto finish_or_cancel = [this]()
             {
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
+                {
                     state.io.onCancelOrConnectionLoss();
+                    state.cancelOut();
+                    state.reset();
+                }
                 else
                     state.io.onFinish();
             };
@@ -636,20 +645,24 @@ void TCPHandler::runImpl()
 
                         executor.setCancelCallback(callback, interactive_delay / 1000);
                     }
+
                     executor.execute();
                 }
 
                 finish_or_cancel();
 
-                std::lock_guard lock(out_mutex);
+                if (!state.empty() && state.cancellation_status != CancellationStatus::FULLY_CANCELLED)
+                {
+                    std::lock_guard lock(out_mutex);
 
-                /// Send final progress after calling onFinish(), since it will update the progress.
-                ///
-                /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
-                /// without breaking protocol compatibility, but it can be done
-                /// by increasing revision.
-                sendProgress();
-                sendSelectProfileEvents();
+                    /// Send final progress after calling onFinish(), since it will update the progress.
+                    ///
+                    /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
+                    /// without breaking protocol compatibility, but it can be done
+                    /// by increasing revision.
+                    sendProgress();
+                    sendSelectProfileEvents();
+                }
             }
             else
             {
@@ -663,6 +676,7 @@ void TCPHandler::runImpl()
             if (state.is_connection_closed)
                 break;
 
+            if (!state.empty() && state.cancellation_status != CancellationStatus::FULLY_CANCELLED)
             {
                 std::lock_guard lock(out_mutex);
                 sendLogs();
@@ -694,7 +708,11 @@ void TCPHandler::runImpl()
             /// is_interserver_mode is false, and we can send the exception to the client normally.
 
             if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+            {
+                state.cancelOut();
+                state.reset();
                 throw;
+            }
 
             state.io.onException();
             exception.reset(e.clone());
@@ -703,7 +721,11 @@ void TCPHandler::runImpl()
             state.timeout_setter.reset();
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
+            {
+                state.cancelOut();
+                state.reset();
                 throw;
+            }
 
             /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
             /// to break the loop, but do not throw to send the exception to
@@ -874,6 +896,7 @@ bool TCPHandler::readDataNext()
             {
                 LOG_INFO(log, "Client has dropped the connection, cancel the query.");
                 state.is_connection_closed = true;
+                state.cancelOut();
                 state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
                 break;
             }
@@ -1011,7 +1034,10 @@ void TCPHandler::processInsertQuery()
             executor.push(std::move(state.block_for_insert));
 
         if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
+        {
+            state.cancelOut();
             executor.cancel();
+        }
         else
             executor.finish();
     };

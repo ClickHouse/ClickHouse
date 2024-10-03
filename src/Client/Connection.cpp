@@ -323,6 +323,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
+    catch (...)
+    {
+        cancel();
+        throw;
+    }
 }
 
 void Connection::cancel() noexcept
@@ -352,7 +357,7 @@ void Connection::reset() noexcept
 
 void Connection::disconnect()
 {
-    in = nullptr;
+    in.reset();
     last_input_packet_type.reset();
 
     // no point to finalize tcp connections

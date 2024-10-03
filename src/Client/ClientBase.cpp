@@ -292,17 +292,14 @@ ClientBase::ClientBase(
     , std_out(out_fd_)
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(output_stream_, in_fd_, err_fd_)
-    , in_fd(in_fd_)
-    , out_fd(out_fd_)
-    , err_fd(err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
     , error_stream(error_stream_)
 {
-    stdin_is_a_tty = isatty(in_fd);
-    stdout_is_a_tty = isatty(out_fd);
-    stderr_is_a_tty = isatty(err_fd);
-    terminal_width = getTerminalWidth(in_fd, err_fd);
+    stdin_is_a_tty = isatty(in_fd_);
+    stdout_is_a_tty = isatty(out_fd_);
+    stderr_is_a_tty = isatty(err_fd_);
+    terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
@@ -1477,6 +1474,8 @@ void ClientBase::resetOutput()
         out_file_buf->finalize();
     out_file_buf.reset();
 
+    if (out_logs_buf)
+        out_logs_buf->finalize();
     out_logs_buf.reset();
 
     if (pager_cmd)

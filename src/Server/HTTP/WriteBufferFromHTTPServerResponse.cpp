@@ -365,7 +365,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
 
             // this prevent sending final empty chunk in case of Transfer-Encoding: chunked
             // the aim is to break HTTP
-            if (compression_buffer)
+            if (use_compression_buffer)
                 compression_buffer->cancel();
             cancel();
         }
