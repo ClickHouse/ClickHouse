@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
-#include "Core/SettingsEnums.h"
 
 namespace DB
 {
