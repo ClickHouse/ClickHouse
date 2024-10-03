@@ -6212,9 +6212,9 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         /// Trim starting/ending newline.
         std::string_view doc = setting.getDescription();
-        if (doc.length() > 0 && doc[0] == '\n')
+        if (!doc.empty() && doc[0] == '\n')
             doc = doc.substr(1);
-        if (doc.length() > 0 && doc[doc.length() - 1] == '\n')
+        if (!doc.empty() && doc[doc.length() - 1] == '\n')
             doc = doc.substr(0, doc.length() - 1);
 
         res_columns[3]->insert(doc);
