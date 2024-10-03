@@ -35,22 +35,20 @@ def started_cluster():
 
 
 def test_ddl_worker_replicas(started_cluster):
-    replica_list = node1.query(
-        "SELECT name FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas'"
-    ).strip()
+    for replica in ["node1:9000", "node2:9000", "node3:9000", "node4:9000"]:
+        # wait until the replicas path is created
+        node1.query_with_retry(
+            sql=f"SELECT count() FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/{replica}'",
+            check_callback=lambda result: result == 1,
+        )
 
-    replica_list = list(replica_list.split("\n"))
-    expected_replicas = ["node1:9000", "node2:9000", "node3:9000", "node4:9000"]
-    assert expected_replicas.sort() == replica_list.sort()
-
-    for replica in replica_list:
         result = node1.query(
             f"SELECT name, value, ephemeralOwner FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/{replica}'"
         ).strip()
+        print(f"result: {replica} {result}")
 
         lines = list(result.split("\n"))
         assert len(lines) == 1
-        print(f"Test: {replica} {lines[0]}")
         parts = list(lines[0].split("\t"))
         assert len(parts) == 3
         assert parts[0] == "active"
@@ -69,6 +67,8 @@ def test_ddl_worker_replicas(started_cluster):
         result = node1.query_with_retry(
             f"SELECT name, value, ephemeralOwner FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/node4:9000'"
         ).strip()
+
+        print(f"result: {replica} {result}")
 
         lines = list(result.split("\n"))
         assert len(lines) == 1
