@@ -1302,26 +1302,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             && (join_kind == JoinKind::Inner || join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
             && (right_pre_filters.empty() || FilterStep::canUseType(right_pre_filters[0]->result_type))
             && (left_pre_filters.empty() || FilterStep::canUseType(left_pre_filters[0]->result_type));
-        if (can_move_out_residuals && join_kind != JoinKind::Cross && join_kind != JoinKind::Comma)
-        {
-            /* In case we have only conditions like x.column1 = x.column2, do not move them to WHERE.
-             * ClickHouse has pretty complicated logic to resolve qualified column names, so a user may write something like:
-             * SELECT dummy FROM one l JOIN one r ON l.dummy = dummy;
-             * (tests/queries/0_stateless/01018_ambiguous_column.sql)
-             * That case is definitely not a cross join with condition `dummy = dummy`,
-             * and we should keep the behavior of throwing an exception.
-             */
-            const auto & join_clause = join_clauses_and_actions.join_clauses[0];
-            bool has_only_single_table_conditions = join_clause.getMixedFilterConditionNodes().size() == 0
-                && join_clause.getLeftKeyNodes().size() == 0
-                && join_clause.getRightKeyNodes().size() == 0;
-
-            bool has_only_single_table_equals = has_only_single_table_conditions
-                && (right_pre_filters.empty() || (right_pre_filters[0]->function_base && right_pre_filters[0]->function_base->getName() != "equals"))
-                && (left_pre_filters.empty() || (left_pre_filters[0]->function_base && left_pre_filters[0]->function_base->getName() != "equals"));
-
-            can_move_out_residuals = has_only_single_table_equals;
-        }
 
         join_clauses_and_actions.left_join_expressions_actions.appendInputsForUnusedColumns(left_plan.getCurrentDataStream().header);
         appendSetsFromActionsDAG(join_clauses_and_actions.left_join_expressions_actions, left_join_tree_query_plan.useful_sets);
