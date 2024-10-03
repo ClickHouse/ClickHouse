@@ -629,6 +629,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
                 auto startup_context = Context::createCopy(context);
+                startup_context->makeQueryContext();
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
@@ -650,6 +651,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             LOG_DEBUG(log, "Executing query `{}`", query);
             auto startup_context = Context::createCopy(context);
+            startup_context->makeQueryContext();
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
     }
