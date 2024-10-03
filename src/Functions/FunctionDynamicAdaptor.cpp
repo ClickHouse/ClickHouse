@@ -118,7 +118,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         filter.reserve(variant_column.size());
         const auto & local_discriminators = variant_column.getLocalDiscriminators();
         auto local_discr = variant_column.localDiscriminatorByGlobal(global_discr);
-        for (auto & discr : local_discriminators)
+        for (const auto & discr : local_discriminators)
             filter.push_back(discr == local_discr);
 
         /// Filter all other arguments using created filter.

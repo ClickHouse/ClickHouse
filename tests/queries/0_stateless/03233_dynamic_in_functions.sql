@@ -123,6 +123,7 @@ select replaceAll(d, 'str', 'a') as res, toTypeName(res) from test;
 select repeat(d, 2) as res, toTypeName(res) from test;
 select substring(d, 1, 3) as res, toTypeName(res) from test;
 
+truncate table test;
 insert into test select 'str_' || number, toFixedString('str_' || number, 5) from numbers(4);
 
 select upper(d) as res, toTypeName(res) from test;
@@ -146,6 +147,7 @@ select * from test where d = x;
 
 select sipHash64(d, x) as res, toTypeName(res) from test;
 
+truncate table test;
 insert into test select number % 2 ? NULL : 'str_' || number, toFixedString('str_' || number, 5) from numbers(4);
 select upper(d) as res, toTypeName(res) from test;
 
@@ -252,6 +254,7 @@ select * from test where d = NULL;
 
 select upper(d) as res, toTypeName(res) from test;
 
+truncate table test;
 insert into test select 'str_' || number, number % 2 ? NULL : toFixedString('str_' || number, 5) from numbers(4);
 select upper(d) as res, toTypeName(res) from test;
 
@@ -269,6 +272,8 @@ select * from test where d > x;
 select * from test where d = x;
 
 select sipHash64(d, x) as res, toTypeName(res) from test;
+
+truncate table test;
 
 insert into test select number % 2 ? NULL : 'str_' || number, number % 2 ? NULL : toFixedString('str_' || number, 5) from numbers(4);
 select upper(d) as res, toTypeName(res) from test;
