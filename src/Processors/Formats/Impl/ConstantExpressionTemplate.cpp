@@ -331,9 +331,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     for (size_t i = 0; i < replaced_literals.size(); ++i)
     {
         const LiteralInfo & info = replaced_literals[i];
-        if (info.literal->begin.value() < prev_end)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace literals");
-
         while (prev_end < info.literal->begin.value())
         {
             tokens.emplace_back(prev_end->begin, prev_end->size());
