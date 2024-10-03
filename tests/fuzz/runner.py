@@ -7,7 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
-import botocore
+from botocore.exceptions import ClientError
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
@@ -74,8 +74,11 @@ def run_fuzzer(fuzzer: str, timeout: int):
             file_suffix="",
             local_directory=active_corpus_dir,
         )
-    except botocore.errorfactory.NoSuchKey as e:
-        logging.debug("No active corpus exists for %s", fuzzer)
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'NoSuchKey':
+            logging.debug("No active corpus exists for %s", fuzzer)
+        else:
+            raise
 
     new_corpus_dir = f"{fuzzer}.corpus_new"
     if not os.path.exists(new_corpus_dir):
