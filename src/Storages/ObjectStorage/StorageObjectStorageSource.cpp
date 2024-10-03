@@ -424,32 +424,6 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
 }
 
-static void patchReadSettings(
-    ReadSettings & read_settings,
-    const StorageObjectStorage::ObjectInfo & object_info,
-    const LoggerPtr & log)
-{
-    if (read_settings.enable_filesystem_cache && !read_settings.filesystem_cache_name.empty())
-    {
-        if (object_info.metadata->etag.empty())
-        {
-            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-        }
-        else
-        {
-            SipHash hash;
-            hash.update(object_info.getPath());
-            hash.update(object_info.metadata->etag);
-            read_settings.filecache_key = FileCacheKey::fromKey(hash.get128());
-            read_settings.remote_fs_cache = FileCacheFactory::instance().get(read_settings.filesystem_cache_name);
-
-            LOG_TEST(log, "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                     read_settings.filesystem_cache_name, object_info.getPath(),
-                     object_info.metadata->etag, toString(hash.get128()));
-        }
-    }
-}
-
 std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
 {
@@ -459,7 +433,6 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
-    read_settings.enable_filesystem_cache = false;
     read_settings.use_page_cache_for_disks_without_file_cache = false;
 
     const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
@@ -472,13 +445,51 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
 
     auto impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
 
-    patchReadSettings(read_settings, object_info, log);
-
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
     if (!use_prefetch)
         return impl;
+
+    if (read_settings.enable_filesystem_cache && !read_settings.filesystem_cache_name.empty())
+    {
+        if (object_info.metadata->etag.empty())
+        {
+            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+        }
+        else
+        {
+            SipHash hash;
+            hash.update(object_info.getPath());
+            hash.update(object_info.metadata->etag);
+
+            const auto cache_key = FileCacheKey::fromKey(hash.get128());
+            auto cache = FileCacheFactory::instance().get(read_settings.filesystem_cache_name);
+
+            auto read_buffer_creator = [path = object_info.getPath(), object_size, read_settings, object_storage]()
+            {
+                return object_storage->readObject(StoredObject(path, "", object_size), read_settings);
+            };
+
+            impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
+                object_info.getPath(),
+                cache_key,
+                cache,
+                FileCache::getCommonUser(),
+                read_buffer_creator,
+                read_settings,
+                std::string(CurrentThread::getQueryId()),
+                object_size,
+                /* allow_seeks */false,
+                /* use_external_buffer */true,
+                /* read_until_position */std::nullopt,
+                context_->getFilesystemCacheLog());
+
+            LOG_TEST(log, "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                     read_settings.filesystem_cache_name, object_info.getPath(),
+                     object_info.metadata->etag, toString(hash.get128()));
+        }
+    }
 
     LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
