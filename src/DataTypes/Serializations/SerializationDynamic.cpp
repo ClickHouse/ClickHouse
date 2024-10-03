@@ -566,7 +566,6 @@ static void deserializeTextImpl(
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     String field = read_field(istr);
-    auto field_buf = std::make_unique<ReadBufferFromString>(field);
     JSONInferenceInfo json_info;
     auto variant_type = tryInferDataTypeByEscapingRule(field, settings, escaping_rule, &json_info);
     if (escaping_rule == FormatSettings::EscapingRule::JSON)
@@ -580,7 +579,7 @@ static void deserializeTextImpl(
         size_t shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
         for (size_t i = 0; i != variant_types.size(); ++i)
         {
-            field_buf = std::make_unique<ReadBufferFromString>(field);
+            auto field_buf = std::make_unique<ReadBufferFromString>(field);
             if (i != shared_variant_discr
                 && deserializeVariant<bool>(
                     variant_column,
@@ -591,21 +590,24 @@ static void deserializeTextImpl(
                 return;
         }
 
+        /// We cannot insert value with incomplete type, insert it as String.
         variant_type = std::make_shared<DataTypeString>();
         /// To be able to deserialize field as String with Quoted escaping rule, it should be quoted.
         if (escaping_rule == FormatSettings::EscapingRule::Quoted && (field.size() < 2 || field.front() != '\'' || field.back() != '\''))
             field = "'" + field + "'";
     }
-    else if (dynamic_column.addNewVariant(variant_type, variant_type->getName()))
+
+    if (dynamic_column.addNewVariant(variant_type, variant_type->getName()))
     {
+        auto field_buf = std::make_unique<ReadBufferFromString>(field);
         auto discr = variant_info.variant_name_to_discriminator.at(variant_type->getName());
         deserializeVariant(dynamic_column.getVariantColumn(), dynamic_column.getVariantSerialization(variant_type), discr, *field_buf, deserialize_variant);
         return;
     }
 
-    /// We couldn't infer type or add new variant. Insert it into shared variant.
+    /// We couldn't add new variant. Insert it into shared variant.
     auto tmp_variant_column = variant_type->createColumn();
-    field_buf = std::make_unique<ReadBufferFromString>(field);
+    auto field_buf = std::make_unique<ReadBufferFromString>(field);
     auto variant_type_name = variant_type->getName();
     deserialize_variant(*dynamic_column.getVariantSerialization(variant_type, variant_type_name), *tmp_variant_column, *field_buf);
     dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);

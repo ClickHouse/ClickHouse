@@ -1,14 +1,16 @@
 import logging
-import time
 import os
+import time
 
 import pytest
+from pyhdfs import HdfsClient
+
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.utility import generate_values
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
-from helpers.wait_for_helpers import wait_for_delete_empty_parts
-
-from pyhdfs import HdfsClient
+from helpers.wait_for_helpers import (
+    wait_for_delete_empty_parts,
+    wait_for_delete_inactive_parts,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(

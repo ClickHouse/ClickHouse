@@ -1,6 +1,7 @@
 import logging
-import pytest
 from multiprocessing.dummy import Pool
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import get_postgres_conn

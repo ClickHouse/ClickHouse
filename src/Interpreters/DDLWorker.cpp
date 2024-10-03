@@ -1050,7 +1050,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     if (is_currently_deleting)
     {
         cleanup_event->set();
-        throw Exception(ErrorCodes::UNFINISHED, "Cannot create status dirs for {}, "
+        throw Exception(ErrorCodes::UNFINISHED, "Cannot create znodes (status) for {} in [Zoo]Keeper, "
                         "most likely because someone is deleting it concurrently", node_path);
     }
 
@@ -1176,7 +1176,14 @@ void DDLWorker::runMainThread()
             }
 
             cleanup_event->set();
-            markReplicasActive(reinitialized);
+            try
+            {
+                markReplicasActive(reinitialized);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "An error occurred when markReplicasActive: ");
+            }
             scheduleTasks(reinitialized);
             subsequent_errors_count = 0;
 
@@ -1311,11 +1318,11 @@ void DDLWorker::markReplicasActive(bool reinitialized)
             continue;
         }
 
-        /// Create "active" node (remove previous one if necessary)
         String active_path = fs::path(replicas_dir) / host_id / "active";
-        String active_id = toString(ServerUUID::get());
-        zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+        if (zookeeper->exists(active_path))
+            continue;
 
+        String active_id = toString(ServerUUID::get());
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
 
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);

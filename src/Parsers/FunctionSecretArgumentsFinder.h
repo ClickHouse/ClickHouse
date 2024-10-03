@@ -2,6 +2,7 @@
 
 #include <Common/KnownObjectNames.h>
 #include <Common/re2.h>
+#include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -88,12 +89,16 @@ protected:
 
     void findOrdinaryFunctionSecretArguments()
     {
-        if ((function->name() == "mysql") || (function->name() == "postgresql") || (function->name() == "mongodb"))
+        if ((function->name() == "mysql") || (function->name() == "postgresql"))
         {
             /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
             /// postgresql('host:port', 'database', 'table', 'user', 'password', ...)
             /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
             findMySQLFunctionSecretArguments();
+        }
+        else if (function->name() == "mongodb")
+        {
+            findMongoDBSecretArguments();
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
@@ -147,6 +152,40 @@ protected:
             /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
             markSecretArgument(4);
         }
+    }
+
+    void findMongoDBSecretArguments()
+    {
+        String uri;
+
+        if (isNamedCollectionName(0))
+        {
+            /// MongoDB(named_collection, ..., password = 'password', ...)
+            if (findSecretNamedArgument("password", 1))
+                return;
+
+            /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+            findNamedArgument(&uri, "uri", 1);
+            result.are_named = true;
+            result.start = 1;
+        }
+        else if (function->arguments->size() == 2)
+        {
+            tryGetStringFromArgument(0, &uri);
+            result.are_named = false;
+            result.start = 0;
+        }
+        else
+        {
+            // MongoDB('127.0.0.1:27017', 'database', 'collection', 'user, 'password'...)
+            markSecretArgument(4, false);
+            return;
+        }
+
+        chassert(result.count == 0);
+        maskURIPassword(&uri);
+        result.count = 1;
+        result.replacement = std::move(uri);
     }
 
     /// Returns the number of arguments excluding "headers" and "extra_credentials" (which should
@@ -424,14 +463,17 @@ protected:
             /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
             findExternalDistributedTableEngineSecretArguments();
         }
-        else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") ||
-                    (engine_name == "MaterializedPostgreSQL") || (engine_name == "MongoDB"))
+        else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") || (engine_name == "MaterializedPostgreSQL"))
         {
             /// MySQL('host:port', 'database', 'table', 'user', 'password', ...)
             /// PostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
             /// MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
             /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
             findMySQLFunctionSecretArguments();
+        }
+        else if (engine_name == "MongoDB")
+        {
+            findMongoDBSecretArguments();
         }
         else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg") || (engine_name == "S3Queue"))
@@ -591,11 +633,15 @@ protected:
 
     /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// If the argument is found, it is marked as a secret.
-    void findSecretNamedArgument(const std::string_view & key, size_t start = 0)
+    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0)
     {
         ssize_t arg_idx = findNamedArgument(nullptr, key, start);
         if (arg_idx >= 0)
+        {
             markSecretArgument(arg_idx, /* argument_is_named= */ true);
+            return true;
+        }
+        return false;
     }
 };
 

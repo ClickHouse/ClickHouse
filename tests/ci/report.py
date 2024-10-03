@@ -52,6 +52,7 @@ _GITHUB_JOB_API_URL = ""
 
 
 def GITHUB_JOB_ID(safe: bool = True) -> str:
+    # pylint:disable=global-statement
     global _GITHUB_JOB_ID
     global _GITHUB_JOB_URL
     global _GITHUB_JOB_API_URL
@@ -851,16 +852,15 @@ def create_test_html_report(
         def sort_key(status):
             if "fail" in status.lower():
                 return 0
-            elif "error" in status.lower():
+            if "error" in status.lower():
                 return 1
-            elif "not" in status.lower():
+            if "not" in status.lower():
                 return 2
-            elif "ok" in status.lower():
+            if "ok" in status.lower():
                 return 10
-            elif "success" in status.lower():
+            if "success" in status.lower():
                 return 9
-            else:
-                return 5
+            return 5
 
         test_results.sort(key=lambda result: sort_key(result.status))
 

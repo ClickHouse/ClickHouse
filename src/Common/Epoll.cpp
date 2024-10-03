@@ -95,7 +95,7 @@ Epoll::~Epoll()
 {
     if (epoll_fd != -1)
     {
-        int err = close(epoll_fd);
+        [[maybe_unused]] int err = close(epoll_fd);
         chassert(!err || errno == EINTR);
     }
 }

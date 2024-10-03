@@ -629,9 +629,9 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     }
 }
 
-void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
-    MultipleAccessStorage::restoreFromBackup(restorer);
+    MultipleAccessStorage::restoreFromBackup(restorer, data_path_in_backup);
     changes_notifier->sendNotifications();
 }
 

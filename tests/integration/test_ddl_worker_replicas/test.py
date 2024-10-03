@@ -1,5 +1,4 @@
 import pytest
-import time
 
 from helpers.cluster import ClickHouseCluster
 
@@ -18,7 +17,10 @@ node3 = cluster.add_instance(
     "node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
 )
 node4 = cluster.add_instance(
-    "node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node4",
+    main_configs=["configs/remote_servers.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
 )
 
 
@@ -48,20 +50,28 @@ def test_ddl_worker_replicas(started_cluster):
 
         lines = list(result.split("\n"))
         assert len(lines) == 1
-
+        print(f"Test: {replica} {lines[0]}")
         parts = list(lines[0].split("\t"))
         assert len(parts) == 3
         assert parts[0] == "active"
         assert len(parts[1]) != 0
         assert len(parts[2]) != 0
 
-    node4.stop()
-    time.sleep(1)
+    try:
+        node4.stop_clickhouse()
 
-    result = node1.query(
-        f"SELECT name, value, ephemeralOwner FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/node4:9000'"
-    ).strip()
+        # wait for node4 active path is removed
+        node1.query_with_retry(
+            sql=f"SELECT count() FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/node4:9000'",
+            check_callback=lambda result: result == 0,
+        )
 
-    lines = list(result.split("\n"))
-    assert len(lines) == 1
-    assert len(lines[0]) == 0
+        result = node1.query_with_retry(
+            f"SELECT name, value, ephemeralOwner FROM system.zookeeper WHERE path='/clickhouse/task_queue/replicas/node4:9000'"
+        ).strip()
+
+        lines = list(result.split("\n"))
+        assert len(lines) == 1
+        assert len(lines[0]) == 0
+    finally:
+        node4.start_clickhouse()
