@@ -314,6 +314,7 @@ DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
 
 enum class DeduplicateMergeProjectionMode : uint8_t
 {
+    IGNORE,
     THROW,
     DROP,
     REBUILD,
