@@ -5683,9 +5683,9 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 
 Default value: `false`.
 
-## enable_secure_identifiers
+## enforce_strict_identifier_format
 
-If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
 
 Default value: `false`.
 
