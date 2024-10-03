@@ -69,3 +69,5 @@ def test_restart_zookeeper(start_cluster):
             retry_count=10,
             sleep_time=1,
         )
+    # restore the cluster state
+    cluster.start_zookeeper_nodes([node1_zk])
