@@ -648,7 +648,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     for (const auto & projection : projections)
     {
-        if (merge_may_reduce_rows)
+        /// Checking IGNORE here is just for compatibility.
+        if (merge_may_reduce_rows && mode != DeduplicateMergeProjectionMode::IGNORE)
         {
             global_ctx->projections_to_rebuild.push_back(&projection);
             continue;
