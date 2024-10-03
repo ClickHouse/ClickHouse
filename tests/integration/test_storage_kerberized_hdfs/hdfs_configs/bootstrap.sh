@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 : "${HADOOP_PREFIX:=/usr/local/hadoop}"
 
@@ -6,9 +6,10 @@ cat >> $HADOOP_PREFIX/etc/hadoop/hadoop-env.sh <<EOF
 export HADOOP_SECURE_DN_USER=hdfs
 export HADOOP_SECURE_DN_PID_DIR=$HADOOP_PREFIX/pid
 export HADOOP_SECURE_DN_LOG_DIR=$HADOOP_PREFIX/logs/hdfs
-export JSVC_HOME=$HADOOP_PREFIX/sbin
+# export JSVC_HOME=$HADOOP_PREFIX/sbin
+export JSVC_HOME=/usr/bin
 EOF
-$HADOOP_PREFIX/etc/hadoop/hadoop-env.sh
+. $HADOOP_PREFIX/etc/hadoop/hadoop-env.sh
 
 mkdir -p "${HADOOP_SECURE_DN_PID_DIR}"
 mkdir -p "${HADOOP_SECURE_DN_LOG_DIR}"
@@ -230,7 +231,9 @@ keytool -genkey -alias kerberizedhdfs1 -keyalg rsa -keysize 1024 -dname "CN=kerb
 chmod g+r /usr/local/hadoop/etc/hadoop/conf/hdfs.jks
 
 
-service sshd start
+service ssh start
+# service sshd start
+
 
 # yum --quiet --assumeyes install krb5-workstation.x86_64
 # yum --quiet --assumeyes install tcpdump

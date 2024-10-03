@@ -25,6 +25,7 @@ create_config() {
  ticket_lifetime = 15d
  renew_lifetime = 15d
  forwardable = true
+ rdns = false
  # WARNING: We use weaker key types to simplify testing as stronger key types
  # require the enhanced security JCE policy file to be installed. You should
  # NOT run with this configuration in production or any real environment. You
@@ -32,6 +33,7 @@ create_config() {
  default_tkt_enctypes = des-cbc-md5 des-cbc-crc des3-cbc-sha1
  default_tgs_enctypes = des-cbc-md5 des-cbc-crc des3-cbc-sha1
  permitted_enctypes = des-cbc-md5 des-cbc-crc des3-cbc-sha1
+ ignore_acceptor_hostname = true
 
 [realms]
  $REALM = {
@@ -103,9 +105,6 @@ create_keytabs() {
 
   kadmin.local -q "addprinc -randkey HTTP/kerberizedhdfs1@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/hdfs.keytab HTTP/kerberizedhdfs1@${REALM}"
-
-  kadmin.local -q "addprinc -randkey hdfsuser/node1@${REALM}"
-  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab hdfsuser/node1@${REALM}"
   kadmin.local -q "addprinc -randkey hdfsuser@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab hdfsuser@${REALM}"
   kadmin.local -q "addprinc -randkey root@${REALM}"
