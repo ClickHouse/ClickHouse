@@ -400,6 +400,7 @@ protected:
     /// Call under lock. Finds process with specified current_user and current_query_id.
     QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
+    /// Call under lock. Finds process with specified query_id.
     QueryStatusPtr getProcessListElement(const String & query_id) const;
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
