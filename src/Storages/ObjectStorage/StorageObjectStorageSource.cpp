@@ -40,6 +40,7 @@ namespace Setting
     extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsString filesystem_cache_name;
 }
 
 namespace ErrorCodes
@@ -424,10 +425,11 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
 }
 
-std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
+std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBuffer(
     const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
 {
     const auto & object_size = object_info.metadata->size_bytes;
+    const auto & settings = context_->getSettingsRef();
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
     /// FIXME: Changing this setting to default value breaks something around parquet reading
@@ -451,7 +453,8 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     if (!use_prefetch)
         return impl;
 
-    if (read_settings.enable_filesystem_cache && !read_settings.filesystem_cache_name.empty())
+    const auto filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
+    if (read_settings.enable_filesystem_cache && !filesystem_cache_name.empty())
     {
         if (object_info.metadata->etag.empty())
         {
@@ -464,7 +467,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
             hash.update(object_info.metadata->etag);
 
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
-            auto cache = FileCacheFactory::instance().get(read_settings.filesystem_cache_name);
+            auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
             auto read_buffer_creator = [path = object_info.getPath(), object_size, read_settings, object_storage]()
             {
@@ -486,7 +489,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
                 context_->getFilesystemCacheLog());
 
             LOG_TEST(log, "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                     read_settings.filesystem_cache_name, object_info.getPath(),
+                     filesystem_cache_name, object_info.getPath(),
                      object_info.metadata->etag, toString(hash.get128()));
         }
     }
@@ -831,8 +834,7 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         /* path_to_archive */object_info->getPath(),
         /* archive_read_function */[=, this]()
         {
-            StoredObject stored_object(object_info->getPath(), "", size);
-            return object_storage->readObject(stored_object, getContext()->getReadSettings());
+            return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger);
         },
         /* archive_size */size);
 }
