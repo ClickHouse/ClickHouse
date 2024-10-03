@@ -133,6 +133,8 @@ def main():
         check_name, run_by_hash_num, run_by_hash_total
     )
 
+    additional_envs.append("CI=1")
+
     ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
         pr_info, stopwatch.start_time_str, check_name
