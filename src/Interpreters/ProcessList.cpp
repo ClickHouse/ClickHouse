@@ -724,7 +724,6 @@ QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
     QueryStatusPtr process_found;
     {
-        auto lock = safeLock();
         for (const auto & process : processes)
         {
             if (process->client_info.current_query_id == query_id)
@@ -740,7 +739,15 @@ QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 
 QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
+    /// We need to ensure that `process` (QueryStatusPtr) is never released in the QueryMetricLog
+    /// task thread. If we didn't acquire the lock until the end of this function, it could happen
+    /// that we get `process` but immediately the query finishes and is removed from `processes`.
+    /// Then, this code would have the only reference to it. Thus, the moment `process`'s shared_ptr
+    /// goes out of scope at the end of this function, `query_metric_log_task` destructor is called,
+    /// which locks the same `exec_mutex` that is hold while this method is executed.
+    auto lock = safeLock();
     auto process = getProcessListElement(query_id);
+
     if (process)
         return std::make_shared<QueryStatusInfo>(process->getInfo(get_thread_list, get_profile_events, get_settings));
 
@@ -749,7 +756,9 @@ QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_t
 
 void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const
 {
+    auto lock = safeLock();
     auto process = getProcessListElement(query_id);
+
     /// Some extra quick queries might have already finished
     /// e.g. SHOW PROCESSLIST FORMAT Null
     if (!process)
@@ -761,7 +770,9 @@ void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 inter
 
 void ProcessList::scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const
 {
+    auto lock = safeLock();
     auto process = getProcessListElement(query_id);
+
     if (!process || !process->query_metric_log_task)
         return;
 
