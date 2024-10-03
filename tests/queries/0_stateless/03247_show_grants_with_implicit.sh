@@ -9,8 +9,6 @@ user="user03247_${CLICKHOUSE_DATABASE}_$RANDOM"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user;";
 ${CLICKHOUSE_CLIENT} --query "CREATE USER $user;";
 
-${CLICKHOUSE_CLIENT} --query "GRANT SOURCES ON *.* TO $user;";
-
 echo "Empty grants";
 ${CLICKHOUSE_CLIENT} --query "SHOW GRANTS FOR $user WITH IMPLICIT;" | sed 's/ TO.*//';
 
