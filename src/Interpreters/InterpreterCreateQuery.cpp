@@ -1944,15 +1944,19 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
 
         UInt64 name_hash = sipHash64(create.getDatabase() + create.getTable());
-        UInt16 random_suffix = thread_local_rng();
+        String random_suffix;
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// Avoid different table name on database replicas
-            random_suffix = sipHash64(txn->getTaskZooKeeperPath());
+            UInt16 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
+            random_suffix = getHexUIntLowercase(hashed_zk_path);
         }
-        create.setTable(fmt::format("_tmp_replace_{}_{}",
-                            getHexUIntLowercase(name_hash),
-                            getHexUIntLowercase(random_suffix)));
+        else
+        {
+            random_suffix = getRandomSuffix(/*size=*/4);
+        }
+
+        create.setTable(fmt::format("_tmp_replace_{}_{}", getHexUIntLowercase(name_hash), random_suffix));
 
         ast_drop->setTable(create.getTable());
         ast_drop->is_dictionary = create.is_dictionary;
@@ -2331,6 +2335,18 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
+}
+
+String InterpreterCreateQuery::getRandomSuffix(size_t size)
+{
+    String random_suffix;
+    constexpr char characters[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    random_suffix.reserve(size);
+    std::uniform_int_distribution<> distribution(0, sizeof(characters) - 2); // -2 to avoid null terminator
+    for (size_t i = 0; i < size; ++i)
+        random_suffix += characters[distribution(thread_local_rng)];
+
+    return random_suffix;
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
