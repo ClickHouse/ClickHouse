@@ -2045,7 +2045,7 @@ Possible values:
 - 0 - Disabled.
 - 1 - Enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
 
@@ -5704,6 +5704,12 @@ Possible values:
 - 1 — Usage of `Variant` and `Dynamic` types is not restricted.
 
 Default value: 0.
+
+## enable_secure_identifiers
+
+If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+
+Default value: `false`.
 
 ## show_create_query_identifier_quoting_rule
 

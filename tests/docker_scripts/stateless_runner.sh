@@ -62,6 +62,8 @@ source /repo/tests/docker_scripts/utils.lib
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
+    sudo sed -i "/<use_xid_64>1<\/use_xid_64>/d" /etc/clickhouse-server/config.d/zookeeper.xml
+
     function remove_keeper_config()
     {
         sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
