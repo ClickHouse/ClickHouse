@@ -2004,3 +2004,9 @@ Disabled by default.
 Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native input format.
 
 Disabled by default.
+
+### output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
+
+Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
+
+Disabled by default.
