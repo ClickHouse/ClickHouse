@@ -39,11 +39,6 @@ public:
 
     UInt64 getCurrentInitializationDurationMs() const;
 
-protected:
-    // No need to `createReplicaDirs` and `markReplicasActive`
-    void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
-    void markReplicasActive(bool) override { }
-
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;
