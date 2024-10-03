@@ -309,7 +309,8 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
                 "await_startup",
             ),
             stderr=subprocess.STDOUT,
-            timeout=timeout)
+            timeout=timeout,
+        )
         return True
     except subprocess.CalledProcessError as e:
         # Raised if the command returns a non-zero exit code
@@ -320,8 +321,9 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
-        raise RuntimeError(f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}")
-
+        raise RuntimeError(
+            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
+        )
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
