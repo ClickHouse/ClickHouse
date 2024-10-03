@@ -686,15 +686,17 @@ void TCPHandler::runImpl()
             if (state.empty() || state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
             {
                 state.cancelOut();
-                state.reset();
-                break;
             }
+            else
+            {
+                state.finalizeOut();
+            }
+
 
             /// QueryState should be cleared before QueryScope, since otherwise
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             /// Also it resets socket's timeouts.
-            state.finalizeOut();
             state.reset();
             last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
             query_scope.reset();

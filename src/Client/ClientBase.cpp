@@ -1474,8 +1474,6 @@ void ClientBase::resetOutput()
         out_file_buf->finalize();
     out_file_buf.reset();
 
-    if (out_logs_buf)
-        out_logs_buf->finalize();
     out_logs_buf.reset();
 
     if (pager_cmd)
