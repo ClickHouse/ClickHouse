@@ -362,7 +362,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
     {
         const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->update(block.getByName(stat_ptr->columnName()).column);
+        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
         execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }

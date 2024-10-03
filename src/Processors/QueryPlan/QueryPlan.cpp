@@ -340,14 +340,10 @@ static void explainStep(
 
     if (options.sorting)
     {
-        if (step.hasOutputStream())
+        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
         {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
+            settings.out << prefix << "Sorting: ";
+            dumpSortDescription(sort_description, settings.out);
             settings.out.write('\n');
         }
     }

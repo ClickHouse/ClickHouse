@@ -155,7 +155,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 
 ``` bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
-$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
 ## Configuring {#interfaces_cli_configuration}
@@ -188,7 +188,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--memory-usage` – If specified, print memory usage to ‘stderr’ in non-interactive mode]. Possible values: 'none' - do not print memory usage, 'default' - print number of bytes, 'readable' - print memory usage in human-readable format.
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
-- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl).
 - `--history_file` — Path to a file containing command history.
 - `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 - `--hardware-utilization` — Print hardware utilization information in progress bar.

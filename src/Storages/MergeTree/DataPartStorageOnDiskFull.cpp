@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -203,7 +204,8 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
     source_on_disk->getDisk()->copyFile(
         fs::path(source_on_disk->getRelativePath()) / from,
         *volume->getDisk(),
-        fs::path(root_path) / part_dir / to);
+        fs::path(root_path) / part_dir / to,
+        getReadSettings());
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)
