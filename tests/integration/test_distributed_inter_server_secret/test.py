@@ -12,12 +12,16 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-def make_instance(name, cfg, *args, **kwargs):
+def make_instance(name, *args, **kwargs):
+    main_configs = kwargs.pop("main_configs", [])
+    main_configs.append("configs/remote_servers.xml")
+    user_configs = kwargs.pop("user_configs", [])
+    user_configs.append("configs/users.xml")
     return cluster.add_instance(
         name,
         with_zookeeper=True,
-        main_configs=["configs/remote_servers.xml", cfg],
-        user_configs=["configs/users.xml"],
+        main_configs=main_configs,
+        user_configs=user_configs,
         *args,
         **kwargs,
     )
