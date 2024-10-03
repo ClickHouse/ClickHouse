@@ -5,6 +5,8 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -24,6 +26,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+
+#include <numeric>
 
 using namespace DB;
 
@@ -336,10 +340,31 @@ IColumn::Selector selectDispatchBlock(size_t num_shards, const Strings & key_col
     return hashToSelector(hash, num_shards);
 }
 
-ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
+ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
 {
-    size_t num_shards = hash_joins.size();
-    IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
+    Blocks blocks(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+        blocks[i] = from_block.cloneEmpty();
+
+    for (size_t i = 0; i < from_block.columns(); ++i)
+    {
+        auto dispatched_columns = from_block.getByPosition(i).column->scatter(num_shards, selector);
+        chassert(blocks.size() == dispatched_columns.size());
+        for (size_t block_index = 0; block_index < num_shards; ++block_index)
+        {
+            blocks[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
+        }
+    }
+
+    ScatteredBlocks result;
+    result.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+        result.emplace_back(std::move(blocks[i]));
+    return result;
+}
+
+ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
+{
     std::vector<ScatteredBlock::IndexesPtr> selectors(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
     {
@@ -356,6 +381,28 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
     for (size_t i = 0; i < num_shards; ++i)
         result.emplace_back(from_block, std::move(selectors[i]));
     return result;
+}
+
+ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
+{
+    size_t num_shards = hash_joins.size();
+    IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
+
+    /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
+    /// This is not beneficial when the whole set of columns is e.g. a single small column.
+    constexpr auto threshold = sizeof(IColumn::Selector::value_type);
+    const auto & data_types = from_block.getDataTypes();
+    const bool use_zero_copy_approach
+        = std::accumulate(
+              data_types.begin(),
+              data_types.end(),
+              0u,
+              [](size_t sum, const DataTypePtr & type)
+              { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
+        > threshold;
+
+    return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
+                                  : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression)
