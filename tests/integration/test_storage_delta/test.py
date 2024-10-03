@@ -5,6 +5,7 @@ import os
 import random
 import string
 import time
+import uuid
 from datetime import datetime
 
 import delta
@@ -12,7 +13,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pyspark
 import pytest
-import uuid
 from delta import *
 from deltalake.writer import write_deltalake
 from minio.deleteobjects import DeleteObject
