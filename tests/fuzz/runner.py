@@ -75,7 +75,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
             local_directory=active_corpus_dir,
         )
     except ClientError as e:
-        if e.response['Error']['Code'] == 'NoSuchKey':
+        if e.response["Error"]["Code"] == "NoSuchKey":
             logging.debug("No active corpus exists for %s", fuzzer)
         else:
             raise
