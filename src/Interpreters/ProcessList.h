@@ -42,6 +42,13 @@ class ThreadStatus;
 class ProcessListEntry;
 
 
+enum CancelReason
+{
+    NOT_CANCELLED,
+    TIMEOUT,
+    MANUAL_CANCEL,
+};
+
 /** Information of process list element.
   * To output in SHOW PROCESSLIST query. Does not contain any complex objects, that do something on copy or destructor.
   */
@@ -59,6 +66,7 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
+    CancelReason cancel_reason;
     bool is_all_data_sent;
 
     /// Optional fields, filled by query
@@ -105,6 +113,7 @@ protected:
     bool is_cancelling { false };
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
+    CancelReason cancel_reason { CancelReason::NOT_CANCELLED };
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -223,7 +232,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    CancellationCode cancelQuery(bool kill);
+    CancellationCode cancelQuery(bool kill, CancelReason reason = CancelReason::MANUAL_CANCEL);
 
     bool isKilled() const { return is_killed; }
 

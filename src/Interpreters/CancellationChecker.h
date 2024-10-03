@@ -44,7 +44,7 @@ private:
     std::condition_variable cond_var;
 
     // Function to execute when a task's endTime is reached
-    void cancelTask(std::shared_ptr<QueryStatus> query);
+    void cancelTask(std::shared_ptr<QueryStatus> query, CancelReason reason);
     bool removeQueryFromSet(std::shared_ptr<QueryStatus> query);
 
 public:

@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -454,12 +455,14 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(bool)
+CancellationCode QueryStatus::cancelQuery(bool, CancelReason reason)
 {
     if (is_killed.load())
         return CancellationCode::CancelSent;
 
     is_killed.store(true);
+
+    cancel_reason = reason;
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
@@ -493,7 +496,11 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     if (is_killed.load())
+    {
+        if (cancel_reason == CancelReason::TIMEOUT)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Query was timed out");
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    }
 
     std::lock_guard lock(executors_mutex);
     assert(!executors.contains(e));
@@ -519,7 +526,11 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 bool QueryStatus::checkTimeLimit()
 {
     if (is_killed.load())
+    {
+        if (cancel_reason == CancelReason::TIMEOUT)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Query was timed out");
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    }
 
     return limits.checkTimeLimit(watch, overflow_mode);
 }

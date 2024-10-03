@@ -1,4 +1,5 @@
 #include <Common/logger_useful.h>
+#include "Interpreters/ProcessList.h"
 #include <Interpreters/CancellationChecker.h>
 
 #include <__chrono/duration.h>
@@ -40,9 +41,9 @@ CancellationChecker& CancellationChecker::getInstance()
     return instance;
 }
 
-void CancellationChecker::cancelTask(std::shared_ptr<QueryStatus> query)
+void CancellationChecker::cancelTask(std::shared_ptr<QueryStatus> query, CancelReason reason)
 {
-    query->cancelQuery(/*kill=*/false);
+    query->cancelQuery(/*kill=*/false, /*reason=*/reason);
 }
 
 bool CancellationChecker::removeQueryFromSet(std::shared_ptr<QueryStatus> query)
@@ -63,7 +64,7 @@ bool CancellationChecker::removeQueryFromSet(std::shared_ptr<QueryStatus> query)
 
 void CancellationChecker::appendTask(const std::shared_ptr<QueryStatus> & query, const UInt64 & timeout)
 {
-    if (!timeout)
+    if (timeout > 0) // Avoid cases when the timeout is less or equal zero
     {
         LOG_TRACE(getLogger("CancellationChecker"), "Did not add the task because the timeout is 0. Query: {}", query->getInfo().query);
         return;
@@ -114,7 +115,7 @@ void CancellationChecker::workerFunction()
             if ((end_time_ms <= now_ms && duration_milliseconds.count() != 0))
             {
                 LOG_TRACE(getLogger("CancellationChecker"), "Cancelling the task because of the timeout: {}, query: {}", duration, next_task.query->getInfo().query);
-                cancelTask(next_task.query);
+                cancelTask(next_task.query, CancelReason::TIMEOUT);
                 querySet.erase(next_task);
 
                 continue;
