@@ -114,12 +114,12 @@ void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
     std::visit(DetailsVisitor{columns, i, explicitly_set}, details);
 
     auto it = explicitly_set.begin();
-    it += i; // start from beginning of details
+    it += i; // start from the beginning of details
 
     for (; it != explicitly_set.end(); ++it)
     {
         if (! *it)
-            // not set by details visitor
+            // not set by a details visitor
             columns[i]->insertDefault();
         i++;
     }

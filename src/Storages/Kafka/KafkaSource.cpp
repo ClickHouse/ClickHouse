@@ -4,31 +4,31 @@
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/DeadLetterQueue.h>
 
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
-    extern const Event KafkaMessagesRead;
-    extern const Event KafkaMessagesFailed;
-    extern const Event KafkaRowsRead;
-    extern const Event KafkaRowsRejected;
+extern const Event KafkaMessagesRead;
+extern const Event KafkaMessagesFailed;
+extern const Event KafkaRowsRead;
+extern const Event KafkaRowsRejected;
 }
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMilliseconds kafka_max_wait_ms;
+extern const SettingsMilliseconds kafka_max_wait_ms;
 }
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 // with default poll timeout (500ms) it will give about 5 sec delay for doing 10 retries
@@ -119,9 +119,8 @@ Chunk KafkaSource::generateImpl()
 
         switch (handle_error_mode)
         {
-        case ExtStreamingHandleErrorMode::STREAM:
-        case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
-            {
+            case ExtStreamingHandleErrorMode::STREAM:
+            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE: {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
                 {
@@ -172,12 +171,12 @@ Chunk KafkaSource::generateImpl()
 
             consumer->storeLastReadMessageOffset();
 
-            auto topic         = consumer->currentTopic();
-            auto key           = consumer->currentKey();
-            auto offset        = consumer->currentOffset();
-            auto partition     = consumer->currentPartition();
+            auto topic = consumer->currentTopic();
+            auto key = consumer->currentKey();
+            auto offset = consumer->currentOffset();
+            auto partition = consumer->currentPartition();
             auto timestamp_raw = consumer->currentTimestamp();
-            auto header_list   = consumer->currentHeaderList();
+            auto header_list = consumer->currentHeaderList();
 
             Array headers_names;
             Array headers_values;
@@ -203,7 +202,8 @@ Chunk KafkaSource::generateImpl()
                 {
                     auto ts = timestamp_raw->get_timestamp();
                     virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
-                    virtual_columns[5]->insert(DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(),3));
+                    virtual_columns[5]->insert(
+                        DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(), 3));
                 }
                 else
                 {
@@ -230,28 +230,23 @@ Chunk KafkaSource::generateImpl()
                 {
                     if (exception_message)
                     {
-
                         const auto time_now = std::chrono::system_clock::now();
                         auto storage_id = storage.getStorageID();
 
                         auto dead_letter_queue = context->getDeadLetterQueue();
-                        dead_letter_queue->add(
-                            DeadLetterQueueElement{
-                                .stream_type = DeadLetterQueueElement::StreamType::Kafka,
-                                .event_time = timeInSeconds(time_now),
-                                .event_time_microseconds = timeInMicroseconds(time_now),
-                                .database_name = storage_id.database_name,
-                                .table_name = storage_id.table_name,
-                                .raw_message = consumer->currentPayload(),
-                                .error = exception_message.value(),
-                                .details = DeadLetterQueueElement::KafkaDetails{
-                                    .topic_name = consumer->currentTopic(),
-                                    .partition = consumer->currentPartition(),
-                                    .offset = consumer->currentPartition()
-                                }
-                            });
+                        dead_letter_queue->add(DeadLetterQueueElement{
+                            .stream_type = DeadLetterQueueElement::StreamType::Kafka,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database_name = storage_id.database_name,
+                            .table_name = storage_id.table_name,
+                            .raw_message = consumer->currentPayload(),
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::KafkaDetails{
+                                .topic_name = consumer->currentTopic(),
+                                .partition = consumer->currentPartition(),
+                                .offset = consumer->currentPartition()}});
                     }
-
                 }
             }
 
@@ -271,7 +266,12 @@ Chunk KafkaSource::generateImpl()
             // TODO: it seems like in case of ExtStreamingHandleErrorMode::STREAM we may need to process those differently
             // currently we just skip them with note in logs.
             consumer->storeLastReadMessageOffset();
-            LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
+            LOG_DEBUG(
+                log,
+                "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.",
+                consumer->currentTopic(),
+                consumer->currentPartition(),
+                consumer->currentOffset());
         }
 
         if (!consumer->hasMorePolledMessages()
@@ -301,7 +301,7 @@ Chunk KafkaSource::generateImpl()
     // i.e. will not be stored anywhere
     // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
 
-    auto result_block  = non_virtual_header.cloneWithColumns(executor.getResultColumns());
+    auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())

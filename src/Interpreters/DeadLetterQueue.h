@@ -5,9 +5,6 @@
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
-
-/// should be called ...Log for uniformity
-
 namespace DB
 {
 
@@ -28,6 +25,7 @@ struct DeadLetterQueueElement
     String raw_message;
     String error;
 
+    /// Engine specific details
     struct KafkaDetails
     {
         String topic_name;
@@ -45,6 +43,7 @@ struct DeadLetterQueueElement
     };
     std::variant<KafkaDetails, RabbitMQDetails> details;
 
+
     static std::string name() { return "DeadLetterQueue"; }
 
     static ColumnsDescription getColumnsDescription();
@@ -55,8 +54,6 @@ struct DeadLetterQueueElement
 class DeadLetterQueue : public SystemLog<DeadLetterQueueElement>
 {
     using SystemLog<DeadLetterQueueElement>::SystemLog;
-
-
 };
 
 }

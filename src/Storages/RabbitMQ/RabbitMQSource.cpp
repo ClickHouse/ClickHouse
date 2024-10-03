@@ -13,7 +13,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 }
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot, const Names & column_names)
@@ -149,8 +149,11 @@ Chunk RabbitMQSource::generateImpl()
 
     if (is_finished || !consumer || consumer->isConsumerStopped())
     {
-        LOG_TRACE(log, "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
-                  is_finished, consumer ? toString(consumer->isConsumerStopped()) : "No consumer");
+        LOG_TRACE(
+            log,
+            "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
+            is_finished,
+            consumer ? toString(consumer->isConsumerStopped()) : "No consumer");
         return {};
     }
 
@@ -170,9 +173,8 @@ Chunk RabbitMQSource::generateImpl()
     {
         switch (handle_error_mode)
         {
-        case ExtStreamingHandleErrorMode::STREAM:
-        case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
-            {
+            case ExtStreamingHandleErrorMode::STREAM:
+            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE: {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
                 {
@@ -185,8 +187,8 @@ Chunk RabbitMQSource::generateImpl()
 
                 break;
             }
-        case ExtStreamingHandleErrorMode::DEFAULT:
-            throw std::move(e);
+            case ExtStreamingHandleErrorMode::DEFAULT:
+                throw std::move(e);
         }
         return 1;
     };
@@ -213,11 +215,16 @@ Chunk RabbitMQSource::generateImpl()
             const auto exchange_name = storage.getExchange();
             const auto & message = consumer->currentMessage();
 
-            LOG_TEST(log, "Pulled {} rows, message delivery tag: {}, "
-                     "previous delivery tag: {}, redelivered: {}, failed delivery tags by this moment: {}, exception message: {}",
-                     new_rows, message.delivery_tag, commit_info.delivery_tag, message.redelivered,
-                     commit_info.failed_delivery_tags.size(),
-                     exception_message.has_value() ? exception_message.value() : "None");
+            LOG_TEST(
+                log,
+                "Pulled {} rows, message delivery tag: {}, "
+                "previous delivery tag: {}, redelivered: {}, failed delivery tags by this moment: {}, exception message: {}",
+                new_rows,
+                message.delivery_tag,
+                commit_info.delivery_tag,
+                message.redelivered,
+                commit_info.failed_delivery_tags.size(),
+                exception_message.has_value() ? exception_message.value() : "None");
 
             commit_info.channel_id = message.channel_id;
 
@@ -256,7 +263,6 @@ Chunk RabbitMQSource::generateImpl()
                 {
                     if (exception_message)
                     {
-
                         const auto time_now = std::chrono::system_clock::now();
                         auto storage_id = storage.getStorageID();
 
@@ -317,12 +323,15 @@ Chunk RabbitMQSource::generateImpl()
     LOG_TEST(
         log,
         "Flushing {} rows (max block size: {}, time: {} / {} ms)",
-        total_rows, max_block_size, total_stopwatch.elapsedMilliseconds(), max_execution_time_ms);
+        total_rows,
+        max_block_size,
+        total_stopwatch.elapsedMilliseconds(),
+        max_execution_time_ms);
 
     if (total_rows == 0)
         return {};
 
-    auto result_columns  = executor.getResultColumns();
+    auto result_columns = executor.getResultColumns();
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 
