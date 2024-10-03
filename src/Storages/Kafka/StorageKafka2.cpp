@@ -40,7 +40,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
