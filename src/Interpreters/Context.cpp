@@ -10,7 +10,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
@@ -252,13 +252,13 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
-    extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -3376,10 +3376,13 @@ size_t Context::getPrefetchThreadpoolSize() const
 
 ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
 {
-    callOnce(shared->build_vector_similarity_index_threadpool_initialized, [&] {
+    callOnce(
+        shared->build_vector_similarity_index_threadpool_initialized,
+        [&]
+        {
             size_t pool_size = shared->server_settings.max_build_vector_similarity_index_thread_pool_size > 0
                 ? shared->server_settings.max_build_vector_similarity_index_thread_pool_size
-                : getNumberOfPhysicalCPUCores();
+                : getNumberOfCPUCoresToUse();
             shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
                 CurrentMetrics::BuildVectorSimilarityIndexThreads,
                 CurrentMetrics::BuildVectorSimilarityIndexThreadsActive,

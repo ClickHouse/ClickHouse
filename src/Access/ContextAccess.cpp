@@ -645,9 +645,25 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
             }
 
+            AccessRights difference;
+            difference.grant(flags, fmt_args...);
+            AccessRights original_rights = difference;
+            difference.makeDifference(*getAccessRights());
+
+            if (difference == original_rights)
+            {
+                return access_denied(ErrorCodes::ACCESS_DENIED,
+                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+            }
+
+
             return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
+                "(Missing permissions: {}){}",
+                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                difference.getElements().toStringWithoutOptions(),
+                grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
 
         /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
@@ -671,18 +687,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             if (new_flags.isEmpty())
                 return access_denied_no_grant(flags, args...);
 
-            if (grant_option && acs->isGranted(flags, args...))
-            {
-                return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. "
-                    "The required privileges have been granted, but without grant option. "
-                    "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{new_flags}.toStringForAccessTypeSource());
-            }
-
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                AccessRightsElement{new_flags}.toStringForAccessTypeSource() + (grant_option ? " WITH GRANT OPTION" : ""));
+            return access_denied_no_grant(new_flags);
         }
 
         return access_denied_no_grant(flags, args...);

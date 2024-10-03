@@ -594,6 +594,14 @@ public:
         optimizeTree();
     }
 
+    void makeDifference(const Node & other)
+    {
+        Node rhs = other;
+        makeDifferenceRec(*this, rhs);
+        flags -= other.flags;
+        optimizeTree();
+    }
+
     ProtoElements getElements() const
     {
         ProtoElements res;
@@ -1109,6 +1117,32 @@ private:
         result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
     }
 
+    void makeDifferenceRec(Node & result, Node & rhs)
+    {
+        if (rhs.children)
+        {
+            for (auto & rhs_child : *rhs.children)
+            {
+                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                lhs_child.makeDifferenceRec(result_child, rhs_child);
+            }
+        }
+
+        if (children)
+        {
+            for (auto & lhs_child : *children)
+            {
+                auto & result_child = result.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                auto & rhs_child = rhs.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                lhs_child.makeDifferenceRec(result_child, rhs_child);
+            }
+        }
+
+        result.flags = flags - rhs.flags;
+        result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
+    }
+
     void modifyFlagsRec(const ModifyFlagsFunction & function, bool grant_option, bool & flags_added, bool & flags_removed)
     {
         if (children)
@@ -1573,6 +1607,22 @@ void AccessRights::makeIntersection(const AccessRights & other)
             return;
         }
         root_node->makeIntersection(*other_root_node);
+        if (!root_node->flags && !root_node->children)
+            root_node = nullptr;
+    };
+    helper(root, other.root);
+    helper(root_with_grant_option, other.root_with_grant_option);
+}
+
+
+void AccessRights::makeDifference(const AccessRights & other)
+{
+    auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
+    {
+        if (!root_node || !other_root_node)
+            return;
+
+        root_node->makeDifference(*other_root_node);
         if (!root_node->flags && !root_node->children)
             root_node = nullptr;
     };

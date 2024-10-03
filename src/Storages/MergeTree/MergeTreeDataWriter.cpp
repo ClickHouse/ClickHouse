@@ -60,6 +60,8 @@ namespace Setting
     extern const SettingsBool materialize_statistics_on_insert;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
+    extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
+    extern const SettingsDouble min_free_disk_ratio_to_perform_insert;
 }
 
 namespace ErrorCodes
@@ -67,6 +69,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace
@@ -560,6 +563,41 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
+    const auto & global_settings = context->getSettingsRef();
+    const auto & data_settings = data.getSettings();
+
+    const UInt64 & min_bytes_to_perform_insert =
+        data_settings->min_free_disk_bytes_to_perform_insert.changed
+        ? data_settings->min_free_disk_bytes_to_perform_insert
+        : global_settings[Setting::min_free_disk_bytes_to_perform_insert];
+
+    const Float64 & min_ratio_to_perform_insert =
+        data_settings->min_free_disk_ratio_to_perform_insert.changed
+        ? data_settings->min_free_disk_ratio_to_perform_insert
+        : global_settings[Setting::min_free_disk_ratio_to_perform_insert];
+
+    if (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0)
+    {
+        const auto & disk = data_part_volume->getDisk();
+        const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
+        const UInt64 & free_disk_bytes = disk->getAvailableSpace().value_or(0);
+
+        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
+        const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
+
+        if (needed_free_bytes > free_disk_bytes)
+        {
+            throw Exception(
+                ErrorCodes::NOT_ENOUGH_SPACE,
+                "Could not perform insert: less than {} free bytes left in the disk space ({}). "
+                "Configure this limit with user settings {} or {}",
+                needed_free_bytes,
+                free_disk_bytes,
+                "min_free_disk_bytes_to_perform_insert",
+                "min_free_disk_ratio_to_perform_insert");
+        }
+    }
+
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
         .withPartInfo(new_part_info)
@@ -571,11 +609,16 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    const auto & data_settings = data.getSettings();
-
     SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
+
+    for (const auto & [column_name, _] : columns)
+    {
+        auto & column = block.getByName(column_name);
+        if (column.column->isSparse() && infos.getKind(column_name) != ISerialization::Kind::SPARSE)
+            column.column = recursiveRemoveSparse(column.column);
+    }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();

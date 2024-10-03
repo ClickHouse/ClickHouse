@@ -1,19 +1,20 @@
 import gzip
-import uuid
+import io
 import logging
 import os
-import io
 import random
 import threading
 import time
+import uuid
+
+import pytest
 
 import helpers.client
-import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.network import PartitionManager
 from helpers.mock_servers import start_mock_servers
-from helpers.test_tools import exec_query_with_retry
+from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
+from helpers.test_tools import exec_query_with_retry
 
 MINIO_INTERNAL_PORT = 9001
 

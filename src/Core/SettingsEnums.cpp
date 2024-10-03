@@ -251,9 +251,17 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
-IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", IdentifierQuotingStyle::None},
-     {"Backticks", IdentifierQuotingStyle::Backticks},
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingStyle,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Backticks", IdentifierQuotingStyle::Backticks},
      {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
      {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
+
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingRule,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"user_display", IdentifierQuotingRule::UserDisplay},
+     {"when_necessary", IdentifierQuotingRule::WhenNecessary},
+     {"always", IdentifierQuotingRule::Always}})
 }

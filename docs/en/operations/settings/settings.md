@@ -2045,7 +2045,7 @@ Possible values:
 - 0 - Disabled.
 - 1 - Enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
 
@@ -5682,6 +5682,30 @@ Default value: `0`.
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
+
+## enable_secure_identifiers
+
+If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+
+Default value: `false`.
+
+## show_create_query_identifier_quoting_rule
+
+Define identifier quoting behavior of the show create query result:
+- `when_necessary`: When the identifiers is one of `{"distinct", "all", "table"}`, or it can cause ambiguity: column names, dictionary attribute names.
+- `always`: Always quote identifiers.
+- `user_display`: When the identifiers is a keyword.
+
+Default value: `when_necessary`.
+
+## show_create_query_identifier_quoting_style
+
+Define identifier quoting style of the show create query result:
+- `Backticks`: \`clickhouse\` style.
+- `DoubleQuotes`: "postgres" style
+- `BackticksMySQL`: \`mysql\` style, most same as `Backticks`, but it uses '``' to escape '`'
+
+Default value: `Backticks`.
 
 ## mongodb_throw_on_unsupported_query
 

@@ -302,6 +302,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
     ReplicatedFilesDescription description;
     auto relative_path = fs::path(root_path) / part_dir;
     auto disk = volume->getDisk();
+    auto read_settings = getReadSettings();
 
     auto actual_file_names = getActualFileNamesOnDisk(file_names);
     for (const auto & name : actual_file_names)
@@ -312,9 +313,9 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         auto & file_desc = description.files[name];
 
         file_desc.file_size = file_size;
-        file_desc.input_buffer_getter = [disk, path, file_size]
+        file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, ReadSettings{}.adjustBufferSize(file_size), file_size, file_size);
+            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size, file_size);
         };
     }
 
