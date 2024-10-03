@@ -334,7 +334,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::JWT:
         {
-            const auto &claims = getJWTClaims();
+            const auto & claims = getJWTClaims();
             if (!claims.empty())
                 node->children.push_back(std::make_shared<ASTLiteral>(claims));
             break;

@@ -28,12 +28,12 @@ namespace ErrorCodes
 namespace
 {
 
-bool check_claims(const picojson::value &claims, const picojson::value &payload, const String &path);
-bool check_claims(const picojson::value::object &claims, const picojson::value::object &payload, const String &path)
+bool check_claims(const picojson::value & claims, const picojson::value & payload, const String & path);
+bool check_claims(const picojson::value::object & claims, const picojson::value::object & payload, const String & path)
 {
-    for (const auto &it : claims)
+    for (const auto & it : claims)
     {
-        const auto &payload_it = payload.find(it.first);
+        const auto & payload_it = payload.find(it.first);
         if (payload_it == payload.end())
         {
             LOG_TRACE(getLogger("JWTAuthentication"), "Key '{}.{}' not found in JWT payload", path, it.first);
@@ -47,7 +47,7 @@ bool check_claims(const picojson::value::object &claims, const picojson::value::
     return true;
 }
 
-bool check_claims(const picojson::value::array &claims, const picojson::value::array &payload, const String &path)
+bool check_claims(const picojson::value::array & claims, const picojson::value::array & payload, const String & path)
 {
     if (claims.size() > payload.size())
     {
@@ -57,8 +57,8 @@ bool check_claims(const picojson::value::array &claims, const picojson::value::a
     for (size_t claims_i = 0; claims_i < claims.size(); ++claims_i)
     {
         bool found = false;
-        const auto &claims_val = claims.at(claims_i);
-        for (const auto &payload_val : payload)
+        const auto & claims_val = claims.at(claims_i);
+        for (const auto & payload_val : payload)
         {
             if (!check_claims(claims_val, payload_val, path + "[" + std::to_string(claims_i) + "]"))
                 continue;
@@ -73,7 +73,7 @@ bool check_claims(const picojson::value::array &claims, const picojson::value::a
     return true;
 }
 
-bool check_claims(const picojson::value &claims, const picojson::value &payload, const String &path)
+bool check_claims(const picojson::value & claims, const picojson::value & payload, const String & path)
 {
     if (claims.is<picojson::array>())
     {
@@ -155,7 +155,7 @@ bool check_claims(const picojson::value &claims, const picojson::value &payload,
     return false;
 }
 
-bool check_claims(const String &claims, const picojson::value::object &payload)
+bool check_claims(const String & claims, const picojson::value::object & payload)
 {
     if (claims.empty())
         return true;
@@ -168,9 +168,9 @@ bool check_claims(const String &claims, const picojson::value::object &payload)
     return check_claims(json.get<picojson::value::object>(), payload, "");
 }
 
-std::map<String, Field> stringify_params(const picojson::value &params, const String &path);
+std::map<String, Field> stringify_params(const picojson::value & params, const String & path);
 
-std::map<String, Field> stringify_params(const picojson::value::array &params, const String &path)
+std::map<String, Field> stringify_params(const picojson::value::array & params, const String & path)
 {
     std::map<String, Field> result;
     for (size_t i = 0; i < params.size(); ++i)
@@ -181,13 +181,13 @@ std::map<String, Field> stringify_params(const picojson::value::array &params, c
     return result;
 }
 
-std::map<String, Field> stringify_params(const picojson::value::object &params, const String &path)
+std::map<String, Field> stringify_params(const picojson::value::object & params, const String & path)
 {
     auto add_path = String(path);
     if (!add_path.empty())
         add_path = add_path + ".";
     std::map<String, Field> result;
-    for (const auto &it : params)
+    for (const auto & it : params)
     {
         const auto tmp_result = stringify_params(it.second, add_path + it.first);
         result.insert(tmp_result.begin(), tmp_result.end());
@@ -195,7 +195,7 @@ std::map<String, Field> stringify_params(const picojson::value::object &params, 
     return result;
 }
 
-std::map<String, Field> stringify_params(const picojson::value &params, const String &path)
+std::map<String, Field> stringify_params(const picojson::value & params, const String & path)
 {
     std::map<String, Field> result;
     if (params.is<picojson::array>())
@@ -228,12 +228,12 @@ std::map<String, Field> stringify_params(const picojson::value &params, const St
 }
 }
 
-void IJWTValidator::init(const JWTValidator &_params)
+void IJWTValidator::init(const JWTValidator & _params)
 {
     params = _params;
 }
 
-bool IJWTValidator::verify(const String &claims, const String &token, SettingsChanges & settings) const
+bool IJWTValidator::verify(const String & claims, const String & token, SettingsChanges & settings) const
 {
     try
     {
@@ -244,10 +244,10 @@ bool IJWTValidator::verify(const String &claims, const String &token, SettingsCh
             return false;
         if (params.settings_key.empty())
             return true;
-        const auto &payload_obj = decoded_jwt.get_payload_json();
-        const auto &payload_settings = payload_obj.at(params.settings_key);
+        const auto & payload_obj = decoded_jwt.get_payload_json();
+        const auto & payload_settings = payload_obj.at(params.settings_key);
         const auto string_settings = stringify_params(payload_settings, "");
-        for (const auto &it : string_settings)
+        for (const auto & it : string_settings)
             settings.insertSetting(it.first, it.second);
         return true;
     }
@@ -349,7 +349,7 @@ void SimpleJWTValidator::init(const SimpleJWTValidatorParams & _params)
         throw Exception(ErrorCodes::JWT_ERROR, "Unknown algorithm {}", _params.algo);
 }
 
-bool SimpleJWTValidator::verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const
+bool SimpleJWTValidator::verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> & token) const
 {
     verifier.verify(token);
     return true;
@@ -360,7 +360,7 @@ JWKSValidator::JWKSValidator(const String & _name, std::shared_ptr<IJWKSProvider
     , provider(_provider)
 {}
 
-bool JWKSValidator::verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const
+bool JWKSValidator::verifyImpl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> & token) const
 {
     auto jwk = provider->getJWKS().get_jwk(token.get_key_id());
     auto subject = token.get_subject();
@@ -482,7 +482,7 @@ void StaticJWKSParams::validate() const
         throw Exception(ErrorCodes::JWT_ERROR, "`static_jwks` and `static_jwks_file` keys cannot both be present in configuration");
 }
 
-void StaticJWKS::init(const StaticJWKSParams& params)
+void StaticJWKS::init(const StaticJWKSParams & params)
 {
     params.validate();
     String content = String(params.static_jwks);

@@ -102,7 +102,7 @@ const String & BasicCredentials::getPassword() const
 
 namespace
 {
-String extractSubjectFromToken(const String& token)
+String extractSubjectFromToken(const String & token)
 {
     try
     {
@@ -116,7 +116,7 @@ String extractSubjectFromToken(const String& token)
 }
 }
 
-JWTCredentials::JWTCredentials(const String& token_)
+JWTCredentials::JWTCredentials(const String & token_)
         : Credentials(extractSubjectFromToken(token_))
         , token(token_)
     {

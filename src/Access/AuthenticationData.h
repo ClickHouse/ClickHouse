@@ -75,7 +75,7 @@ public:
     void setHTTPAuthenticationServerName(const String & name) { http_auth_server_name = name; }
 
     const String & getJWTClaims() const { return jwt_claims; }
-    void setJWTClaims(const String &jwt_claims_) { jwt_claims = jwt_claims_; }
+    void setJWTClaims(const String & jwt_claims_) { jwt_claims = jwt_claims_; }
 
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }

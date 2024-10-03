@@ -174,7 +174,7 @@ Or without additional JWT payload checks:
 CREATE USER my_user IDENTIFIED WITH jwt
 ```
 
-## JWT authorization examples {#jwt-authorization-examples}
+## JWT authentication examples {#jwt-authentication-examples}
 
 #### Console client
 

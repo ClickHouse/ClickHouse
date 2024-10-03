@@ -261,7 +261,11 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     return http_auth_params;
 }
 
-std::unique_ptr<DB::IJWTValidator> makeJWTValidator(const Poco::Util::AbstractConfiguration & config, const String & prefix, const String &name, const String &global_settings_key)
+std::unique_ptr<DB::IJWTValidator> makeJWTValidator(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & prefix,
+        const String &name,
+        const String &global_settings_key)
 {
     auto settings_key = String(global_settings_key);
     if (config.hasProperty(prefix + ".settings_key"))
@@ -639,7 +643,7 @@ GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
     return kerberos_params.value();
 }
 
-HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const String& server) const
+HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const String & server) const
 {
     std::lock_guard lock{mutex};
 
@@ -649,14 +653,14 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
     return it->second;
 }
 
-bool ExternalAuthenticators::checkJWTCredentials(const String &claims, const JWTCredentials & credentials, SettingsChanges &settings) const
+bool ExternalAuthenticators::checkJWTCredentials(const String & claims, const JWTCredentials & credentials, SettingsChanges & settings) const
 {
     std::lock_guard lock{mutex};
 
     const auto token = String(credentials.getToken());
-    const auto &user_name = credentials.getUserName();
+    const auto & user_name = credentials.getUserName();
 
-    for (const auto &it : jwt_validators)
+    for (const auto & it : jwt_validators)
     {
         if (it.second->verify(claims, token, settings))
         {
