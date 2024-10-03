@@ -110,7 +110,7 @@ def check_replica_after_insert(node, table_name):
     assert detached_parts_name_after_drop == "broken_all_0_0_0"
 
 
-def assert_part_exists(node, table_name, expected_part):
+def assert_one_part_exists(node, table_name, expected_part):
     def check_callback(actual_part):
         return actual_part.strip() == expected_part
 
@@ -119,6 +119,13 @@ def assert_part_exists(node, table_name, expected_part):
         check_callback=check_callback,
     )
     assert part_name.strip() == expected_part
+
+    assert (
+        "1"
+        == node.query(
+            f"SELECT count(*) FROM system.parts WHERE table='{table_name}'",
+        ).strip()
+    )
 
 
 def test_corrupted_blob(start_cluster):
@@ -204,7 +211,7 @@ def test_no_metadata_file(start_cluster):
         regexp=FETCHED_PART_MSG, timeout=60, look_behind_lines=2000
     )
 
-    assert_part_exists(replica1, table_name, part_name)
+    assert_one_part_exists(replica1, table_name, part_name)
 
     data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert "1" == data
@@ -245,7 +252,7 @@ def test_broken_metadata_file(start_cluster):
         regexp=FETCHED_PART_MSG, timeout=60, look_behind_lines=2000
     )
 
-    assert_part_exists(replica1, table_name, part_name)
+    assert_one_part_exists(replica1, table_name, part_name)
 
     data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert "1" == data
