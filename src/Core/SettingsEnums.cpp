@@ -68,6 +68,14 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
      {"break", OverflowMode::BREAK}})
 
+IMPLEMENT_SETTING_ENUM(DistributedCacheLogMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"nothing", DistributedCacheLogMode::LOG_NOTHING},
+     {"on_error", DistributedCacheLogMode::LOG_ON_ERROR},
+     {"all", DistributedCacheLogMode::LOG_ALL}})
+
+IMPLEMENT_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit, ErrorCodes::BAD_ARGUMENTS,
+    {{"wait", DistributedCachePoolBehaviourOnLimit::WAIT},
+     {"allocate_bypassing_pool", DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL}});
 
 IMPLEMENT_SETTING_ENUM(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
