@@ -67,6 +67,7 @@ DEFAULT_ENV_NAME = ".env"
 DEFAULT_BASE_CONFIG_DIR = os.environ.get(
     "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
 )
+DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
 SANITIZER_SIGN = "=================="
 
@@ -504,7 +505,6 @@ class ClickHouseCluster:
             "CLICKHOUSE_TESTS_DOCKERD_HOST"
         )
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
-        self.docker_base_tag = os.environ.get("DOCKER_BASE_TAG", "latest")
 
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
@@ -1079,7 +1079,7 @@ class ClickHouseCluster:
 
         env_variables["keeper_binary"] = binary_path
         env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
-        env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
+        env_variables["image"] = "clickhouse/integration-test:" + DOCKER_BASE_TAG
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
         for i in range(1, 4):
@@ -1672,7 +1672,7 @@ class ClickHouseCluster:
             )
 
         if tag is None:
-            tag = self.docker_base_tag
+            tag = DOCKER_BASE_TAG
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
@@ -4519,15 +4519,11 @@ class ClickHouseInstance:
         if (
             self.randomize_settings
             and self.image == "clickhouse/integration-test"
-            and self.tag == "latest"
+            and self.tag == DOCKER_BASE_TAG
             and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR
         ):
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
-        else:
-            print(
-                f"XXXX Skip random settings for {self.name}, {self.randomize_settings} {self.image}:{self.tag} @ {self.base_config_dir} ?= {DEFAULT_BASE_CONFIG_DIR}"
-            )
 
         version = None
         version_parts = self.tag.split(".")
