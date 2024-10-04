@@ -666,6 +666,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
             DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+            pipeline.setConcurrencyControl(false);
             Block block;
             while (executor.pull(block))
             {

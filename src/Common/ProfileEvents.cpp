@@ -828,6 +828,11 @@ The server successfully detected this situation and will download merged part fr
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP") \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.") \
     \
+    M(ConcurrencyControlGrantedHard, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0") \
+    M(ConcurrencyControlGrantDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot") \
+    M(ConcurrencyControlAcquiredTotal, "Total number of CPU slot acquired") \
+    M(ConcurrencyControlAllocationDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale") \
+    \
     M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
     M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
     M(GWPAsanFree, "Number of free operations done by GWPAsan") \
