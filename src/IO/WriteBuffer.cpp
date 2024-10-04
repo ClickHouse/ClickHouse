@@ -36,6 +36,12 @@ void WriteBuffer::cancel() noexcept
     if (canceled || finalized)
         return;
 
+    // LoggerPtr log = getLogger("WriteBuffer");
+    // LOG_ERROR(
+    //         log,
+    //         "canceled at {}",
+    //         StackTrace().toString());
+
     LockMemoryExceptionInThread lock(VariableContext::Global);
     cancelImpl();
     canceled = true;
