@@ -233,15 +233,20 @@ Hierarchy of privileges:
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#sources)
+    - `AZURE`
     - `FILE`
-    - `URL`
-    - `REMOTE`
-    - `YSQL`
-    - `ODBC`
-    - `JDBC`
     - `HDFS`
-    - `S3`
+    - `HIVE`
+    - `JDBC`
+    - `MONGO`
+    - `MYSQL`
+    - `ODBC`
     - `POSTGRES`
+    - `REDIS`
+    - `REMOTE`
+    - `S3`
+    - `SQLITE`
+    - `URL`
 - [dictGet](#dictget)
 - [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
 - [NAMED COLLECTION ADMIN](#named-collection-admin)
