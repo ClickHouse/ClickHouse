@@ -63,6 +63,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"query_plan_optimize_lazy_materialization", false, true, "Added new setting to use query plan for lazy materialization optimisation"},
+            {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
         }
     },
     {"24.10",
