@@ -100,6 +100,7 @@ protected:
             auto buf = BuilderRWBufferFromHTTP(getPingURI())
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withTimeouts(getHTTPTimeouts())
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             return checkString(PING_OK_ANSWER, *buf);
@@ -206,6 +207,7 @@ protected:
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                            .withTimeouts(getHTTPTimeouts())
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             bool res = false;
@@ -232,6 +234,7 @@ protected:
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                            .withTimeouts(getHTTPTimeouts())
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             std::string character;
@@ -240,7 +243,7 @@ protected:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
                     character, BridgeHelperMixin::serviceAlias());
             else if (character.empty())
-                quote_style = IdentifierQuotingStyle::None;
+                quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '"')

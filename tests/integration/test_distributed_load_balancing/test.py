@@ -5,6 +5,7 @@
 import uuid
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -200,7 +201,6 @@ def test_distributed_replica_max_ignored_errors():
         "connect_timeout": 2,
         "receive_timeout": 2,
         "send_timeout": 2,
-        "idle_connection_timeout": 2,
         "tcp_keep_alive_timeout": 2,
         "distributed_replica_max_ignored_errors": 0,
         "distributed_replica_error_half_life": 60,

@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_async_insert_native_3;
     CREATE TABLE t_async_insert_native_3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
 "
@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT $async_insert_options -q "INSERT INTO t_async_insert_native_3
 
 wait
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT format, length(entries.bytes) FROM system.asynchronous_inserts
     WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_3'
     ORDER BY format;

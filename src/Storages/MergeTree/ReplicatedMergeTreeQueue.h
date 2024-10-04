@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 
 #include <Common/ActionBlocker.h>
@@ -151,8 +152,11 @@ private:
 
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
-    /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
-    std::atomic<ssize_t> alter_conversions_mutations = 0;
+
+    /// Unfinished mutations that are required for AlterConversions.
+    Int64 num_data_mutations_to_apply = 0;
+    Int64 num_metadata_mutations_to_apply = 0;
+
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
@@ -409,10 +413,26 @@ public:
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
 
+    struct MutationsSnapshot : public MergeTreeData::IMutationsSnapshot
+    {
+    public:
+        MutationsSnapshot() = default;
+        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
+
+        using Params = MergeTreeData::IMutationsSnapshot::Params;
+        using MutationsByPartititon = std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>>;
+
+        MutationsByPartititon mutations_by_partition;
+
+        MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        NameSet getAllUpdatedColumns() const override;
+    };
+
     /// Return mutation commands for part which could be not applied to
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
-    MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
+    MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.
@@ -453,6 +473,7 @@ public:
         UInt32 inserts_in_queue;
         UInt32 merges_in_queue;
         UInt32 part_mutations_in_queue;
+        UInt32 metadata_alters_in_queue;
         UInt32 queue_oldest_time;
         UInt32 inserts_oldest_time;
         UInt32 merges_oldest_time;

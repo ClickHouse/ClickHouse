@@ -1,7 +1,5 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
-#include <Storages/StorageMaterializedView.h>
-
 #include <Common/CurrentMetrics.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -11,6 +9,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Storages/StorageMaterializedView.h>
 
 namespace CurrentMetrics
 {
@@ -19,48 +18,52 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int REFRESH_FAILED;
 }
 
 RefreshTask::RefreshTask(
-    const ASTRefreshStrategy & strategy)
+    StorageMaterializedView * view_, const DB::ASTRefreshStrategy & strategy)
     : log(getLogger("RefreshTask"))
+    , view(view_)
     , refresh_schedule(strategy)
-{}
+    , refresh_append(strategy.append)
+{
+    if (strategy.settings != nullptr)
+        refresh_settings.applyChanges(strategy.settings->changes);
+}
 
-RefreshTaskHolder RefreshTask::create(
-    const StorageMaterializedView & view,
+OwnedRefreshTask RefreshTask::create(
+    StorageMaterializedView * view,
     ContextMutablePtr context,
     const DB::ASTRefreshStrategy & strategy)
 {
-    auto task = std::make_shared<RefreshTask>(strategy);
+    auto task = std::make_shared<RefreshTask>(view, strategy);
 
-    task->refresh_task = context->getSchedulePool().createTask("MaterializedViewRefresherTask",
-        [self = task->weak_from_this()]
-        {
-            if (auto t = self.lock())
-                t->refreshTask();
-        });
+    task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
+        [self = task.get()] { self->refreshTask(); });
 
-    std::vector<StorageID> deps;
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
-            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+            task->initial_dependencies.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
-    context->getRefreshSet().emplace(view.getStorageID(), deps, task);
-
-    return task;
+    return OwnedRefreshTask(task);
 }
 
-void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> view)
+void RefreshTask::initializeAndStart()
 {
-    view_to_refresh = view;
-    if (view->getContext()->getSettingsRef().stop_refreshable_materialized_views_on_startup)
+    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         stop_requested = true;
+    view->getContext()->getRefreshSet().emplace(view->getStorageID(), initial_dependencies, shared_from_this());
     populateDependencies();
     advanceNextRefreshTime(currentTime());
     refresh_task->schedule();
@@ -69,7 +72,8 @@ void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> vi
 void RefreshTask::rename(StorageID new_id)
 {
     std::lock_guard guard(mutex);
-    set_handle.rename(new_id);
+    if (set_handle)
+        set_handle.rename(new_id);
 }
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)
@@ -104,7 +108,11 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         if (arriveDependency(id) && !std::exchange(refresh_immediately, true))
             refresh_task->schedule();
 
-    /// TODO: Update settings once we have them.
+    refresh_settings = {};
+    if (new_strategy.settings != nullptr)
+        refresh_settings.applyChanges(new_strategy.settings->changes);
+
+    refresh_append = new_strategy.append;
 }
 
 RefreshInfo RefreshTask::getInfo() const
@@ -113,7 +121,7 @@ RefreshInfo RefreshTask::getInfo() const
     auto res = info;
     res.view_id = set_handle.getID();
     res.remaining_dependencies.assign(remaining_dependencies.begin(), remaining_dependencies.end());
-    if (res.last_refresh_result != LastRefreshResult::Exception)
+    if (res.last_refresh_result != LastRefreshResult::Error)
         res.exception_message.clear();
     res.progress = progress.getValues();
     return res;
@@ -141,6 +149,8 @@ void RefreshTask::run()
     std::lock_guard guard(mutex);
     if (std::exchange(refresh_immediately, true))
         return;
+    next_refresh_prescribed = std::chrono::floor<std::chrono::seconds>(currentTime());
+    next_refresh_actual = currentTime();
     refresh_task->schedule();
 }
 
@@ -151,10 +161,22 @@ void RefreshTask::cancel()
     refresh_task->schedule();
 }
 
+void RefreshTask::wait()
+{
+    std::unique_lock lock(mutex);
+    refresh_cv.wait(lock, [&] { return info.state != RefreshState::Running && !refresh_immediately; });
+    if (info.last_refresh_result == LastRefreshResult::Error)
+        throw Exception(ErrorCodes::REFRESH_FAILED, "Refresh failed: {}", info.exception_message);
+}
+
 void RefreshTask::shutdown()
 {
     {
         std::lock_guard guard(mutex);
+
+        if (view == nullptr)
+            return; // already shut down
+
         stop_requested = true;
         interruptExecution();
     }
@@ -168,6 +190,8 @@ void RefreshTask::shutdown()
     /// (Also, RefreshSet holds a shared_ptr to us.)
     std::lock_guard guard(mutex);
     set_handle.reset();
+
+    view = nullptr;
 }
 
 void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds parent_next_prescribed_time)
@@ -234,6 +258,7 @@ void RefreshTask::refreshTask()
             chassert(lock.owns_lock());
 
             interrupt_execution.store(false);
+            refresh_cv.notify_all(); // we'll assign info.state before unlocking the mutex
 
             if (stop_requested)
             {
@@ -245,7 +270,7 @@ void RefreshTask::refreshTask()
             if (!refresh_immediately)
             {
                 auto now = currentTime();
-                if (now >= next_refresh_with_spread)
+                if (now >= next_refresh_actual)
                 {
                     if (arriveTime())
                         refresh_immediately = true;
@@ -258,7 +283,7 @@ void RefreshTask::refreshTask()
                 else
                 {
                     size_t delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        next_refresh_with_spread - now).count();
+                        next_refresh_actual - now).count();
 
                     /// If we're in a test that fakes the clock, poll every 100ms.
                     if (fake_clock.load(std::memory_order_relaxed) != INT64_MIN)
@@ -272,19 +297,9 @@ void RefreshTask::refreshTask()
 
             /// Perform a refresh.
 
+            bool append = refresh_append;
             refresh_immediately = false;
-
-            auto view = lockView();
-            if (!view)
-            {
-                /// The view was dropped. This RefreshTask should be destroyed soon too.
-                /// (Maybe this is unreachable.)
-                info.state = RefreshState::Disabled;
-                break;
-            }
-
             info.state = RefreshState::Running;
-
             CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
 
             lock.unlock();
@@ -295,19 +310,13 @@ void RefreshTask::refreshTask()
 
             try
             {
-                executeRefreshUnlocked(view);
+                executeRefreshUnlocked(append);
                 refreshed = true;
             }
             catch (...)
             {
                 if (!interrupt_execution.load())
-                {
-                    PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-                    auto text = message.text;
-                    message.text = fmt::format("Refresh view {} failed: {}", view->getStorageID().getFullTableName(), message.text);
-                    LOG_ERROR(log, message);
-                    exception = text;
-                }
+                    exception = getCurrentExceptionMessage(true);
             }
 
             lock.lock();
@@ -319,18 +328,18 @@ void RefreshTask::refreshTask()
 
             if (exception)
             {
-                info.last_refresh_result = LastRefreshResult::Exception;
+                info.last_refresh_result = LastRefreshResult::Error;
                 info.exception_message = *exception;
-
-                /// TODO: Do a few retries with exponential backoff.
-                advanceNextRefreshTime(now);
+                Int64 attempt_number = num_retries + 1;
+                scheduleRetryOrSkipToNextRefresh(now);
+                LOG_ERROR(log, "Refresh view {} failed (attempt {}/{}): {}", view->getStorageID().getFullTableName(), attempt_number, refresh_settings.refresh_retries + 1, *exception);
             }
             else if (!refreshed)
             {
                 info.last_refresh_result = LastRefreshResult::Cancelled;
 
                 /// Make sure we don't just start another refresh immediately.
-                if (!stop_requested && now >= next_refresh_with_spread)
+                if (!stop_requested)
                     advanceNextRefreshTime(now);
             }
             else
@@ -363,17 +372,18 @@ void RefreshTask::refreshTask()
     }
 }
 
-void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view)
+void RefreshTask::executeRefreshUnlocked(bool append)
 {
     LOG_DEBUG(log, "Refreshing view {}", view->getStorageID().getFullTableName());
     progress.reset();
 
-    /// Create a table.
-    auto [refresh_context, refresh_query] = view->prepareRefresh();
-
-    StorageID stale_table = StorageID::createEmpty();
+    ContextMutablePtr refresh_context = view->createRefreshContext();
+    std::optional<StorageID> table_to_drop;
     try
     {
+        /// Create a table.
+        auto refresh_query = view->prepareRefresh(append, refresh_context, table_to_drop);
+
         /// Run the query.
         {
             CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
@@ -394,8 +404,7 @@ void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView
             });
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
-            String query_for_logging = refresh_query->formatForLogging(
-                refresh_context->getSettingsRef().log_queries_cut_to_length);
+            String query_for_logging = refresh_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
             block_io.process_list_entry = refresh_context->getProcessList().insert(
                 query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
             pipeline.setProcessListElement(block_io.process_list_entry->getQueryStatus());
@@ -431,35 +440,53 @@ void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView
         }
 
         /// Exchange tables.
-        stale_table = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
+        if (!append)
+            table_to_drop = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
     }
     catch (...)
     {
-        try
-        {
-            InterpreterDropQuery::executeDropQuery(
-                ASTDropQuery::Kind::Drop, view->getContext(), refresh_context, refresh_query->table_id, /*sync*/ false, /*ignore_sync_setting*/ true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to drop temporary table after a failed refresh");
-            /// Let's ignore this and keep going, at risk of accumulating many trash tables if this keeps happening.
-        }
+        if (table_to_drop.has_value())
+            view->dropTempTable(table_to_drop.value(), refresh_context);
         throw;
     }
 
-    /// Drop the old table (outside the try-catch so we don't try to drop the other table if this fails).
-    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, view->getContext(), refresh_context, stale_table, /*sync*/ true, /*ignore_sync_setting*/ true);
+    if (table_to_drop.has_value())
+        view->dropTempTable(table_to_drop.value(), refresh_context);
 }
 
 void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point now)
 {
     std::chrono::sys_seconds next = refresh_schedule.prescribeNext(next_refresh_prescribed, now);
     next_refresh_prescribed = next;
-    next_refresh_with_spread = refresh_schedule.addRandomSpread(next);
+    next_refresh_actual = refresh_schedule.addRandomSpread(next);
 
-    auto secs = std::chrono::floor<std::chrono::seconds>(next_refresh_with_spread);
+    num_retries = 0;
+    info.retry = num_retries;
+
+    auto secs = std::chrono::floor<std::chrono::seconds>(next_refresh_actual);
     info.next_refresh_time = UInt32(secs.time_since_epoch().count());
+}
+
+void RefreshTask::scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now)
+{
+    if (refresh_settings.refresh_retries >= 0 && num_retries >= refresh_settings.refresh_retries)
+    {
+        advanceNextRefreshTime(now);
+        return;
+    }
+
+    num_retries += 1;
+    info.retry = num_retries;
+
+    UInt64 delay_ms;
+    UInt64 multiplier = UInt64(1) << std::min(num_retries - 1, Int64(62));
+    /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
+    if (refresh_settings.refresh_retry_initial_backoff_ms <= refresh_settings.refresh_retry_max_backoff_ms / multiplier)
+        delay_ms = refresh_settings.refresh_retry_initial_backoff_ms * multiplier;
+    else
+        delay_ms = refresh_settings.refresh_retry_max_backoff_ms;
+
+    next_refresh_actual = now + std::chrono::milliseconds(delay_ms);
 }
 
 bool RefreshTask::arriveDependency(const StorageID & parent)
@@ -500,11 +527,6 @@ void RefreshTask::interruptExecution()
 
         LOG_DEBUG(log, "Cancelling refresh");
     }
-}
-
-std::shared_ptr<StorageMaterializedView> RefreshTask::lockView()
-{
-    return std::static_pointer_cast<StorageMaterializedView>(view_to_refresh.lock());
 }
 
 std::chrono::system_clock::time_point RefreshTask::currentTime() const

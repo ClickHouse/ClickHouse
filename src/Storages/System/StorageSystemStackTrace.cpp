@@ -38,6 +38,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds storage_system_stack_trace_pipe_read_timeout_ms;
+}
 
 namespace ErrorCodes
 {
@@ -277,7 +281,7 @@ public:
     StackTraceSource(
         const Names & column_names,
         Block header_,
-        ActionsDAGPtr && filter_dag_,
+        std::optional<ActionsDAG> filter_dag_,
         ContextPtr context_,
         UInt64 max_block_size_,
         LoggerPtr log_)
@@ -288,7 +292,7 @@ public:
         , predicate(filter_dag ? filter_dag->getOutputs().at(0) : nullptr)
         , max_block_size(max_block_size_)
         , pipe_read_timeout_ms(
-              static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
+              static_cast<int>(context->getSettingsRef()[Setting::storage_system_stack_trace_pipe_read_timeout_ms].totalMilliseconds()))
         , log(log_)
         , proc_it("/proc/self/task")
         /// It shouldn't be possible to do concurrent reads from this table.
@@ -423,7 +427,7 @@ protected:
 private:
     ContextPtr context;
     Block header;
-    const ActionsDAGPtr filter_dag;
+    const std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate;
 
     const size_t max_block_size;

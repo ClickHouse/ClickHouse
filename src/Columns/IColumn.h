@@ -475,6 +475,18 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Returns the number of elements allocated in reserve.
+    virtual size_t capacity() const { return size(); }
+
+    /// Reserve memory before squashing all specified source columns into this column.
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
+    {
+        size_t new_size = size();
+        for (const auto & source_column : source_columns)
+            new_size += source_column->size();
+        reserve(new_size);
+    }
+
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
     virtual void shrinkToFit() {}

@@ -27,7 +27,8 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr) { return createImpl(); }
+    static FunctionPtr createImpl()
     {
         return std::make_shared<FunctionStringOrArrayToT>();
     }
@@ -71,7 +72,7 @@ public:
 
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
-            Impl::vector(col->getChars(), col->getOffsets(), vec_res);
+            Impl::vector(col->getChars(), col->getOffsets(), vec_res, input_rows_count);
 
             return col_res;
         }
@@ -80,7 +81,7 @@ public:
             if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
-                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res);
+                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
 
                 return result_type->createColumnConst(col_fixed->size(), toField(res));
             }
@@ -90,7 +91,7 @@ public:
 
                 typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
                 vec_res.resize(col_fixed->size());
-                Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res);
+                Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res, input_rows_count);
 
                 return col_res;
             }
@@ -101,7 +102,7 @@ public:
 
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col_arr->size());
-            Impl::array(col_arr->getOffsets(), vec_res);
+            Impl::array(col_arr->getOffsets(), vec_res, input_rows_count);
 
             return col_res;
         }
@@ -112,7 +113,7 @@ public:
             vec_res.resize(col_map->size());
             const auto & col_nested = col_map->getNestedColumn();
 
-            Impl::array(col_nested.getOffsets(), vec_res);
+            Impl::array(col_nested.getOffsets(), vec_res, input_rows_count);
             return col_res;
         }
         else if (const ColumnUUID * col_uuid = checkAndGetColumn<ColumnUUID>(column.get()))
@@ -120,7 +121,7 @@ public:
             auto col_res = ColumnVector<ResultType>::create();
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col_uuid->size());
-            Impl::uuid(col_uuid->getData(), input_rows_count, vec_res);
+            Impl::uuid(col_uuid->getData(), input_rows_count, vec_res, input_rows_count);
             return col_res;
         }
         else if (const ColumnIPv6 * col_ipv6 = checkAndGetColumn<ColumnIPv6>(column.get()))
@@ -128,7 +129,7 @@ public:
             auto col_res = ColumnVector<ResultType>::create();
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col_ipv6->size());
-            Impl::ipv6(col_ipv6->getData(), input_rows_count, vec_res);
+            Impl::ipv6(col_ipv6->getData(), input_rows_count, vec_res, input_rows_count);
             return col_res;
         }
         else if (const ColumnIPv4 * col_ipv4 = checkAndGetColumn<ColumnIPv4>(column.get()))
@@ -136,7 +137,7 @@ public:
             auto col_res = ColumnVector<ResultType>::create();
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col_ipv4->size());
-            Impl::ipv4(col_ipv4->getData(), input_rows_count, vec_res);
+            Impl::ipv4(col_ipv4->getData(), input_rows_count, vec_res, input_rows_count);
             return col_res;
         }
         else

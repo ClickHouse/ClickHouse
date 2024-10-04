@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 #include <vector>
-#include <Client/ReplxxLineReader.h>
+#include <Client/LineReader.h>
 #include <Loggers/Loggers.h>
 #include "DisksClient.h"
 #include "ICommand_fwd.h"

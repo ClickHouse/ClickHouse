@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <set>
@@ -13,6 +14,11 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
+}
+
+namespace FailPoints
+{
+    extern const char stop_moving_part_before_swap_with_active[];
 }
 
 namespace
@@ -226,6 +232,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
     MutableDataPartStoragePtr cloned_part_storage;
+    bool preserve_blobs = false;
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
@@ -253,6 +260,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         if (zero_copy_part)
         {
             /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
+            preserve_blobs = true;
             zero_copy_part->is_temp = false;    /// Do not remove it in dtor
             cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
         }
@@ -272,7 +280,17 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
-    cloned_part.part->is_temp = data->allowRemoveStaleMovingParts();
+    cloned_part.part->is_temp = false;
+    if (data->allowRemoveStaleMovingParts())
+    {
+        cloned_part.part->is_temp = true;
+        /// Setting it in case connection to zookeeper is lost while moving
+        /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
+        if (preserve_blobs)
+            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
+        else
+            cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
+    }
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
     cloned_part.part->loadVersionMetadata();
     cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
@@ -282,6 +300,8 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
 void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
 {
+    /// Used to get some stuck parts in the moving directory by stopping moves while pause is active
+    FailPointInjection::pauseFailPoint(FailPoints::stop_moving_part_before_swap_with_active);
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 

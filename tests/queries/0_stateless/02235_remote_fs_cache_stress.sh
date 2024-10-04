@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types=1 --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types=1 --multiline --query="""
 
 DROP TABLE IF EXISTS t_01411;
 DROP TABLE IF EXISTS t_01411_num;
@@ -35,7 +35,7 @@ insert into lc_dict_reading select number, if(number < 8192 * 4, number % 100, n
 function go()
 {
 
-${CLICKHOUSE_CLIENT} --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --multiline --query="""
 
 select sum(toUInt64(str)), sum(toUInt64(pat)) from lc_dict_reading where val < 8129 or val > 8192 * 4;
 
@@ -67,7 +67,7 @@ for _ in `seq 1 32`; do go | grep -q "Exception" && echo 'FAIL' || echo 'OK' ||:
 
 wait
 
-${CLICKHOUSE_CLIENT} --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --multiline --query="""
 DROP TABLE IF EXISTS t_01411;
 DROP TABLE IF EXISTS t_01411_num;
 """

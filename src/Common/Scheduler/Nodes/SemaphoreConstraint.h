@@ -81,8 +81,7 @@ public:
         child_active = child_now_active;
         if (!active())
             busy_periods++;
-        dequeued_requests++;
-        dequeued_cost += request->cost;
+        incrementDequeued(request->cost);
         return {request, active()};
     }
 

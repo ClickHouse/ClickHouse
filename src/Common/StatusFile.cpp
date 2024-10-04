@@ -51,7 +51,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         std::string contents;
         {
             ReadBufferFromFile in(path, 1024);
-            LimitReadBuffer limit_in(in, 1024, /* trow_exception */ false, /* exact_limit */ {});
+            LimitReadBuffer limit_in(in, 1024, /* throw_exception */ false, /* exact_limit */ {});
             readStringUntilEOF(contents, limit_in);
         }
 
@@ -100,7 +100,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     }
     catch (...)
     {
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
         throw;
     }

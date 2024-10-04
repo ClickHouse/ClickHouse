@@ -99,16 +99,16 @@ public:
         return std::make_shared<DataTypeArray>(item_data_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * tuple_col = arguments[0].column.get();
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        const auto * tuple_col_concrete = assert_cast<const ColumnTuple*>(tuple_col);
+        const auto * tuple_col_concrete = assert_cast<const ColumnTuple *>(tuple_col);
 
         auto keys = ColumnString::create();
         MutableColumnPtr values = tuple_col_concrete->getColumn(0).cloneEmpty();
         auto offsets = ColumnVector<UInt64>::create();
-        for (size_t row = 0; row < tuple_col_concrete->size(); ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             for (size_t col = 0; col < tuple_col_concrete->tupleSize(); ++col)
             {
