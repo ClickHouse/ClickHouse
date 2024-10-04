@@ -732,6 +732,17 @@ void LocalServer::processConfig()
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
+    String skipping_index_cache_policy = server_settings.skipping_index_cache_policy;
+    size_t skipping_index_cache_size = server_settings.skipping_index_cache_size;
+    size_t skipping_index_cache_max_count = server_settings.skipping_index_cache_max_entries;
+    double skipping_index_cache_size_ratio = server_settings.skipping_index_cache_size_ratio;
+    if (skipping_index_cache_size > max_cache_size)
+    {
+        skipping_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
+    }
+    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_count, skipping_index_cache_size_ratio);
+
     size_t mmap_cache_size = server_settings.mmap_cache_size;
     if (mmap_cache_size > max_cache_size)
     {

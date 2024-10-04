@@ -294,6 +294,42 @@ Type: Double
 
 Default: 0.5
 
+## skipping_index_cache_policy
+
+Skipping index cache policy name.
+
+Type: String
+
+Default: SLRU
+
+## skipping_index_cache_size
+
+Size of cache for skipping index granules. Zero means disabled.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
+Type: UInt64
+
+Default: 5368709120 (= 5 GiB)
+
+## skipping_index_cache_size_ratio
+
+The size of the protected queue in the skipping index cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
+
+## skipping_index_cache_max_entries
+
+The maximum number of entries in the skipping index cache.
+
+Type: UInt64
+
+Default: 10000000
+
 ## io_thread_pool_queue_size
 
 Queue size for IO thread pool. Zero means unlimited.
