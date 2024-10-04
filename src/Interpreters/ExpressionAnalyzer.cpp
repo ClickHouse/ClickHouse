@@ -1372,6 +1372,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     ASTs asts = select_query->groupBy()->children;
+    NameSet group_by_keys;
     if (select_query->group_by_with_grouping_sets)
     {
         for (const auto & ast : asts)
@@ -1379,6 +1380,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             for (const auto & ast_element : ast->children)
             {
                 step.addRequiredOutput(ast_element->getColumnName());
+                group_by_keys.insert(ast_element->getColumnName());
                 getRootActions(ast_element, only_types, step.actions()->dag);
             }
         }
@@ -1388,12 +1390,16 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         for (const auto & ast : asts)
         {
             step.addRequiredOutput(ast->getColumnName());
+            group_by_keys.insert(ast->getColumnName());
             getRootActions(ast, only_types, step.actions()->dag);
         }
     }
 
     for (const auto & result_column : step.getResultColumns())
-        validateGroupByKeyType(result_column.type);
+    {
+        if (group_by_keys.contains(result_column.name))
+            validateGroupByKeyType(result_column.type);
+    }
 
     if (optimize_aggregation_in_order)
     {
@@ -1612,9 +1618,6 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(
 
     getRootActions(select_query->orderBy(), only_types, step.actions()->dag);
 
-    for (const auto & result_column : step.getResultColumns())
-        validateOrderByKeyType(result_column.type);
-
     bool with_fill = false;
 
     for (auto & child : select_query->orderBy()->children)
@@ -1627,6 +1630,12 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(
 
         if (ast->with_fill)
             with_fill = true;
+    }
+
+    for (const auto & result_column : step.getResultColumns())
+    {
+        if (order_by_keys.contains(result_column.name))
+            validateOrderByKeyType(result_column.type);
     }
 
     if (auto interpolate_list = select_query->interpolate())
