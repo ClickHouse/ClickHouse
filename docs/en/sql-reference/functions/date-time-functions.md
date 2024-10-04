@@ -1974,6 +1974,38 @@ Result:
 
 Converts a date, or date with time, to a UInt16 number containing the ISO Year number.
 
+**Syntax**
+
+```sql
+toISOYear(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time.
+
+**Returned value**
+
+- `value` converted to the current ISO year number. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOYear(toDate('2024/10/02')) as year1,
+  toISOYear(toDateTime('2024/10/02 01:30:00')) as year2
+```
+
+Result:
+
+```response
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
+└───────┴───────┘
+```
+
 ## toISOWeek
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
