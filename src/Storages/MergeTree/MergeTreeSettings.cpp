@@ -1,5 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsProgramOptions.h>
+#include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFomAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -550,6 +551,31 @@ void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
 void MergeTreeSettings::applyChange(const SettingChange & change)
 {
     impl->applyChange(change);
+}
+
+void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_value)
+{
+    /// If setting value is empty, we don't need to change settings
+    if (compatibility_value.empty())
+        return;
+
+    ClickHouseVersion version(compatibility_value);
+    const auto & settings_changes_history = getMergeTreeSettingsChangesHistory();
+    /// Iterate through ClickHouse version in descending order and apply reversed
+    /// changes for each version that is higher that version from compatibility setting
+    for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
+    {
+        if (version >= it->first)
+            break;
+
+        /// Apply reversed changes from this version.
+        for (const auto & change : it->second)
+        {
+            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
+            auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
+            set(final_name, change.previous_value);
+        }
+    }
 }
 
 std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
