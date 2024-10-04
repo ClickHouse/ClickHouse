@@ -377,8 +377,8 @@ done
 # wait for minio to flush its batch if it has any
 sleep 1
 clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
-clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
