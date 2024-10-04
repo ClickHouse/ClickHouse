@@ -26,14 +26,15 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             String res_database, res_table_name;
+            bool is_any_database = false;
+            bool is_any_table = false;
 
-            bool wildcard = false;
-            bool default_database = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database) || (res_database.empty() && res_table_name.empty() && !default_database))
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, is_any_database, res_table_name, is_any_table)
+                || is_any_database)
             {
                 return false;
             }
-            else if (res_table_name.empty())
+            else if (is_any_table)
             {
                 res_table_name = RowPolicyName::ANY_TABLE_MARK;
             }

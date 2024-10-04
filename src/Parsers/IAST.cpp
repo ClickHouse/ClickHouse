@@ -1,14 +1,11 @@
 #include <Parsers/IAST.h>
 
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/IdentifierQuotingStyle.h>
-#include <Poco/String.h>
+#include <IO/Operators.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
-#include <algorithm>
+
 
 namespace DB
 {
@@ -17,8 +14,8 @@ namespace ErrorCodes
 {
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
-    extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_ELEMENT_IN_AST;
 }
 
 
@@ -168,21 +165,11 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(
-    size_t max_length,
-    bool one_line,
-    bool show_secrets,
-    bool print_pretty_type_names,
-    IdentifierQuotingRule identifier_quoting_rule,
-    IdentifierQuotingStyle identifier_quoting_style) const
+String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
 {
-
     WriteBufferFromOwnString buf;
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
-    settings.print_pretty_type_names = print_pretty_type_names;
-    settings.identifier_quoting_rule = identifier_quoting_rule;
-    settings.identifier_quoting_style = identifier_quoting_style;
     format(settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
@@ -220,25 +207,22 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
+void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
-    checkIdentifier(name);
-    bool must_quote
-        = (identifier_quoting_rule == IdentifierQuotingRule::Always
-           || (ambiguous && identifier_quoting_rule == IdentifierQuotingRule::WhenNecessary));
-
-    if (identifier_quoting_rule == IdentifierQuotingRule::UserDisplay && !must_quote)
-    {
-        // Quote `name` if it is one of the keywords when `identifier_quoting_rule` is `IdentifierQuotingRule::UserDisplay`
-        const auto & keyword_set = getKeyWordSet();
-        must_quote = keyword_set.contains(Poco::toUpper(name));
-    }
-
     switch (identifier_quoting_style)
     {
+        case IdentifierQuotingStyle::None:
+        {
+            if (always_quote_identifiers)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Incompatible arguments: always_quote_identifiers = true && "
+                                "identifier_quoting_style == IdentifierQuotingStyle::None");
+            writeString(name, ostr);
+            break;
+        }
         case IdentifierQuotingStyle::Backticks:
         {
-            if (must_quote)
+            if (always_quote_identifiers)
                 writeBackQuotedString(name, ostr);
             else
                 writeProbablyBackQuotedString(name, ostr);
@@ -246,7 +230,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) 
         }
         case IdentifierQuotingStyle::DoubleQuotes:
         {
-            if (must_quote)
+            if (always_quote_identifiers)
                 writeDoubleQuotedString(name, ostr);
             else
                 writeProbablyDoubleQuotedString(name, ostr);
@@ -254,26 +238,11 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) 
         }
         case IdentifierQuotingStyle::BackticksMySQL:
         {
-            if (must_quote)
+            if (always_quote_identifiers)
                 writeBackQuotedStringMySQL(name, ostr);
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
-        }
-    }
-}
-
-void IAST::FormatSettings::checkIdentifier(const String & name) const
-{
-    if (enable_secure_identifiers)
-    {
-        bool is_secure_identifier = std::all_of(name.begin(), name.end(), [](char ch) { return std::isalnum(ch) || ch == '_'; });
-        if (!is_secure_identifier)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Not a secure identifier: `{}`, a secure identifier must contain only underscore and alphanumeric characters",
-                name);
         }
     }
 }

@@ -53,6 +53,10 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 {
     switch (quoting_style)
     {
+        case IdentifierQuotingStyle::None:
+            writeString(s, out);
+            break;
+
         case IdentifierQuotingStyle::Backticks:
             writeBackQuotedString(s, out);
             break;

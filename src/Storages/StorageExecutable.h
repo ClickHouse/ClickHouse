@@ -22,8 +22,7 @@ public:
         const ExecutableSettings & settings,
         const std::vector<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints,
-        const String & comment);
+        const ConstraintsDescription & constraints);
 
     String getName() const override
     {

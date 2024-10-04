@@ -91,6 +91,8 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        const auto size = input_rows_count;
+
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;
         std::vector<Ellipse> ellipses(ellipses_count);
@@ -139,11 +141,13 @@ private:
 
                 auto dst = ColumnVector<UInt8>::create();
                 auto & dst_data = dst->getData();
-                dst_data.resize(input_rows_count);
+                dst_data.resize(size);
 
                 size_t start_index = 0;
-                for (size_t row = 0; row < input_rows_count; ++row)
+                for (const auto row : collections::range(0, size))
+                {
                     dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses.data(), ellipses_count, start_index);
+                }
 
                 return dst;
         }
@@ -153,7 +157,7 @@ private:
             const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
             size_t start_index = 0;
             UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
-            return DataTypeUInt8().createColumnConst(input_rows_count, res);
+            return DataTypeUInt8().createColumnConst(size, res);
         }
         else
         {

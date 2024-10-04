@@ -17,12 +17,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_introspection_functions;
-}
-
-
 namespace ErrorCodes
 {
     extern const int FUNCTION_NOT_ALLOWED;
@@ -275,9 +269,9 @@ struct AggregateFunctionFlameGraphData
 
     using Entries = HashMap<UInt64, Pair>;
 
+    AggregateFunctionFlameGraphTree tree;
     Entries entries;
     Entry * free_list = nullptr;
-    AggregateFunctionFlameGraphTree tree;
 
     Entry * alloc(Arena * arena)
     {
@@ -565,7 +559,7 @@ public:
             ptr = ptrs[row_num];
         }
 
-        data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
+        this->data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
     }
 
     void addManyDefaults(
@@ -578,7 +572,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        data(place).merge(data(rhs), arena);
+        this->data(place).merge(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t> /* version */) const override
@@ -596,7 +590,7 @@ public:
         auto & array = assert_cast<ColumnArray &>(to);
         auto & str = assert_cast<ColumnString &>(array.getData());
 
-        data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
+        this->data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
 
         array.getOffsets().push_back(str.size());
     }
@@ -634,7 +628,7 @@ static void check(const std::string & name, const DataTypes & argument_types, co
 
 AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
-    if (!(*settings)[Setting::allow_introspection_functions])
+    if (!settings->allow_introspection_functions)
         throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
         "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 import argparse
-import atexit
 import logging
-import os
 import os.path as p
 import re
 import subprocess
@@ -24,16 +22,12 @@ SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 CWD = p.dirname(p.realpath(__file__))
 TWEAK = 1
 
-with tempfile.NamedTemporaryFile("w", delete=False) as f:
-    GIT_KNOWN_HOSTS_FILE = f.name
-    GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@users.noreply.github.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        f"'ssh -o UserKnownHostsFile={GIT_KNOWN_HOSTS_FILE} "
-        "-o StrictHostKeyChecking=accept-new'"
-    )
-    atexit.register(os.remove, f.name)
+GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+    "git -c user.email=robot-clickhouse@users.noreply.github.com "
+    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    "-c core.sshCommand="
+    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+)
 
 
 # Py 3.8 removeprefix and removesuffix

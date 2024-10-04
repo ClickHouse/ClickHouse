@@ -844,7 +844,7 @@ public:
             return true;
         }
 
-        const value_type & get() const
+        inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
                 throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");

@@ -1,11 +1,9 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageLogSettings.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -23,6 +21,7 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
+#include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
@@ -40,8 +39,6 @@
 #include <cassert>
 #include <chrono>
 
-#include <boost/range/adaptor/map.hpp>
-
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -49,12 +46,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_compress_block_size;
-    extern const SettingsSeconds max_execution_time;
-}
 
 namespace ErrorCodes
 {
@@ -261,7 +252,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     if (!deserialize_states.contains(name))
     {
         settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
+        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
     }
 
     settings.getter = create_stream_getter(false);
@@ -329,10 +320,6 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
-                for (auto & [_, stream] : streams)
-                {
-                    stream.cancel();
-                }
                 streams.clear();
 
                 /// Truncate files to the older sizes.
@@ -348,7 +335,7 @@ public:
         }
     }
 
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
     void onFinish() override;
 
 private:
@@ -384,12 +371,6 @@ private:
             plain->next();
             plain->finalize();
         }
-
-        void cancel()
-        {
-            compressed.cancel();
-            plain->cancel();
-        }
     };
 
     using FileStreams = std::map<String, Stream>;
@@ -405,9 +386,9 @@ private:
 };
 
 
-void LogSink::consume(Chunk & chunk)
+void LogSink::consume(Chunk chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.getColumns());
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     for (auto & stream : streams | boost::adaptors::map_values)
@@ -591,7 +572,7 @@ StorageLog::StorageLog(
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
+    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -694,7 +675,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         for (auto & data_file : data_files)
             data_file.marks.resize(num_marks);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, getReadSettings().adjustBufferSize(32768));
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, ReadSettings().adjustBufferSize(32768));
         for (size_t i = 0; i != num_marks; ++i)
         {
             for (auto & data_file : data_files)
@@ -794,9 +775,9 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
-    if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
-        lock_timeout = settings[Setting::max_execution_time].totalSeconds();
+    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
+    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
+        lock_timeout = settings.max_execution_time.totalSeconds();
     return std::chrono::seconds{lock_timeout};
 }
 
@@ -850,7 +831,8 @@ Pipe StorageLog::read(
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    num_streams = std::min(num_streams, max_streams);
+    if (num_streams > max_streams)
+        num_streams = max_streams;
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);

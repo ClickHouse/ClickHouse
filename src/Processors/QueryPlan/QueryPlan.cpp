@@ -340,10 +340,14 @@ static void explainStep(
 
     if (options.sorting)
     {
-        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
+        if (step.hasOutputStream())
         {
-            settings.out << prefix << "Sorting: ";
-            dumpSortDescription(sort_description, settings.out);
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+            {
+                settings.out << ": ";
+                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
+            }
             settings.out.write('\n');
         }
     }
@@ -517,6 +521,10 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
+
+        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
+        {
+        }
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;

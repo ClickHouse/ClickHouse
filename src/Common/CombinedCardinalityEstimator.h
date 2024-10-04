@@ -16,12 +16,7 @@ namespace ErrorCodes
 namespace details
 {
 
-enum class ContainerType : uint8_t
-{
-    SMALL = 1,
-    MEDIUM = 2,
-    LARGE = 3
-};
+enum class ContainerType : uint8_t { SMALL = 1, MEDIUM = 2, LARGE = 3 };
 
 static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
 {
@@ -177,6 +172,48 @@ public:
         }
     }
 
+    void readAndMerge(DB::ReadBuffer & in)
+    {
+        auto container_type = getContainerType();
+
+        /// If readAndMerge is called with an empty state, just deserialize
+        /// the state is specified as a parameter.
+        if ((container_type == details::ContainerType::SMALL) && small.empty())
+        {
+            read(in);
+            return;
+        }
+
+        UInt8 v;
+        readBinary(v, in);
+        auto rhs_container_type = static_cast<details::ContainerType>(v);
+
+        auto max_container_type = details::max(container_type, rhs_container_type);
+
+        if (container_type != max_container_type)
+        {
+            if (max_container_type == details::ContainerType::MEDIUM)
+                toMedium();
+            else if (max_container_type == details::ContainerType::LARGE)
+                toLarge();
+        }
+
+        if (rhs_container_type == details::ContainerType::SMALL)
+        {
+            typename Small::Reader reader(in);
+            while (reader.next())
+                insert(reader.get());
+        }
+        else if (rhs_container_type == details::ContainerType::MEDIUM)
+        {
+            typename Medium::Reader reader(in);
+            while (reader.next())
+                insert(reader.get());
+        }
+        else if (rhs_container_type == details::ContainerType::LARGE)
+            getContainer<Large>().readAndMerge(in);
+    }
+
     void write(DB::WriteBuffer & out) const
     {
         auto container_type = getContainerType();
@@ -250,13 +287,13 @@ private:
     }
 
     template <typename T>
-    T & getContainer()
+    inline T & getContainer()
     {
         return *reinterpret_cast<T *>(address & mask);
     }
 
     template <typename T>
-    const T & getContainer() const
+    inline const T & getContainer() const
     {
         return *reinterpret_cast<T *>(address & mask);
     }
@@ -267,7 +304,7 @@ private:
         address |= static_cast<UInt8>(t);
     }
 
-    details::ContainerType getContainerType() const
+    inline details::ContainerType getContainerType() const
     {
         return static_cast<details::ContainerType>(address & ~mask);
     }

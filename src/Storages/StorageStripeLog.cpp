@@ -5,9 +5,6 @@
 
 #include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
-
-#include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -48,12 +45,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_compress_block_size;
-    extern const SettingsSeconds max_execution_time;
-}
 
 namespace ErrorCodes
 {
@@ -62,13 +53,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
-    extern const int FAULT_INJECTED;
 }
 
-namespace FailPoints
-{
-    extern const char stripe_log_sink_write_fallpoint[];
-}
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
@@ -181,7 +167,8 @@ class StripeLogSink final : public SinkToStorage
 public:
     using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
-    explicit StripeLogSink(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
+    explicit StripeLogSink(
+        StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
@@ -200,7 +187,7 @@ public:
         storage.saveFileSizes(lock);
 
         size_t initial_data_size = storage.file_checker.getFileSize(storage.data_file_path);
-        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &storage.indices, initial_data_size);
+        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), false, &storage.indices, initial_data_size);
     }
 
     String getName() const override { return "StripeLogSink"; }
@@ -214,10 +201,7 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
-                data_out->cancel();
                 data_out.reset();
-
-                data_out_compressed->cancel();
                 data_out_compressed.reset();
 
                 /// Truncate files to the older sizes.
@@ -233,9 +217,9 @@ public:
         }
     }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
-        block_out->write(getHeader().cloneWithColumns(chunk.getColumns()));
+        block_out->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
@@ -243,17 +227,13 @@ public:
         if (done)
             return;
 
-        data_out->finalize();
+        data_out->next();
+        data_out_compressed->next();
         data_out_compressed->finalize();
 
         /// Save the new indices.
         storage.saveIndices(lock);
 
-        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
-        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
-        });
         /// Save the new file sizes.
         storage.saveFileSizes(lock);
 
@@ -296,7 +276,7 @@ StorageStripeLog::StorageStripeLog(
     , data_file_path(table_path + "data.bin")
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
+    , max_compress_block_size(context_->getSettings().max_compress_block_size)
     , log(getLogger("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -358,9 +338,9 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
-    Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
-    if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
-        lock_timeout = settings[Setting::max_execution_time].totalSeconds();
+    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
+    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
+        lock_timeout = settings.max_execution_time.totalSeconds();
     return std::chrono::seconds{lock_timeout};
 }
 
@@ -391,7 +371,8 @@ Pipe StorageStripeLog::read(
         = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
 
     size_t size = indices_for_selected_columns->blocks.size();
-    num_streams = std::min(num_streams, size);
+    if (num_streams > size)
+        num_streams = size;
 
     ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
@@ -478,7 +459,7 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
 
     if (disk->exists(index_file_path))
     {
-        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)));
+        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, ReadSettings{}.adjustBufferSize(4096)));
         indices.read(index_in);
     }
 
@@ -503,7 +484,8 @@ void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writi
     for (size_t i = start; i != num_indices; ++i)
         indices.blocks[i].write(*index_out);
 
-    index_out->finalize();
+    index_out->next();
+    index_out_compressed->next();
     index_out_compressed->finalize();
 
     num_indices_saved = num_indices;

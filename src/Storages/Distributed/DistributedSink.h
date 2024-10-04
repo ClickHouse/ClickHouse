@@ -49,11 +49,11 @@ public:
         const Names & columns_to_send_);
 
     String getName() const override { return "DistributedSink"; }
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
     void onFinish() override;
 
 private:
-    void onCancel() noexcept override;
+    void onCancel() override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
 
@@ -112,8 +112,6 @@ private:
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
-
-    std::mutex execution_mutex;
 
     struct JobReplica
     {

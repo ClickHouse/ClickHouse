@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ThreadFuzzer.h>
@@ -360,7 +359,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
                 throw Exception(ErrorCodes::TABLE_DIFFERS_TOO_MUCH, "Columns of local part {} are different from ZooKeeper", part_name);
 
-            zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
+            zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
 
             checkDataPart(
                 part,
@@ -387,12 +386,12 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
                 throw;
 
             PreformattedMessage message;
-            if (is_broken_projection && throw_on_broken_projection)
+            if (is_broken_projection)
             {
                 WriteBufferFromOwnString wb;
                 message = PreformattedMessage::create(
-                    "Part `{}` has broken projections. It will be ignored. Broken projections info: {}",
-                    part_name, getCurrentExceptionMessage(true));
+                    "Part {} has a broken projections. It will be ignored. Broken projections info: {}",
+                    part_name, getCurrentExceptionMessage(false));
                 LOG_DEBUG(log, message);
                 result.action = ReplicatedCheckResult::DoNothing;
             }

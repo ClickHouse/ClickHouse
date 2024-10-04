@@ -8,7 +8,6 @@
 
 #include <IO/ReadSettings.h>
 
-#include <Common/callOnce.h>
 #include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
@@ -19,7 +18,6 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 
@@ -48,14 +46,14 @@ struct FileCacheReserveStat
         }
     };
 
-    Stat total_stat;
+    Stat stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     void update(size_t size, FileSegmentKind kind, bool releasable);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
-        total_stat += other.total_stat;
+        stat += other.stat;
         for (const auto & [name, stat_] : other.stat_by_kind)
             stat_by_kind[name] += stat_;
         return *this;
@@ -80,11 +78,6 @@ public:
     ~FileCache();
 
     void initialize();
-
-    bool isInitialized() const;
-
-    /// Throws if `!load_metadata_asynchronously` and there is an exception in `init_exception`
-    void throwInitExceptionIfNeeded();
 
     const String & getBasePath() const;
 
@@ -169,8 +162,7 @@ public:
         size_t size,
         FileCacheReserveStat & stat,
         const UserInfo & user,
-        size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason);
+        size_t lock_wait_timeout_milliseconds);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
@@ -194,8 +186,6 @@ public:
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
-    void freeSpaceRatioKeepingThreadFunc();
-
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -203,21 +193,12 @@ private:
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
     size_t load_metadata_threads;
-    const bool load_metadata_asynchronously;
-    std::atomic<bool> stop_loading_metadata = false;
-    ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
-
-    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
-    const double keep_current_size_to_max_ratio;
-    const double keep_current_elements_to_max_ratio;
-    const size_t keep_up_free_space_remove_batch;
 
     LoggerPtr log;
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
-    OnceFlag initialize_called;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
@@ -255,8 +236,6 @@ private:
      */
     FileCacheQueryLimitPtr query_limit;
 
-    void initializeImpl(bool load_metadata);
-
     void assertInitialized() const;
     void assertCacheCorrectness();
 
@@ -274,12 +253,17 @@ private:
 
     /// Split range into subranges by max_file_segment_size,
     /// each subrange size must be less or equal to max_file_segment_size.
-    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size);
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size);
 
-    FileSegments createFileSegmentsFromRanges(
+    /// Split range into subranges by max_file_segment_size (same as in splitRange())
+    /// and create a new file segment for each subrange.
+    /// If `file_segments_limit` > 0, create no more than first file_segments_limit
+    /// file segments.
+    FileSegments splitRangeIntoFileSegments(
         LockedKey & locked_key,
-        const std::vector<FileSegment::Range> & ranges,
-        size_t & file_segments_count,
+        size_t offset,
+        size_t size,
+        FileSegment::State state,
         size_t file_segments_limit,
         const CreateFileSegmentSettings & create_settings);
 
@@ -287,7 +271,6 @@ private:
         LockedKey & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
-        size_t non_aligned_right_offset,
         size_t file_segments_limit,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);

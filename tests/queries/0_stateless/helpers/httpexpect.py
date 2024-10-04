@@ -11,17 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import http.client
 import os
 import sys
+import http.client
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, CURDIR)
 
-from queue import Empty, Queue
-from threading import Event, Thread
-
 import uexpect
+
+from threading import Thread, Event
+from queue import Queue, Empty
 
 
 class IO(uexpect.IO):

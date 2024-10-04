@@ -30,7 +30,7 @@ public:
             {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
-        validateFunctionArguments(func, arguments, mandatory_args);
+        validateFunctionArgumentTypes(func, arguments, mandatory_args);
     }
 
     static constexpr auto strings_argument_position = 0uz;

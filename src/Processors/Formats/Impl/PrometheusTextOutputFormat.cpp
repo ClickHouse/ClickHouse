@@ -286,10 +286,10 @@ static void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Cont
 {
     Field field;
     col_map->get(row_num, field);
-    const auto & map_field = field.safeGet<Map>();
+    const auto & map_field = field.get<Map>();
     for (const auto & map_element : map_field)
     {
-        const auto & map_entry = map_element.safeGet<Tuple>();
+        const auto & map_entry = map_element.get<Tuple>();
 
         String entry_key;
         String entry_value;

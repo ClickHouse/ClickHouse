@@ -23,13 +23,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <is_decimal T>
-T DecimalField<T>::getScaleMultiplier() const
-{
-    return DecimalUtils::scaleMultiplier<T>(scale);
-}
-
-Field getBinaryValue(UInt8 type, ReadBuffer & buf)
+inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (static_cast<Field::Types::Which>(type))
     {
@@ -576,7 +570,7 @@ template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-void writeText(const Null & x, WriteBuffer & buf)
+inline void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
         writeText("-Inf", buf);
@@ -634,9 +628,5 @@ std::string_view Field::getTypeName() const
     return fieldTypeToString(which);
 }
 
-template class DecimalField<Decimal32>;
-template class DecimalField<Decimal64>;
-template class DecimalField<Decimal128>;
-template class DecimalField<Decimal256>;
-template class DecimalField<DateTime64>;
+
 }

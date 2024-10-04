@@ -96,12 +96,11 @@ public:
     virtual MergeTreeDataPartStorageType getType() const = 0;
 
     /// Methods to get path components of a data part.
-    virtual std::string getFullPath() const = 0;         /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
-    virtual std::string getRelativePath() const = 0;     ///                          'database/table/moving/all_1_5_1'
-    virtual std::string getPartDirectory() const = 0;    ///                                                'all_1_5_1'
-    virtual std::string getFullRootPath() const = 0;     /// '/var/lib/clickhouse/data/database/table/moving'
-    virtual std::string getParentDirectory() const = 0;  ///                                                '' (or 'detached' for 'detached/all_1_5_1')
-    /// Can add it if needed                             ///                          'database/table/moving'
+    virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
+    virtual std::string getRelativePath() const = 0;  ///                          'database/table/moving/all_1_5_1'
+    virtual std::string getPartDirectory() const = 0; ///                                                'all_1_5_1'
+    virtual std::string getFullRootPath() const = 0;  /// '/var/lib/clickhouse/data/database/table/moving'
+    /// Can add it if needed                          ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
@@ -127,7 +126,7 @@ public:
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
-    virtual std::vector<std::string> getRemotePaths(const std::string & file_name) const = 0;
+    virtual std::string getRemotePath(const std::string & file_name, bool if_exists) const = 0;
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
@@ -258,15 +257,6 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
-
-    virtual std::shared_ptr<IDataPartStorage> freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(

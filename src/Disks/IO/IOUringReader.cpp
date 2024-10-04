@@ -1,4 +1,5 @@
 #include "IOUringReader.h"
+#include <memory>
 
 #if USE_LIBURING
 
@@ -12,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <future>
-#include <memory>
 
 namespace ProfileEvents
 {
@@ -22,8 +22,7 @@ namespace ProfileEvents
     extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event IOUringSQEsSubmitted;
-    extern const Event IOUringSQEsResubmitsAsync;
-    extern const Event IOUringSQEsResubmitsSync;
+    extern const Event IOUringSQEsResubmits;
     extern const Event IOUringCQEsCompleted;
     extern const Event IOUringCQEsFailed;
 }
@@ -150,12 +149,10 @@ int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
     io_uring_prep_read(sqe, fd, request.buf, static_cast<unsigned>(request.size - enqueued.bytes_read), request.offset + enqueued.bytes_read);
     int ret = 0;
 
-    ret = io_uring_submit(&ring);
-    while (ret == -EINTR || ret == -EAGAIN)
+    do
     {
-        ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsSync);
         ret = io_uring_submit(&ring);
-    }
+    } while (ret == -EINTR || ret == -EAGAIN);
 
     if (ret > 0 && !enqueued.resubmitting)
     {
@@ -269,7 +266,7 @@ void IOUringReader::monitorRing()
         if (cqe->res == -EAGAIN || cqe->res == -EINTR)
         {
             enqueued.resubmitting = true;
-            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsAsync);
+            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmits);
 
             ret = submitToRing(enqueued);
             if (ret <= 0)
@@ -313,7 +310,6 @@ void IOUringReader::monitorRing()
             // potential short read, re-submit
             enqueued.resubmitting = true;
             enqueued.bytes_read += bytes_read;
-            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsAsync);
 
             ret = submitToRing(enqueued);
             if (ret <= 0)

@@ -11,7 +11,7 @@ namespace DB
 class SortingStep : public ITransformingStep
 {
 public:
-    enum class Type : uint8_t
+    enum class Type
     {
         Full,
         FinishSorting,
@@ -27,8 +27,6 @@ public:
         size_t max_bytes_before_external_sort = 0;
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
-        size_t max_block_bytes = 0;
-        size_t read_in_order_use_buffering = 0;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
@@ -39,7 +37,8 @@ public:
         const DataStream & input_stream,
         SortDescription description_,
         UInt64 limit_,
-        const Settings & settings_);
+        const Settings & settings_,
+        bool optimize_sorting_by_input_stream_properties_);
 
     /// Full with partitioning
     SortingStep(
@@ -47,7 +46,8 @@ public:
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
-        const Settings & settings_);
+        const Settings & settings_,
+        bool optimize_sorting_by_input_stream_properties_);
 
     /// FinishSorting
     SortingStep(
@@ -77,11 +77,9 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const override { return result_description; }
+    const SortDescription & getSortDescription() const { return result_description; }
 
-    bool hasPartitions() const { return !partition_by_description.empty(); }
-
-    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_);
+    void convertToFinishSorting(SortDescription prefix_description);
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
@@ -127,9 +125,10 @@ private:
 
     UInt64 limit;
     bool always_read_till_end = false;
-    bool use_buffering = false;
 
     Settings sort_settings;
+
+    const bool optimize_sorting_by_input_stream_properties = false;
 };
 
 }

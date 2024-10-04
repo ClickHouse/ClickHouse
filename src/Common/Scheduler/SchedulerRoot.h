@@ -162,7 +162,8 @@ public:
             if (request == nullptr) // Possible in case of request cancel, just retry
                 continue;
 
-            incrementDequeued(request->cost);
+            dequeued_requests++;
+            dequeued_cost += request->cost;
             return {request, current != nullptr};
         }
     }

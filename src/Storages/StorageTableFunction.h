@@ -63,6 +63,14 @@ public:
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool storesDataOnDisk() const override { return false; }
 
+    String getName() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getName();
+        return StorageProxy::getName();
+    }
+
     void startup() override { }
     void shutdown(bool is_drop) override
     {
@@ -112,7 +120,7 @@ public:
 
             auto step = std::make_unique<ExpressionStep>(
                 query_plan.getCurrentDataStream(),
-                std::move(convert_actions_dag));
+                convert_actions_dag);
 
             step->setStepDescription("Converting columns");
             query_plan.addStep(std::move(step));
