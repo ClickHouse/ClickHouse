@@ -9,7 +9,6 @@
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>
@@ -161,11 +160,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             {
                 if (errno == ENOSYS || errno == EOPNOTSUPP)
                 {
-                    LOG_INFO(
-                        getLogger("ThreadPoolReader"),
-                        "Unexpected errno for preadv2 with RWF_NOWAIT, {} ({})",
-                        errnoToString(errno),
-                        errno);
                     /// No support for the syscall or the flag in the Linux kernel.
                     /// It shouldn't happen because we check the kernel version but let's
                     /// fallback to the thread pool.
