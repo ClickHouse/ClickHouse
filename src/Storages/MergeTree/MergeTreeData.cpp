@@ -17,7 +17,6 @@
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
@@ -2130,6 +2129,8 @@ try
 
         runner([&, my_part = part]()
         {
+            auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
+
             auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
             DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,

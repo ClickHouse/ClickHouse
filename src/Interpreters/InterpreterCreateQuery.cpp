@@ -76,6 +76,8 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
@@ -137,6 +139,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
+    extern const SettingsBool restore_replace_external_dictionary_source_to_null;
 }
 
 namespace ErrorCodes
@@ -866,6 +869,26 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
+
+            /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
+            /// Note: only supports the source table engine is using the new syntax.
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            {
+                if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+                {
+                    if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
+                        create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
+
+                    if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                        create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+
+                    if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                        create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+
+                    if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
+                        create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
+                }
+            }
         }
         else
         {
@@ -1155,6 +1178,22 @@ namespace
         storage.set(storage.engine, engine_ast);
     }
 
+    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
+    {
+        ASTDictionary & dict = *create_query.dictionary;
+        if (Poco::toLower(dict.source->name) == "clickhouse")
+        {
+            auto config = getDictionaryConfigurationFromAST(create_query, Context::getGlobalContextInstance());
+            auto info = getInfoIfClickHouseDictionarySource(config, Context::getGlobalContextInstance());
+            if (info && info->is_local)
+                return;
+        }
+        auto source_ast = std::make_shared<ASTFunctionWithKeyValueArguments>();
+        source_ast->name = "null";
+        source_ast->elements = std::make_shared<ASTExpressionList>();
+        source_ast->children.push_back(source_ast->elements);
+        dict.set(dict.source, source_ast);
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -1180,6 +1219,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         return;
     }
+
+    if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
+        setNullDictionarySourceIfExternal(create);
 
     if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
         return;
