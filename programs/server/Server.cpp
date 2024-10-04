@@ -36,7 +36,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -628,7 +628,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
-                executeQuery(condition_read_buffer, condition_write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                auto startup_context = Context::createCopy(context);
+                startup_context->makeQueryContext();
+                executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
 
@@ -648,7 +650,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             auto write_buffer = WriteBufferFromOwnString();
 
             LOG_DEBUG(log, "Executing query `{}`", query);
-            executeQuery(read_buffer, write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+            auto startup_context = Context::createCopy(context);
+            startup_context->makeQueryContext();
+            executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
     }
     catch (...)
@@ -784,10 +788,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(server_settings.use_legacy_mongodb_integration);
+    registerDictionaries(server_settings.use_legacy_mongodb_integration);
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -833,11 +837,13 @@ try
 
     const size_t physical_server_memory = getMemoryAmount();
 
-    LOG_INFO(log, "Available RAM: {}; logical cores: {}; used cores: {}.",
+    LOG_INFO(
+        log,
+        "Available RAM: {}; logical cores: {}; used cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
         std::thread::hardware_concurrency(),
-        getNumberOfPhysicalCPUCores()  // on ARM processors it can show only enabled at current moment cores
-        );
+        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
+    );
 
 #if defined(__x86_64__)
     String cpu_info;
@@ -1060,8 +1066,9 @@ try
         0, // We don't need any threads one all the parts will be deleted
         server_settings.max_parts_cleaning_thread_pool_size);
 
-    auto max_database_replicated_create_table_thread_pool_size = server_settings.max_database_replicated_create_table_thread_pool_size ?
-        server_settings.max_database_replicated_create_table_thread_pool_size : getNumberOfPhysicalCPUCores();
+    auto max_database_replicated_create_table_thread_pool_size = server_settings.max_database_replicated_create_table_thread_pool_size
+        ? server_settings.max_database_replicated_create_table_thread_pool_size
+        : getNumberOfCPUCoresToUse();
     getDatabaseReplicatedCreateTablesThreadPool().initialize(
         max_database_replicated_create_table_thread_pool_size,
         0, // We don't need any threads once all the tables will be created
@@ -1638,7 +1645,7 @@ try
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfPhysicalCPUCores();
+                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfCPUCoresToUse();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }

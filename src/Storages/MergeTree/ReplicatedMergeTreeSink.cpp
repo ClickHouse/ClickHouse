@@ -917,7 +917,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         try
         {
             auto lock = storage.lockParts();
-            storage.renameTempPartAndAdd(part, transaction, lock);
+            storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ true);
         }
         catch (const Exception & e)
         {
@@ -931,6 +931,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             throw;
         }
+
+        /// Rename parts before committing to ZooKeeper without holding DataPartsLock.
+        transaction.renameParts();
 
         ThreadFuzzer::maybeInjectSleep();
 
