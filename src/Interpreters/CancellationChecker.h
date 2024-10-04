@@ -34,7 +34,6 @@ class CancellationChecker
 {
 private:
     CancellationChecker();
-    ~CancellationChecker();
 
     // Priority queue to manage tasks based on endTime
     std::multiset<QueryToTrack, CompareEndTime> querySet;
@@ -54,6 +53,8 @@ public:
     // Deleted copy constructor and assignment operator
     CancellationChecker(const CancellationChecker&) = delete;
     CancellationChecker& operator=(const CancellationChecker&) = delete;
+
+    void terminateThread();
 
     // Method to add a new task to the multiset
     void appendTask(const std::shared_ptr<QueryStatus> & query, const Int64 & timeout);

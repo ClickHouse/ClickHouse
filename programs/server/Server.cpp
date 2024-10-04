@@ -2318,6 +2318,8 @@ try
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
 
+            CancellationChecker::getInstance().terminateThread();
+
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);

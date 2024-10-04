@@ -30,16 +30,19 @@ CancellationChecker::CancellationChecker() : stop_thread(false)
 {
 }
 
-CancellationChecker::~CancellationChecker()
-{
-    stop_thread = true;
-}
-
 CancellationChecker& CancellationChecker::getInstance()
 {
     static CancellationChecker instance;
     return instance;
 }
+
+void CancellationChecker::terminateThread()
+{
+    LOG_TRACE(getLogger("CancellationChecker"), "Stopping CancellationChecker");
+    stop_thread = true;
+    cond_var.notify_all();
+}
+
 
 void CancellationChecker::cancelTask(std::shared_ptr<QueryStatus> query, CancelReason reason)
 {
