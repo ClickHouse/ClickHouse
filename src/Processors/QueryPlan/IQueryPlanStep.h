@@ -38,8 +38,8 @@ public:
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
     ///   * pipelines.size() == getInputHeaders.size()
-    ///   * header from each pipeline is the same as header from corresponding input_streams
-    /// Result pipeline must contain any number of streams with compatible output header is hasOutputStream(),
+    ///   * header from each pipeline is the same as header from corresponding input
+    /// Result pipeline must contain any number of ports with compatible output header if hasOutputHeader(),
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
