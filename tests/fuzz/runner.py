@@ -161,7 +161,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         print("Stderr output: ", e.stderr)
         process_error(e.stderr)
     except subprocess.TimeoutExpired as e:
-        print("Timeout for ", cmd_line)
+        logging.info("Timeout for %s", cmd_line)
         kill_fuzzer(fuzzer)
         process_fuzzer_output(e.stderr)
     else:
