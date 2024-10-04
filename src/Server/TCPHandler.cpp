@@ -1281,6 +1281,9 @@ void TCPHandler::processTablesStatusRequest()
     }
 
 
+    if (out->isCanceled())
+        return;
+
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
 
     /// For testing hedged requests
