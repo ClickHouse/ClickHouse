@@ -7,6 +7,7 @@ import re
 import signal
 import subprocess
 from pathlib import Path
+from time import sleep
 
 from botocore.exceptions import ClientError
 
@@ -163,6 +164,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     except subprocess.TimeoutExpired as e:
         logging.info("Timeout for %s", cmd_line)
         kill_fuzzer(fuzzer)
+        sleep(10)
         process_fuzzer_output(e.stderr)
     else:
         process_fuzzer_output(result.stderr)
