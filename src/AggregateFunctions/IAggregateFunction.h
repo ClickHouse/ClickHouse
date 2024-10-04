@@ -694,7 +694,7 @@ class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 protected:
     using Data = T;
 
-    static Data & data(const AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
 public:
