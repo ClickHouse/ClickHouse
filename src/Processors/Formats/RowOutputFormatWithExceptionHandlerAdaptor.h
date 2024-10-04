@@ -84,7 +84,7 @@ public:
 
     bool supportsWritingException() const override { return true; }
 
-    void setException(const String & exception_message_) override { exception_message_A = exception_message_; }
+    void setException(const String & exception_message_) override { exception_message = exception_message_; }
 
 protected:
     /// Returns buffer that should be used in derived classes instead of out.
@@ -95,7 +95,7 @@ protected:
         return Base::getWriteBufferPtr();
     }
 
-    String exception_message_A;
+    String exception_message;
 
 private:
 
