@@ -185,8 +185,18 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
 }
 
+void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
+{
+    join_algorithm_header.clear();
+    swap_streams = swap_streams_;
+    join = std::move(join_);
+}
+
 void JoinStep::updateOutputStream()
 {
+    if (join_algorithm_header)
+        return;
+
     const auto & header = swap_streams ? input_streams[1].header : input_streams[0].header;
 
     Block result_header = JoiningTransform::transformHeader(header, join);
@@ -199,7 +209,6 @@ void JoinStep::updateOutputStream()
         output_stream = DataStream { .header = result_header };
         return;
     }
-
 
     if (swap_streams)
         result_header = rotateBlock(result_header, input_streams[1].header);

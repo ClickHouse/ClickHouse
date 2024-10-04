@@ -92,12 +92,11 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
 
     const auto & left_stream_input_header = streams.front().header;
     const auto & right_stream_input_header = streams.back().header;
-    join_step->swap_streams = true;
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
     auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
-    join_step->setJoin(std::move(updated_join));
+    join_step->setJoin(std::move(updated_join), /* swap_streams= */ true);
 }
 
 }

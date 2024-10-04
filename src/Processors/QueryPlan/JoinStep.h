@@ -34,13 +34,12 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const JoinPtr & getJoin() const { return join; }
-    void setJoin(JoinPtr join_) { join = std::move(join_); }
+    void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
     bool canUpdateInputStream() const override { return true; }
 
     JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
-    bool swap_streams = false;
 
 private:
     void updateOutputStream() override;
@@ -51,10 +50,11 @@ private:
     size_t max_block_size;
     size_t max_streams;
 
-    NameSet required_output;
+    const NameSet required_output;
     std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
+    bool swap_streams = false;
 };
 
 /// Special step for the case when Join is already filled.
