@@ -17,7 +17,6 @@
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
@@ -2120,6 +2119,8 @@ try
 
         runner([&, my_part = part]()
         {
+            auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
+
             auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
             DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
@@ -4954,7 +4955,8 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
         total_column_size.add(part_column_size);
     }
 
-    auto indexes_descriptions = getInMemoryMetadataPtr()->secondary_indices;
+    const auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto indexes_descriptions = metadata_snapshot->secondary_indices;
     for (const auto & index : indexes_descriptions)
     {
         IndexSize & total_secondary_index_size = secondary_index_sizes[index.name];
@@ -8596,7 +8598,9 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         .choose_kind = true,
     };
 
-    const auto & storage_columns = getInMemoryMetadataPtr()->getColumns();
+    const auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & storage_columns = metadata_snapshot->getColumns();
+
     serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
     auto range = getDataPartsStateRange(DataPartState::Active);
 
@@ -8607,7 +8611,8 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 template <typename AddedParts, typename RemovedParts>
 void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & /*lock*/)
 {
-    const auto & storage_columns = getInMemoryMetadataPtr()->getColumns();
+    const auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & storage_columns = metadata_snapshot->getColumns();
 
     for (const auto & part : added_parts)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);

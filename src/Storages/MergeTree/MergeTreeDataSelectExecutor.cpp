@@ -1440,42 +1440,48 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
             if (index_helper->isVectorSimilarityIndex())
             {
-                /// An array of indices of useful ranges.
-                auto result = condition->getUsefulRanges(granule);
+                auto rows = condition->calculateApproximateNearestNeighbors(granule);
 
-                for (auto range : result)
+                for (auto row : rows)
                 {
-                    /// The range for the corresponding index.
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * index_granularity + range),
-                        std::min(ranges[i].end, index_mark * index_granularity + range + 1));
+                    const MergeTreeIndexGranularity & merge_tree_index_granularity = part->index_granularity;
+                    size_t num_marks = merge_tree_index_granularity.countMarksForRows(index_mark * index_granularity, row);
 
-                    if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                    MarkRange data_range(
+                        std::max(ranges[i].begin, (index_mark * index_granularity) + num_marks),
+                        std::min(ranges[i].end, (index_mark * index_granularity) + num_marks + 1));
+
+                    if (!res.empty() && data_range.end == res.back().end)
+                        /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
+                        continue;
+
+                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
                 }
-                continue;
             }
-
-            bool result = false;
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
-            if (!gin_filter_condition)
-                result = condition->mayBeTrueOnGranule(granule);
             else
-                result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+            {
+                 bool result = false;
+                 const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
+                 if (!gin_filter_condition)
+                     result = condition->mayBeTrueOnGranule(granule);
+                 else
+                     result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
 
-            if (!result)
-                continue;
+                if (!result)
+                    continue;
 
-            MarkRange data_range(
-                std::max(ranges[i].begin, index_mark * index_granularity),
-                std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+                MarkRange data_range(
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
-            if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                res.push_back(data_range);
-            else
-                res.back().end = data_range.end;
+                if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                    res.push_back(data_range);
+                else
+                    res.back().end = data_range.end;
+            }
         }
 
         last_index_mark = index_range.end - 1;

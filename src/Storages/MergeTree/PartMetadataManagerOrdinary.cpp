@@ -11,7 +11,10 @@ namespace DB
 std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
 {
     constexpr size_t size_hint = 4096; /// These files are small.
-    auto res = part->getDataPartStorage().readFile(file_name, getReadSettings().adjustBufferSize(size_hint), size_hint, std::nullopt);
+    auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+    /// Default read method is pread_threadpool, but there is not much point in it here.
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    auto res = part->getDataPartStorage().readFile(file_name, read_settings, size_hint, std::nullopt);
 
     if (isCompressedFromFileName(file_name))
         return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
