@@ -16,3 +16,6 @@
 
 # Applied Black formatter for Python code
 e6f5a3f98b21ba99cf274a9833797889e020a2b3
+
+# Enabling clang-tidy readability-else-no-return rule
+974f15adf094dbbc389c3c44e9bf02709786f5f0
