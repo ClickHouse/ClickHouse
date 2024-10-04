@@ -4,8 +4,6 @@ import time
 import uuid
 
 import pytest
-import uuid
-import time
 from pyhdfs import HdfsClient
 
 from helpers.client import QueryRuntimeException
