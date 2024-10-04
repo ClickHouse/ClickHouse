@@ -14,6 +14,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <base/scope_guard.h>
 
 #include <chrono>
 #include <mutex>
@@ -23,6 +24,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace {
+    auto logger = getLogger("QueryMetricLog");
+}
 namespace DB
 {
 
@@ -91,6 +95,9 @@ void QueryMetricLog::shutdown()
 
 void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
 {
+    LOG_TRACE(logger, "startQuery {} every {} ms", query_id, interval_milliseconds);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~startQuery {} every {} ms", query_id, interval_milliseconds); });
+
     QueryMetricLogStatus status;
     status.interval_milliseconds = interval_milliseconds;
     status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
@@ -122,6 +129,9 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
 
 void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr query_info)
 {
+    LOG_TRACE(logger, "finishQuery {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~finishQuery {}", query_id); });
+
     std::lock_guard lock(queries_mutex);
     auto it = queries.find(query_id);
 
@@ -142,6 +152,9 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
 
 std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time)
 {
+    LOG_TRACE(logger, "createLogMetricElement {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~createLogMetricElement {}", query_id); });
+
     std::lock_guard lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
 
