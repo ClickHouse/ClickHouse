@@ -202,6 +202,12 @@ String getNameForSubstreamPath(
             stream_name += "." + it->variant_element_name + ".null";
         else if (it->type == SubstreamType::DynamicStructure)
             stream_name += ".dynamic_structure";
+        else if (it->type == SubstreamType::ObjectStructure)
+            stream_name += ".object_structure";
+        else if (it->type == SubstreamType::ObjectSharedData)
+            stream_name += ".object_shared_data";
+        else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
+            stream_name += "." + it->object_path_name;
     }
 
     return stream_name;
@@ -401,7 +407,32 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
             || path[last_elem].type == Substream::VariantElement
-            || path[last_elem].type == Substream::VariantElementNullMap;
+            || path[last_elem].type == Substream::VariantElementNullMap
+            || path[last_elem].type == Substream::ObjectTypedPath;
+}
+
+bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    size_t last_elem = prefix_len - 1;
+    return path[last_elem].type == Substream::VariantElementNullMap;
+}
+
+bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    for (size_t i = 0; i != prefix_len; ++i)
+    {
+        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
+            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
+            return true;
+    }
+
+    return false;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)

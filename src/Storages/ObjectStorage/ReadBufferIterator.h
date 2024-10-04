@@ -33,7 +33,7 @@ public:
 
     void setResultingSchema(const ColumnsDescription & columns) override;
 
-    String getLastFileName() const override;
+    String getLastFilePath() const override;
 
     void setFormatName(const String & format_name) override;
 

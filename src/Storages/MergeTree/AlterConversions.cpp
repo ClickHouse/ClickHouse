@@ -9,9 +9,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool AlterConversions::supportsMutationCommandType(MutationCommand::Type t)
+bool AlterConversions::isSupportedDataMutation(MutationCommand::Type)
 {
-    return t == MutationCommand::Type::RENAME_COLUMN;
+    /// Currently there is no such mutations. See setting 'apply_mutations_on_fly'.
+    return false;
+}
+
+bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
+{
+    return type == MutationCommand::Type::RENAME_COLUMN;
 }
 
 void AlterConversions::addMutationCommand(const MutationCommand & command)

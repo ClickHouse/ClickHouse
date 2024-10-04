@@ -153,7 +153,7 @@ struct SettingFieldMaxThreads
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto==true`.
+    /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto == true`.
     String toString() const;
     void parseFromString(const String & str);
 

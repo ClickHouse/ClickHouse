@@ -5,12 +5,6 @@ rules:
     indentation:
         level: warning
         indent-sequences: consistent
-    line-length:
-        # there are:
-        # - bash -c "", so this is OK
-        # - yaml in tests
-        max: 1000
-        level: warning
     comments:
         min-spaces-from-content: 1
     document-start: disable

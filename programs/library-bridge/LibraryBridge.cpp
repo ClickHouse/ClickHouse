@@ -27,7 +27,7 @@ std::string LibraryBridge::bridgeName() const
 
 LibraryBridge::HandlerFactoryPtr LibraryBridge::getHandlerFactoryPtr(ContextPtr context) const
 {
-    return std::make_shared<LibraryBridgeHandlerFactory>("LibraryRequestHandlerFactory", keep_alive_timeout, context);
+    return std::make_shared<LibraryBridgeHandlerFactory>("LibraryRequestHandlerFactory", context);
 }
 
 }

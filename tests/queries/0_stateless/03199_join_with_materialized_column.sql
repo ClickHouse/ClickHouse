@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS table_with_materialized;
 CREATE TABLE table_with_materialized (col String MATERIALIZED 'A') ENGINE = Memory;

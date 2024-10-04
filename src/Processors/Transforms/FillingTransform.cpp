@@ -62,7 +62,7 @@ static FillColumnDescription::StepFunction getStepFunction(
         case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.get<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -139,21 +139,21 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     {
         if (which.isDate() || which.isDate32())
         {
-            Int64 avg_seconds = descr.fill_step.get<Int64>() * descr.step_kind->toAvgSeconds();
+            Int64 avg_seconds = descr.fill_step.safeGet<Int64>() * descr.step_kind->toAvgSeconds();
             if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                                 "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
         }
 
         if (which.isDate())
-            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, descr.fill_step.get<Int64>(), DateLUT::instance());
+            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), DateLUT::instance());
         else if (which.isDate32())
-            descr.step_func = getStepFunction<Int32>(*descr.step_kind, descr.fill_step.get<Int64>(), DateLUT::instance());
+            descr.step_func = getStepFunction<Int32>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), DateLUT::instance());
         else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
-            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, descr.fill_step.get<Int64>(), date_time->getTimeZone());
+            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), date_time->getTimeZone());
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
-            const auto & step_dec = descr.fill_step.get<const DecimalField<Decimal64> &>();
+            const auto & step_dec = descr.fill_step.safeGet<const DecimalField<Decimal64> &>();
             Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
             static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
@@ -163,7 +163,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
                 case IntervalKind::Kind::NAME: \
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
-                        auto field_decimal = field.get<DecimalField<DateTime64>>(); \
+                        auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
                         auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, utc_time_zone, field_decimal.getScale()); \
                         field = DecimalField(res, field_decimal.getScale()); \
                     }; \
@@ -203,7 +203,7 @@ FillingTransform::FillingTransform(
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
     if (interpolate_description)
-        interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
+        interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
 
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)

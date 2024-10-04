@@ -1,4 +1,5 @@
 #include "HTTPDictionarySource.h"
+#include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
@@ -8,12 +9,12 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
+#include <Storages/NamedCollectionsHelpers.h>
 #include "registerDictionaries.h"
 
 
@@ -223,21 +224,23 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         String endpoint;
         String format;
 
-        auto named_collection = created_from_ddl
-                            ? getURLBasedDataSourceConfiguration(config, settings_config_prefix, global_context)
-                            : std::nullopt;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
         if (named_collection)
         {
-            url = named_collection->configuration.url;
-            endpoint = named_collection->configuration.endpoint;
-            format = named_collection->configuration.format;
+            validateNamedCollection(
+                *named_collection,
+                /* required_keys */{},
+                /* optional_keys */ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
+                "url", "endpoint", "user", "credentials.user", "password", "credentials.password", "format", "compression_method", "structure", "name"});
 
-            credentials.setUsername(named_collection->configuration.user);
-            credentials.setPassword(named_collection->configuration.password);
+            url = named_collection->getOrDefault<String>("url", "");
+            endpoint = named_collection->getOrDefault<String>("endpoint", "");
+            format = named_collection->getOrDefault<String>("format", "");
 
-            header_entries.reserve(named_collection->configuration.headers.size());
-            for (const auto & [key, value] : named_collection->configuration.headers)
-                header_entries.emplace_back(key, value);
+            credentials.setUsername(named_collection->getAnyOrDefault<String>({"user", "credentials.user"}, ""));
+            credentials.setPassword(named_collection->getAnyOrDefault<String>({"password", "credentials.password"}, ""));
+
+            header_entries = getHeadersFromNamedCollection(*named_collection);
         }
         else
         {

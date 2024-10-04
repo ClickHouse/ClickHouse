@@ -2,12 +2,12 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/StdStreamFromReadBuffer.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>

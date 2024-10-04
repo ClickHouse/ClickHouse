@@ -45,6 +45,13 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             /// then MV will create inner table. We should generate UUID of inner table here.
             if (query.is_materialized_view)
                 generate_target_uuid(ViewTarget::To);
+
+            if (query.is_time_series_table)
+            {
+                generate_target_uuid(ViewTarget::Data);
+                generate_target_uuid(ViewTarget::Tags);
+                generate_target_uuid(ViewTarget::Metrics);
+            }
         }
     }
 }

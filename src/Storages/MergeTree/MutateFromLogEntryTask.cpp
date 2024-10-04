@@ -237,10 +237,11 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     if (data_part_storage.hasActiveTransaction())
         data_part_storage.precommitTransaction();
 
-    storage.renameTempPartAndReplace(new_part, *transaction_ptr);
+    storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
 
     try
     {
+        transaction_ptr->renameParts();
         storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, mutate_task->getHardlinkedFiles());
     }
     catch (const Exception & e)
@@ -254,6 +255,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
                            "We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
+            mutate_task->updateProfileEvents();
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
@@ -281,6 +283,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
          */
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
+    mutate_task->updateProfileEvents();
     write_part_log({});
 
     return true;

@@ -268,9 +268,16 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
 void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * /*cache*/) const
+    SubstreamsDeserializeStatesCache * cache) const
 {
     settings.path.push_back(Substream::DictionaryKeys);
+
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        state = std::move(cached_state);
+        return;
+    }
+
     auto * stream = settings.getter(settings.path);
     settings.path.pop_back();
 

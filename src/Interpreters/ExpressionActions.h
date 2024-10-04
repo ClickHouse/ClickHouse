@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
@@ -21,9 +22,6 @@ namespace ErrorCodes
 class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
-
-class ArrayJoinAction;
-using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -70,7 +68,7 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-    ActionsDAGPtr actions_dag;
+    ActionsDAG actions_dag;
     Actions actions;
     size_t num_columns = 0;
 
@@ -84,14 +82,13 @@ private:
     ExpressionActionsSettings settings;
 
 public:
-    ExpressionActions() = delete;
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
-    ExpressionActions(const ExpressionActions &) = default;
-    ExpressionActions & operator=(const ExpressionActions &) = default;
+    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    ExpressionActions(ExpressionActions &&) = default;
+    ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
-    const ActionsDAG & getActionsDAG() const { return *actions_dag; }
+    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
+    const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }
 
@@ -103,7 +100,7 @@ public:
     ///
     /// @param allow_duplicates_in_input - actions are allowed to have
     /// duplicated input (that will refer into the block). This is needed for
-    /// preliminary query filtering (filterBlockWithDAG()), because they just
+    /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
     void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) const;
@@ -131,6 +128,7 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
+    ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
@@ -223,11 +221,11 @@ struct ExpressionActionsChain : WithContext
 
     struct ArrayJoinStep : public Step
     {
-        ArrayJoinActionPtr array_join;
+        const NameSet array_join_columns;
         NamesAndTypesList required_columns;
         ColumnsWithTypeAndName result_columns;
 
-        ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_);
+        ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_);
 
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }

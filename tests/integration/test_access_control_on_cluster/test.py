@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -42,9 +43,18 @@ def test_access_control_on_cluster():
     ch1.query_with_retry(
         "CREATE USER IF NOT EXISTS Alex ON CLUSTER 'cluster'", retry_count=5
     )
-    assert ch1.query("SHOW CREATE USER Alex") == "CREATE USER Alex\n"
-    assert ch2.query("SHOW CREATE USER Alex") == "CREATE USER Alex\n"
-    assert ch3.query("SHOW CREATE USER Alex") == "CREATE USER Alex\n"
+    assert (
+        ch2.query("SHOW CREATE USER Alex")
+        == "CREATE USER Alex IDENTIFIED WITH no_password\n"
+    )
+    assert (
+        ch1.query("SHOW CREATE USER Alex")
+        == "CREATE USER Alex IDENTIFIED WITH no_password\n"
+    )
+    assert (
+        ch3.query("SHOW CREATE USER Alex")
+        == "CREATE USER Alex IDENTIFIED WITH no_password\n"
+    )
 
     ch2.query_with_retry(
         "GRANT ON CLUSTER 'cluster' SELECT ON *.* TO Alex", retry_count=3
@@ -89,3 +99,5 @@ def test_grant_current_database_on_cluster():
     assert ch1.query("SHOW DATABASES", user="test_user") == "user_db\n"
     ch1.query("GRANT SELECT ON * TO test_user ON CLUSTER 'cluster'", user="test_user")
     assert ch1.query("SHOW DATABASES", user="test_user") == "user_db\n"
+    ch1.query("DROP DATABASE user_db ON CLUSTER 'cluster'")
+    ch1.query("DROP USER test_user ON CLUSTER 'cluster'")

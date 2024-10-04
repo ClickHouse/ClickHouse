@@ -131,7 +131,12 @@ bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
         {
             created_base_directory = false;
 
-            if (!throw_if_failed && e.code() == std::errc::no_space_on_device)
+            if (!throw_if_failed &&
+                (e.code() == std::errc::no_space_on_device
+                 || e.code() == std::errc::read_only_file_system
+                 || e.code() == std::errc::permission_denied
+                 || e.code() == std::errc::too_many_files_open
+                 || e.code() == std::errc::operation_not_permitted))
             {
                 LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
                           "because no space left on device", key);
@@ -178,7 +183,7 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
     String file_suffix;
     switch (segment_kind)
     {
-        case FileSegmentKind::Temporary:
+        case FileSegmentKind::Ephemeral:
             file_suffix = "_temporary";
             break;
         case FileSegmentKind::Regular:
@@ -198,13 +203,13 @@ String CacheMetadata::getFileSegmentPath(
 
 String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
 {
+    const auto key_str = key.toString();
     if (write_cache_per_user_directory)
     {
-        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key.toString();
+        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
     }
     else
     {
-        const auto key_str = key.toString();
         return fs::path(path) / key_str.substr(0, 3) / key_str;
     }
 }
@@ -423,6 +428,8 @@ CacheMetadata::removeEmptyKey(
             fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
         }
+
+        /// TODO: Remove empty user directories.
     }
     catch (...)
     {
@@ -705,7 +712,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     {
         auto size = reader->available();
 
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds))
+        std::string failure_reason;
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "
@@ -846,7 +854,7 @@ LockedKey::~LockedKey()
     /// See comment near cleanupThreadFunc() for more details.
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_TRACE(key_metadata->logger(), "Submitting key {} for removal", getKey());
+    LOG_TEST(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 

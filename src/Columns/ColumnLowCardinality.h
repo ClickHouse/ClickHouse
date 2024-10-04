@@ -46,8 +46,8 @@ public:
         return Base::create(std::move(column_unique), std::move(indexes), is_shared);
     }
 
-    std::string getName() const override { return "ColumnLowCardinality"; }
-    const char * getFamilyName() const override { return "ColumnLowCardinality"; }
+    std::string getName() const override { return "LowCardinality(" + getDictionary().getNestedColumn()->getName() + ")"; }
+    const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
     ColumnPtr convertToFullColumn() const { return getDictionary().getNestedColumn()->index(getIndexes(), 0); }
@@ -172,6 +172,7 @@ public:
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
+    size_t capacity() const override { return idx.capacity(); }
     void shrinkToFit() override { idx.shrinkToFit(); }
 
     /// Don't count the dictionary size as it can be shared between different blocks.
@@ -309,6 +310,7 @@ public:
 
         void popBack(size_t n) { positions->popBack(n); }
         void reserve(size_t n) { positions->reserve(n); }
+        size_t capacity() const { return positions->capacity(); }
         void shrinkToFit() { positions->shrinkToFit(); }
 
         UInt64 getMaxPositionForCurrentType() const;

@@ -37,12 +37,12 @@ struct FunctionStringDistanceImpl
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
-        size_t size = res.size();
         const char * haystack = reinterpret_cast<const char *>(haystack_data.data());
         const char * needle = reinterpret_cast<const char *>(needle_data.data());
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(
                 haystack + haystack_offsets[i - 1],
@@ -56,13 +56,13 @@ struct FunctionStringDistanceImpl
         const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
         const char * haystack_data = haystack.data();
         size_t haystack_size = haystack.size();
         const char * needle = reinterpret_cast<const char *>(needle_data.data());
-        size_t size = res.size();
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(haystack_data, haystack_size,
                 needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1] - 1);
@@ -73,9 +73,10 @@ struct FunctionStringDistanceImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const String & needle,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
-        constantVector(needle, data, offsets, res);
+        constantVector(needle, data, offsets, res, input_rows_count);
     }
 
 };

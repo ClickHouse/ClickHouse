@@ -114,7 +114,7 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.get<std::string>()));
+            return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>()));
         else
             return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }

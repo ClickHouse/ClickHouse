@@ -45,6 +45,7 @@ public:
     void work() override;
 
     void consume(Chunk chunk);
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 private:
     void generate();
@@ -85,6 +86,8 @@ private:
     Block res_header;
     Chunk current_chunk;
     Chunk to_push_chunk;
+
+    RowsBeforeStepCounterPtr rows_before_aggregation;
 
     LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };

@@ -1,8 +1,9 @@
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Core/Settings.h>
 #include <base/sleep.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 
 namespace DB
 {
