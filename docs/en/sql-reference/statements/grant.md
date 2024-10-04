@@ -515,15 +515,20 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
+    - `AZURE`. Level: `GLOBAL`
     - `FILE`. Level: `GLOBAL`
-    - `URL`. Level: `GLOBAL`
-    - `REMOTE`. Level: `GLOBAL`
-    - `YSQL`. Level: `GLOBAL`
-    - `ODBC`. Level: `GLOBAL`
-    - `JDBC`. Level: `GLOBAL`
     - `HDFS`. Level: `GLOBAL`
-    - `S3`. Level: `GLOBAL`
+    - `HIVE`. Level: `GLOBAL`
+    - `JDBC`. Level: `GLOBAL`
+    - `MONGO`. Level: `GLOBAL`
+    - `MYSQL`. Level: `GLOBAL`
+    - `ODBC`. Level: `GLOBAL`
     - `POSTGRES`. Level: `GLOBAL`
+    - `REDIS`. Level: `GLOBAL`
+    - `REMOTE`. Level: `GLOBAL`
+    - `S3`. Level: `GLOBAL`
+    - `SQLITE`. Level: `GLOBAL`
+    - `URL`. Level: `GLOBAL`
 
 The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
 
