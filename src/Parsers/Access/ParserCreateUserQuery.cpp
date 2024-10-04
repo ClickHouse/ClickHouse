@@ -236,10 +236,7 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
-            if (parseValidUntil(pos, expected, auth_data->valid_until))
-            {
-                auth_data->children.push_back(auth_data->valid_until);
-            }
+            parseValidUntil(pos, expected, auth_data->valid_until);
 
             return true;
         });
