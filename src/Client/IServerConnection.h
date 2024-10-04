@@ -100,6 +100,7 @@ public:
         const Settings * settings,
         const ClientInfo * client_info,
         bool with_pending_data,
+        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) = 0;
 
     virtual void sendCancel() = 0;

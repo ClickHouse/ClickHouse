@@ -86,6 +86,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"filesystem_cache_prefer_bigger_buffer_size", true, true, "New setting"},
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
             {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
+            {"push_external_roles_in_interserver_queries", false, false, "New setting."},
         }
     },
     {"24.10",
