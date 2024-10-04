@@ -59,7 +59,7 @@ def process_error(error: str):
 
 
 def kill_fuzzer(fuzzer: str):
-    with subprocess.Popen(["ps", "-A"], stdout=subprocess.PIPE) as p:
+    with subprocess.Popen(["ps", "-A", "u"], stdout=subprocess.PIPE) as p:
         out, _ = p.communicate()
         for line in out.splitlines():
             if fuzzer.encode("utf-8") in line:
