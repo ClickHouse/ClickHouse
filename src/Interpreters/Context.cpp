@@ -4650,7 +4650,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
 
-        /// Respcet compatibility setting from the default profile.
+        /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
         mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
 
@@ -4670,7 +4670,7 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
 
-        /// Respcet compatibility setting from the default profile.
+        /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
         mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
 
