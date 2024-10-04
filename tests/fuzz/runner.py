@@ -61,7 +61,7 @@ def kill_fuzzer(fuzzer: str):
     with subprocess.Popen(["ps", "-A"], stdout=subprocess.PIPE) as p:
         out, _ = p.communicate()
         for line in out.splitlines():
-            if fuzzer in line:
+            if fuzzer.encode("utf-8") in line:
                 pid = int(line.split(None, 1)[0])
                 os.kill(pid, signal.SIGKILL)
 
