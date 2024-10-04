@@ -131,7 +131,12 @@ bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
         {
             created_base_directory = false;
 
-            if (!throw_if_failed && e.code() == std::errc::no_space_on_device)
+            if (!throw_if_failed &&
+                (e.code() == std::errc::no_space_on_device
+                 || e.code() == std::errc::read_only_file_system
+                 || e.code() == std::errc::permission_denied
+                 || e.code() == std::errc::too_many_files_open
+                 || e.code() == std::errc::operation_not_permitted))
             {
                 LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
                           "because no space left on device", key);
