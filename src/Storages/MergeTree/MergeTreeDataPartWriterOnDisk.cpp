@@ -78,7 +78,8 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::cancel() noexcept
     }
 
     plain_file->cancel();
-    marks_file->cancel();
+    if constexpr (!only_plain_file)
+        marks_file->cancel();
 }
 
 template<bool only_plain_file>
@@ -583,11 +584,6 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         if (sync)
             stream->sync();
     }
-
-    // std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
-    // std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
-    // std::unique_ptr<CompressedWriteBuffer> index_compressor_stream;
-    // std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
 
     for (auto & store: gin_index_stores)
         store.second->finalize();

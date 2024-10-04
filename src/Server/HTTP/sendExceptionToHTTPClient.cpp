@@ -7,7 +7,7 @@
 namespace DB
 {
 
-void drainRequstIfNeded(HTTPServerRequest & request, HTTPServerResponse & response) noexcept
+void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & response) noexcept
 {
     /// If HTTP method is POST and Keep-Alive is turned on, we should try to read the whole request body
     /// to avoid reading part of the current request body in the next request.

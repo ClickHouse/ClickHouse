@@ -30,7 +30,7 @@ int main(int argc, char ** argv)
 
     writeCString("\n--- second ---\n", out);
     {
-        LimitReadBuffer limit_in( in,{.read_no_more=limit});
+        LimitReadBuffer limit_in(in,{.read_no_more=limit});
         copyData(limit_in, out);
     }
 

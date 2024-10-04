@@ -544,7 +544,7 @@ void HTTPHandler::processQuery(
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
                 used_output.exception_writer = [&, format_name, header, context_, format_settings](WriteBuffer & buf, int code, const String & message)
                 {
-                    drainRequstIfNeded(request, response);
+                    drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
                     auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
                     output_format->setException(message);
@@ -557,7 +557,7 @@ void HTTPHandler::processQuery(
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
 
-                drainRequstIfNeded(request, response);
+                drainRequestIfNeeded(request, response);
                 used_output.out_holder->setExceptionCode(status.code);
                 current_output_format.setException(status.message);
                 current_output_format.finalize();
@@ -595,7 +595,6 @@ try
 {
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
-        LOG_DEBUG(getLogger("trySendExceptionToClient"), "1");
         /// If nothing was sent yet and we don't even know if we must compress the response.
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
         return wb.cancelWithException(request, exception_code, message, nullptr);

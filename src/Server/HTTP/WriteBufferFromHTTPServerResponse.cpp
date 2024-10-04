@@ -267,7 +267,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
         // proper senging bad http code
         if (!is_response_sent)
         {
-            drainRequstIfNeded(request, response);
+            drainRequestIfNeeded(request, response);
             // We try to send the exception message when the transmission has not been started yet
             // Set HTTP code and HTTP message. Add "X-ClickHouse-Exception-Code" header.
             // If it is not HEAD request send the message in the body.

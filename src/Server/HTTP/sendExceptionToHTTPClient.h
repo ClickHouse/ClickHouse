@@ -5,6 +5,6 @@ namespace DB
 class HTTPServerRequest;
 class HTTPServerResponse;
 
-void drainRequstIfNeded(HTTPServerRequest & request, HTTPServerResponse & response) noexcept;
+void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & response) noexcept;
 
 }

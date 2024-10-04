@@ -131,7 +131,7 @@ public:
 
     void setPlain(size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
     {
-        if (count() > 0)
+        if (count() > 0 && count() != offset())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "can't do setPlain on HTTPWriteBuffer, buffer is already in use");
 
         chunked = false;

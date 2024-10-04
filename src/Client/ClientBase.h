@@ -401,7 +401,6 @@ protected:
     std::atomic_bool cancelled_printed = false;
 
     /// Unpacked descriptors and streams for the ease of use.
-    int err_fd = STDERR_FILENO;
     std::istream & input_stream;
     std::ostream & output_stream;
     std::ostream & error_stream;
