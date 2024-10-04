@@ -757,7 +757,6 @@ int AccessControl::getBcryptWorkfactor() const
     return bcrypt_workfactor;
 }
 
-
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {
     return context_access_cache->getContextAccess(params);

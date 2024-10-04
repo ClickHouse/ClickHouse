@@ -1,0 +1,46 @@
+<clickhouse>
+    <remote_servers>
+        <sharded_cluster_without_secret>
+            <shard>
+                <replica>
+                    <host>instance1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>instance2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>instance3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </sharded_cluster_without_secret>
+        
+        <sharded_cluster_with_secret>
+            <secret>qwerty123</secret>
+            <shard>
+                <replica>
+                    <host>instance1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>instance2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>instance3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </sharded_cluster_with_secret>
+    </remote_servers>
+</clickhouse>

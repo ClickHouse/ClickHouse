@@ -287,6 +287,7 @@ protected:
 
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
+    std::shared_ptr<std::vector<UUID>> external_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -632,7 +633,7 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_);
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
     std::optional<UUID> getUserID() const;

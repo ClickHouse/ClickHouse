@@ -1440,7 +1440,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -1455,7 +1455,6 @@ void Context::setUser(const UUID & user_id_)
     const auto & database = user->default_database;
 
     /// Apply user's profiles, constraints, settings, roles.
-
     std::lock_guard lock(mutex);
 
     setUserIDWithLock(user_id_, lock);
@@ -1465,6 +1464,8 @@ void Context::setUser(const UUID & user_id_)
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
     setCurrentRolesWithLock(default_roles, lock);
+    setCurrentRolesWithLock(external_roles_, lock);
+    setCurrentRolesWithLock(external_roles_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -1622,7 +1623,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         bool full_access = !user_id;
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
