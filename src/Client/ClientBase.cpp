@@ -12,7 +12,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
@@ -1630,7 +1630,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 client_context,
                 {},
                 client_context->getSettingsRef()[Setting::max_block_size],
-                getNumberOfPhysicalCPUCores());
+                getNumberOfCPUCoresToUse());
 
             auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(client_context),
