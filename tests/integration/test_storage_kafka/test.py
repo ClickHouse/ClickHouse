@@ -2755,7 +2755,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_
             )
         )
 
-        # instance.wait_for_log_line(log_line)
+        instance.wait_for_log_line(log_line)
 
         expected = """\
     1	1	k1	1577836801	k1	insert3	0	0	1577836801
