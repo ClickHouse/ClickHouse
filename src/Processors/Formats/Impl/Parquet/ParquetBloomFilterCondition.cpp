@@ -19,91 +19,71 @@ namespace ErrorCodes
 namespace
 {
 
-bool isFieldTypeCompatibleWithParquetByteType(Field::Types::Which field_type)
+bool isParquetStringTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
 {
-    return field_type == Field::Types::Which::String || field_type == Field::Types::Which::Int128
-        || field_type == Field::Types::Which::Int256 || field_type == Field::Types::Which::UInt128
-        || field_type == Field::Types::Which::UInt256 || field_type == Field::Types::IPv6;
-}
-
-bool isColumnSupported(Field::Types::Which field_type, const parquet::ColumnDescriptor * column_descriptor)
-{
-    const auto physical_type = column_descriptor->physical_type();
-    const auto & logical_type = column_descriptor->logical_type();
-    const auto converted_type = column_descriptor->converted_type();
-
-    // not supporting booleans
-    if (physical_type == parquet::Type::type::BOOLEAN)
+    if ((!logical_type || logical_type->is_none()) && parquet::ConvertedType::type::NONE == converted_type)
     {
-        return false;
+        return true;
     }
 
-    if (physical_type == parquet::Type::type::INT32 || physical_type == parquet::Type::type::INT64)
+    if (logical_type && (logical_type->is_string() || logical_type->is_BSON() || logical_type->is_JSON() || logical_type->is_UUID()))
     {
-        // I assume it is safe to allow clickhouse ipv4 x parquet physical 64. It would only be a problem in case
-        // the generator used some sort of zero filled buffer and memcopied an uint32 to it. If the proper API was used or uint64 was copied,
-        // it would be ok
-        if (!isInt64OrUInt64FieldType(field_type) && field_type != Field::Types::Which::IPv4)
-        {
-            return false;
-        }
-
-        if (!logical_type && parquet::ConvertedType::type::NONE == converted_type)
-        {
-            return true;
-        }
-
-        if (logical_type && logical_type->is_int())
-        {
-            return true;
-        }
-
-        if (converted_type == parquet::ConvertedType::INT_8 || converted_type == parquet::ConvertedType::INT_16
-            || converted_type == parquet::ConvertedType::INT_32 || converted_type == parquet::ConvertedType::INT_64
-            || converted_type == parquet::ConvertedType::UINT_8 || converted_type == parquet::ConvertedType::UINT_16
-            || converted_type == parquet::ConvertedType::UINT_32 || converted_type == parquet::ConvertedType::UINT_64)
-        {
-            return true;
-        }
+        return true;
     }
-    else if (physical_type == parquet::Type::type::BYTE_ARRAY || physical_type == parquet::Type::type::FIXED_LEN_BYTE_ARRAY)
+
+    if (converted_type == parquet::ConvertedType::JSON || converted_type == parquet::ConvertedType::UTF8 || converted_type == parquet::ConvertedType::BSON)
     {
-        // branching with false and true is weird
-        if (!isFieldTypeCompatibleWithParquetByteType(field_type))
-        {
-            return false;
-        }
-
-        if ((!logical_type || logical_type->is_none()) && parquet::ConvertedType::type::NONE == converted_type)
-        {
-            return true;
-        }
-
-        if (logical_type && (logical_type->is_string() || logical_type->is_BSON() || logical_type->is_JSON() || logical_type->is_UUID()))
-        {
-            return true;
-        }
-
-        if (converted_type == parquet::ConvertedType::JSON || converted_type == parquet::ConvertedType::UTF8 || converted_type == parquet::ConvertedType::BSON)
-        {
-            return true;
-        }
+        return true;
     }
 
     return false;
 }
 
-bool isColumnSupported(ColumnPtr column, const parquet::ColumnDescriptor * column_descriptor)
+bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
 {
-    Field f;
-    column->get(0, f);
+    if (!logical_type && parquet::ConvertedType::type::NONE == converted_type)
+    {
+        return true;
+    }
 
-    return isColumnSupported(f.getType(), column_descriptor);
+    if (logical_type && logical_type->is_int())
+    {
+        return true;
+    }
+
+    if (converted_type == parquet::ConvertedType::INT_8 || converted_type == parquet::ConvertedType::INT_16
+        || converted_type == parquet::ConvertedType::INT_32 || converted_type == parquet::ConvertedType::INT_64
+        || converted_type == parquet::ConvertedType::UINT_8 || converted_type == parquet::ConvertedType::UINT_16
+        || converted_type == parquet::ConvertedType::UINT_32 || converted_type == parquet::ConvertedType::UINT_64)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+
+std::optional<uint64_t> tryHashString(const Field & field, const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
+{
+    if (field.getType() != Field::Types::Which::String && isParquetStringTypeSupportedForBloomFilters(logical_type, converted_type))
+    {
+        return std::nullopt;
+    }
+
+    parquet::XxHasher hasher;
+    parquet::ByteArray ba { field.safeGet<std::string>() };
+
+    return hasher.Hash(&ba);
 }
 
 template <typename HashingType>
-std::optional<uint64_t> hashInt(const Field & field)
+std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
 {
+    if (!isParquetIntegerTypeSupportedForBloomFilters(logical_type, converted_type))
+    {
+        return std::nullopt;
+    }
+
     parquet::XxHasher hasher;
 
     if (field.getType() == Field::Types::Which::Int64)
@@ -122,30 +102,27 @@ std::optional<uint64_t> hashInt(const Field & field)
     return std::nullopt;
 }
 
-uint64_t hashString(const Field & field)
+std::optional<uint64_t> tryHash(const Field & field, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
-    parquet::XxHasher hasher;
-    parquet::ByteArray ba { field.safeGet<std::string>() };
-    return hasher.Hash(&ba);
-}
+    const auto physical_type = parquet_column_descriptor->physical_type();
+    const auto & logical_type = parquet_column_descriptor->logical_type();
+    const auto converted_type = parquet_column_descriptor->converted_type();
 
-std::optional<uint64_t> hash(const Field & field, parquet::Type::type physical_type)
-{
     switch (physical_type)
     {
         case parquet::Type::type::INT32:
-            return hashInt<int32_t>(field);
+            return tryHashInt<int32_t>(field, logical_type, converted_type);
         case parquet::Type::type::INT64:
-            return hashInt<int64_t>(field);
+            return tryHashInt<int64_t>(field, logical_type, converted_type);
         case parquet::Type::type::BYTE_ARRAY:
         case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-            return hashString(field);
+            return tryHashString(field, logical_type, converted_type);
         default:
             return std::nullopt;
     }
 }
 
-std::vector<uint64_t> hash(const IColumn * data_column, parquet::Type::type physical_type)
+std::vector<uint64_t> hash(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     std::vector<uint64_t> hashes;
 
@@ -154,7 +131,7 @@ std::vector<uint64_t> hash(const IColumn * data_column, parquet::Type::type phys
         Field f;
         data_column->get(i, f);
 
-        if (auto hashed_value = hash(f, physical_type))
+        if (auto hashed_value = tryHash(f, parquet_column_descriptor))
         {
             hashes.emplace_back(*hashed_value);
         }
@@ -174,6 +151,43 @@ bool maybeTrueOnBloomFilter(const std::vector<uint64_t> & hashes, const std::uni
     }
 
     return false;
+}
+
+const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
+    const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata,
+    const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
+    std::size_t clickhouse_column_index)
+{
+    if (clickhouse_column_index_to_parquet_index.size() <= clickhouse_column_index)
+    {
+        return nullptr;
+    }
+
+    const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[clickhouse_column_index].parquet_indexes;
+
+    // complex types like structs, tuples and maps will have more than one index.
+    // we don't support those for now
+    if (parquet_indexes.size() > 1)
+    {
+        return nullptr;
+    }
+
+    if (parquet_indexes.empty())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Something bad happened, raise an issue and try the query with `input_format_parquet_bloom_filter_push_down=false`");
+    }
+
+    auto parquet_column_index = parquet_indexes[0];
+
+    const auto * parquet_column_descriptor = parquet_rg_metadata->schema()->Column(parquet_column_index);
+
+    bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
+    if (!column_has_bloom_filter)
+    {
+        return nullptr;
+    }
+
+    return parquet_column_descriptor;
 }
 
 }
@@ -326,51 +340,23 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
         if (rpn_element.function == RPNElement::FUNCTION_IN_RANGE
             || rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
+            // Only FUNCTION_EQUALS is supported and for that extremes need to be the same
             if (rpn_element.range.left != rpn_element.range.right)
             {
                 condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
                 continue;
             }
 
-            if (clickhouse_column_index_to_parquet_index.size() <= rpn_element.key_column)
+            const auto * parquet_column_descriptor =
+                getColumnDescriptorIfBloomFilterIsPresent(parquet_rg_metadata, clickhouse_column_index_to_parquet_index, rpn_element.key_column);
+
+            if (!parquet_column_descriptor)
             {
                 condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
                 continue;
             }
 
-            const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[rpn_element.key_column].parquet_indexes;
-
-            // complex types like structs, tuples and maps will have more than one index.
-            // we don't support those for now
-            if (parquet_indexes.size() > 1)
-            {
-                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
-                continue;
-            }
-
-            if (parquet_indexes.empty())
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Something bad happened, raise an issue and try the query with `input_format_parquet_bloom_filter_push_down=false`");
-            }
-
-            auto parquet_column_index = parquet_indexes[0];
-
-            bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
-            if (!column_has_bloom_filter)
-            {
-                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
-                continue;
-            }
-
-            if (!isColumnSupported(rpn_element.range.left.getType(), parquet_rg_metadata->schema()->Column(parquet_column_index)))
-            {
-                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
-                continue;
-            }
-
-            const auto * parquet_column_descriptor = parquet_rg_metadata->schema()->Column(parquet_column_index);
-
-            auto hashed_value = hash(rpn_element.range.left, parquet_column_descriptor->physical_type());
+            auto hashed_value = tryHash(rpn_element.range.left, parquet_column_descriptor);
 
             if (!hashed_value)
             {
@@ -405,30 +391,12 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             {
                 const auto & set_column = ordered_set[i];
 
-                if (clickhouse_column_index_to_parquet_index.size() <= indexes_mapping[i].key_index)
-                {
-                    condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
-                    continue;
-                }
+                const auto * parquet_column_descriptor = getColumnDescriptorIfBloomFilterIsPresent(
+                    parquet_rg_metadata,
+                    clickhouse_column_index_to_parquet_index,
+                    indexes_mapping[i].key_index);
 
-                const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].parquet_indexes;
-
-                // complex types like structs, tuples and maps will have more than one index.
-                // we don't support those for now
-                if (parquet_indexes.size() > 1)
-                {
-                    continue;
-                }
-
-                if (parquet_indexes.empty())
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Something bad happened, raise an issue and try the query with `input_format_parquet_bloom_filter_push_down=false`");
-                }
-
-                auto parquet_column_index = parquet_indexes[0];
-
-                bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
-                if (!column_has_bloom_filter)
+                if (!parquet_column_descriptor)
                 {
                     continue;
                 }
@@ -445,14 +413,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                     column = nullable_column->getNestedColumnPtr();
                 }
 
-                const auto * parquet_column_descriptor = parquet_rg_metadata->schema()->Column(parquet_column_index);
-
-                if (!isColumnSupported(column, parquet_column_descriptor))
-                {
-                    continue;
-                }
-
-                auto hashes_for_column = hash(column.get(), parquet_column_descriptor->physical_type());
+                auto hashes_for_column = hash(column.get(), parquet_column_descriptor);
 
                 if (hashes_for_column.empty())
                 {
