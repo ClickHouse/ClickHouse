@@ -572,7 +572,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         const auto parquet_conditions = keyConditionRPNToParquetBloomFilterCondition(
             key_condition->getRPN(),
-            getPort().getHeader(),
             index_mapping,
             metadata->RowGroup(0));
         parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions, getPort().getHeader());
