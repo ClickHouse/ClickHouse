@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>

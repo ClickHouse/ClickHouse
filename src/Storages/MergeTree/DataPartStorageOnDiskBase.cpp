@@ -59,6 +59,16 @@ std::string DataPartStorageOnDiskBase::getRelativePath() const
     return fs::path(root_path) / part_dir / "";
 }
 
+std::string DataPartStorageOnDiskBase::getParentDirectory() const
+{
+    /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
+    fs::path part_dir_without_slash = part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir;
+
+    if (part_dir_without_slash.has_parent_path())
+        return part_dir_without_slash.parent_path();
+    return "";
+}
+
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
@@ -73,12 +83,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
     for (int try_no = 0; try_no < 10; ++try_no)
     {
-        if (prefix.empty())
-            res = part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
-        else if (prefix.ends_with("_"))
-            res = prefix + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
-        else
-            res = prefix + "_" + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        res = getPartDirForPrefix(prefix, detached, try_no);
 
         if (!volume->getDisk()->exists(full_relative_path / res))
             return res;
@@ -97,6 +102,36 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
         LOG_WARNING(log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
     }
+
+    return res;
+}
+
+String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, bool detached, int try_no) const
+{
+    /// This function joins `prefix` and the part name and an attempt number returning something like "<prefix>_<part_name>_<tryN>".
+    String res = prefix;
+    if (!prefix.empty() && !prefix.ends_with("_"))
+        res += "_";
+
+    /// During RESTORE temporary part directories are created with names like "tmp_restore_all_2_2_0-XXXXXXXX".
+    /// To detach such a directory we need to rename it replacing "tmp_restore_" with a specified prefix,
+    /// and a random suffix with an attempt number.
+    String part_name;
+    if (detached && part_dir.starts_with("tmp_restore_"))
+    {
+        part_name = part_dir.substr(strlen("tmp_restore_"));
+        size_t endpos = part_name.find('-');
+        if (endpos != String::npos)
+            part_name.erase(endpos, String::npos);
+    }
+
+    if (!part_name.empty())
+        res += part_name;
+    else
+        res += part_dir;
+
+    if (try_no)
+        res += "_try" + DB::toString(try_no);
 
     return res;
 }
@@ -267,6 +302,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
     ReplicatedFilesDescription description;
     auto relative_path = fs::path(root_path) / part_dir;
     auto disk = volume->getDisk();
+    auto read_settings = getReadSettings();
 
     auto actual_file_names = getActualFileNamesOnDisk(file_names);
     for (const auto & name : actual_file_names)
@@ -277,9 +313,9 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         auto & file_desc = description.files[name];
 
         file_desc.file_size = file_size;
-        file_desc.input_buffer_getter = [disk, path, file_size]
+        file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, ReadSettings{}.adjustBufferSize(file_size), file_size, file_size);
+            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size, file_size);
         };
     }
 
@@ -674,9 +710,9 @@ void DataPartStorageOnDiskBase::remove(
 
     if (!has_delete_prefix)
     {
-        if (part_dir_without_slash.has_parent_path())
+        auto parent_path = getParentDirectory();
+        if (!parent_path.empty())
         {
-            auto parent_path = part_dir_without_slash.parent_path();
             if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -684,7 +720,7 @@ void DataPartStorageOnDiskBase::remove(
                     part_dir,
                     root_path);
 
-            part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+            part_dir_without_slash = fs::path(parent_path) / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
         }
         else
         {

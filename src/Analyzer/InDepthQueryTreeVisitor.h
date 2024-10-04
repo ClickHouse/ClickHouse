@@ -3,7 +3,6 @@
 #include <base/scope_guard.h>
 
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryNode.h>

@@ -38,7 +38,7 @@ public:
             {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
             {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "constant String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeUInt64>();
     }

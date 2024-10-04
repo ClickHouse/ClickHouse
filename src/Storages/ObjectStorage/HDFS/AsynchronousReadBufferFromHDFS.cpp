@@ -91,9 +91,9 @@ void AsynchronousReadBufferFromHDFS::prefetch(Priority priority)
 }
 
 
-size_t AsynchronousReadBufferFromHDFS::getFileSize()
+std::optional<size_t> AsynchronousReadBufferFromHDFS::tryGetFileSize()
 {
-    return impl->getFileSize();
+    return impl->tryGetFileSize();
 }
 
 String AsynchronousReadBufferFromHDFS::getFileName() const

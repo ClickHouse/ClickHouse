@@ -76,7 +76,7 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
-## FQDN
+## fqdn
 
 Returns the fully qualified domain name of the ClickHouse server.
 
@@ -86,11 +86,11 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-This function is case-insensitive.
+Aliases: `fullHostName`, `FQDN`.
 
 **Returned value**
 
-- String with the fully qualified domain name. [String](../data-types/string.md). 
+- String with the fully qualified domain name. [String](../data-types/string.md).
 
 **Example**
 
@@ -245,7 +245,7 @@ Result:
 3. │           5 │
 4. │           5 │
 5. │           5 │
-   └─────────────┘ 
+   └─────────────┘
 ```
 
 ## byteSize
@@ -346,12 +346,42 @@ Result:
 ## materialize
 
 Turns a constant into a full column containing a single value.
-Full columns and constants are represented differently in memory. Functions usually execute different code for normal and constant arguments, although the result should typically be the same. This function can be used to debug this behavior.
+Full columns and constants are represented differently in memory.
+Functions usually execute different code for normal and constant arguments, although the result should typically be the same.
+This function can be used to debug this behavior.
 
 **Syntax**
 
 ```sql
 materialize(x)
+```
+
+**Parameters**
+
+- `x` — A constant. [Constant](../functions/index.md/#constants).
+
+**Returned value**
+
+- A column containing a single value `x`.
+
+**Example**
+
+In the example below the `countMatches` function expects a constant second argument.
+This behaviour can be debugged by using the `materialize` function to turn a constant into a full column,
+verifying that the function throws an error for a non-constant argument.
+
+Query:
+
+```sql
+SELECT countMatches('foobarfoo', 'foo');
+SELECT countMatches('foobarfoo', materialize('foo'));
+```
+
+Result:
+
+```response
+2
+Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal type of argument #2 'pattern' of function countMatches, expected constant String, got String
 ```
 
 ## ignore
@@ -1807,7 +1837,7 @@ Returns the default value for the given data type.
 
 Does not include default values for custom columns set by the user.
 
-**Syntax** 
+**Syntax**
 
 ```sql
 defaultValueOfArgumentType(expression)
@@ -2102,14 +2132,14 @@ Result:
 └─────────────────┘
 ```
 
-## filesystemFree
+## filesystemUnreserved
 
-Returns the total amount of the free space on the filesystem hosting the database persistence. See also `filesystemAvailable`
+Returns the total amount of the free space on the filesystem hosting the database persistence. (previously `filesystemFree`). See also [`filesystemAvailable`](#filesystemavailable).
 
 **Syntax**
 
 ```sql
-filesystemFree()
+filesystemUnreserved()
 ```
 
 **Returned value**
@@ -2121,7 +2151,7 @@ filesystemFree()
 Query:
 
 ```sql
-SELECT formatReadableSize(filesystemFree()) AS "Free space";
+SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
 ```
 
 Result:
@@ -2134,7 +2164,7 @@ Result:
 
 ## filesystemCapacity
 
-Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) to the data directory to be configured.
+Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#path) to the data directory to be configured.
 
 **Syntax**
 
@@ -2449,11 +2479,11 @@ As you can see, `runningAccumulate` merges states for each group of rows separat
 
 ## joinGet
 
-The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md).
+The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md). Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
 
-Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
-
+:::note
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+:::
 
 **Syntax**
 
@@ -2463,26 +2493,32 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. The identifier is searched in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
+:::note
+The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+:::
+
 **Returned value**
 
-Returns a list of values corresponded to list of keys.
+- Returns a list of values corresponded to the list of keys.
 
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
-
+:::note
+If a certain key does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting during table creation.
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
+:::
 
 **Example**
 
 Input table:
 
 ```sql
-CREATE DATABASE db_test
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
-INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val;
 ```
 
 ```text
@@ -2496,18 +2532,116 @@ INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 Query:
 
 ```sql
-SELECT joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
 
 ```text
-┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
-│                                                0 │
-│                                               11 │
-│                                               12 │
-│                                                0 │
-└──────────────────────────────────────────────────┘
+   ┌─number─┬─joinGet('db_test.id_val', 'val', toUInt32(number))─┐
+1. │      0 │                                                  0 │
+2. │      1 │                                                 11 │
+3. │      2 │                                                 12 │
+4. │      3 │                                                  0 │
+   └────────┴────────────────────────────────────────────────────┘
+```
+
+Setting `join_use_nulls` can be used during table creation to change the behaviour of what gets returned if no key exists in the source table.
+
+```sql
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val_nulls(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls=1;
+INSERT INTO db_test.id_val_nulls VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val_nulls;
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
+```
+
+Result:
+
+```text
+   ┌─number─┬─joinGet('db_test.id_val_nulls', 'val', toUInt32(number))─┐
+1. │      0 │                                                     ᴺᵁᴸᴸ │
+2. │      1 │                                                       11 │
+3. │      2 │                                                       12 │
+4. │      3 │                                                     ᴺᵁᴸᴸ │
+   └────────┴──────────────────────────────────────────────────────────┘
+```
+
+## joinGetOrNull
+
+Like [joinGet](#joinget) but returns `NULL` when the key is missing instead of returning the default value.
+
+**Syntax**
+
+```sql
+joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
+```
+
+**Arguments**
+
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
+
+:::note
+The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+:::
+
+**Returned value**
+
+- Returns a list of values corresponded to the list of keys.
+
+:::note
+If a certain key does not exist in source table then `NULL` is returned for that key.
+:::
+
+**Example**
+
+Input table:
+
+```sql
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val;
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+```
+
+Result:
+
+```text
+   ┌─number─┬─joinGetOrNull('db_test.id_val', 'val', toUInt32(number))─┐
+1. │      0 │                                                     ᴺᵁᴸᴸ │
+2. │      1 │                                                       11 │
+3. │      2 │                                                       12 │
+4. │      3 │                                                     ᴺᵁᴸᴸ │
+   └────────┴──────────────────────────────────────────────────────────┘
 ```
 
 ## catboostEvaluate
@@ -2783,7 +2917,7 @@ Result:
 
 **See Also**
 
-- [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
+- [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port)
 
 ## currentProfiles
 
@@ -2983,6 +3117,66 @@ Result:
 │ 1       │
 └─────────┘
 ```
+
+## partitionID
+
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+
+:::note
+This function is slow and should not be called for large amount of rows.
+:::
+
+**Syntax**
+
+```sql
+partitionID(x[, y, ...]);
+```
+
+**Arguments**
+
+- `x` — Column for which to return the partition ID.
+- `y, ...` — Remaining N columns for which to return the partition ID (optional).
+
+**Returned Value**
+
+- Partition ID that the row would belong to. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+  i int,
+  j int
+)
+ENGINE = MergeTree
+PARTITION BY i
+ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+
+SELECT i, j, partitionID(i), _partition_id FROM tab ORDER BY i, j;
+```
+
+Result:
+
+```response
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 1 │ 1 │ 1              │ 1             │
+│ 1 │ 2 │ 1              │ 1             │
+│ 1 │ 3 │ 1              │ 1             │
+└───┴───┴────────────────┴───────────────┘
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 2 │ 4 │ 2              │ 2             │
+│ 2 │ 5 │ 2              │ 2             │
+│ 2 │ 6 │ 2              │ 2             │
+└───┴───┴────────────────┴───────────────┘
+```
+
 
 ## shardNum
 
@@ -3819,4 +4013,269 @@ Result:
  9. │ ab │ df                    │
 10. │ df │                       │
     └────┴───────────────────────┘
+```
+
+## displayName
+
+Returns the value of `display_name` from [config](../../operations/configuration-files.md/#configuration-files) or server Fully Qualified Domain Name (FQDN) if not set.
+
+**Syntax**
+
+```sql
+displayName()
+```
+
+**Returned value**
+
+- Value of `display_name` from config or server FQDN if not set. [String](../data-types/string.md).
+
+**Example**
+
+The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production':
+
+```xml
+<!-- It is the name that will be shown in the clickhouse-client.
+     By default, anything with "production" will be highlighted in red in query prompt.
+-->
+<display_name>production</display_name>
+```
+
+Query:
+
+```sql
+SELECT displayName();
+```
+
+Result:
+
+```response
+┌─displayName()─┐
+│ production    │
+└───────────────┘
+```
+
+## transactionID
+
+Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```
+<clickhouse>
+  <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+
+**Syntax**
+
+```sql
+transactionID()
+```
+
+**Returned value**
+
+- Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`. [Tuple](../data-types/tuple.md).
+
+- `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began. [UInt64](../data-types/int-uint.md).
+- `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn. [UInt64](../data-types/int-uint.md).
+- `host_id`: UUID of the host that has started this transaction. [UUID](../data-types/uuid.md).
+
+**Example**
+
+Query:
+
+```sql
+BEGIN TRANSACTION;
+SELECT transactionID();
+ROLLBACK;
+```
+
+Result:
+
+```response
+┌─transactionID()────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
+└────────────────────────────────────────────────┘
+```
+
+## transactionLatestSnapshot
+
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```
+<clickhouse>
+  <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+
+**Syntax**
+
+```sql
+transactionLatestSnapshot()
+```
+
+**Returned value**
+
+- Returns the latest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+BEGIN TRANSACTION;
+SELECT transactionLatestSnapshot();
+ROLLBACK;
+```
+
+Result:
+
+```response
+┌─transactionLatestSnapshot()─┐
+│                          32 │
+└─────────────────────────────┘
+```
+
+## transactionOldestSnapshot
+
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```
+<clickhouse>
+  <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+
+**Syntax**
+
+```sql
+transactionOldestSnapshot()
+```
+
+**Returned value**
+
+- Returns the oldest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+BEGIN TRANSACTION;
+SELECT transactionLatestSnapshot();
+ROLLBACK;
+```
+
+Result:
+
+```response
+┌─transactionOldestSnapshot()─┐
+│                          32 │
+└─────────────────────────────┘
+```
+
+## getSubcolumn
+
+Takes a table expression or identifier and constant string with the name of the sub-column, and returns the requested sub-column extracted from the expression.
+
+**Syntax**
+
+```sql
+getSubcolumn(col_name, subcol_name)
+```
+
+**Arguments**
+
+- `col_name` — Table expression or identifier. [Expression](../syntax.md/#expressions), [Identifier](../syntax.md/#identifiers).
+- `subcol_name` — The name of the sub-column. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the extracted sub-column.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE t_arr (arr Array(Tuple(subcolumn1 UInt32, subcolumn2 String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_arr VALUES ([(1, 'Hello'), (2, 'World')]), ([(3, 'This'), (4, 'is'), (5, 'subcolumn')]);
+SELECT getSubcolumn(arr, 'subcolumn1'), getSubcolumn(arr, 'subcolumn2') FROM t_arr;
+```
+
+Result:
+
+```response
+   ┌─getSubcolumn(arr, 'subcolumn1')─┬─getSubcolumn(arr, 'subcolumn2')─┐
+1. │ [1,2]                           │ ['Hello','World']               │
+2. │ [3,4,5]                         │ ['This','is','subcolumn']       │
+   └─────────────────────────────────┴─────────────────────────────────┘
+```
+
+## getTypeSerializationStreams
+
+Enumerates stream paths of a data type.
+
+:::note
+This function is intended for use by developers.
+:::
+
+**Syntax**
+
+```sql
+getTypeSerializationStreams(col)
+```
+
+**Arguments**
+
+- `col` — Column or string representation of a data-type from which the data type will be detected.
+
+**Returned value**
+
+- Returns an array with all the serialization sub-stream paths.[Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2));
+```
+
+Result:
+
+```response
+   ┌─getTypeSerializationStreams(('a', 1, 'b', 2))─────────────────────────────────────────────────────────────────────────┐
+1. │ ['{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}','{TupleElement(4), Regular}'] │
+   └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT getTypeSerializationStreams('Map(String, Int64)');
+```
+
+Result:
+
+```response
+   ┌─getTypeSerializationStreams('Map(String, Int64)')────────────────────────────────────────────────────────────────┐
+1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```

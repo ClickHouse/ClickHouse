@@ -3,9 +3,14 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsTransactionsWaitCSNMode wait_changes_become_visible_after_commit_mode;
+}
 
 namespace ErrorCodes
 {
@@ -60,7 +65,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
-    TransactionsWaitCSNMode mode = query_context->getSettingsRef().wait_changes_become_visible_after_commit_mode;
+    TransactionsWaitCSNMode mode = query_context->getSettingsRef()[Setting::wait_changes_become_visible_after_commit_mode];
     CSN csn;
     try
     {

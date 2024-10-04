@@ -1,4 +1,5 @@
 #include <Compression/CompressionFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -6,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -18,6 +20,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -33,14 +36,24 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool flatten_nested;
+}
 
 namespace ErrorCodes
 {
@@ -108,7 +121,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
-            command.comment = ast_comment.value.get<String>();
+            command.comment = ast_comment.value.safeGet<String>();
         }
 
         if (ast_col_decl.codec)
@@ -166,7 +179,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
-            command.comment.emplace(ast_comment.value.get<String>());
+            command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
         if (ast_col_decl.ttl)
@@ -209,7 +222,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = COMMENT_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -219,7 +232,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = COMMENT_TABLE;
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
@@ -487,7 +500,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
-        if (context->getSettingsRef().flatten_nested)
+        if (context->getSettingsRef()[Setting::flatten_nested])
         {
             StorageInMemoryMetadata temporary_metadata;
             temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
@@ -703,9 +716,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & stats : stats_vec)
+        for (const auto & [stats_column_name, stats] : stats_vec)
         {
-            metadata.columns.modify(stats.column_name,
+            metadata.columns.modify(stats_column_name,
                 [&](ColumnDescription & column) { column.statistics.merge(stats, column.name, column.type, if_not_exists); });
         }
     }
@@ -732,14 +745,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (!metadata.columns.has(statistics_column_name))
             {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot add statistics for column {}: this column is not found", statistics_column_name);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot modify statistics for column {}: this column is not found", statistics_column_name);
             }
         }
 
         auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & stats : stats_vec)
+        for (const auto & [stats_column_name, stats] : stats_vec)
         {
-            metadata.columns.modify(stats.column_name,
+            metadata.columns.modify(stats_column_name,
                 [&](ColumnDescription & column) { column.statistics.assign(stats); });
         }
     }
@@ -794,7 +807,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
     }
     else if (type == REMOVE_TTL)
     {
@@ -805,7 +819,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
         Block as_select_sample;
 
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
         }
@@ -864,8 +878,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
-                if (column_to_modify.name == column_name && !column_to_modify.statistics.empty())
-                    column_to_modify.statistics.column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)
@@ -1057,7 +1069,7 @@ bool AlterCommand::isRemovingProperty() const
 
 bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
         || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
@@ -1136,6 +1148,26 @@ bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
     for (const auto & index : metadata.secondary_indices)
     {
         if (index.type == FULL_TEXT_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == INVERTED_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == "vector_similarity")
             return true;
     }
     return false;
@@ -1228,13 +1260,18 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(
+            ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
         metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
         metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+            metadata_copy.table_ttl.definition_ast,
+            metadata_copy.columns,
+            context,
+            metadata_copy.primary_key,
+            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 
     metadata = std::move(metadata_copy);
 }
@@ -1243,6 +1280,13 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 {
     auto columns = metadata.columns;
+
+    auto ast_to_str = [](const ASTPtr & query) -> String
+    {
+        if (!query)
+            return "";
+        return queryToString(query);
+    };
 
     for (size_t i = 0; i < size(); ++i)
     {
@@ -1274,6 +1318,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 || command.type == AlterCommand::RENAME_COLUMN)
         {
             if (!has_column && command.if_exists)
+                command.ignore = true;
+        }
+        else if (command.type == AlterCommand::MODIFY_ORDER_BY)
+        {
+            if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
                 command.ignore = true;
         }
     }
@@ -1315,6 +1364,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
+            validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+
             /// FIXME: Adding a new column of type Object(JSON) is broken.
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
@@ -1330,11 +1381,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 const auto & settings = context->getSettingsRef();
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    command.codec, command.data_type,
-                    !settings.allow_suspicious_codecs,
-                    settings.allow_experimental_codecs,
-                    settings.enable_deflate_qpl_codec,
-                    settings.enable_zstd_qat_codec);
+                    command.codec,
+                    command.data_type,
+                    !settings[Setting::allow_suspicious_codecs],
+                    settings[Setting::allow_experimental_codecs],
+                    settings[Setting::enable_deflate_qpl_codec],
+                    settings[Setting::enable_zstd_qat_codec]);
             }
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
@@ -1360,7 +1412,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                    command.codec,
+                    command.data_type,
+                    !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                    context->getSettingsRef()[Setting::allow_experimental_codecs],
+                    context->getSettingsRef()[Setting::enable_deflate_qpl_codec],
+                    context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
@@ -1394,16 +1452,26 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
+                validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
+
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                bool new_type_has_object = command.data_type->hasDynamicSubcolumnsDeprecated();
-                bool old_type_has_object = old_data_type->hasDynamicSubcolumnsDeprecated();
+                bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
+                bool old_type_has_deprecated_object = old_data_type->hasDynamicSubcolumnsDeprecated();
 
-                if (new_type_has_object || old_type_has_object)
+                if (new_type_has_deprecated_object || old_type_has_deprecated_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",
+                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
+
+                bool has_object_type = isObject(command.data_type);
+                command.data_type->forEachChild([&](const IDataType & type){ has_object_type |= isObject(type); });
+                if (has_object_type)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The change of data type {} of column {} to {} is not supported.",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/corrmatrix
-sidebar_position: 108
+sidebar_position: 118
 ---
 
 # corrMatrix

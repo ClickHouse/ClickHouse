@@ -1,10 +1,10 @@
 import re
-from dataclasses import dataclass, asdict
-from typing import Optional, List, Dict, Any, Iterable
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Iterable, List, Optional
 
-from ci_utils import normalize_string
-from ci_config import CILabels, CI_CONFIG, JobConfig, JobNames
-from git_helper import Runner as GitRunner, GIT_PREFIX
+from ci_config import CI
+from git_helper import GIT_PREFIX
+from git_helper import Runner as GitRunner
 from pr_info import PRInfo
 
 # pylint: disable=too-many-return-statements
@@ -29,6 +29,7 @@ class CiSettings:
     no_ci_cache: bool = False
     upload_all: bool = False
     no_merge_commit: bool = False
+    woolen_wolfdog: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -80,7 +81,7 @@ class CiSettings:
                 if not res.ci_jobs:
                     res.ci_jobs = []
                 res.ci_jobs.append(match.removeprefix("job_"))
-            elif match.startswith("ci_set_") and match in CILabels:
+            elif match.startswith("ci_set_") and match in CI.Tags:
                 if not res.ci_sets:
                     res.ci_sets = []
                 res.ci_sets.append(match)
@@ -88,26 +89,29 @@ class CiSettings:
                 if not res.include_keywords:
                     res.include_keywords = []
                 res.include_keywords.append(
-                    normalize_string(match.removeprefix("ci_include_"))
+                    CI.Utils.normalize_string(match.removeprefix("ci_include_"))
                 )
             elif match.startswith("ci_exclude_"):
                 if not res.exclude_keywords:
                     res.exclude_keywords = []
                 keywords = match.removeprefix("ci_exclude_").split("|")
                 res.exclude_keywords += [
-                    normalize_string(keyword) for keyword in keywords
+                    CI.Utils.normalize_string(keyword) for keyword in keywords
                 ]
-            elif match == CILabels.NO_CI_CACHE:
+            elif match == CI.Tags.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
-            elif match == CILabels.UPLOAD_ALL_ARTIFACTS:
+            elif match == CI.Tags.UPLOAD_ALL_ARTIFACTS:
                 res.upload_all = True
                 print("NOTE: All binary artifacts will be uploaded")
-            elif match == CILabels.DO_NOT_TEST_LABEL:
+            elif match == CI.Tags.DO_NOT_TEST_LABEL:
                 res.do_not_test = True
-            elif match == CILabels.NO_MERGE_COMMIT:
+            elif match == CI.Tags.NO_MERGE_COMMIT:
                 res.no_merge_commit = True
                 print("NOTE: Merge Commit will be disabled")
+            elif match == CI.Tags.WOOLEN_WOLFDOG_LABEL:
+                res.woolen_wolfdog = True
+                print("NOTE: Woolen Wolfdog mode enabled")
             elif match.startswith("batch_"):
                 batches = []
                 try:
@@ -131,18 +135,18 @@ class CiSettings:
     def _check_if_selected(
         self,
         job: str,
-        job_config: JobConfig,
+        job_config: CI.JobConfig,
         is_release: bool,
         is_pr: bool,
         is_mq: bool,
         labels: Iterable[str],
     ) -> bool:  # type: ignore #too-many-return-statements
         if self.do_not_test:
-            label_config = CI_CONFIG.get_label_config(CILabels.DO_NOT_TEST_LABEL)
-            assert label_config, f"Unknown tag [{CILabels.DO_NOT_TEST_LABEL}]"
+            label_config = CI.get_tag_config(CI.Tags.DO_NOT_TEST_LABEL)
+            assert label_config, f"Unknown tag [{CI.Tags.DO_NOT_TEST_LABEL}]"
             if job in label_config.run_jobs:
                 print(
-                    f"Job [{job}] present in CI set [{CILabels.DO_NOT_TEST_LABEL}] - pass"
+                    f"Job [{job}] present in CI set [{CI.Tags.DO_NOT_TEST_LABEL}] - pass"
                 )
                 return True
             return False
@@ -153,29 +157,30 @@ class CiSettings:
                     f"Job [{job}] selected by GH label [{job_config.run_by_label}] - pass"
                 )
                 return True
-            else:
-                return False
+            return False
 
-        if self.exclude_keywords:
+        # do not exclude builds
+        if self.exclude_keywords and not CI.is_build_job(job):
             for keyword in self.exclude_keywords:
-                if keyword in normalize_string(job):
+                if keyword in CI.Utils.normalize_string(job):
                     print(f"Job [{job}] matches Exclude keyword [{keyword}] - deny")
                     return False
 
         to_deny = False
         if self.include_keywords:
-            if job == JobNames.STYLE_CHECK:
+            # do not exclude builds
+            if job == CI.JobNames.STYLE_CHECK or CI.is_build_job(job):
                 # never exclude Style Check by include keywords
                 return True
             for keyword in self.include_keywords:
-                if keyword in normalize_string(job):
+                if keyword in CI.Utils.normalize_string(job):
                     print(f"Job [{job}] matches Include keyword [{keyword}] - pass")
                     return True
             to_deny = True
 
         if self.ci_sets:
             for tag in self.ci_sets:
-                label_config = CI_CONFIG.get_label_config(tag)
+                label_config = CI.get_tag_config(tag)
                 assert label_config, f"Unknown tag [{tag}]"
                 if job in label_config.run_jobs:
                     print(f"Job [{job}] present in CI set [{tag}] - pass")
@@ -190,19 +195,20 @@ class CiSettings:
 
         if job_config.release_only and not is_release:
             return False
-        elif job_config.pr_only and not is_pr and not is_mq:
+
+        if job_config.pr_only and not is_pr and not is_mq:
             return False
 
         return not to_deny
 
     def apply(
         self,
-        job_configs: Dict[str, JobConfig],
+        job_configs: Dict[str, CI.JobConfig],
         is_release: bool,
         is_pr: bool,
         is_mq: bool,
         labels: Iterable[str],
-    ) -> Dict[str, JobConfig]:
+    ) -> Dict[str, CI.JobConfig]:
         """
         Apply CI settings from pr body
         """
@@ -220,19 +226,12 @@ class CiSettings:
 
         add_parents = []
         for job in list(res):
-            parent_jobs = CI_CONFIG.get_job_parents(job)
+            parent_jobs = CI.get_job_parents(job)
             for parent_job in parent_jobs:
                 if parent_job not in res:
                     add_parents.append(parent_job)
                     print(f"Job [{job}] requires [{parent_job}] - add")
         for job in add_parents:
             res[job] = job_configs[job]
-
-        for job, job_config in res.items():
-            batches = []
-            for batch in range(job_config.num_batches):
-                if not self.job_batches or batch in self.job_batches:
-                    batches.append(batch)
-            job_config.batches = batches
 
         return res

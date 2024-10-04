@@ -8,7 +8,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
-#include <Common/TimerDescriptor.h>
 #include <sys/types.h>
 
 
@@ -218,9 +217,12 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
+    bool needToSkipUnavailableShard() const;
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
+
+    /// return true if parallel replica packet was processed
+    bool processParallelReplicaPacketIfAny();
 
 private:
     RemoteQueryExecutor(
@@ -302,6 +304,8 @@ private:
     /** Got duplicated uuids from replica
       */
     bool got_duplicated_part_uuids = false;
+
+    bool has_postponed_packet = false;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

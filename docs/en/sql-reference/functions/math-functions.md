@@ -8,7 +8,7 @@ sidebar_label: Mathematical
 
 ## e
 
-Returns e ([Euler's constant](https://en.wikipedia.org/wiki/Euler%27s_constant)).
+Returns $e$ ([Euler's constant](https://en.wikipedia.org/wiki/Euler%27s_constant)).
 
 **Syntax**
 
@@ -22,7 +22,7 @@ Type: [Float64](../data-types/float.md).
 
 ## pi
 
-Returns π ([Pi](https://en.wikipedia.org/wiki/Pi)).
+Returns $\pi$ ([Pi](https://en.wikipedia.org/wiki/Pi)).
 
 **Syntax**
 
@@ -35,7 +35,7 @@ Type: [Float64](../data-types/float.md).
 
 ## exp
 
-Returns e to the power of the given argument.
+Returns $e^{x}$, where x is the given argument to the function.
 
 **Syntax**
 
@@ -46,6 +46,22 @@ exp(x)
 **Arguments**
 
 - `x` - [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT round(exp(-1), 4);
+```
+
+Result:
+
+```response
+┌─round(exp(-1), 4)─┐
+│            0.3679 │
+└───────────────────┘
+```
 
 **Returned value**
 
@@ -91,7 +107,7 @@ Type: [Float*](../data-types/float.md).
 
 ## intExp2
 
-Like `exp` but returns a UInt64.
+Like [`exp`](#exp) but returns a UInt64.
 
 **Syntax**
 
@@ -137,7 +153,7 @@ Type: [Float*](../data-types/float.md).
 
 ## intExp10
 
-Like `exp10` but returns a UInt64.
+Like [`exp10`](#exp10) but returns a UInt64.
 
 **Syntax**
 
@@ -197,7 +213,7 @@ Type: [Float*](../data-types/float.md).
 
 ## erf
 
-If `x` is non-negative, then `erf(x / σ√2)` is the probability that a random variable having a normal distribution with standard deviation `σ` takes the value that is separated from the expected value by more than `x`.
+If `x` is non-negative, then $erf(\frac{x}{\sigma\sqrt{2}})$ is the probability that a random variable having a normal distribution with standard deviation $\sigma$ takes the value that is separated from the expected value by more than `x`.
 
 **Syntax**
 
@@ -229,7 +245,7 @@ SELECT erf(3 / sqrt(2));
 
 ## erfc
 
-Returns a number close to `1 - erf(x)` without loss of precision for large ‘x’ values.
+Returns a number close to $1-erf(x)$ without loss of precision for large `x` values.
 
 **Syntax**
 
@@ -403,7 +419,7 @@ Type: [Float*](../data-types/float.md).
 
 ## pow
 
-Returns `x` to the power of `y`.
+Returns $x^y$.
 
 **Syntax**
 
@@ -434,11 +450,11 @@ cosh(x)
 
 **Arguments**
 
-- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — The angle, in radians. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `1 <= cosh(x) < +∞`.
+- Values from the interval: $1 \le cosh(x) \lt +\infty$.
 
 Type: [Float64](../data-types/float.md#float32-float64).
 
@@ -468,11 +484,11 @@ acosh(x)
 
 **Arguments**
 
-- `x` — Hyperbolic cosine of angle. Values from the interval: `1 <= x < +∞`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — Hyperbolic cosine of angle. Values from the interval: $1 \le x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- The angle, in radians. Values from the interval: `0 <= acosh(x) < +∞`.
+- The angle, in radians. Values from the interval: $0 \le acosh(x) \lt +\infty$.
 
 Type: [Float64](../data-types/float.md#float32-float64).
 
@@ -502,11 +518,11 @@ sinh(x)
 
 **Arguments**
 
-- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — The angle, in radians. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `-∞ < sinh(x) < +∞`.
+- Values from the interval: $-\infty \lt sinh(x) \lt +\infty$.
 
 Type: [Float64](../data-types/float.md#float32-float64).
 
@@ -536,11 +552,11 @@ asinh(x)
 
 **Arguments**
 
-- `x` — Hyperbolic sine of angle. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — Hyperbolic sine of angle. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- The angle, in radians. Values from the interval: `-∞ < asinh(x) < +∞`.
+- The angle, in radians. Values from the interval: $-\infty \lt asinh(x) \lt +\infty$.
 
 Type: [Float64](../data-types/float.md#float32-float64).
 
@@ -569,11 +585,11 @@ tanh(x)
 
 **Arguments**
 
-- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — The angle, in radians. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `-1 < tanh(x) < 1`.
+- Values from the interval: $-1 \lt tanh(x) \lt 1$.
 
 Type: [Float*](../data-types/float.md#float32-float64).
 
@@ -601,11 +617,11 @@ atanh(x)
 
 **Arguments**
 
-- `x` — Hyperbolic tangent of angle. Values from the interval: `–1 < x < 1`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — Hyperbolic tangent of angle. Values from the interval: $-1 \lt x \lt 1$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- The angle, in radians. Values from the interval: `-∞ < atanh(x) < +∞`.
+- The angle, in radians. Values from the interval: $-\infty \lt atanh(x) \lt +\infty$.
 
 Type: [Float64](../data-types/float.md#float32-float64).
 
@@ -640,7 +656,7 @@ atan2(y, x)
 
 **Returned value**
 
-- The angle `θ` such that `−π < θ ≤ π`, in radians.
+- The angle `θ` such that $-\pi \lt 0 \le \pi$, in radians.
 
 Type: [Float64](../data-types/float.md#float32-float64).
 
@@ -705,11 +721,11 @@ log1p(x)
 
 **Arguments**
 
-- `x` — Values from the interval: `-1 < x < +∞`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — Values from the interval: $-1 \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 
-- Values from the interval: `-∞ < log1p(x) < +∞`.
+- Values from the interval: $-\infty < log1p(x) \lt +\infty$.
 
 Type: [Float64](../data-types/float.md#float32-float64).
 
@@ -739,7 +755,7 @@ sign(x)
 
 **Arguments**
 
-- `x` — Values from  `-∞` to `+∞`. Support all numeric types in ClickHouse.
+- `x` — Values from $-\infty$ to $+\infty$. Supports all numeric types in ClickHouse.
 
 **Returned value**
 
@@ -804,7 +820,7 @@ sigmoid(x)
 
 **Parameters**
 
-- `x` — input value. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
+- `x` — input value. Values from the interval: $-\infty \lt x \lt +\infty$. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md) or [Decimal*](../data-types/decimal.md).
 
 **Returned value**
 

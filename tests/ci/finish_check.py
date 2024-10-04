@@ -4,20 +4,15 @@ import logging
 
 from github import Github
 
-from ci_config import StatusNames
+from ci_config import CI
 from commit_status_helper import (
     get_commit,
     get_commit_filtered_statuses,
     post_commit_status,
-    set_mergeable_check,
-    trigger_mergeable_check,
-    update_upstream_sync_status,
 )
-from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS, StatusType
-from synchronizer_utils import SYNC_BRANCH_PREFIX
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,33 +40,9 @@ def main():
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
-    if pr_info.is_merge_queue:
-        # in MQ Mergeable check status must never be green if any failures in the workflow
-        if has_workflow_failures:
-            set_mergeable_check(commit, "workflow failed", FAILURE)
-        else:
-            # This must be the only place where green MCheck is set in the MQ (in the end of CI) to avoid early merge
-            set_mergeable_check(commit, "workflow passed", SUCCESS)
-        return
-
     statuses = get_commit_filtered_statuses(commit)
-    state = trigger_mergeable_check(commit, statuses, set_if_green=True)
 
-    # Process upstream StatusNames.SYNC
-    if (
-        pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-        and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-    ):
-        upstream_pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-        update_upstream_sync_status(
-            upstream_pr_number,
-            pr_info.number,
-            gh,
-            state,
-            can_set_green_mergeable_status=True,
-        )
-
-    ci_running_statuses = [s for s in statuses if s.context == StatusNames.CI]
+    ci_running_statuses = [s for s in statuses if s.context == CI.StatusNames.CI]
     if not ci_running_statuses:
         return
     # Take the latest status
@@ -81,7 +52,11 @@ def main():
     has_pending = False
     error_cnt = 0
     for status in statuses:
-        if status.context in (StatusNames.MERGEABLE, StatusNames.CI, StatusNames.SYNC):
+        if status.context in (
+            CI.StatusNames.MERGEABLE,
+            CI.StatusNames.CI,
+            CI.StatusNames.SYNC,
+        ):
             # do not account these statuses
             continue
         if status.state == PENDING:
@@ -108,7 +83,7 @@ def main():
         ci_state,
         ci_status.target_url,
         description,
-        StatusNames.CI,
+        CI.StatusNames.CI,
         pr_info,
         dump_to_file=True,
     )

@@ -124,7 +124,7 @@ public:
 
     bool hasEmptyBound() const { return has_empty_bound; }
 
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
+    inline bool contains(CoordinateType x, CoordinateType y) const
     {
         Point point(x, y);
 
@@ -167,7 +167,7 @@ public:
 
     UInt64 getAllocatedBytes() const;
 
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
+    bool contains(CoordinateType x, CoordinateType y) const;
 
 private:
     enum class CellType : uint8_t
@@ -199,7 +199,7 @@ private:
         }
 
         /// Inner part of the HalfPlane is the left side of initialized vector.
-        bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const { return a * x + b * y + c >= 0; }
+        bool contains(CoordinateType x, CoordinateType y) const { return a * x + b * y + c >= 0; }
     };
 
     struct Cell
@@ -233,7 +233,7 @@ private:
     void calcGridAttributes(Box & box);
 
     template <typename T>
-    T ALWAYS_INLINE getCellIndex(T row, T col) const { return row * grid_size + col; }
+    T getCellIndex(T row, T col) const { return row * grid_size + col; }
 
     /// Complex case. Will check intersection directly.
     inline void addComplexPolygonCell(size_t index, const Box & box);

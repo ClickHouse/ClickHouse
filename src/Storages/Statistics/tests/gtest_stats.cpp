@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <Storages/Statistics/TDigestStatistics.h>
+#include <Storages/Statistics/StatisticsTDigest.h>
+#include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypeFactory.h>
+
+using namespace DB;
 
 TEST(Statistics, TDigestLessThan)
 {
@@ -39,6 +43,4 @@ TEST(Statistics, TDigestLessThan)
 
     std::reverse(data.begin(), data.end());
     test_less_than(data, {-1, 1e9, 50000.0, 3000.0, 30.0}, {0, 100000, 50000, 3000, 30}, {0, 0, 0.001, 0.001, 0.001});
-
-
 }

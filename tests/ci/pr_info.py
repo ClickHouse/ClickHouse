@@ -2,19 +2,23 @@
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
 from unidiff import PatchSet  # type: ignore
 
 from build_download_helper import get_gh_api
+from ci_config import Labels
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
+    GITHUB_UPSTREAM_REPOSITORY,
 )
-from lambda_shared_package.lambda_shared.pr import Labels
+from get_robot_token import get_best_robot_token
+from github_helper import GitHub
 
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
@@ -293,13 +297,16 @@ class PRInfo:
         else:
             if "schedule" in github_event:
                 self.event_type = EventType.SCHEDULE
-            else:
+            elif "inputs" in github_event:
                 # assume this is a dispatch
                 self.event_type = EventType.DISPATCH
-            logging.warning(
-                "event.json does not match pull_request or push:\n%s",
-                json.dumps(github_event, sort_keys=True, indent=4),
-            )
+                print("PR Info:")
+                print(self)
+            else:
+                logging.warning(
+                    "event.json does not match pull_request or push:\n%s",
+                    json.dumps(github_event, sort_keys=True, indent=4),
+                )
             self.sha = os.getenv(
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
@@ -316,15 +323,30 @@ class PRInfo:
 
     @property
     def is_master(self) -> bool:
-        return self.number == 0 and self.head_ref == "master"
+        return (
+            self.number == 0 and self.head_ref == "master" and not self.is_merge_queue
+        )
 
     @property
     def is_release(self) -> bool:
-        return self.number == 0 and not self.is_merge_queue
+        return self.is_master or (
+            self.is_push_event
+            and (
+                bool(re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref))
+                or bool(re.match(r"^release/2[1-9]\.[1-9][0-9]*$", self.head_ref))
+            )
+        )
 
     @property
     def is_pr(self):
-        return self.event_type == EventType.PULL_REQUEST
+        if self.event_type == EventType.PULL_REQUEST:
+            assert self.number
+            return True
+        return False
+
+    @property
+    def is_push_event(self) -> bool:
+        return self.event_type == EventType.PUSH
 
     @property
     def is_scheduled(self) -> bool:
@@ -352,9 +374,6 @@ class PRInfo:
     def fetch_changed_files(self):
         if self.changed_files_requested:
             return
-
-        if not getattr(self, "diff_urls", False):
-            raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
             response = get_gh_api(
@@ -429,6 +448,36 @@ class PRInfo:
             if "contrib/" in f:
                 return True
         return False
+
+    def get_latest_sync_commit(self):
+        gh = GitHub(get_best_robot_token(), per_page=100)
+        assert self.head_ref.startswith("sync-upstream/pr/")
+        assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
+        upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
+        upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])
+        upstream_pr = upstream_repo.get_pull(upstream_pr_number)
+        sync_repo = gh.get_repo(GITHUB_REPOSITORY)
+        sync_pr = sync_repo.get_pull(self.number)
+        # Find the commit that is in both repos, upstream and cloud
+        # Do not ever use `reversed` here, otherwise the list of commits is not full
+        sync_commits = list(sync_pr.get_commits())
+        upstream_commits = list(upstream_pr.get_commits())
+        # Github objects are compared by _url attribute. We can't compare them directly and
+        # should compare commits by SHA1
+        upstream_shas = [c.sha for c in upstream_commits]
+        logging.info("Commits in upstream PR:\n %s", ", ".join(upstream_shas))
+        sync_shas = [c.sha for c in sync_commits]
+        logging.info("Commits in sync PR:\n %s", ", ".join(sync_shas))
+
+        # find latest synced commit, search from the latest
+        upstream_commits.reverse()
+        last_synced_upstream_commit = None
+        for commit in upstream_commits:
+            if commit.sha in sync_shas:
+                last_synced_upstream_commit = commit
+                break
+        assert last_synced_upstream_commit
+        return last_synced_upstream_commit
 
 
 class FakePRInfo:

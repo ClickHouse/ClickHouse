@@ -90,6 +90,11 @@ metric_log:
   table: metric_log
   flush_interval_milliseconds: 7500
   collect_interval_milliseconds: 1000
+error_log:
+  database: system
+  table: error_log
+  flush_interval_milliseconds: 7500
+  collect_interval_milliseconds: 1000
 asynchronous_metric_log:
   database: system
   table: asynchronous_metric_log

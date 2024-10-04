@@ -25,83 +25,83 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM distributed WHERE a = 0 AND b
 | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
 # Should pass now
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0;
 "
 
 # Should still fail because of matching unavailable shard
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 2 AND b = 2;
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
 # Try more complext expressions for constant folding - all should pass.
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 1 AND a = 0 AND b = 0;
 "
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a IN (0, 1) AND b IN (0, 1);
 "
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0 OR a = 1 AND b = 1;
 "
 
 # TODO: should pass one day.
-#${CLICKHOUSE_CLIENT} -n --query="
+#${CLICKHOUSE_CLIENT} --query="
 #    SET optimize_skip_unused_shards = 1;
 #    SELECT count(*) FROM distributed WHERE a = 0 AND b >= 0 AND b <= 1;
 #"
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0 AND c = 0;
 "
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0 AND c != 10;
 "
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0 AND (a+b)*b != 12;
 "
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE (a = 0 OR a = 1) AND (b = 0 OR b = 1);
 "
 
 # These ones should fail.
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b <= 1;
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND c = 0;
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 OR a = 1 AND b = 0;
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0 OR a = 2 AND b = 2;
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed WHERE a = 0 AND b = 0 OR c = 0;
 " 2>&1 \ | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'

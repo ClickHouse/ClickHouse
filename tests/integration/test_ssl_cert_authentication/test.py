@@ -1,13 +1,15 @@
+import logging
+import os.path
+import ssl
+import urllib.parse
+import urllib.request
+from os import remove
+
 import pytest
+
 from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 from helpers.ssl_context import WrapSSLContextWithSNI
-import urllib.request, urllib.parse
-import ssl
-import os.path
-from os import remove
-import logging
-
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client have to verify server certificate against that name. Client uses SNI
@@ -43,15 +45,10 @@ def started_cluster():
 config = """<clickhouse>
     <openSSL>
         <client>
-            <verificationMode>none</verificationMode>
-
+            <verificationMode>strict</verificationMode>
             <certificateFile>{certificateFile}</certificateFile>
             <privateKeyFile>{privateKeyFile}</privateKeyFile>
             <caConfig>{caConfig}</caConfig>
-
-            <invalidCertificateHandler>
-                <name>AcceptCertificateHandler</name>
-            </invalidCertificateHandler>
         </client>
     </openSSL>
 </clickhouse>"""
@@ -302,6 +299,8 @@ def test_https_non_ssl_auth():
 
 
 def test_create_user():
+    instance.query("DROP USER IF EXISTS emma")
+
     instance.query("CREATE USER emma IDENTIFIED WITH ssl_certificate CN 'client3'")
     assert (
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
@@ -335,6 +334,85 @@ def test_create_user():
         instance.query(
             "SELECT name, auth_type, auth_params FROM system.users WHERE name IN ['emma', 'lucy'] ORDER BY name"
         )
-        == 'emma\tssl_certificate\t{"common_names":["client2"]}\n'
-        'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
+        == "emma\t['ssl_certificate']\t['{\"common_names\":[\"client2\"]}']\n"
+        'lucy\t[\'ssl_certificate\']\t[\'{"common_names":["client2","client3"]}\']\n'
     )
+
+    instance.query("DROP USER IF EXISTS emma")
+
+
+def test_x509_san_support():
+    instance.query("DROP USER IF EXISTS jemma")
+
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="jerome", cert_name="client4"
+        )
+        == "jerome\n"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", user="jerome", cert_name="client4")
+        == "jerome\n"
+    )
+    assert (
+        instance.query(
+            "SELECT name, auth_type, auth_params FROM system.users WHERE name='jerome'"
+        )
+        == 'jerome\t[\'ssl_certificate\']\t[\'{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar","URI:spiffe:\\\\/\\\\/foo.com\\\\/baz"]}\']\n'
+    )
+    # user `jerome` is configured via xml config, but `show create` should work regardless.
+    assert (
+        instance.query("SHOW CREATE USER jerome")
+        == "CREATE USER jerome IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
+    )
+
+    instance.query(
+        "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://foo.com/bar', 'URI:spiffe://foo.com/baz'"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", user="jemma", cert_name="client4")
+        == "jemma\n"
+    )
+    assert (
+        instance.query("SHOW CREATE USER jemma")
+        == "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
+    )
+
+    instance.query("DROP USER IF EXISTS jemma")
+
+
+def test_x509_san_wildcard_support():
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="stewie", cert_name="client5"
+        )
+        == "stewie\n"
+    )
+
+    assert (
+        instance.query(
+            "SELECT name, auth_type, auth_params FROM system.users WHERE name='stewie'"
+        )
+        == "stewie\t['ssl_certificate']\t['{\"subject_alt_names\":[\"URI:spiffe:\\\\/\\\\/bar.com\\\\/foo\\\\/*\\\\/far\"]}']\n"
+    )
+
+    assert (
+        instance.query("SHOW CREATE USER stewie")
+        == "CREATE USER stewie IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://bar.com/foo/*/far\\'\n"
+    )
+
+    instance.query(
+        "CREATE USER brian IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://bar.com/foo/*/far'"
+    )
+
+    assert (
+        execute_query_https("SELECT currentUser()", user="brian", cert_name="client6")
+        == "brian\n"
+    )
+
+    assert (
+        instance.query("SHOW CREATE USER brian")
+        == "CREATE USER brian IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://bar.com/foo/*/far\\'\n"
+    )
+
+    instance.query("DROP USER brian")

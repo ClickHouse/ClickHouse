@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <local_disk_check_period_ms>1000</local_disk_check_period_ms>
     <storage_configuration>
         <disks>
@@ -27,4 +27,4 @@
             </jbod>
         </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>

@@ -1,17 +1,17 @@
-import pytest
-
 import json
+import logging
+import math
 import os.path as p
 import random
 import subprocess
 import threading
-import logging
 import time
 from random import randrange
-import math
 
 import pika
+import pytest
 from google.protobuf.internal.encoder import _VarintBytes
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
 from helpers.test_tools import TSV
@@ -78,13 +78,13 @@ def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
 
 def kill_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(("docker", "stop", rabbitmq_id), stdout=subprocess.PIPE)
-    p.communicate()
+    p.wait(timeout=60)
     return p.returncode == 0
 
 
 def revive_rabbitmq(rabbitmq_id, cookie):
     p = subprocess.Popen(("docker", "start", rabbitmq_id), stdout=subprocess.PIPE)
-    p.communicate()
+    p.wait(timeout=60)
     wait_rabbitmq_to_start(rabbitmq_id, cookie)
 
 
@@ -2220,13 +2220,11 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
 
 
 def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
-    # no connection when table is initialized
-    rabbitmq_cluster.pause_container("rabbitmq1")
-    instance.query_and_get_error(
+    error = instance.query_and_get_error(
         """
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = 'no_connection_at_startup:5672',
                      rabbitmq_exchange_name = 'cs',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
@@ -2234,7 +2232,7 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
     """
     )
-    rabbitmq_cluster.unpause_container("rabbitmq1")
+    assert "CANNOT_CONNECT_RABBITMQ" in error
 
 
 def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-tsan, no-asan, no-debug, no-s3-storage, no-fasttest, no-replicated-database
+# Tags: long, no-parallel, no-tsan, no-asan, no-debug, no-object-storage, no-fasttest, no-replicated-database
 
 set -e
 

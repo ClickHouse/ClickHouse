@@ -1,8 +1,8 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.keeper_utils import KeeperClient, KeeperException
 
+from helpers.cluster import ClickHouseCluster
+from helpers.keeper_utils import KeeperClient, KeeperException
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
@@ -127,7 +127,7 @@ def test_base_commands(client: KeeperClient):
     assert client.get("/test_create_zk_node1") == "testvalue1"
 
     client.create("/123", "1=2")
-    client.create("/123/321", "'foo;bar'")
+    client.create("/123/321", "foo;bar")
     assert client.get("/123") == "1=2"
     assert client.get("/123/321") == "foo;bar"
 

@@ -423,6 +423,8 @@ Token Lexer::nextTokenImpl()
         }
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
+        case '^':
+            return Token(TokenType::Caret, token_begin, ++pos);
         case ':':
         {
             ++pos;

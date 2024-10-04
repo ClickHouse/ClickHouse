@@ -1,8 +1,9 @@
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ProfileEventsScope.h>
 
 

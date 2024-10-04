@@ -22,6 +22,29 @@ public:
 
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";
+    /// All possible signatures for Azure engine with structure argument (for example for azureBlobStorage table function).
+    static constexpr auto max_number_of_arguments_with_structure = 8;
+    static constexpr auto signatures_with_structure =
+        " - connection_string, container_name, blobpath\n"
+        " - connection_string, container_name, blobpath, structure \n"
+        " - connection_string, container_name, blobpath, format \n"
+        " - connection_string, container_name, blobpath, format, compression \n"
+        " - connection_string, container_name, blobpath, format, compression, structure \n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n";
+
+    /// All possible signatures for Azure engine without structure argument (for example for AzureBlobStorage table engine).
+    static constexpr auto max_number_of_arguments_without_structure = 7;
+    static constexpr auto signatures_without_structure =
+        " - connection_string, container_name, blobpath\n"
+        " - connection_string, container_name, blobpath, format \n"
+        " - connection_string, container_name, blobpath, format, compression \n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n";
 
     StorageAzureConfiguration() = default;
     StorageAzureConfiguration(const StorageAzureConfiguration & other);
@@ -29,14 +52,17 @@ public:
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
 
+    std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
+    size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
+
     Path getPath() const override { return blob_path; }
     void setPath(const Path & path) override { blob_path = path; }
 
     const Paths & getPaths() const override { return blobs_paths; }
     void setPaths(const Paths & paths) override { blobs_paths = paths; }
 
-    String getNamespace() const override { return container; }
-    String getDataSourceDescription() const override { return std::filesystem::path(connection_url) / container; }
+    String getNamespace() const override { return connection_params.getContainer(); }
+    String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
@@ -44,7 +70,7 @@ public:
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 
-    void addStructureAndFormatToArgs(
+    void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
         const String & structure_,
         const String & format_,
@@ -54,22 +80,9 @@ protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
-    using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
-    using AzureClientPtr = std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient>;
-
-    std::string connection_url;
-    bool is_connection_string;
-
-    std::optional<std::string> account_name;
-    std::optional<std::string> account_key;
-
-    std::string container;
     std::string blob_path;
     std::vector<String> blobs_paths;
-
-    AzureClientPtr createClient(bool is_read_only, bool attempt_to_create_container);
-    AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
-    Poco::URI getConnectionURL() const;
+    AzureBlobStorage::ConnectionParams connection_params;
 };
 
 }

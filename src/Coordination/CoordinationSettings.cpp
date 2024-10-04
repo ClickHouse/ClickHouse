@@ -169,6 +169,23 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("async_replication=", buf);
     write_bool(coordination_settings->async_replication);
+
+    writeText("latest_logs_cache_size_threshold=", buf);
+    write_int(coordination_settings->latest_logs_cache_size_threshold);
+    writeText("commit_logs_cache_size_threshold=", buf);
+    write_int(coordination_settings->commit_logs_cache_size_threshold);
+
+    writeText("disk_move_retries_wait_ms=", buf);
+    write_int(coordination_settings->disk_move_retries_wait_ms);
+    writeText("disk_move_retries_during_init=", buf);
+    write_int(coordination_settings->disk_move_retries_during_init);
+
+    writeText("log_slow_total_threshold_ms=", buf);
+    write_int(coordination_settings->log_slow_total_threshold_ms);
+    writeText("log_slow_cpu_threshold_ms=", buf);
+    write_int(coordination_settings->log_slow_cpu_threshold_ms);
+    writeText("log_slow_connection_operation_threshold_ms=", buf);
+    write_int(coordination_settings->log_slow_connection_operation_threshold_ms);
 }
 
 KeeperConfigurationAndSettingsPtr

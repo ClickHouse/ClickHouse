@@ -9,11 +9,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 RefreshSet::Handle::Handle(Handle && other) noexcept
 {
     *this = std::move(other);
@@ -27,6 +22,7 @@ RefreshSet::Handle & RefreshSet::Handle::operator=(Handle && other) noexcept
     parent_set = std::exchange(other.parent_set, nullptr);
     id = std::move(other.id);
     dependencies = std::move(other.dependencies);
+    iter = std::move(other.iter);
     metric_increment = std::move(other.metric_increment);
     return *this;
 }
@@ -39,21 +35,21 @@ RefreshSet::Handle::~Handle()
 void RefreshSet::Handle::rename(StorageID new_id)
 {
     std::lock_guard lock(parent_set->mutex);
-    parent_set->removeDependenciesLocked(id, dependencies);
-    auto it = parent_set->tasks.find(id);
-    auto task = it->second;
-    parent_set->tasks.erase(it);
+    RefreshTaskHolder task = *iter;
+    parent_set->removeDependenciesLocked(task, dependencies);
+    parent_set->removeTaskLocked(id, iter);
     id = new_id;
-    parent_set->tasks.emplace(id, task);
-    parent_set->addDependenciesLocked(id, dependencies);
+    iter = parent_set->addTaskLocked(id, task);
+    parent_set->addDependenciesLocked(task, dependencies);
 }
 
 void RefreshSet::Handle::changeDependencies(std::vector<StorageID> deps)
 {
     std::lock_guard lock(parent_set->mutex);
-    parent_set->removeDependenciesLocked(id, dependencies);
+    RefreshTaskHolder task = *iter;
+    parent_set->removeDependenciesLocked(task, dependencies);
     dependencies = std::move(deps);
-    parent_set->addDependenciesLocked(id, dependencies);
+    parent_set->addDependenciesLocked(task, dependencies);
 }
 
 void RefreshSet::Handle::reset()
@@ -63,8 +59,8 @@ void RefreshSet::Handle::reset()
 
     {
         std::lock_guard lock(parent_set->mutex);
-        parent_set->removeDependenciesLocked(id, dependencies);
-        parent_set->tasks.erase(id);
+        parent_set->removeDependenciesLocked(*iter, dependencies);
+        parent_set->removeTaskLocked(id, iter);
     }
 
     parent_set = nullptr;
@@ -76,37 +72,50 @@ RefreshSet::RefreshSet() = default;
 void RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task)
 {
     std::lock_guard guard(mutex);
-    auto [it, is_inserted] = tasks.emplace(id, task);
-    if (!is_inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Refresh set entry already exists for table {}", id.getFullTableName());
-    addDependenciesLocked(id, dependencies);
+    const auto iter = addTaskLocked(id, task);
+    addDependenciesLocked(task, dependencies);
 
-    task->setRefreshSetHandleUnlock(Handle(this, id, dependencies));
+    task->setRefreshSetHandleUnlock(Handle(this, id, iter, dependencies));
 }
 
-void RefreshSet::addDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies)
+RefreshTaskList::iterator RefreshSet::addTaskLocked(StorageID id, RefreshTaskHolder task)
+{
+    RefreshTaskList & list = tasks[id];
+    list.push_back(task);
+    return std::prev(list.end());
+}
+
+void RefreshSet::removeTaskLocked(StorageID id, RefreshTaskList::iterator iter)
+{
+    const auto it = tasks.find(id);
+    it->second.erase(iter);
+    if (it->second.empty())
+        tasks.erase(it);
+}
+
+void RefreshSet::addDependenciesLocked(RefreshTaskHolder task, const std::vector<StorageID> & dependencies)
 {
     for (const StorageID & dep : dependencies)
-        dependents[dep].insert(id);
+        dependents[dep].insert(task);
 }
 
-void RefreshSet::removeDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies)
+void RefreshSet::removeDependenciesLocked(RefreshTaskHolder task, const std::vector<StorageID> & dependencies)
 {
     for (const StorageID & dep : dependencies)
     {
         auto & set = dependents[dep];
-        set.erase(id);
+        set.erase(task);
         if (set.empty())
             dependents.erase(dep);
     }
 }
 
-RefreshTaskHolder RefreshSet::getTask(const StorageID & id) const
+RefreshTaskList RefreshSet::findTasks(const StorageID & id) const
 {
     std::lock_guard lock(mutex);
-    if (auto task = tasks.find(id); task != tasks.end())
-        return task->second;
-    return nullptr;
+    if (auto it = tasks.find(id); it != tasks.end())
+        return it->second;
+    return {};
 }
 
 RefreshSet::InfoContainer RefreshSet::getInfo() const
@@ -116,26 +125,23 @@ RefreshSet::InfoContainer RefreshSet::getInfo() const
     lock.unlock();
 
     InfoContainer res;
-    for (const auto & [id, task] : tasks_copy)
-        res.push_back(task->getInfo());
+    for (const auto & [id, list] : tasks_copy)
+        for (const auto & task : list)
+            res.push_back(task->getInfo());
     return res;
 }
 
 std::vector<RefreshTaskHolder> RefreshSet::getDependents(const StorageID & id) const
 {
     std::lock_guard lock(mutex);
-    std::vector<RefreshTaskHolder> res;
     auto it = dependents.find(id);
     if (it == dependents.end())
         return {};
-    for (const StorageID & dep_id : it->second)
-        if (auto task = tasks.find(dep_id); task != tasks.end())
-            res.push_back(task->second);
-    return res;
+    return std::vector<RefreshTaskHolder>(it->second.begin(), it->second.end());
 }
 
-RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::vector<StorageID> dependencies_)
+RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, RefreshTaskList::iterator iter_, std::vector<StorageID> dependencies_)
     : parent_set(parent_set_), id(std::move(id_)), dependencies(std::move(dependencies_))
-    , metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
+    , iter(iter_), metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
 
 }

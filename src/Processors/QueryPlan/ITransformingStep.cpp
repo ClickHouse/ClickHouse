@@ -13,21 +13,13 @@ ITransformingStep::ITransformingStep(DataStream input_stream, Block output_heade
     output_stream = createOutputStream(input_streams.front(), std::move(output_header), data_stream_traits);
 }
 
+/// TODO: cleanup in the following PR.
 DataStream ITransformingStep::createOutputStream(
-    const DataStream & input_stream,
+    [[maybe_unused]] const DataStream & input_stream,
     Block output_header,
-    const DataStreamTraits & stream_traits)
+    [[maybe_unused]] const DataStreamTraits & stream_traits)
 {
     DataStream output_stream{.header = std::move(output_header)};
-
-    output_stream.has_single_port = stream_traits.returns_single_stream
-                                     || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);
-
-    if (stream_traits.preserves_sorting)
-    {
-        output_stream.sort_description = input_stream.sort_description;
-        output_stream.sort_scope = input_stream.sort_scope;
-    }
 
     return output_stream;
 }

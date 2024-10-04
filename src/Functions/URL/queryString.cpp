@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include "queryString.h"
+#include <Functions/URL/queryString.h>
 
 namespace DB
 {

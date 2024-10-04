@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists insert_select_progress_tcp;
     create table insert_select_progress_tcp(s UInt16) engine = MergeTree order by s;
 "

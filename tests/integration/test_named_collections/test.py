@@ -1,7 +1,11 @@
 import logging
-import pytest
 import os
 import time
+from contextlib import nullcontext as does_not_raise
+
+import pytest
+
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -761,3 +765,32 @@ def test_keeper_storage(cluster):
 
     check_dropped(node1)
     check_dropped(node2)
+
+
+@pytest.mark.parametrize(
+    "ignore, expected_raise",
+    [(True, does_not_raise()), (False, pytest.raises(QueryRuntimeException))],
+)
+def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
+    node = cluster.instances["node_with_keeper"]
+
+    replace_in_users_config(
+        node,
+        "ignore_on_cluster_for_replicated_named_collections_queries>.",
+        f"ignore_on_cluster_for_replicated_named_collections_queries>{int(ignore)}",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    with expected_raise:
+        node.query(
+            "DROP NAMED COLLECTION IF EXISTS test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+        )
+        node.query(
+            f"CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
+        )
+        node.query(
+            f"ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
+        )
+        node.query(
+            f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+        )

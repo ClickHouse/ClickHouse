@@ -66,6 +66,7 @@ public:
 REGISTER_FUNCTION(PartitionId)
 {
     factory.registerFunction<FunctionPartitionId>();
+    factory.registerAlias("partitionID", "partitionId");
 }
 
 }

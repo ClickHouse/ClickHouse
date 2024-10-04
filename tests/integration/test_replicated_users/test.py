@@ -1,10 +1,11 @@
 import inspect
-import pytest
 import time
-
 from dataclasses import dataclass
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 

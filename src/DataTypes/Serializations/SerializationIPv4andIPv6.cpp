@@ -125,7 +125,7 @@ bool SerializationIP<IPv>::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadB
 template <typename IPv>
 void SerializationIP<IPv>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    IPv x = field.get<IPv>();
+    IPv x = field.safeGet<IPv>();
     if constexpr (std::is_same_v<IPv, IPv6>)
         writeBinary(x, ostr);
     else

@@ -1,8 +1,13 @@
 #pragma once
+#include <Core/Settings.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+}
 
 namespace ErrorCodes
 {
@@ -22,7 +27,7 @@ public:
     }
 
     explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_)
-        : enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
     }
 

@@ -159,7 +159,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry * merge_entry,
         std::unique_ptr<MergeListElement> projection_merge_list_element,
-        TableLockHolder table_lock_holder,
+        TableLockHolder & table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
         ReservationSharedPtr space_reservation,

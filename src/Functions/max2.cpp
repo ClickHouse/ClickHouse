@@ -21,6 +21,6 @@ namespace
 
 REGISTER_FUNCTION(Max2)
 {
-    factory.registerFunction<FunctionMax2>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMax2>({}, FunctionFactory::Case::Insensitive);
 }
 }

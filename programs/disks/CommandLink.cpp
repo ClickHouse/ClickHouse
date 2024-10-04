@@ -1,13 +1,8 @@
-#include "ICommand.h"
 #include <Interpreters/Context.h>
+#include "ICommand.h"
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 class CommandLink final : public ICommand
 {
@@ -16,42 +11,27 @@ public:
     {
         command_name = "link";
         description = "Create hardlink from `from_path` to `to_path`";
-        usage = "link [OPTION]... <FROM_PATH> <TO_PATH>";
+        options_description.add_options()(
+            "path-from", po::value<String>(), "the path from which a hard link will be created (mandatory, positional)")(
+            "path-to", po::value<String>(), "the path where a hard link will be created (mandatory, positional)");
+        positional_options_description.add("path-from", 1);
+        positional_options_description.add("path-to", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-    }
+        auto disk = client.getCurrentDiskWithPath();
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
-        Poco::Util::LayeredConfiguration & config) override
-    {
-        if (command_arguments.size() != 2)
-        {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
-        }
+        const String & path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
+        const String & path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 
-        String disk_name = config.getString("disk", "default");
-
-        const String & path_from = command_arguments[0];
-        const String & path_to = command_arguments[1];
-
-        DiskPtr disk = disk_selector->get(disk_name);
-
-        String relative_path_from = validatePathAndGetAsRelative(path_from);
-        String relative_path_to = validatePathAndGetAsRelative(path_to);
-
-        disk->createHardLink(relative_path_from, relative_path_to);
+        disk.getDisk()->createHardLink(path_from, path_to);
     }
 };
+
+CommandPtr makeCommandLink()
+{
+    return std::make_shared<DB::CommandLink>();
 }
 
-std::unique_ptr <DB::ICommand> makeCommandLink()
-{
-    return std::make_unique<DB::CommandLink>();
 }

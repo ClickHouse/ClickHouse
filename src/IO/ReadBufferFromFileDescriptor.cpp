@@ -253,7 +253,7 @@ void ReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
 }

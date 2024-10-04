@@ -1,0 +1,6 @@
+this query used to be broken in old analyser:
+c1	c2	yes	true
+this query worked:
+yes	true
+experimental analyzer:
+c1	c2	yes	true

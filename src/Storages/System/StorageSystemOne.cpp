@@ -41,7 +41,10 @@ Pipe StorageSystemOne::read(
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
     Chunk chunk({ std::move(column) }, 1);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+    source->addTotalRowsApprox(1);
+
+    return Pipe(source);
 }
 
 

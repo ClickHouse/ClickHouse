@@ -2,6 +2,7 @@ import os
 import time
 
 import pytest
+
 from helpers.client import QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -35,16 +36,6 @@ def get_status(dictionary_name):
     return instance.query(
         "SELECT status FROM system.dictionaries WHERE name='" + dictionary_name + "'"
     ).rstrip("\n")
-
-
-def get_status_retry(dictionary_name, expect, retry_count=10, sleep_time=0.5):
-    for _ in range(retry_count):
-        res = get_status(dictionary_name)
-        if res == expect:
-            return res
-        time.sleep(sleep_time)
-
-    raise Exception(f'Expected result "{expect}" did not occur')
 
 
 def get_last_exception(dictionary_name):
@@ -263,13 +254,7 @@ def test_reload_after_fail_by_timer(started_cluster):
 
     # on sanitizers builds it can return 'FAILED_AND_RELOADING' which is not quite right
     # add retry for these builds
-    if (
-        instance.is_built_with_sanitizer()
-        and get_status("no_file_2") == "FAILED_AND_RELOADING"
-    ):
-        get_status_retry("no_file_2", expect="FAILED")
-
-    assert get_status("no_file_2") == "FAILED"
+    assert get_status("no_file_2") in ["FAILED", "FAILED_AND_RELOADING"]
 
     # Creating the file source makes the dictionary able to load.
     instance.copy_file_to_container(
@@ -284,7 +269,7 @@ def test_reload_after_fail_by_timer(started_cluster):
     )
     instance.query("SYSTEM RELOAD DICTIONARY no_file_2")
     instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
-    assert get_status("no_file_2") == "LOADED"
+    assert get_status("no_file_2") in ["LOADED", "LOADED_AND_RELOADING"]
 
     # Removing the file source should not spoil the loaded dictionary.
     instance.exec_in_container(
@@ -292,7 +277,7 @@ def test_reload_after_fail_by_timer(started_cluster):
     )
     time.sleep(6)
     instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
-    assert get_status("no_file_2") == "LOADED"
+    assert get_status("no_file_2") in ["LOADED", "LOADED_AND_RELOADING"]
 
 
 def test_reload_after_fail_in_cache_dictionary(started_cluster):

@@ -72,6 +72,29 @@ class ClickHouseVersion:
             return self.patch_update()
         raise KeyError(f"wrong part {part} is used")
 
+    def bump(self) -> "ClickHouseVersion":
+        if self.minor < 12:
+            self._minor += 1
+            self._revision += 1
+            self._patch = 1
+            self._tweak = 1
+        else:
+            self._major += 1
+            self._revision += 1
+            self._patch = 1
+            self._tweak = 1
+        return self
+
+    def bump_patch(self) -> "ClickHouseVersion":
+        self._revision += 1
+        self._patch += 1
+        self._tweak = 1
+        return self
+
+    def reset_tweak(self) -> "ClickHouseVersion":
+        self._tweak = 1
+        return self
+
     def major_update(self) -> "ClickHouseVersion":
         if self._git is not None:
             self._git.update()
@@ -89,13 +112,6 @@ class ClickHouseVersion:
             self._git.update()
         return ClickHouseVersion(
             self.major, self.minor, self.patch + 1, self.revision, self._git
-        )
-
-    def reset_tweak(self) -> "ClickHouseVersion":
-        if self._git is not None:
-            self._git.update()
-        return ClickHouseVersion(
-            self.major, self.minor, self.patch, self.revision, self._git, 1
         )
 
     @property
@@ -148,6 +164,11 @@ class ClickHouseVersion:
         """our X.3 and X.8 are LTS"""
         return self.minor % 5 == 3
 
+    def get_stable_release_type(self) -> str:
+        if self.is_lts:
+            return VersionType.LTS
+        return VersionType.STABLE
+
     def as_dict(self) -> VERSIONS:
         return {
             "revision": self.revision,
@@ -168,6 +189,7 @@ class ClickHouseVersion:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
         self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
+        return self
 
     def copy(self) -> "ClickHouseVersion":
         copy = ClickHouseVersion(
@@ -200,7 +222,7 @@ class ClickHouseVersion:
         for part in ("major", "minor", "patch", "tweak"):
             if getattr(self, part) < getattr(other, part):
                 return True
-            elif getattr(self, part) > getattr(other, part):
+            if getattr(self, part) > getattr(other, part):
                 return False
 
         return False

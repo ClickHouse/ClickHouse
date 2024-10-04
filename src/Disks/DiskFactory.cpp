@@ -27,7 +27,8 @@ DiskPtr DiskFactory::create(
     ContextPtr context,
     const DisksMap & map,
     bool attach,
-    bool custom_disk) const
+    bool custom_disk,
+    const std::unordered_set<String> & skip_types) const
 {
     const auto disk_type = config.getString(config_prefix + ".type", "local");
 
@@ -36,6 +37,11 @@ DiskPtr DiskFactory::create(
     {
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
                         "DiskFactory: the disk '{}' has unknown disk type: {}", name, disk_type);
+    }
+
+    if (skip_types.contains(found->first))
+    {
+        return nullptr;
     }
 
     const auto & disk_creator = found->second;

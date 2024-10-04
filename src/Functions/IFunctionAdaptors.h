@@ -86,6 +86,8 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
 
+    bool isServerConstant() const override  { return function->isServerConstant(); }
+
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }

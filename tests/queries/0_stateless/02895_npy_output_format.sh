@@ -5,12 +5,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-user_files_path=$($CLICKHOUSE_CLIENT_BINARY -q "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-mkdir -p ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
-rm -rf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
-chmod 777 ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
+mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
+rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
+chmod 777 ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 
-${CLICKHOUSE_CLIENT} -n -q --ignore-error "
+${CLICKHOUSE_CLIENT} -q --ignore-error "
     DROP DATABASE IF EXISTS npy_output_02895;
     CREATE DATABASE IF NOT EXISTS npy_output_02895;
 
@@ -33,43 +32,43 @@ ${CLICKHOUSE_CLIENT} -n -q --ignore-error "
 
     INSERT INTO npy_output_02895.data_types VALUES (1, 1, 1, 1, 1, 1, 1, 1, 0.1, 0.01, 'npy', 'npy'), (-1, -1, -1, -1, 0, 0, 0, 0, 0.2, 0.02, 'npy', 'npynpy');
 
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy') SELECT i1 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy') SELECT i2 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy') SELECT i4 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy') SELECT i8 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy') SELECT u1 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy') SELECT u2 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy') SELECT u4 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy') SELECT u8 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy') SELECT f4 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy') SELECT f8 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy') SELECT fs FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy') SELECT s FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy') SELECT i1 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy') SELECT i2 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy') SELECT i4 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy') SELECT i8 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy') SELECT u1 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy') SELECT u2 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy') SELECT u4 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy') SELECT u8 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy') SELECT f4 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy') SELECT f8 FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy') SELECT fs FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy') SELECT s FROM npy_output_02895.data_types;
 
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy');
 
     SELECT '-- test nested data types --';
     CREATE TABLE IF NOT EXISTS npy_output_02895.nested_data_types
@@ -81,16 +80,16 @@ ${CLICKHOUSE_CLIENT} -n -q --ignore-error "
 
     INSERT INTO npy_output_02895.nested_data_types VALUES ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], ['a', 'bb']), ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], ['ccc', 'dddd']);
 
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy') SELECT i4 FROM npy_output_02895.nested_data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy') SELECT f8 FROM npy_output_02895.nested_data_types;
-    INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy') SELECT s FROM npy_output_02895.nested_data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy') SELECT i4 FROM npy_output_02895.nested_data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy') SELECT f8 FROM npy_output_02895.nested_data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy') SELECT s FROM npy_output_02895.nested_data_types;
 
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy');
-    SELECT * FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy');
-    DESC file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy');
+    SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy');
+    DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy');
 
     SELECT '-- test exceptions --';
     CREATE TABLE IF NOT EXISTS npy_output_02895.exceptions
@@ -115,4 +114,4 @@ ${CLICKHOUSE_CLIENT} -n -q --ignore-error "
 
     DROP DATABASE IF EXISTS npy_output_02895;"
 
-rm -rf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
+rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}

@@ -1,6 +1,7 @@
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 
 #include <base/types.h>
 #include <base/sort.h>

@@ -74,7 +74,7 @@ private:
 
 REGISTER_FUNCTION(MonthName)
 {
-    factory.registerFunction<FunctionMonthName>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMonthName>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

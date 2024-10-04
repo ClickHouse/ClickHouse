@@ -33,6 +33,7 @@ c	String	NO	PRI SOR	\N
 c	String	NO	PRI SOR	\N	
 c	String	NO	PRI SOR	\N	
 c	String	NO	PRI SOR	\N	
+c	String	NO	PRI SOR	\N	
 --- Original table
 int32	Nullable(Int32)	YES		\N	
 str	String	NO	SOR	\N	

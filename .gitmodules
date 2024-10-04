@@ -108,7 +108,7 @@
 	url = https://github.com/ClickHouse/icudata
 [submodule "contrib/icu"]
 	path = contrib/icu
-	url = https://github.com/unicode-org/icu
+	url = https://github.com/ClickHouse/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
 	url = https://github.com/ClickHouse/flatbuffers
@@ -170,9 +170,6 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
-[submodule "contrib/libpq"]
-	path = contrib/libpq
-	url = https://github.com/ClickHouse/libpq
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
@@ -230,9 +227,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/annoy"]
-	path = contrib/annoy
-	url = https://github.com/ClickHouse/annoy
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
@@ -341,16 +335,13 @@
 	url = https://github.com/graphitemaster/incbin.git
 [submodule "contrib/usearch"]
 	path = contrib/usearch
-	url = https://github.com/unum-cloud/usearch.git
+	url = https://github.com/ClickHouse/usearch.git
 [submodule "contrib/SimSIMD"]
 	path = contrib/SimSIMD
 	url = https://github.com/ashvardanian/SimSIMD.git
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git
-[submodule "contrib/robin-map"]
-	path = contrib/robin-map
-	url = https://github.com/Tessil/robin-map.git
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
@@ -372,3 +363,15 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
+[submodule "contrib/mongo-cxx-driver"]
+	path = contrib/mongo-cxx-driver
+	url = https://github.com/ClickHouse/mongo-cxx-driver.git
+[submodule "contrib/mongo-c-driver"]
+	path = contrib/mongo-c-driver
+	url = https://github.com/ClickHouse/mongo-c-driver.git
+[submodule "contrib/numactl"]
+	path = contrib/numactl
+	url = https://github.com/ClickHouse/numactl.git
+[submodule "contrib/postgres"]
+	path = contrib/postgres
+	url = https://github.com/ClickHouse/postgres.git

@@ -46,6 +46,6 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
 
 void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("avg", createAggregateFunctionAvg, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("avg", createAggregateFunctionAvg, AggregateFunctionFactory::Case::Insensitive);
 }
 }

@@ -209,7 +209,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings = {},
+        const ReadSettings & read_settings,
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {});
 
@@ -219,7 +219,7 @@ public:
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
-        const ReadSettings & settings = ReadSettings{},
+        const ReadSettings & settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
@@ -427,7 +427,7 @@ public:
     ///  Device: 10301h/66305d   Inode: 3109907     Links: 1
     /// Why we have always zero by default? Because normal filesystem
     /// manages hardlinks by itself. So you can always remove hardlink and all
-    /// other alive harlinks will not be removed.
+    /// other alive hardlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
     /// Revision is an incremental counter of disk operation.
@@ -464,9 +464,9 @@ public:
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
     /// Was disk created to be used without storage configuration?
-    bool isCustomDisk() const { return is_custom_disk; }
-
-    void markDiskAsCustom() { is_custom_disk = true; }
+    bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
+    UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
+    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
@@ -478,6 +478,8 @@ public:
             "Method getS3StorageClient() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
+
+    virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
 #endif
 
 
@@ -502,7 +504,8 @@ protected:
 
 private:
     ThreadPool copying_thread_pool;
-    bool is_custom_disk = false;
+    // 0 means the disk is not custom, the disk is predefined in the config
+    UInt128 custom_disk_settings_hash = 0;
 
     /// Check access to the disk.
     void checkAccess();

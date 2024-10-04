@@ -15,6 +15,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/randomDelay.h>
@@ -223,14 +225,18 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
+        if (e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+            && !isRetryableException(std::current_exception()))
+        {
             report_broken_part();
+        }
 
         throw;
     }
     catch (...)
     {
-        report_broken_part();
+        if (!isRetryableException(std::current_exception()))
+            report_broken_part();
         throw;
     }
 }

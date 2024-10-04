@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFileCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -8,6 +9,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString rename_files_after_processing;
+}
 
 StoragePtr TableFunctionFileCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
@@ -27,9 +32,8 @@ StoragePtr TableFunctionFileCluster::getStorage(
             columns,
             ConstraintsDescription{},
             String{},
-            context->getSettingsRef().rename_files_after_processing,
-            path_to_archive
-        };
+            context->getSettingsRef()[Setting::rename_files_after_processing],
+            path_to_archive};
 
         storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), true, args);
     }

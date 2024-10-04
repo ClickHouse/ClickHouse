@@ -1,23 +1,32 @@
 #pragma once
 
-#include <string_view>
-#include "Common/NamePrompter.h"
-#include <Parsers/ASTCreateQuery.h>
-#include <Common/ProgressIndication.h>
+
+#include <Client/Suggest.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
-#include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
-#include <Poco/Util/Application.h>
+#include <Core/Settings.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
 #include <Interpreters/Context.h>
-#include <Client/Suggest.h>
-#include <Client/QueryFuzzer.h>
-#include <boost/program_options.hpp>
-#include <Storages/StorageFile.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Poco/Util/Application.h>
 
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageFile.h>
+
+#include <boost/program_options.hpp>
+
+#include <atomic>
+#include <optional>
+#include <string_view>
+#include <string>
 
 namespace po = boost::program_options;
 
@@ -61,19 +70,34 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress);
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2>
+/**
+ * The base class which encapsulates the core functionality of a client.
+ * Can be used in a standalone application (clickhouse-client or clickhouse-local),
+ * or be embedded into server.
+ * Always keep in mind that there can be several instances of this class within
+ * a process. Thus, it cannot keep its state in global shared variables or even use them.
+ * The best example - std::cin, std::cout and std::cerr.
+ */
+class ClientBase
 {
-
 public:
     using Arguments = std::vector<String>;
 
-    ClientBase();
-    ~ClientBase() override;
+    explicit ClientBase
+    (
+        int in_fd_ = STDIN_FILENO,
+        int out_fd_ = STDOUT_FILENO,
+        int err_fd_ = STDERR_FILENO,
+        std::istream & input_stream_ = std::cin,
+        std::ostream & output_stream_ = std::cout,
+        std::ostream & error_stream_ = std::cerr
+    );
+    virtual ~ClientBase();
 
-    void init(int argc, char ** argv);
+    bool tryStopQuery() { return query_interrupt_handler.tryStop(); }
+    void stopQuery() { query_interrupt_handler.stop(); }
 
-    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
-    static ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error);
+    ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
 
 protected:
     void runInteractive();
@@ -81,6 +105,9 @@ protected:
 
     char * argv0 = nullptr;
     void runLibFuzzer();
+
+    /// This is the analogue of Poco::Application::config()
+    virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
     virtual bool processWithFuzzing(const String &)
     {
@@ -99,7 +126,7 @@ protected:
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
-    static void setupSignalHandler();
+    virtual void setupSignalHandler() = 0;
 
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
@@ -107,7 +134,7 @@ protected:
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::unique_ptr<Exception> & current_exception);
 
-    static void clearTerminal();
+    void clearTerminal();
     void showClientVersion();
 
     using ProgramOptionsDescription = boost::program_options::options_description;
@@ -129,6 +156,7 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
+    /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 
     virtual void readArguments(
@@ -139,8 +167,6 @@ protected:
         std::vector<Arguments> & hosts_and_ports_arguments) = 0;
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
-
-    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
 
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
@@ -174,7 +200,6 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);
 
@@ -182,6 +207,31 @@ private:
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
 protected:
+
+    class QueryInterruptHandler : private boost::noncopyable
+    {
+    public:
+        /// Store how much interrupt signals can be before stopping the query
+        /// by default stop after the first interrupt signal.
+        void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
+
+        /// Set value not greater then 0 to mark the query as stopped.
+        void stop() { exit_after_signals.store(0); }
+
+        /// Return true if the query was stopped.
+        /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
+        bool tryStop() { return exit_after_signals.fetch_sub(1) <= 0; }
+        bool cancelled() { return exit_after_signals.load() <= 0; }
+
+        /// Return how much interrupt signals remain before stop.
+        Int32 cancelled_status() { return exit_after_signals.load(); }
+
+    private:
+        std::atomic<Int32> exit_after_signals = 0;
+    };
+
+    QueryInterruptHandler query_interrupt_handler;
+
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
@@ -189,6 +239,9 @@ protected:
 
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
+
+    /// Initializes the client context.
+    void initClientContext();
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
@@ -199,13 +252,14 @@ protected:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
+    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
+    ContextMutablePtr client_context;
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
-    bool is_multiquery = false;
     bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
-    bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
@@ -214,7 +268,6 @@ protected:
     std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
-    std::vector<String> cmd_options;
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
@@ -250,9 +303,9 @@ protected:
     ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
-    ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
+    ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    WriteBufferFromFileDescriptor std_out{STDOUT_FILENO};
+    WriteBufferFromFileDescriptor std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -283,7 +336,6 @@ protected:
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
-    bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
@@ -328,11 +380,17 @@ protected:
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
 
-    bool cancelled = false;
-    bool cancelled_printed = false;
+    std::atomic_bool cancelled = false;
+    std::atomic_bool cancelled_printed = false;
 
-    /// Does log_comment has specified by user?
-    bool has_log_comment = false;
+    /// Unpacked descriptors and streams for the ease of use.
+    int in_fd = STDIN_FILENO;
+    int out_fd = STDOUT_FILENO;
+    int err_fd = STDERR_FILENO;
+    std::istream & input_stream;
+    std::ostream & output_stream;
+    std::ostream & error_stream;
+
 };
 
 }

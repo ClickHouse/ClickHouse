@@ -83,6 +83,20 @@ void CascadeWriteBuffer::finalizeImpl()
     }
 }
 
+void CascadeWriteBuffer::cancelImpl() noexcept
+{
+    if (curr_buffer)
+        curr_buffer->position() = position();
+
+    for (auto & buf : prepared_sources)
+    {
+        if (buf)
+        {
+            buf->cancel();
+        }
+    }
+}
+
 WriteBuffer * CascadeWriteBuffer::setNextBuffer()
 {
     if (first_lazy_source_num <= curr_buffer_num && curr_buffer_num < num_sources)

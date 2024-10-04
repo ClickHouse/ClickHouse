@@ -54,13 +54,8 @@ void checkFinalInferredType(
         type = default_type;
     }
 
-    if (settings.schema_inference_make_columns_nullable)
+    if (settings.schema_inference_make_columns_nullable == 1)
         type = makeNullableRecursively(type);
-    /// In case when data for some column could contain nulls and regular values,
-    /// resulting inferred type is Nullable.
-    /// If input_format_null_as_default is enabled, we should remove Nullable type.
-    else if (settings.null_as_default)
-        type = removeNullable(type);
 }
 
 void ISchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)

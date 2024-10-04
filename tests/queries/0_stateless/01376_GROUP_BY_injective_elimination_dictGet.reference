@@ -21,4 +21,4 @@ QUERY id: 0
   GROUP BY
     LIST id: 10, nodes: 1
       COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

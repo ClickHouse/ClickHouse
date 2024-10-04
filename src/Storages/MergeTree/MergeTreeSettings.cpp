@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Disks/getOrCreateDiskFromAST.h>
+#include <Disks/DiskFomAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -59,15 +59,19 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
                 CustomType custom;
                 if (name == "disk")
                 {
+                    ASTPtr value_as_custom_ast = nullptr;
                     if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+                        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+
+                    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-                        if (ast && isDiskFunction(ast))
-                        {
-                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context, is_attach);
-                            LOG_TRACE(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
-                            value = disk_name;
-                        }
+                        auto disk_name = DiskFomAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                        value = disk_name;
+                    }
+                    else
+                    {
+                        DiskFomAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
                     }
 
                     if (has("storage_policy"))
@@ -113,6 +117,16 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
+}
+
+bool MergeTreeSettings::isReadonlySetting(const String & name)
+{
+    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts";
+}
+
+bool MergeTreeSettings::isPartFormatSetting(const String & name)
+{
+    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
 }
 
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
@@ -243,4 +257,8 @@ std::vector<String> MergeTreeSettings::getAllRegisteredNames() const
     return all_settings;
 }
 
+std::string_view MergeTreeSettings::resolveName(std::string_view name)
+{
+    return MergeTreeSettings::Traits::resolveName(name);
+}
 }
