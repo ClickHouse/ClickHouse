@@ -474,6 +474,8 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         AuthenticationData auth_data(current_type);
 
+        auth_data.setValidUntil(valid_until);
+
         if (check_password_rules)
             context->getAccessControl().checkPasswordComplexityRules(value);
 
@@ -512,7 +514,6 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
         }
 
-        auth_data.setValidUntil(valid_until);
         auth_data.setPassword(value);
         return auth_data;
     }
