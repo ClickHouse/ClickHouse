@@ -44,5 +44,11 @@ void ASTShowGrantsQuery::formatQueryImpl(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH IMPLICIT"
                       << (settings.hilite ? hilite_none : "");
     }
+
+    if (final)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FINAL"
+                      << (settings.hilite ? hilite_none : "");
+    }
 }
 }
