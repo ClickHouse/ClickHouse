@@ -1,9 +1,9 @@
 #include "Loggers.h"
 
-#include "Loggers/OwnFilteringChannel.h"
-#include "OwnFormattingChannel.h"
-#include "OwnPatternFormatter.h"
-#include "OwnSplitChannel.h"
+#include <Loggers/OwnFilteringChannel.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <iostream>
 #include <sstream>
@@ -13,7 +13,7 @@
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 #ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>

@@ -1,4 +1,4 @@
-#include "OwnFilteringChannel.h"
+#include <Loggers/OwnFilteringChannel.h>
 #include <Poco/RegularExpression.h>
 
 
