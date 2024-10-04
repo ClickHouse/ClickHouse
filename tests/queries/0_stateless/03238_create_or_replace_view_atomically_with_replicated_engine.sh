@@ -50,3 +50,5 @@ bash -c create_or_replace_view_thread &
 bash -c create_or_replace_view_thread &
 
 wait
+
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db SYNC";
