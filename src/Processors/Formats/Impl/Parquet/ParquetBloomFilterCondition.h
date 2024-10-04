@@ -67,7 +67,6 @@ private:
 
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
-    const Block & header,
     const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata);
 

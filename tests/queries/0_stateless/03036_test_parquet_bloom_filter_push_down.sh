@@ -66,10 +66,10 @@ ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Pa
 echo "Bloom filter for ipv4 column. BF is on"
 ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Parquet) where ipv4 = IPv4StringToNum('0.0.1.143') order by uint16_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-echo "Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') is not supported. Should read everything"
+echo "Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation."
 ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Parquet) where toIPv4(ipv4) = toIPv4('0.0.1.143') order by uint16_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-echo "Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143')) is not supported. Should read everything"
+echo "Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation."
 ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Parquet) where (toIPv4(ipv4)) in (toIPv4('0.0.1.143')) order by uint16_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
 echo "BF off for parquet uint64 logical type. Should read everything"
