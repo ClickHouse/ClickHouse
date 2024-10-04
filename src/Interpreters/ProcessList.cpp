@@ -12,6 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <chrono>
 
 
@@ -720,8 +721,15 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
+namespace {
+    auto logger = getLogger("QueryMetricLog");
+}
+
 QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
+    LOG_TRACE(logger, "getProcessListElement {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~getProcessListElement {}", query_id); });
+
     QueryStatusPtr process_found;
     {
         for (const auto & process : processes)
@@ -739,6 +747,9 @@ QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 
 QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
+    LOG_TRACE(logger, "getQueryInfo {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~getQueryInfo {}", query_id); });
+
     /// We need to ensure that `process` (QueryStatusPtr) is never released in the QueryMetricLog
     /// task thread. If we didn't acquire the lock until the end of this function, it could happen
     /// that we get `process` but immediately the query finishes and is removed from `processes`.
@@ -756,6 +767,9 @@ QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_t
 
 void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const
 {
+    LOG_TRACE(logger, "createQueryMetricLogTask {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~createQueryMetricLogTask {}", query_id); });
+
     auto lock = safeLock();
     auto process = getProcessListElement(query_id);
 
@@ -770,6 +784,9 @@ void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 inter
 
 void ProcessList::scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const
 {
+    LOG_TRACE(logger, "scheduleQueryMetricLogTask {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~scheduleQueryMetricLogTask {}", query_id); });
+
     auto lock = safeLock();
     auto process = getProcessListElement(query_id);
 
