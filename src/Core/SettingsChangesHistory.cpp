@@ -75,6 +75,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
             {"enable_secure_identifiers", false, false, "New setting."},
+            {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
+            {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
         }
     },
     {"24.9",
@@ -92,6 +94,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"join_to_sort_minimum_perkey_rows", 0, 40, "The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys"},
             {"join_to_sort_maximum_table_rows", 0, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join"},
             {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"},
+            {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
+            {"min_free_disk_bytes_to_perform_insert", 0, 0, "Maintain some free disk space bytes from inserts while still allowing for temporary writing."},
+            {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "Maintain some free disk space bytes expressed as ratio to total disk space from inserts while still allowing for temporary writing."},
         }
     },
     {"24.8",
