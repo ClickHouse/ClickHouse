@@ -185,7 +185,7 @@ def main():
     with Path() as current:
         for fuzzer in current.iterdir():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
-                run_fuzzer(fuzzer, timeout)
+                run_fuzzer(fuzzer.name, timeout)
 
 
 if __name__ == "__main__":
