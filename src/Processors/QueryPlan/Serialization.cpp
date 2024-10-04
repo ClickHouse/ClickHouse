@@ -47,6 +47,7 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsSetOperationMode except_default_mode;
@@ -59,6 +60,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 static void serializeHeader(const Block & header, WriteBuffer & out)
@@ -369,6 +371,22 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     return deserializeSets(std::move(plan), sets_registry, in, context);
 }
 
+static Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+
+    Tokens tokens(str.data(), str.data() + str.size(), settings[Setting::max_query_size]);
+    IParser::Pos pos(tokens, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+    Expected expected;
+
+    ParserCompoundIdentifier parser(false, false);
+    ASTPtr res;
+    if (!parser.parse(pos, res, expected))
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse itable identifier ({})", str);
+
+    return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
+}
+
 static std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
     auto table_node_ptr = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, context);
@@ -393,7 +411,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
 {
     for (auto & set : sets)
     {
-        Identifier identifier(set.storage_name);
+        Identifier identifier = parseTableIdentifier(set.storage_name, context);
         auto table_node = resolveTable(identifier, context);
         const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
         if (!storage_set)
@@ -502,7 +520,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     if (reading_from_table)
     {
-        Identifier identifier(reading_from_table->getTable());
+        Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
         auto table_node = resolveTable(identifier, context);
 
         storage = table_node->getStorage();
