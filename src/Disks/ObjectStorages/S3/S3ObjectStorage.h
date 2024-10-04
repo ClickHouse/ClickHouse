@@ -89,12 +89,6 @@ public:
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
