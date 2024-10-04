@@ -108,6 +108,7 @@ public:
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
+        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
     void sendCancel() override;
