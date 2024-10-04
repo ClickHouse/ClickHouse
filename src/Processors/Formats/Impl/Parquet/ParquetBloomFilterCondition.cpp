@@ -332,6 +332,12 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
+            if (clickhouse_column_index_to_parquet_index.size() <= rpn_element.key_column)
+            {
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
+                continue;
+            }
+
             const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[rpn_element.key_column].parquet_indexes;
 
             // complex types like structs, tuples and maps will have more than one index.
@@ -398,6 +404,12 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             for (auto i = 0u; i < ordered_set.size(); i++)
             {
                 const auto & set_column = ordered_set[i];
+
+                if (clickhouse_column_index_to_parquet_index.size() <= indexes_mapping[i].key_index)
+                {
+                    condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
+                    continue;
+                }
 
                 const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].parquet_indexes;
 
