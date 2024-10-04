@@ -16,6 +16,7 @@
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
@@ -1953,7 +1954,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         }
         else
         {
-            random_suffix = getRandomSuffix(/*size=*/4);
+            random_suffix = getRandomASCIIString(/*length=*/4);
         }
 
         create.setTable(fmt::format("_tmp_replace_{}_{}", getHexUIntLowercase(name_hash), random_suffix));
@@ -2335,18 +2336,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
-}
-
-String InterpreterCreateQuery::getRandomSuffix(size_t size)
-{
-    String random_suffix;
-    constexpr char characters[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-    random_suffix.reserve(size);
-    std::uniform_int_distribution<> distribution(0, sizeof(characters) - 2); // -2 to avoid null terminator
-    for (size_t i = 0; i < size; ++i)
-        random_suffix += characters[distribution(thread_local_rng)];
-
-    return random_suffix;
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
