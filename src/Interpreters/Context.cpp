@@ -4649,7 +4649,11 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respcet compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
         mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
     }
@@ -4665,7 +4669,11 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respcet compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
         mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
         shared->replicated_merge_tree_settings.emplace(mt_settings);

@@ -561,7 +561,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.8",
         {
-            {"deduplicate_merge_projection_mode", "drop", "throw", "Do not allow to create inconsistent projection"}
+            {"deduplicate_merge_projection_mode", "ignore", "throw", "Do not allow to create inconsistent projection"}
         }
     },
 };
