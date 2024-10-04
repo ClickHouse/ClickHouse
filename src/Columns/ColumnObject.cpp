@@ -300,6 +300,19 @@ void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
     }
 }
 
+void ColumnObject::setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths)
+{
+    if (paths.size() > max_dynamic_paths)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set dynamic paths to Object column, the number of paths ({}) exceeds the limit ({})", paths.size(), max_dynamic_paths);
+
+    for (const auto & [path, column] : paths)
+    {
+        auto it = dynamic_paths.emplace(path, column).first;
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
+        sorted_dynamic_paths.insert(it->first);
+    }
+}
+
 void ColumnObject::insert(const Field & x)
 {
     const auto & object = x.safeGet<Object>();
