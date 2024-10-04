@@ -24,13 +24,13 @@ int main(int argc, char ** argv)
 
     writeCString("--- first ---\n", out);
     {
-        LimitReadBuffer limit_in(in, limit, /* trow_exception */ false, /* exact_limit */ {});
+        LimitReadBuffer limit_in(in, {.read_no_more=limit});
         copyData(limit_in, out);
     }
 
     writeCString("\n--- second ---\n", out);
     {
-        LimitReadBuffer limit_in(in, limit, /* trow_exception */ false, /* exact_limit */ {});
+        LimitReadBuffer limit_in( in,{.read_no_more=limit});
         copyData(limit_in, out);
     }
 
