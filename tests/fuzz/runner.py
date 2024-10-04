@@ -63,6 +63,7 @@ def kill_fuzzer(fuzzer: str):
         for line in out.splitlines():
             if fuzzer.encode("utf-8") in line:
                 pid = int(line.split(None, 1)[0])
+                logging.info("Killing fuzzer %s, pid %d", fuzzer, pid)
                 os.kill(pid, signal.SIGKILL)
 
 
