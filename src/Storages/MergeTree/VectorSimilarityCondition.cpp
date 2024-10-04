@@ -58,7 +58,6 @@ VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(const
 
 VectorSimilarityCondition::VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context)
     : block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context))
-    , index_granularity(context->getMergeTreeSettings().index_granularity)
     , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
     , index_is_useful(checkQueryStructure(query_info))
 {}
