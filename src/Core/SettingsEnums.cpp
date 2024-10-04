@@ -178,7 +178,8 @@ IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUME
      {"rebuild", LightweightMutationProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", DeduplicateMergeProjectionMode::THROW},
+    {{"ignore", DeduplicateMergeProjectionMode::IGNORE},
+     {"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
