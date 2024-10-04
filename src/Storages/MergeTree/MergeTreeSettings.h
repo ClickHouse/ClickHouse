@@ -69,6 +69,7 @@ struct MergeTreeSettings
     void applyChanges(const SettingsChanges & changes);
     void applyChange(const SettingChange & change);
     std::vector<std::string_view> getAllRegisteredNames() const;
+    void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);

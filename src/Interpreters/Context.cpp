@@ -238,6 +238,7 @@ namespace Setting
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
+    extern const SettingsString compatibility;
 }
 
 namespace MergeTreeSetting
@@ -4654,6 +4655,11 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respect compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
     }
@@ -4669,6 +4675,11 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respect compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
         shared->replicated_merge_tree_settings.emplace(mt_settings);
