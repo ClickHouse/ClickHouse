@@ -541,15 +541,40 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
 };
 
-
-const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory()
+static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> merge_tree_settings_changes_history_initializer =
 {
-    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history;
+    {"24.12",
+        {
+        }
+    },
+    {"24.11",
+        {
+        }
+    },
+    {"24.10",
+        {
+        }
+    },
+    {"24.9",
+        {
+        }
+    },
+    {"24.8",
+        {
+            {"deduplicate_merge_projection_mode", "ignore", "throw", "Do not allow to create inconsistent projection"}
+        }
+    },
+};
 
-    static std::once_flag initialized_flag;
-    std::call_once(initialized_flag, []()
+static void initSettingsChangesHistory(
+    std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & settings_changes_history,
+    std::once_flag & initialized_flag,
+    std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> & initializer
+)
+{
+    std::call_once(initialized_flag, [&]()
     {
-        for (const auto & setting_change : settings_changes_history_initializer)
+        for (const auto & setting_change : initializer)
         {
             /// Disallow duplicate keys in the settings changes history. Example:
             ///     {"21.2", {{"some_setting_1", false, true, "[...]"}}},
@@ -562,7 +587,24 @@ const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & get
             settings_changes_history[setting_change.first] = setting_change.second;
         }
     });
+}
+
+const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory()
+{
+    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history;
+    static std::once_flag initialized_flag;
+    initSettingsChangesHistory(settings_changes_history, initialized_flag, settings_changes_history_initializer);
 
     return settings_changes_history;
 }
+
+const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getMergeTreeSettingsChangesHistory()
+{
+    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> merge_tree_settings_changes_history;
+    static std::once_flag initialized_flag;
+    initSettingsChangesHistory(merge_tree_settings_changes_history, initialized_flag, merge_tree_settings_changes_history_initializer);
+
+    return merge_tree_settings_changes_history;
+}
+
 }
