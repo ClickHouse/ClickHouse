@@ -275,6 +275,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 
+    void applyCompatibilitySetting(const String & compatibility_value);
+
     static bool isReadonlySetting(const String & name);
     static bool isPartFormatSetting(const String & name);
 
