@@ -513,12 +513,6 @@ static void validateUpdateColumns(
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
         }
-        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
-        {
-            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
-                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
-        }
     }
 }
 
@@ -863,7 +857,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (materialize_ttl_recalculate_only)
+            bool suitable_for_ttl_optimization = source.getMergeTreeData()->getSettings()->ttl_only_drop_parts
+                && metadata_snapshot->hasOnlyRowsTTL();
+
+            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -1359,6 +1356,21 @@ void MutationsInterpreter::validate()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                     "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
+        }
+    }
+
+    const auto & storage_columns = source.getStorageSnapshot(metadata_snapshot, context)->metadata->getColumns();
+    for (const auto & command : commands)
+    {
+        for (const auto & [column_name, _] : command.column_to_update_expression)
+        {
+            auto column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
+            if (column && column->type->hasDynamicSubcolumns())
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
+                                backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
+            }
         }
     }
 

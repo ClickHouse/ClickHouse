@@ -750,7 +750,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                                              "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, /*rename_in_transaction=*/ true);
+
+    /// Explicitly rename part while still holding the lock for tmp folder to avoid cleanup
+    out_transaction.renameParts();
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())
@@ -780,7 +783,14 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}", new_data_part->name, replaced_parts.size(), parts.size());
+        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}\n"
+            "Replaced parts:\n{}\n"
+            "Parts:\n{}\n",
+            new_data_part->name,
+            replaced_parts.size(),
+            parts.size(),
+            fmt::join(getPartsNames(replaced_parts), "\n"),
+            fmt::join(getPartsNames(parts), "\n"));
     }
     else
     {

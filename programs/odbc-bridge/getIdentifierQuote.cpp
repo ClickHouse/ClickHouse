@@ -38,7 +38,7 @@ IdentifierQuotingStyle getQuotingStyle(nanodbc::ConnectionHolderPtr connection)
 {
     auto identifier_quote = getIdentifierQuote(connection);
     if (identifier_quote.empty())
-        return IdentifierQuotingStyle::None;
+        return IdentifierQuotingStyle::Backticks;
     else if (identifier_quote[0] == '`')
         return IdentifierQuotingStyle::Backticks;
     else if (identifier_quote[0] == '"')

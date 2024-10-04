@@ -1,7 +1,7 @@
 #include <Core/SettingsFields.h>
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -262,7 +262,7 @@ void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
 
 UInt64 SettingFieldMaxThreads::getAuto()
 {
-    return getNumberOfPhysicalCPUCores();
+    return getNumberOfCPUCoresToUse();
 }
 
 namespace

@@ -33,6 +33,8 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"Live", static_cast<Int8>(ViewType::LIVE)},
         {"Window", static_cast<Int8>(ViewType::WINDOW)}});
 
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
@@ -53,7 +55,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of written rows."},
         {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number of written bytes."},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>(), "The maximum difference between the amount of allocated and freed memory in context of this view."},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents that measure different metrics. The description of them could be found in the table system.events."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents that measure different metrics. The description of them could be found in the table system.events."},
 
         {"status", std::move(view_status_datatype), "Status of the view. Values: "
             "'QueryStart' = 1 — Successful start the view execution. Should not appear, "
