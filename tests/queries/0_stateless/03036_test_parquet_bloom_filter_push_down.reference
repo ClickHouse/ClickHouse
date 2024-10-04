@@ -214,7 +214,7 @@ Bloom filter for ipv4 column. BF is on
     "bytes_read": 4005
   }
 }
-Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') is not supported. Should read everything
+Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation.
 {
   "data": [
     {
@@ -223,11 +223,11 @@ Bloom filter for ipv4 column. BF is on, but toIPv4(ipv4) = toIPv4('0.0.1.143') i
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 1000,
-    "bytes_read": 47419
+    "rows_read": 72,
+    "bytes_read": 4005
   }
 }
-Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143')) is not supported. Should read everything
+Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation.
 {
   "data": [
     {
@@ -236,8 +236,8 @@ Bloom filter for ipv4 column. BF is on, but (toIPv4(ipv4)) in (toIPv4('0.0.1.143
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 1000,
-    "bytes_read": 47419
+    "rows_read": 72,
+    "bytes_read": 4005
   }
 }
 BF off for parquet uint64 logical type. Should read everything
