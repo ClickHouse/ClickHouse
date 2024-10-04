@@ -1783,9 +1783,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
 
-        std::mutex loading_mutex;
-
-        runner([&expected_parts, &unexpected_disk_parts, &disk_parts, &loading_mutex, this, disk_ptr]()
+        runner([&expected_parts, &unexpected_disk_parts, &disk_parts, this, disk_ptr]()
         {
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
@@ -1797,7 +1795,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
                 {
-                    std::lock_guard lock(loading_mutex);
                     if (expected_parts && !expected_parts->contains(it->name()))
                         unexpected_disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
                     else
