@@ -495,6 +495,7 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
+Синонимы: `time_bucket`, `date_bin`.
 
 Вторая перегрузка эмулирует функцию `time_bucket()` из TimescaleDB, и функцию `date_bin()` из PostgreSQL, например:
 
@@ -509,8 +510,6 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 │      2023-01-01 14:44:30 │
 └──────────────────────────┘
 ```
-
-Синонимы: `time_bucket`, `date_bin`.
 
 **См. также**
 - [date_trunc](#date_trunc)

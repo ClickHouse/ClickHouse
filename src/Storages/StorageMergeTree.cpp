@@ -400,15 +400,16 @@ void StorageMergeTree::alter(
 
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 
+            {
+                /// Reset Object columns, because column of type
+                /// Object may be added or dropped by alter.
+                auto parts_lock = lockParts();
+                resetObjectColumnsFromActiveParts(parts_lock);
+                resetSerializationHints(parts_lock);
+            }
+
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
-        }
-
-        {
-            /// Reset Object columns, because column of type
-            /// Object may be added or dropped by alter.
-            auto parts_lock = lockParts();
-            resetObjectColumnsFromActiveParts(parts_lock);
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
@@ -1587,8 +1588,9 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
+    const auto mode = getSettings()->deduplicate_merge_projection_mode;
     if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
-        && getSettings()->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+        && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
                     "User should drop all the projections manually before running the query, "

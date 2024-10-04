@@ -648,7 +648,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     for (const auto & projection : projections)
     {
-        if (merge_may_reduce_rows)
+        /// Checking IGNORE here is just for compatibility.
+        if (merge_may_reduce_rows && mode != DeduplicateMergeProjectionMode::IGNORE)
         {
             global_ctx->projections_to_rebuild.push_back(&projection);
             continue;
@@ -1008,7 +1009,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
 
             auto indices_expression_dag = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
-            indices_expression_dag.addMaterializingOutputActions(); /// Const columns cannot be written without materialization.
+            indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
                 merge_column_query_plan.getCurrentDataStream(),
                 std::move(indices_expression_dag));
@@ -1730,7 +1731,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (!global_ctx->merging_skip_indexes.empty())
     {
         auto indices_expression_dag = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
-        indices_expression_dag.addMaterializingOutputActions(); /// Const columns cannot be written without materialization.
+        indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentDataStream(),
             std::move(indices_expression_dag));

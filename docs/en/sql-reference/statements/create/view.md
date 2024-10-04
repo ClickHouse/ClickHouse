@@ -135,15 +135,15 @@ To change SQL security for an existing view, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Examples sql security
+### Examples
 ```sql
-CREATE test_view
+CREATE VIEW test_view
 DEFINER = alice SQL SECURITY DEFINER
 AS SELECT ...
 ```
 
 ```sql
-CREATE test_view
+CREATE VIEW test_view
 SQL SECURITY INVOKER
 AS SELECT ...
 ```
