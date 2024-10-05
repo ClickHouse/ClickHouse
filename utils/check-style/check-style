@@ -115,6 +115,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
+    ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
     ProfileEvents::ThreadIdToCountersSnapshot
@@ -354,6 +355,7 @@ std_cerr_cout_excludes=(
     _fuzzer
     # OK
     src/Common/ProgressIndication.cpp
+    src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
     src/Common/HashTable/HashTable.h
     # SensitiveDataMasker::printStats()
