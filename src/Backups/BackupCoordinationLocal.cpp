@@ -1,4 +1,6 @@
 #include <Backups/BackupCoordinationLocal.h>
+
+#include <Backups/BackupLocalConcurrencyChecker.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -8,29 +10,37 @@
 namespace DB
 {
 
-BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_)
-    : log(getLogger("BackupCoordinationLocal")), file_infos(plain_backup_)
+BackupCoordinationLocal::BackupCoordinationLocal(
+    bool is_plain_backup_, BackupLocalConcurrencyChecker & concurrency_checker_, bool allow_concurrent_backup_)
+    : log(getLogger("BackupCoordinationLocal"))
+    , concurrency_check(concurrency_checker_.checkLocal(/* is_restore = */ false, allow_concurrent_backup_))
+    , file_infos(is_plain_backup_)
 {
 }
 
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStage(const String &, const String &)
+void BackupCoordinationLocal::finish()
 {
+    std::lock_guard lock{concurrency_check_mutex};
+    concurrency_check.reset();
 }
 
-void BackupCoordinationLocal::setError(const Exception &)
+bool BackupCoordinationLocal::tryFinish() noexcept
 {
+    finish();
+    return true;
 }
 
-Strings BackupCoordinationLocal::waitForStage(const String &)
+void BackupCoordinationLocal::cleanup()
 {
-    return {};
+    finish();
 }
 
-Strings BackupCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
+bool BackupCoordinationLocal::tryCleanup() noexcept
 {
-    return {};
+    cleanup();
+    return true;
 }
 
 void BackupCoordinationLocal::addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
@@ -133,17 +143,6 @@ bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)
     std::lock_guard lock{writing_files_mutex};
     /// Return false if this function was already called with this `data_file_index`.
     return writing_files.emplace(data_file_index).second;
-}
-
-
-bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
-{
-    if (num_active_backups > 1)
-    {
-        LOG_WARNING(log, "Found concurrent backups: num_active_backups={}", num_active_backups);
-        return true;
-    }
-    return false;
 }
 
 }

@@ -1,7 +1,9 @@
 #include <Backups/BackupCoordinationRemote.h>
+
 #include <Backups/BackupCoordinationStage.h>
-#include <Backups/RestoreCoordinationRemote.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Backups/BackupLocalConcurrencyChecker.h>
+#include <Backups/RestoreCoordinationRemote.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Parsers/formatAST.h>
@@ -13,112 +15,77 @@
 namespace DB
 {
 
-namespace Stage = BackupCoordinationStage;
-
 RestoreCoordinationRemote::RestoreCoordinationRemote(
-    zkutil::GetZooKeeper get_zookeeper_,
+    const UUID & restore_uuid_,
     const String & root_zookeeper_path_,
-    const RestoreKeeperSettings & keeper_settings_,
-    const String & restore_uuid_,
-    const Strings & all_hosts_,
+    zkutil::GetZooKeeper get_zookeeper_,
+    const BackupKeeperSettings & keeper_settings_,
     const String & current_host_,
-    bool is_internal_,
+    const Strings & all_hosts_,
+    BackupLocalConcurrencyChecker & concurrency_checker_,
+    bool allow_concurrent_restore_,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     QueryStatusPtr process_list_element_)
     : get_zookeeper(get_zookeeper_)
     , root_zookeeper_path(root_zookeeper_path_)
     , keeper_settings(keeper_settings_)
     , restore_uuid(restore_uuid_)
-    , zookeeper_path(root_zookeeper_path_ + "/restore-" + restore_uuid_)
+    , zookeeper_path(root_zookeeper_path_ + "/restore-" + toString(restore_uuid_))
     , all_hosts(all_hosts_)
     , current_host(current_host_)
-    , current_host_index(BackupCoordinationRemote::findCurrentHostIndex(all_hosts, current_host))
-    , is_internal(is_internal_)
+    , current_host_index(BackupCoordinationRemote::findCurrentHostIndex(current_host, all_hosts))
     , log(getLogger("RestoreCoordinationRemote"))
-    , with_retries(
-        log,
-        get_zookeeper_,
-        keeper_settings,
-        process_list_element_,
-        [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
-        (WithRetries::FaultyKeeper & zk)
-        {
-            /// Recreate this ephemeral node to signal that we are alive.
-            if (my_is_internal)
-            {
-                String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
-
-                /// Delete the ephemeral node from the previous connection so we don't have to wait for keeper to do it automatically.
-                zk->tryRemove(alive_node_path);
-
-                zk->createAncestors(alive_node_path);
-                zk->create(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-            }
-        })
+    , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_)
+    , concurrency_check(concurrency_checker_.checkRemote(/* is_restore = */ true, restore_uuid_, allow_concurrent_restore_))
+    , stage_sync(/* is_restore = */ true, fs::path{zookeeper_path} / "stage", current_host, allow_concurrent_restore_, with_retries, schedule_, process_list_element_, log)
 {
+    chassert(std::find(all_hosts.begin(), all_hosts.end(), kInitiator) == all_hosts.end());
     createRootNodes();
-
-    stage_sync.emplace(
-        zookeeper_path,
-        with_retries,
-        log);
 }
 
 RestoreCoordinationRemote::~RestoreCoordinationRemote()
 {
-    try
-    {
-        if (!is_internal)
-            removeAllNodes();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// tryCleanupImpl() must not throw any exceptions.
+    tryCleanupImpl();
 }
 
 void RestoreCoordinationRemote::createRootNodes()
 {
-    auto holder = with_retries.createRetriesControlHolder("createRootNodes");
+    auto holder = with_retries.createRetriesControlHolder("createRootNodes", {.initialization = true});
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zk);
-            zk->createAncestors(zookeeper_path);
 
-            Coordination::Requests ops;
-            Coordination::Responses responses;
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_databases_tables_acquired", "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_tables_data_acquired", "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access_storages_acquired", "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects_acquired", "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/keeper_map_tables", "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/table_uuids", "", zkutil::CreateMode::Persistent));
-            zk->tryMulti(ops, responses);
+            zk->createAncestors(zookeeper_path);
+            zk->createIfNotExists(zookeeper_path, "");
+            zk->createIfNotExists(zookeeper_path + "/repl_databases_tables_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
+            zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
         });
 }
 
 void RestoreCoordinationRemote::setStage(const String & new_stage, const String & message)
 {
-    if (is_internal)
-        stage_sync->set(current_host, new_stage, message);
-    else
-        stage_sync->set(current_host, new_stage, /* message */ "", /* all_hosts */ true);
+    stage_sync.setStage(new_stage, message);
 }
 
 void RestoreCoordinationRemote::setError(const Exception & exception)
 {
-    stage_sync->setError(current_host, exception);
+    stage_sync.setError(exception);
 }
 
-Strings RestoreCoordinationRemote::waitForStage(const String & stage_to_wait)
+Strings RestoreCoordinationRemote::waitForStage(const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout)
 {
-    return stage_sync->wait(all_hosts, stage_to_wait);
+    return stage_sync.waitHostsReachStage(stage_to_wait, all_hosts, timeout);
 }
 
-Strings RestoreCoordinationRemote::waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout)
+std::chrono::seconds RestoreCoordinationRemote::getOnClusterInitializationTimeout() const
 {
-    return stage_sync->waitFor(all_hosts, stage_to_wait, timeout);
+    return keeper_settings.on_cluster_initialization_timeout;
 }
 
 bool RestoreCoordinationRemote::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -233,7 +200,7 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
             }
 
             /// We need to check who created that node
-            result =  zk->get(path) == toString(current_host_index);
+            result = zk->get(path) == toString(current_host_index);
         });
     return result;
 }
@@ -298,82 +265,93 @@ void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_que
         });
 }
 
-void RestoreCoordinationRemote::removeAllNodes()
+void RestoreCoordinationRemote::cleanup()
 {
-    /// Usually this function is called by the initiator when a restore operation is complete so we don't need the coordination anymore.
-    ///
-    /// However there can be a rare situation when this function is called after an error occurs on the initiator of a query
-    /// while some hosts are still restoring something. Removing all the nodes will remove the parent node of the restore coordination
-    /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some part
-    /// of their restore work before that.
+    if (current_host == kInitiator)
+        stage_sync.waitHostsFinish(all_hosts);
 
-    auto holder = with_retries.createRetriesControlHolder("removeAllNodes");
-    holder.retries_ctl.retryLoop(
-        [&, &zk = holder.faulty_zookeeper]()
-        {
-            with_retries.renewZooKeeper(zk);
-            zk->removeRecursive(zookeeper_path);
-        });
+    stage_sync.finish();
+
+    if (current_host == kInitiator)
+        removeAllNodes();
+
+    std::lock_guard lock{mutex};
+    concurrency_check.reset();
 }
 
-bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> &) const
+bool RestoreCoordinationRemote::tryCleanup() noexcept
 {
-    /// If its internal concurrency will be checked for the base restore
-    if (is_internal)
+    return tryCleanupImpl();
+}
+
+bool RestoreCoordinationRemote::tryCleanupImpl() noexcept
+{
+    if ((current_host == kInitiator) && !stage_sync.tryWaitHostsFinish(all_hosts))
         return false;
 
-    bool result = false;
-    std::string path = zookeeper_path + "/stage";
+    if (!stage_sync.tryFinish())
+        return false;
 
-    auto holder = with_retries.createRetriesControlHolder("createRootNodes");
-    holder.retries_ctl.retryLoop(
-        [&, &zk = holder.faulty_zookeeper]()
+    if ((current_host == kInitiator) && !tryRemoveAllNodes())
+        return false;
+
+    std::lock_guard lock{mutex};
+    concurrency_check.reset();
+    return true;
+}
+
+void RestoreCoordinationRemote::removeAllNodes()
+{
+    if (all_nodes_removed)
+        return;
+
+    chassert(!failed_to_remove_all_nodes);
+    try
+    {
+        LOG_TRACE(log, "Removing nodes from ZooKeeper");
+        auto holder = with_retries.createRetriesControlHolder("removeAllNodes");
+        holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
-
-            if (! zk->exists(root_zookeeper_path))
-                zk->createAncestors(root_zookeeper_path);
-
-            for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
-            {
-                Coordination::Stat stat;
-                zk->get(root_zookeeper_path, &stat);
-                Strings existing_restore_paths = zk->getChildren(root_zookeeper_path);
-                for (const auto & existing_restore_path : existing_restore_paths)
-                {
-                    if (startsWith(existing_restore_path, "backup-"))
-                        continue;
-
-                    String existing_restore_uuid = existing_restore_path;
-                    existing_restore_uuid.erase(0, String("restore-").size());
-
-                    if (existing_restore_uuid == toString(restore_uuid))
-                        continue;
-
-                    String status;
-                    if (zk->tryGet(root_zookeeper_path + "/" + existing_restore_path + "/stage", status))
-                    {
-                        /// Check if some other restore is in progress
-                        if (status == Stage::SCHEDULED_TO_START)
-                        {
-                            LOG_WARNING(log, "Found a concurrent restore: {}, current restore: {}", existing_restore_uuid, toString(restore_uuid));
-                            result = true;
-                            return;
-                        }
-                    }
-                }
-
-                zk->createIfNotExists(path, "");
-                auto code = zk->trySet(path, Stage::SCHEDULED_TO_START, stat.version);
-                if (code == Coordination::Error::ZOK)
-                    break;
-                bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
-                if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                    throw zkutil::KeeperException::fromPath(code, path);
-            }
+            with_retries.renewZooKeeper(zookeeper);
+            zookeeper->removeRecursive(zookeeper_path);
         });
 
-    return result;
+        all_nodes_removed = true;
+    }
+    catch (...)
+    {
+        failed_to_remove_all_nodes = true;
+        throw;
+    }
+}
+
+bool RestoreCoordinationRemote::tryRemoveAllNodes() noexcept
+{
+    if (all_nodes_removed)
+        return true;
+
+    if (failed_to_remove_all_nodes)
+        return false;
+
+    try
+    {
+        LOG_TRACE(log, "Removing nodes from ZooKeeper");
+        auto holder = with_retries.createRetriesControlHolder("tryRemoveAllNodes", {.error_handling = true});
+        holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zookeeper);
+            zookeeper->removeRecursive(zookeeper_path);
+        });
+
+        all_nodes_removed = true;
+        return true;
+    }
+    catch (...)
+    {
+        /// retryLoop() has already logged this exception.
+        failed_to_remove_all_nodes = true;
+        return false;
+    }
 }
 
 }

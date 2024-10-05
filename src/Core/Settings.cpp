@@ -516,14 +516,15 @@ namespace ErrorCodes
     M(UInt64, max_temporary_data_on_disk_size_for_user, 0, "The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries. Zero means unlimited.", 0)\
     M(UInt64, max_temporary_data_on_disk_size_for_query, 0, "The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.", 0)\
     \
-    M(UInt64, backup_restore_keeper_max_retries, 20, "Max retries for keeper operations during backup or restore", 0) \
+    M(UInt64, backup_restore_keeper_max_retries, 1000, "Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation. Should be big enough so the whole operation won't fail because of a temporary [Zoo]Keeper failure", 0) \
     M(UInt64, backup_restore_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for [Zoo]Keeper operations during backup or restore", 0) \
     M(UInt64, backup_restore_keeper_retry_max_backoff_ms, 5000, "Max backoff timeout for [Zoo]Keeper operations during backup or restore", 0) \
+    M(UInt64, backup_restore_failure_after_host_disconnected_for_seconds, 3600, "If a host during BACKUP ON CLUSTER or RESTORE ON CLUSTER doesn't recreate its 'alive' node in ZooKeeper for this amount of time then the whole backup or restore is considered as failed. Should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure. Set to zero to disable", 0) \
+    M(UInt64, backup_restore_keeper_value_max_size, 1048576, "Maximum size of data of a [Zoo]Keeper's node during backup", 0) \
+    M(UInt64, backup_restore_batch_size_for_keeper_multi, 1000, "Maximum size of batch for multi request to [Zoo]Keeper during backup or restore", 0) \
+    M(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, "Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore", 0) \
     M(Float,  backup_restore_keeper_fault_injection_probability, 0.0f, "Approximate probability of failure for a keeper request during backup or restore. Valid value is in interval [0.0f, 1.0f]", 0) \
     M(UInt64, backup_restore_keeper_fault_injection_seed, 0, "0 - random seed, otherwise the setting value", 0) \
-    M(UInt64, backup_restore_keeper_value_max_size, 1048576, "Maximum size of data of a [Zoo]Keeper's node during backup", 0) \
-    M(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, "Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore", 0) \
-    M(UInt64, backup_restore_batch_size_for_keeper_multi, 1000, "Maximum size of batch for multi request to [Zoo]Keeper during backup or restore", 0) \
     M(UInt64, backup_restore_s3_retry_attempts, 1000, "Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.", 0) \
     M(UInt64, max_backup_bandwidth, 0, "The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.", 0) \
     \

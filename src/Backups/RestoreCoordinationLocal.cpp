@@ -1,4 +1,6 @@
 #include <Backups/RestoreCoordinationLocal.h>
+
+#include <Backups/BackupLocalConcurrencyChecker.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Common/logger_useful.h>
@@ -7,28 +9,24 @@
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() : log(getLogger("RestoreCoordinationLocal"))
+RestoreCoordinationLocal::RestoreCoordinationLocal(BackupLocalConcurrencyChecker & concurrency_checker_, bool allow_concurrent_restore_)
+    : log(getLogger("RestoreCoordinationLocal"))
+    , concurrency_check(concurrency_checker_.checkLocal(/* is_restore = */ true, allow_concurrent_restore_))
 {
 }
 
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStage(const String &, const String &)
+void RestoreCoordinationLocal::cleanup()
 {
+    std::lock_guard lock{mutex};
+    concurrency_check.reset();
 }
 
-void RestoreCoordinationLocal::setError(const Exception &)
+bool RestoreCoordinationLocal::tryCleanup() noexcept
 {
-}
-
-Strings RestoreCoordinationLocal::waitForStage(const String &)
-{
-    return {};
-}
-
-Strings RestoreCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
-{
-    return {};
+    cleanup();
+    return true;
 }
 
 bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -63,7 +61,7 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
 {
     String query_str = serializeAST(create_query);
 
-    auto find_in_map = [&]
+    auto find_in_map = [&]() TSA_REQUIRES(mutex)
     {
         auto it = create_query_uuids.find(query_str);
         if (it != create_query_uuids.end())
@@ -89,16 +87,6 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
             return;
         create_query_uuids[query_str] = new_uuids;
     }
-}
-
-bool RestoreCoordinationLocal::hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const
-{
-    if (num_active_restores > 1)
-    {
-        LOG_WARNING(log, "Found concurrent backups: num_active_restores={}", num_active_restores);
-        return true;
-    }
-    return false;
 }
 
 }

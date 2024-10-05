@@ -77,6 +77,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_secure_identifiers", false, false, "New setting."},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
+            {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
+            {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
         }
     },
     {"24.9",

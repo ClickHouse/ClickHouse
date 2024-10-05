@@ -4433,6 +4433,10 @@ class ClickHouseInstance:
             ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
 
+    def rename_config(self, path_to_config, new_filename):
+        dest_path = os.path.join(os.path.dirname(path_to_config), new_filename)
+        self.exec_in_container(["bash", "-c", f"mv '{path_to_config}' '{dest_path}'"])
+
     def create_dir(self):
         """Create the instance directory and all the needed files there."""
 

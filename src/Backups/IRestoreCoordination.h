@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <chrono>
 
 
 namespace DB
@@ -18,13 +19,16 @@ class IRestoreCoordination
 public:
     virtual ~IRestoreCoordination() = default;
 
+    /// Cleans up all external data (e.g. nodes in ZooKeeper) this coordination is using.
+    virtual void cleanup() = 0;
+    virtual bool tryCleanup() noexcept = 0;
+
     /// Sets the current stage and waits for other hosts to come to this stage too.
     virtual void setStage(const String & new_stage, const String & message) = 0;
     virtual void setError(const Exception & exception) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
-
-    static constexpr const char * kErrorStatus = "error";
+    virtual Strings waitForStage(const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) = 0;
+    Strings waitForStage(const String & stage_to_wait) { return waitForStage(stage_to_wait, {}); }
+    virtual std::chrono::seconds getOnClusterInitializationTimeout() const = 0;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;
@@ -48,10 +52,6 @@ public:
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     virtual void generateUUIDForTable(ASTCreateQuery & create_query) = 0;
-
-    /// This function is used to check if concurrent restores are running
-    /// other than the restore passed to the function
-    virtual bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const = 0;
 };
 
 }

@@ -889,7 +889,7 @@ private:
             }
         };
 
-        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_keeper_multiread;
+        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_multiread;
 
         auto keys_it = data_children.begin();
         while (keys_it != data_children.end())
@@ -941,9 +941,8 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
-            WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
-            backup_entries_collector.getContext()->getProcessListElement(),
-            [](WithRetries::FaultyKeeper &) {}
+            BackupKeeperSettings::fromContext(backup_entries_collector.getContext()),
+            backup_entries_collector.getContext()->getProcessListElement()
         );
 
         backup_entries_collector.addBackupEntries(
@@ -972,9 +971,8 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     (
         getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
-        WithRetries::KeeperSettings::fromContext(restorer.getContext()),
-        restorer.getContext()->getProcessListElement(),
-        [](WithRetries::FaultyKeeper &) {}
+        BackupKeeperSettings::fromContext(restorer.getContext()),
+        restorer.getContext()->getProcessListElement()
     );
 
     bool allow_non_empty_tables = restorer.isNonEmptyTableAllowed();
@@ -1037,7 +1035,7 @@ void StorageKeeperMap::restoreDataImpl(
     CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
     fs::path data_path_fs(zk_data_path);
 
-    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_keeper_multi;
+    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
 
     Coordination::Requests create_requests;
     const auto flush_create_requests = [&]

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupOperationInfo.h>
+#include <Backups/BackupLocalConcurrencyChecker.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
@@ -23,6 +24,7 @@ using BackupMutablePtr = std::shared_ptr<IBackup>;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
+class BackupLocalConcurrencyChecker;
 using DataRestoreTasks = std::vector<std::function<void()>>;
 struct ReadSettings;
 class BackupLog;
@@ -31,6 +33,8 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class ProcessList;
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 
 /// Manager of backups and restores: executes backups and restores' threads in the background.
@@ -47,18 +51,18 @@ public:
     /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
     /// For asynchronous operations the function throws no exceptions on failure usually,
     /// call getInfo() on a returned operation id to check for errors.
-    BackupOperationID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
+    std::pair<BackupOperationID, BackupStatus> start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
 
     /// Waits until the specified backup or restore operation finishes or stops.
     /// The function returns immediately if the operation is already finished.
-    void wait(const BackupOperationID & backup_or_restore_id, bool rethrow_exception = true);
+    BackupStatus wait(const BackupOperationID & backup_or_restore_id, bool rethrow_exception = true);
 
     /// Waits until all running backup and restore operations finish or stop.
     void waitAll();
 
     /// Cancels the specified backup or restore operation.
     /// The function does nothing if this operation has already finished.
-    void cancel(const BackupOperationID & backup_or_restore_id, bool wait_ = true);
+    BackupStatus cancel(const BackupOperationID & backup_or_restore_id, bool wait_ = true);
 
     /// Cancels all running backup and restore operations.
     void cancelAll(bool wait_ = true);
@@ -67,18 +71,20 @@ public:
     std::vector<BackupOperationInfo> getAllInfos() const;
 
 private:
-    BackupOperationID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
+    std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
+    struct BackupStarter;
+
+    BackupMutablePtr openBackupForWriting(const BackupInfo & backup_info, const BackupSettings & backup_settings, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context) const;
 
     void doBackup(
-        BackupMutablePtr & backup,
+        BackupMutablePtr backup,
         const std::shared_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const String & backup_name_for_logging,
-        const BackupInfo & backup_info,
-        BackupSettings backup_settings,
+        const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
-        const ContextPtr & context,
-        ContextMutablePtr mutable_context);
+        const ClusterPtr & cluster,
+        ContextMutablePtr context);
 
     /// Builds file infos for specified backup entries.
     void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element);
@@ -86,7 +92,10 @@ private:
     /// Write backup entries to an opened backup.
     void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal, QueryStatusPtr process_list_element);
 
-    BackupOperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
+    std::pair<BackupOperationID, BackupStatus> startRestoring(const ASTPtr & query, ContextMutablePtr context);
+    struct RestoreStarter;
+
+    BackupPtr openBackupForReading(const BackupInfo & backup_info, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
     void doRestore(
         const std::shared_ptr<ASTBackupQuery> & restore_query,
@@ -95,7 +104,11 @@ private:
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
+        const ClusterPtr & cluster,
         ContextMutablePtr context);
+
+    std::shared_ptr<IBackupCoordination> makeBackupCoordination(bool remote, const BackupSettings & backup_settings, const ContextPtr & context) const;
+    std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(bool remote, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
     /// Run data restoring tasks which insert data to tables.
     void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
@@ -139,6 +152,8 @@ private:
 
     std::shared_ptr<BackupLog> backup_log;
     ProcessList & process_list;
+
+    std::unique_ptr<BackupLocalConcurrencyChecker> concurrency_checker;
 };
 
 }

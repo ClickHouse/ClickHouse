@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <chrono>
 
 
 namespace DB
@@ -20,11 +21,20 @@ class IBackupCoordination
 public:
     virtual ~IBackupCoordination() = default;
 
+    /// Sets that the current host finished its work.
+    virtual void finish() = 0;
+    virtual bool tryFinish() noexcept = 0;
+
+    /// Cleans up all external data (e.g. nodes in ZooKeeper) this coordination is using.
+    virtual void cleanup() = 0;
+    virtual bool tryCleanup() noexcept = 0;
+
     /// Sets the current stage and waits for other hosts to come to this stage too.
     virtual void setStage(const String & new_stage, const String & message) = 0;
     virtual void setError(const Exception & exception) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) = 0;
+    Strings waitForStage(const String & stage_to_wait) { return waitForStage(stage_to_wait, {}); }
+    virtual std::chrono::seconds getOnClusterInitializationTimeout() const = 0;
 
     struct PartNameAndChecksum
     {
@@ -86,10 +96,6 @@ public:
 
     /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
     virtual bool startWritingFile(size_t data_file_index) = 0;
-
-    /// This function is used to check if concurrent backups are running
-    /// other than the backup passed to the function
-    virtual bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const = 0;
 };
 
 }

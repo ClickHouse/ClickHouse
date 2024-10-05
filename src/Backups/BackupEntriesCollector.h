@@ -111,10 +111,6 @@ private:
     ContextPtr context;
     QueryStatusPtr process_list_element;
 
-    /// The time a BACKUP ON CLUSTER or RESTORE ON CLUSTER command will wait until all the nodes receive the BACKUP (or RESTORE) query and start working.
-    /// This setting is similar to `distributed_ddl_task_timeout`.
-    const std::chrono::milliseconds on_cluster_first_sync_timeout;
-
     /// The time a BACKUP command will try to collect the metadata of tables & databases.
     const std::chrono::milliseconds collect_metadata_timeout;
 

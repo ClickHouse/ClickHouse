@@ -1,7 +1,9 @@
 <clickhouse>
     <backups>
-        <on_cluster_first_sync_timeout>1000</on_cluster_first_sync_timeout>
+        <on_cluster_initialization_timeout_sec>2</on_cluster_initialization_timeout_sec>
+        <on_cluster_error_handling_timeout_sec>2</on_cluster_error_handling_timeout_sec>
         <consistent_metadata_snapshot_timeout>10000</consistent_metadata_snapshot_timeout>
         <create_table_timeout>3000</create_table_timeout>
+        <sync_period_ms>1000</sync_period_ms>
     </backups>
 </clickhouse>
