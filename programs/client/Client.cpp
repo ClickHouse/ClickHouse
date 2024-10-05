@@ -774,7 +774,7 @@ bool Client::processWithFuzzing(const String & full_query)
         else
             this_query_runs = 1;
     }
-    else if (const auto * insert = orig_ast->as<ASTInsertQuery>())
+    else if (const auto * /*insert*/ _ = orig_ast->as<ASTInsertQuery>())
     {
         this_query_runs = 1;
         queries_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
