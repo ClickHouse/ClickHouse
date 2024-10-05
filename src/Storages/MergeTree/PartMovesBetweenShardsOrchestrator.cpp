@@ -10,6 +10,12 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 part_moves_between_shards_delay_seconds;
+    extern const MergeTreeSettingsUInt64 part_moves_between_shards_enable;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -30,7 +36,7 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
 
 void PartMovesBetweenShardsOrchestrator::run()
 {
-    if (!storage.getSettings()->part_moves_between_shards_enable)
+    if (!(*storage.getSettings())[MergeTreeSetting::part_moves_between_shards_enable])
         return;
 
     if (need_stop)
@@ -526,7 +532,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             }
             else
             {
-                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
+                std::this_thread::sleep_for(std::chrono::seconds((*storage.getSettings())[MergeTreeSetting::part_moves_between_shards_delay_seconds]));
                 entry.state = EntryState::SOURCE_DROP;
                 return entry;
             }
@@ -598,7 +604,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
             else
             {
-                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
+                std::this_thread::sleep_for(std::chrono::seconds((*storage.getSettings())[MergeTreeSetting::part_moves_between_shards_delay_seconds]));
                 entry.state = EntryState::REMOVE_UUID_PIN;
                 return entry;
             }

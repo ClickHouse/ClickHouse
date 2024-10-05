@@ -218,6 +218,28 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 }
 
+void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
+{
+    IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
+
+    if (!scope.context)
+        scope.context = context;
+
+    auto node_type = node->getNodeType();
+
+    if (table_expression && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
+    {
+        scope.expression_join_tree_node = table_expression;
+        validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
+        initializeTableExpressionData(scope.expression_join_tree_node, scope);
+    }
+
+    if (node_type == QueryTreeNodeType::LIST)
+        resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    else
+        resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+}
+
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
 {
     if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
@@ -4019,9 +4041,10 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
 
             const auto * constant_node = sort_node.getFillTo()->as<ConstantNode>();
             if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "Sort FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
-                    sort_node.getFillFrom()->formatASTForErrorMessage(),
+                    sort_node.getFillTo()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
             size_t fill_to_expression_projection_names_size = fill_to_expression_projection_names.size();

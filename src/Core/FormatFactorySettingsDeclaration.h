@@ -6,7 +6,7 @@
 
 // clang-format off
 #if defined(__CLION_IDE__)
-/// CLion freezes for a minute every time is processes this
+/// CLion freezes for a minute every time it processes this
 #define FORMAT_FACTORY_SETTINGS(M, ALIAS)
 #define OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
 #else
@@ -257,8 +257,8 @@
     M(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", "Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.", 0) \
     M(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, "Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple", 0) \
     \
-    M(Bool, output_format_always_quote_identifiers, false, "Always quote identifiers", 0) \
-    M(IdentifierQuotingStyle, output_format_identifier_quoting_style, IdentifierQuotingStyle::Backticks, "Set the quoting style for identifiers", 0) \
+    M(IdentifierQuotingRule, show_create_query_identifier_quoting_rule, IdentifierQuotingRule::WhenNecessary, "Set the quoting rule for identifiers in SHOW CREATE query", 0) \
+    M(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, "Set the quoting style for identifiers in SHOW CREATE query", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 

@@ -17,6 +17,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsSeconds old_parts_lifetime;
+}
+
 namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
@@ -292,7 +298,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             /// We cannot rely on exists_in_zookeeper, because the cleanup thread is probably going to remove it from ZooKeeper
             /// Also, it will avoid "Cannot commit empty part: Part ... (state Outdated) already exists, but it will be deleted soon"
             time_t lifetime = time(nullptr) - outdated->remove_time;
-            time_t max_lifetime = storage.getSettings()->old_parts_lifetime.totalSeconds();
+            time_t max_lifetime = (*storage.getSettings())[MergeTreeSetting::old_parts_lifetime].totalSeconds();
             time_t delay = lifetime >= max_lifetime ? 0 : max_lifetime - lifetime;
             result.recheck_after_seconds = delay + 30;
 
@@ -327,7 +333,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 
     time_t current_time = time(nullptr);
     auto zookeeper = storage.getZooKeeper();
-    auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
+    auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage.getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
     auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
         part->getColumns(), part->checksums);

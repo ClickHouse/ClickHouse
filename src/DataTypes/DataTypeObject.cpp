@@ -24,7 +24,8 @@
 
 #if USE_SIMDJSON
 #  include <Common/JSONParsers/SimdJSONParser.h>
-#elif USE_RAPIDJSON
+#endif
+#if USE_RAPIDJSON
 #  include <Common/JSONParsers/RapidJSONParser.h>
 #else
 #  include <Common/JSONParsers/DummyJSONParser.h>
@@ -36,6 +37,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_object_type;
     extern const SettingsBool use_json_alias_for_old_object_type;
+    extern const SettingsBool allow_simdjson;
 }
 
 namespace ErrorCodes
@@ -127,12 +129,18 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     {
         case SchemaFormat::JSON:
 #if USE_SIMDJSON
-            return std::make_shared<SerializationJSON<SimdJSONParser>>(
-                std::move(typed_path_serializations),
-                paths_to_skip,
-                path_regexps_to_skip,
-                buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
-#elif USE_RAPIDJSON
+            auto context = CurrentThread::getQueryContext();
+            if (!context)
+                context = Context::getGlobalContextInstance();
+            if (context->getSettingsRef()[Setting::allow_simdjson])
+                return std::make_shared<SerializationJSON<SimdJSONParser>>(
+                    std::move(typed_path_serializations),
+                    paths_to_skip,
+                    path_regexps_to_skip,
+                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
+#endif
+
+#if USE_RAPIDJSON
             return std::make_shared<SerializationJSON<RapidJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,
@@ -404,7 +412,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     else
     {
         res = std::make_unique<SubstreamData>(std::make_shared<SerializationDynamic>());
-        res->type = std::make_shared<DataTypeDynamic>();
+        res->type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
     }
 
     /// If column was provided, we should create a column for requested subcolumn.

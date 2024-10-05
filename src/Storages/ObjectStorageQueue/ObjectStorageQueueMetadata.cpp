@@ -250,6 +250,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
 
+            table_metadata.adjustFromKeeper(metadata_from_zk);
             table_metadata.checkEquals(metadata_from_zk);
             return table_metadata;
         }
