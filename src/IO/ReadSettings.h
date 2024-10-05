@@ -1,12 +1,13 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
 #include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <IO/DistributedCacheSettings.h>
+#include <Interpreters/Cache/UserInfo.h>
 
 namespace DB
 {
@@ -130,6 +131,10 @@ struct ReadSettings
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
     bool http_make_head_request = true;
+
+    bool read_through_distributed_cache = false;
+    DistributedCacheSettings distributed_cache_settings;
+    std::optional<FileCacheUserInfo> filecache_user_info;
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {
