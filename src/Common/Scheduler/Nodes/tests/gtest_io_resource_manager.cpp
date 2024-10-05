@@ -150,6 +150,27 @@ struct ResourceTest : ResourceTestManager<IOResourceManager>
     {
         storage.executeQuery(query_str);
     }
+
+    template <class Func>
+    void async(const String & workload, Func func)
+    {
+        threads.emplace_back([=, this, func2 = std::move(func)]
+        {
+            ClassifierPtr classifier = manager->acquire(workload);
+            func2(classifier);
+        });
+    }
+
+    template <class Func>
+    void async(const String & workload, const String & resource, Func func)
+    {
+        threads.emplace_back([=, this, func2 = std::move(func)]
+        {
+            ClassifierPtr classifier = manager->acquire(workload);
+            ResourceLink link = classifier->get(resource);
+            func2(link);
+        });
+    }
 };
 
 using TestGuard = ResourceTest::Guard;
@@ -198,9 +219,9 @@ TEST(SchedulerIOResourceManager, Fairness)
 
     t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
     t.query("CREATE WORKLOAD all SETTINGS max_requests = 1");
-    t.query("CREATE WORKLOAD A in all");
-    t.query("CREATE WORKLOAD B in all");
-    t.query("CREATE WORKLOAD leader in all");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+    t.query("CREATE WORKLOAD leader IN all");
 
     for (int thread = 0; thread < threads_per_queue; thread++)
     {
@@ -235,4 +256,74 @@ TEST(SchedulerIOResourceManager, Fairness)
     ClassifierPtr c = t.manager->acquire("leader");
     ResourceLink link = c->get("res1");
     t.blockResource(link);
+}
+
+TEST(SchedulerIOResourceManager, DropNotEmptyQueue)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    std::barrier sync_before_enqueue(2);
+    std::barrier sync_before_drop(3);
+    std::barrier sync_after_drop(2);
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait(); // 1st resource request is consuming
+        sync_after_drop.arrive_and_wait(); // 1st resource request is still consuming
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1, EnqueueOnly);
+        sync_before_drop.arrive_and_wait(); // 2nd resource request is enqueued
+        g.waitFailed("is about to be destructed");
+    });
+
+    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    t.query("CREATE WORKLOAD leaf IN intermediate");
+    sync_after_drop.arrive_and_wait();
+}
+
+TEST(SchedulerIOResourceManager, DropNotEmptyQueueLong)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    static constexpr int queue_size = 100;
+    std::barrier sync_before_enqueue(2);
+    std::barrier sync_before_drop(2 + queue_size);
+    std::barrier sync_after_drop(2);
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait(); // 1st resource request is consuming
+        sync_after_drop.arrive_and_wait(); // 1st resource request is still consuming
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    for (int i = 0; i < queue_size; i++)
+    {
+        t.async("intermediate", "res1", [&] (ResourceLink link)
+        {
+            TestGuard g(t, link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // many resource requests are enqueued
+            g.waitFailed("is about to be destructed");
+        });
+    }
+
+    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    t.query("CREATE WORKLOAD leaf IN intermediate");
+    sync_after_drop.arrive_and_wait();
 }

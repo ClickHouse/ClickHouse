@@ -1,6 +1,8 @@
 #pragma once
 
-#include "Common/Scheduler/SchedulingSettings.h"
+#include <gtest/gtest.h>
+
+#include <Common/Scheduler/SchedulingSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/SchedulerRoot.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -283,6 +285,8 @@ private:
     ResourceCost failed_cost = 0;
 };
 
+enum EnqueueOnlyEnum { EnqueueOnly };
+
 template <class TManager>
 struct ResourceTestManager : public ResourceTestBase
 {
@@ -294,15 +298,48 @@ struct ResourceTestManager : public ResourceTestBase
     struct Guard : public ResourceGuard
     {
         ResourceTestManager & t;
+        ResourceCost cost;
 
-        Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost)
-            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost, Lock::Defer)
+        /// Works like regular ResourceGuard, ready for consumption after constructor
+        Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost_)
+            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost_, Lock::Defer)
             , t(t_)
+            , cost(cost_)
         {
             t.onEnqueue(link);
+            waitExecute();
+        }
+
+        /// Just enqueue resource request, do not block (neede for tests to sync). Call `waitExecuted()` afterwards
+        Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost_, EnqueueOnlyEnum)
+            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost_, Lock::Defer)
+            , t(t_)
+            , cost(cost_)
+        {
+            t.onEnqueue(link);
+        }
+
+        /// Waits for ResourceRequest::execute() to be called for enqueued requet
+        void waitExecute()
+        {
             lock();
             t.onExecute(link);
             consume(cost);
+        }
+
+        /// Waits for ResourceRequest::failure() to be called for enqueued request
+        void waitFailed(const String & pattern)
+        {
+            try
+            {
+                lock();
+                FAIL();
+            }
+            catch (Exception & e)
+            {
+                ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_ACCESS_DENIED);
+                ASSERT_TRUE(e.message().contains(pattern));
+            }
         }
     };
 
