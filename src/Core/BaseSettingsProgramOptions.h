@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <Core/Types_fwd.h>
 
 #include <boost/program_options.hpp>

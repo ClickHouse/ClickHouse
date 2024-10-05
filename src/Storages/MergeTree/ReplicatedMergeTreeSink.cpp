@@ -39,6 +39,11 @@ namespace Setting
     extern const SettingsBool optimize_on_insert;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsMilliseconds sleep_before_commit_local_part_in_replicated_table_ms;
+}
+
 namespace FailPoints
 {
     extern const char replicated_merge_tree_commit_zk_fail_after_op[];
@@ -811,7 +816,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     auto sleep_before_commit_for_tests = [&] ()
     {
-        auto sleep_before_commit_local_part_in_replicated_table_ms = storage.getSettings()->sleep_before_commit_local_part_in_replicated_table_ms;
+        auto sleep_before_commit_local_part_in_replicated_table_ms = (*storage.getSettings())[MergeTreeSetting::sleep_before_commit_local_part_in_replicated_table_ms];
         if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
         {
             LOG_INFO(log, "committing part {}, triggered sleep_before_commit_local_part_in_replicated_table_ms {}",

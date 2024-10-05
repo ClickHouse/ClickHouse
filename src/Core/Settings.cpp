@@ -360,7 +360,7 @@ namespace ErrorCodes
     M(Milliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.", 0) \
     M(Milliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from/to streaming storages.", 0) \
     M(UInt64, min_free_disk_bytes_to_perform_insert, 0, "Minimum free disk space bytes to perform an insert.", 0) \
-    M(Double, min_free_disk_ratio_to_perform_insert, 0.0, "Minimum free disk space ratio to perform an insert.", 0) \
+    M(Float, min_free_disk_ratio_to_perform_insert, 0.0, "Minimum free disk space ratio to perform an insert.", 0) \
     \
     M(Bool, final, false, "Query with the FINAL modifier by default. If the engine does not support the FINAL, it does not have any effect. On queries with multiple tables, FINAL is applied only to those that support it. It also works on distributed tables", 0) \
     \
