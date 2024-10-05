@@ -144,7 +144,7 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 
     while (true)
     {
-        if (auto * select_query = result_ast->as<ASTSelectQuery>())
+        if (auto * /*select_query*/ _ = result_ast->as<ASTSelectQuery>())
             break;
         else if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
             result_ast = select_with_union->list_of_selects->children.at(0);
