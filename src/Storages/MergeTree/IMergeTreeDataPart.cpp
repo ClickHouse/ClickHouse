@@ -60,6 +60,17 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
+    extern const MergeTreeSettingsBool fsync_part_directory;
+    extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
+    extern const MergeTreeSettingsBool primary_key_lazy_load;
+    extern const MergeTreeSettingsFloat primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
@@ -650,7 +661,7 @@ UInt64 IMergeTreeDataPart::getMarksCount() const
 
 UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
 {
-    if (storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge && supportLightweightDeleteMutate() && hasLightweightDelete()
+    if ((*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && supportLightweightDeleteMutate() && hasLightweightDelete()
         && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
         return bytes_on_disk * existing_rows_count.value() / rows_count;
     else
@@ -731,7 +742,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadChecksums(require_columns_checksums);
         loadIndexGranularity();
 
-        if (!storage.getSettings()->primary_key_lazy_load)
+        if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             getIndex();
 
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
@@ -942,7 +953,7 @@ void IMergeTreeDataPart::loadIndex() const
                 key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
         /// Cut useless suffix columns, if necessary.
-        Float64 ratio_to_drop_suffix_columns = storage.getSettings()->primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
+        Float64 ratio_to_drop_suffix_columns = (*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns];
         if (key_size > 1 && ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1)
         {
             chassert(marks_count > 0);
@@ -1459,8 +1470,8 @@ void IMergeTreeDataPart::loadExistingRowsCount()
         return;
 
     if (!rows_count || !supportLightweightDeleteMutate() || !hasLightweightDelete()
-        || !storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge
-        || !storage.getSettings()->load_existing_rows_count_for_old_parts)
+        || !(*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge]
+        || !(*storage.getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts])
         existing_rows_count = rows_count;
     else
         existing_rows_count = readExistingRowsCount();
@@ -1624,7 +1635,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
     SerializationInfo::Settings settings =
     {
-        .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .ratio_of_defaults_for_sparse = (*storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         .choose_kind = false,
     };
 
@@ -1684,7 +1695,7 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for in-memory parts (table: {}, part: {})",
                         storage.getStorageID().getNameForLogs(), name);
 
-    writeVersionMetadata(version, storage.getSettings()->fsync_part_directory);
+    writeVersionMetadata(version, (*storage.getSettings())[MergeTreeSetting::fsync_part_directory]);
 }
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
@@ -1893,7 +1904,7 @@ try
     assertOnDisk();
 
     std::string relative_path = storage.relative_data_path;
-    bool fsync_dir = storage.getSettings()->fsync_part_directory;
+    bool fsync_dir = (*storage.getSettings())[MergeTreeSetting::fsync_part_directory];
 
     if (parent_part)
     {
@@ -2055,7 +2066,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     auto storage_settings = storage.getSettings();
     IDataPartStorage::ClonePartParams params
     {
-        .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
+        .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && (*storage_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication],
         .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction

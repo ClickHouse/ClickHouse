@@ -61,7 +61,18 @@ namespace Setting
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
-    extern const SettingsDouble min_free_disk_ratio_to_perform_insert;
+    extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsBool fsync_part_directory;
+    extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
+    extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
+    extern const MergeTreeSettingsBool optimize_row_order;
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
 }
 
 namespace ErrorCodes
@@ -531,7 +542,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->optimize_row_order
+    if ((*data.getSettings())[MergeTreeSetting::optimize_row_order]
             && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
@@ -567,13 +578,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     const auto & data_settings = data.getSettings();
 
     const UInt64 & min_bytes_to_perform_insert =
-        data_settings->min_free_disk_bytes_to_perform_insert.changed
-        ? data_settings->min_free_disk_bytes_to_perform_insert
-        : global_settings[Setting::min_free_disk_bytes_to_perform_insert];
+            (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert].changed
+            ? (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert]
+            : global_settings[Setting::min_free_disk_bytes_to_perform_insert];
 
-    const Float64 & min_ratio_to_perform_insert =
-        data_settings->min_free_disk_ratio_to_perform_insert.changed
-        ? data_settings->min_free_disk_ratio_to_perform_insert
+    const Float32 & min_ratio_to_perform_insert =
+        (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert].changed
+        ? (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert]
         : global_settings[Setting::min_free_disk_ratio_to_perform_insert];
 
     if (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0)
@@ -606,10 +617,10 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
 
-    if (data.storage_settings.get()->assign_part_uuids)
+    if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
+    SerializationInfo::Settings settings{(*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -645,7 +656,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         data_part_storage->createDirectories();
 
-        if (data.getSettings()->fsync_part_directory)
+        if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
         {
             const auto disk = data_part_volume->getDisk();
             sync_guard = disk->getDirectorySyncGuard(full_path);
@@ -709,7 +720,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     auto finalizer = out->finalizePartAsync(
         new_data_part,
-        data_settings->fsync_after_insert,
+        (*data_settings)[MergeTreeSetting::fsync_after_insert],
         nullptr, nullptr);
 
     temp_part.part = new_data_part;
@@ -751,7 +762,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    SerializationInfo::Settings settings{data.getSettings()->ratio_of_defaults_for_sparse_serialization, true};
+    SerializationInfo::Settings settings{(*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -799,7 +810,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->optimize_row_order
+    if ((*data.getSettings())[MergeTreeSetting::optimize_row_order]
             && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);

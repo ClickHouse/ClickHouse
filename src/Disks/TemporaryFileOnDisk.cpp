@@ -1,3 +1,4 @@
+#include <Core/UUID.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>

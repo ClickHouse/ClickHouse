@@ -603,7 +603,7 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std
     /// If the second case takes place transaction's commit csn has to be set.
     /// We should load CSN again to distinguish the second case.
     if (failback_with_strict_load_csn)
-        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+        if (CSN _ = failback_with_strict_load_csn->load())
             return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);

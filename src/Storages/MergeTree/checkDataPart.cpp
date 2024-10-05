@@ -28,6 +28,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+}
+
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
@@ -183,7 +188,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
+    auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
     SerializationInfoByName serialization_infos;
 
     if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))

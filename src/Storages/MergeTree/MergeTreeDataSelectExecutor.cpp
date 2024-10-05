@@ -85,6 +85,13 @@ namespace Setting
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
+    extern const MergeTreeSettingsInt64 max_partitions_to_read;
+    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -904,7 +911,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
     auto max_partitions_to_read
-        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read] : data_settings->max_partitions_to_read;
+        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read] : (*data_settings)[MergeTreeSetting::max_partitions_to_read];
     if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;
@@ -918,12 +925,12 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
                 max_partitions_to_read);
     }
 
-    if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0
-        && result.selected_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0 && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
+        && result.selected_marks >= (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
     {
         auto query_id = context->getCurrentQueryId();
         if (!query_id.empty())
-            return data.getQueryIdHolder(query_id, data_settings->max_concurrent_queries);
+            return data.getQueryIdHolder(query_id, (*data_settings)[MergeTreeSetting::max_concurrent_queries]);
     }
     return nullptr;
 }
