@@ -298,12 +298,13 @@ public:
                     Field value = values[col_idx];
 
                     /// Compatibility with previous versions.
-                    if (value.getType() == Field::Types::Decimal32)
+                    WhichDataType value_type(values_types[col_idx]);
+                    if (value_type.isDecimal32())
                     {
                         auto source = value.safeGet<DecimalField<Decimal32>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
                     }
-                    else if (value.getType() == Field::Types::Decimal64)
+                    else if (value_type.isDecimal64())
                     {
                         auto source = value.safeGet<DecimalField<Decimal64>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
