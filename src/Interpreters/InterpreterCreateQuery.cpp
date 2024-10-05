@@ -1067,9 +1067,9 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
     if (create.refresh_strategy && !create.refresh_strategy->append)
     {
-        if (database && database->getEngineName() != "Atomic")
+        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
 
         std::string message;
         if (!supportsAtomicRename(&message))
@@ -1362,7 +1362,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     bool from_path = create.attach_from_path.has_value();
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !is_on_cluster && !create.attach)
+    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !internal && !is_on_cluster && !create.attach)
     {
         if (getContext()->getSettingsRef()[Setting::database_replicated_allow_explicit_uuid] == 0)
         {
