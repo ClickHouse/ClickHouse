@@ -10,7 +10,7 @@
 #include <Core/ParallelReplicasMode.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
-#include <Parsers/ASTSQLSecurity.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
@@ -317,6 +317,7 @@ DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
 
 enum class DeduplicateMergeProjectionMode : uint8_t
 {
+    IGNORE,
     THROW,
     DROP,
     REBUILD,

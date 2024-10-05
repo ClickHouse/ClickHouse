@@ -29,6 +29,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
@@ -100,7 +105,7 @@ BlockIO InterpreterDeleteQuery::execute()
         if (metadata_snapshot->hasProjections())
         {
             if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
-                if (merge_tree_data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW)
+                if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "
                         "lightweight_mutation_projection_mode is set to THROW. "
