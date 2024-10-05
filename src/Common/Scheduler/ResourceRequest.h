@@ -45,8 +45,7 @@ constexpr size_t ResourceMaxConstraints = 8;
  *
  * Request can also be canceled before (3) using ISchedulerQueue::cancelRequest().
  * Returning false means it is too late for request to be canceled. It should be processed in a regular way.
- * Returning true means successful cancel and therefore steps (4) and (5) are not going to happen
- * and step (6) MUST be omitted.
+ * Returning true means successful cancel and therefore steps (4) and (5) are not going to happen.
  */
 class ResourceRequest : public boost::intrusive::list_base_hook<>
 {
@@ -88,7 +87,7 @@ public:
     /// Stop resource consumption and notify resource scheduler.
     /// Should be called when resource consumption is finished by consumer.
     /// ResourceRequest should not be destructed or reset before calling to `finish()`.
-    /// WARNING: this function MUST not be called if request was canceled or failed.
+    /// It is okay to call finish() even for failed and canceled requests (it will be no-op)
     void finish();
 
     /// Is called from the scheduler thread to fill `constraints` chain
