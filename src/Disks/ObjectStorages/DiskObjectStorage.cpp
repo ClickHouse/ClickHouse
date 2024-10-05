@@ -560,17 +560,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
     std::optional<size_t> file_size) const
 {
     if (auto storage_objects = metadata_storage->getStorageObjectsIfExist(path))
-    {
-        const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
-        if (storage_objects->empty() && file_can_be_empty)
-            return std::make_unique<ReadBufferFromEmptyFile>();
-
-        return object_storage->readObjects(
-            *storage_objects,
-            updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName()),
-            read_hint,
-            file_size);
-    }
+        return readFile(path, settings, read_hint, file_size);
     else
         return {};
 }
