@@ -1,4 +1,3 @@
-#include "Loggers/OwnFilteringChannel.h"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <base/defines.h>
@@ -52,6 +51,7 @@
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnFilteringChannel.h>
 
 #include <Common/config_version.h>
 
