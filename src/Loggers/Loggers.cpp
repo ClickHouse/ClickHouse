@@ -30,7 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 }
@@ -274,7 +274,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
                     if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
                         regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
                     else
-                        throw DB::Exception(DB::ErrorCodes::TYPE_MISMATCH, "Couldn't convert to OwnFilteringChannel.");
+                        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
 
                     logger.root().get(name).setLevel(level);
                 }
@@ -380,7 +380,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.getChannel()))
         regexp_channel->setRegexpPatterns(global_pos_pattern, global_neg_pattern);
     else
-        throw DB::Exception(DB::ErrorCodes::TYPE_MISMATCH, "Couldn't convert to OwnFilteringChannel.");
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
 
     // Set level to all already created loggers
     std::vector<std::string> names;
@@ -418,7 +418,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
                     if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
                         regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
                     else
-                        throw DB::Exception(DB::ErrorCodes::TYPE_MISMATCH, "Couldn't convert to OwnFilteringChannel.");
+                        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
                 }
                 else
                 {
