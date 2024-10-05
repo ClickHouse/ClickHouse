@@ -9,17 +9,22 @@ void OwnFilteringChannel::log(const Poco::Message & msg)
 {
     std::string formatted_text;
 
-    // Apply formatting to the text
-    if (pFormatter)
+    if (!positive_pattern.empty() || !negative_pattern.empty())
     {
-        pFormatter->formatExtended(ExtendedLogMessage::getFrom(msg), formatted_text);
+        // Apply formatting to the text
+        if (pFormatter)
+        {
+            pFormatter->formatExtended(ExtendedLogMessage::getFrom(msg), formatted_text);
+        }
+        else
+        {
+            formatted_text = msg.getText();
+        }
+        if (regexpFilteredOut(formatted_text))
+            return;
     }
-    else
-    {
-        formatted_text = msg.getText();
-    }
-    if (!regexpFilteredOut(formatted_text))
-        pChannel->log(msg);
+
+    pChannel->log(msg);
 }
 
 bool OwnFilteringChannel::regexpFilteredOut(std::string text) const
