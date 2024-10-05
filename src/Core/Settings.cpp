@@ -581,6 +581,7 @@ namespace ErrorCodes
     M(Int64, max_partitions_to_read, -1, "Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.", 0) \
     M(Bool, check_query_single_value_result, true, "Return check query result as single 1/0 value", 0) \
     M(Bool, allow_drop_detached, false, "Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries", 0) \
+    \
     M(UInt64, max_table_size_to_drop, 50000000000lu, "If the size of a table is greater than this value (in bytes) then the table could not be dropped with any DROP query.", 0) \
     M(UInt64, max_partition_size_to_drop, 50000000000lu, "Same as max_table_size_to_drop, but for the partitions.", 0) \
     \
@@ -675,7 +676,7 @@ namespace ErrorCodes
     M(Bool, describe_include_subcolumns, false, "If true, subcolumns of all table columns will be included into result of DESCRIBE query", 0) \
     M(Bool, describe_include_virtual_columns, false, "If true, virtual columns of table will be included into result of DESCRIBE query", 0) \
     M(Bool, describe_compact_output, false, "If true, include only column names and types into result of DESCRIBE query", 0) \
-    M(Bool, apply_mutations_on_fly, false, "Only available in ClickHouse Cloud", 0) \
+    M(Bool, apply_mutations_on_fly, false, "If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs. Only available in ClickHouse Cloud.", 0) \
     M(Bool, mutations_execute_nondeterministic_on_initiator, false, "If true nondeterministic function are executed on initiator and replaced to literals in UPDATE and DELETE queries", 0) \
     M(Bool, mutations_execute_subqueries_on_initiator, false, "If true scalar subqueries are executed on initiator and replaced to literals in UPDATE and DELETE queries", 0) \
     M(UInt64, mutations_max_literal_size_to_replace, 16384, "The maximum size of serialized literal in bytes to replace in UPDATE and DELETE queries", 0) \
@@ -731,8 +732,9 @@ namespace ErrorCodes
     M(UInt64, database_replicated_allow_replicated_engine_arguments, 0, "0 - Don't allow to explicitly specify ZooKeeper path and replica name for *MergeTree tables in Replicated databases. 1 - Allow. 2 - Allow, but ignore the specified path and use default one instead.", 0) \
     M(UInt64, database_replicated_allow_explicit_uuid, 0, "0 - Don't allow to explicitly specify UUIDs for tables in Replicated databases. 1 - Allow. 2 - Allow, but ignore the specified UUID and generate a random one instead.", 0) \
     M(Bool, database_replicated_allow_heavy_create, false, "Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated database engine. Note that it can block DDL queue for a long time.", 0) \
-    M(Bool, cloud_mode, false, "Only available in ClickHouse Cloud", 0) \
-    M(UInt64, cloud_mode_engine, 1, "Only available in ClickHouse Cloud", 0) \
+    M(Bool, cloud_mode, false, "Cloud mode", 0) \
+    M(UInt64, cloud_mode_engine, 1, "The engine family allowed in Cloud. 0 - allow everything, 1 - rewrite DDLs to use *ReplicatedMergeTree, 2 - rewrite DDLs to use SharedMergeTree. UInt64 to minimize public part", 0) \
+    M(UInt64, cloud_mode_database_engine, 1, "The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database", 0) \
     M(DistributedDDLOutputMode, distributed_ddl_output_mode, DistributedDDLOutputMode::THROW, "Format of distributed DDL query result, one of: 'none', 'throw', 'null_status_on_timeout', 'never_throw', 'none_only_active', 'throw_only_active', 'null_status_on_timeout_only_active'", 0) \
     M(UInt64, distributed_ddl_entry_format_version, 5, "Compatibility version of distributed DDL (ON CLUSTER) queries", 0) \
     \
@@ -791,7 +793,7 @@ namespace ErrorCodes
     M(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, "Min bytes to read per task.", 0) ALIAS(filesystem_prefetch_min_bytes_for_single_read_task) \
     M(Bool, merge_tree_use_const_size_tasks_for_remote_reading, true, "Whether to use constant size tasks for reading from a remote table.", 0) \
     M(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, "Whether to use only prewhere columns size to determine reading task size.", 0) \
-    M(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, "Only available in ClickHouse Cloud", 0) \
+    M(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, "Only available in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.", 0) \
     \
     M(Bool, async_insert, false, "If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table", 0) \
     M(Bool, wait_for_async_insert, true, "If true wait for processing of asynchronous insertion", 0) \
@@ -869,6 +871,22 @@ namespace ErrorCodes
     \
     M(String, rename_files_after_processing, "", "Rename successfully processed files according to the specified pattern; Pattern can include the following placeholders: `%a` (full original file name), `%f` (original filename without extension), `%e` (file extension with dot), `%t` (current timestamp in µs), and `%%` (% sign)", 0) \
     \
+    /* CLOUD ONLY */ \
+    M(Bool, read_through_distributed_cache, false, "Only in ClickHouse Cloud. Allow reading from distributed cache", 0) \
+    M(Bool, write_through_distributed_cache, false, "Only in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)", 0) \
+    M(Bool, distributed_cache_throw_on_error, false, "Only in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error", 0) \
+    M(DistributedCacheLogMode, distributed_cache_log_mode, DistributedCacheLogMode::LOG_ON_ERROR, "Only in ClickHouse Cloud. Mode for writing to system.distributed_cache_log", 0) \
+    M(Bool, distributed_cache_fetch_metrics_only_from_current_az, true, "Only in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events", 0) \
+    M(UInt64, distributed_cache_connect_max_tries, 100, "Only in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful", 0) \
+    M(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, "Only in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache", 0) \
+    M(UInt64, distributed_cache_receive_timeout_milliseconds, 10000, "Only in ClickHouse Cloud. Wait time in milliseconds to receive any kind of response from distributed cache", 0) \
+    M(UInt64, distributed_cache_wait_connection_from_pool_milliseconds, 100, "Only in ClickHouse Cloud. Wait time in milliseconds to receive connection from connection pool if distributed_cache_pool_behaviour_on_limit is wait", 0) \
+    M(Bool, distributed_cache_bypass_connection_pool, false, "Only in ClickHouse Cloud. Allow to bypass distributed cache connection pool", 0) \
+    M(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL, "Only in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached", 0) \
+    M(UInt64, distributed_cache_read_alignment, 0, "Only in ClickHouse Cloud. A setting for testing purpuses, do not change it", 0) \
+    M(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, "Only in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request", 0) \
+    M(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, "Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request", 0) \
+    \
     M(Bool, parallelize_output_from_storages, true, "Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible", 0) \
     M(String, insert_deduplication_token, "", "If not empty, used for duplicate detection instead of data digest", 0) \
     M(Bool, count_distinct_optimization, false, "Rewrite count distinct to subquery of group by", 0) \
@@ -937,6 +955,7 @@ namespace ErrorCodes
     M(Bool, allow_experimental_dynamic_type, false, "Allow Dynamic data type", 0) \
     M(Bool, allow_experimental_json_type, false, "Allow JSON data type", 0) \
     M(Bool, allow_experimental_codecs, false, "If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).", 0) \
+    M(Bool, allow_experimental_shared_set_join, true, "Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin", 0) \
     M(UInt64, max_limit_for_ann_queries, 1'000'000, "SELECT queries with LIMIT bigger than this setting cannot use ANN indexes. Helps to prevent memory overflows in ANN search indexes.", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, "Throw exception if unsupported query is used inside transaction", 0) \
     M(TransactionsWaitCSNMode, wait_changes_become_visible_after_commit_mode, TransactionsWaitCSNMode::WAIT_UNKNOWN, "Wait for committed changes to become actually visible in the latest snapshot", 0) \
