@@ -99,7 +99,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<SchedulerRoot *>(other))
+        if (auto * _ = dynamic_cast<SchedulerRoot *>(other))
             return true;
         return false;
     }

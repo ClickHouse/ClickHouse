@@ -102,7 +102,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
 bool RewriteArrayExistsFunctionMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr &)
 {
     /// Children of ASTTableJoin are handled separately in visit() function
-    if (auto * join = ast->as<ASTTableJoin>())
+    if (auto * /*join*/ _ = ast->as<ASTTableJoin>())
         return false;
 
     return true;

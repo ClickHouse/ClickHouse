@@ -59,6 +59,22 @@ namespace Setting
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
+    extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
+    extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
+    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
+    extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
+    extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
+    extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
+    extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -419,14 +435,14 @@ void StorageMergeTree::alter(
         /// Some additional changes in settings
         auto new_storage_settings = getSettings();
 
-        if (old_storage_settings->non_replicated_deduplication_window != new_storage_settings->non_replicated_deduplication_window)
+        if ((*old_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window] != (*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window])
         {
             /// We cannot place this check into settings sanityCheck because it depends on format_version.
             /// sanityCheck must work event without storage.
-            if (new_storage_settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+            if ((*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window] != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
-            deduplication_log->setDeduplicationWindowSize(new_storage_settings->non_replicated_deduplication_window);
+            deduplication_log->setDeduplicationWindowSize((*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window]);
         }
     }
 }
@@ -584,7 +600,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
                 if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                 {
-                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, getSettings()->max_postpone_time_for_failed_mutations_ms);
+                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, (*getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
                 }
             }
         }
@@ -890,7 +906,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 void StorageMergeTree::loadDeduplicationLog()
 {
     auto settings = getSettings();
-    if (settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if ((*settings)[MergeTreeSetting::non_replicated_deduplication_window] != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
     auto disk = getDisks()[0];
@@ -899,7 +915,7 @@ void StorageMergeTree::loadDeduplicationLog()
     /// Deduplication log only matters on INSERTs.
     if (!disk->isReadOnly())
     {
-        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
+        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk);
         deduplication_log->load();
     }
 }
@@ -968,7 +984,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
 
-    if (storage_settings.get()->assign_part_uuids)
+    if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         future_part->uuid = UUIDHelpers::generateV4();
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
@@ -1052,7 +1068,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         if (is_background_memory_usage_ok(out_disable_reason))
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
+            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
 
             /// TTL requirements is much more strict than for regular merge, so
             /// if regular not possible, than merge with ttl is not also not
@@ -1076,7 +1092,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     {
         while (true)
         {
-            auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
+            auto timeout_ms = (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds();
             auto timeout = std::chrono::milliseconds(timeout_ms);
 
             if (!is_background_memory_usage_ok(out_disable_reason))
@@ -1152,7 +1168,7 @@ bool StorageMergeTree::merge(
     PreformattedMessage & out_disable_reason,
     bool optimize_skip_merged_partitions)
 {
-    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     SelectPartsDecision select_decision;
@@ -1222,7 +1238,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     size_t max_ast_elements = getContext()->getSettingsRef()[Setting::max_expanded_ast_elements];
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
-    if (storage_settings.get()->assign_part_uuids)
+    if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         future_part->uuid = UUIDHelpers::generateV4();
 
     CurrentlyMergingPartsTaggerPtr tagger;
@@ -1403,7 +1419,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     auto metadata_snapshot = getInMemoryMetadataPtr();
     MergeMutateSelectedEntryPtr merge_entry, mutate_entry;
 
-    auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
     MergeTreeTransactionHolder transaction_for_merge;
     MergeTreeTransactionPtr txn;
@@ -1472,18 +1488,18 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     bool scheduled = false;
     if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            getSettings()->merge_tree_clear_old_temporary_directories_interval_seconds))
+            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds]))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()
             {
-                return clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
+                return clearOldTemporaryDirectories((*getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
     }
 
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            getSettings()->merge_tree_clear_old_parts_interval_seconds))
+            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds]))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()
@@ -1517,7 +1533,7 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
-    size_t finished_mutations_to_keep = getSettings()->finished_mutations_to_keep;
+    size_t finished_mutations_to_keep = (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
     if (!truncate && !finished_mutations_to_keep)
         return 0;
 
@@ -1587,7 +1603,7 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
-    const auto mode = getSettings()->deduplicate_merge_projection_mode;
+    const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1612,7 +1628,7 @@ bool StorageMergeTree::optimize(
         if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
             throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, "Cannot OPTIMIZE with CLEANUP table: only ReplacingMergeTree can be CLEANUP");
 
-        if (cleanup && !getSettings()->allow_experimental_replacing_merge_with_cleanup)
+        if (cleanup && !(*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
@@ -2356,7 +2372,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         IDataPartStorage::ClonePartParams clone_params
         {
             .txn = local_context->getCurrentTransaction(),
-            .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
+            .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
