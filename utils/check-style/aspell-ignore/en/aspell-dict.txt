@@ -2911,6 +2911,7 @@ tupleToNameValuePairs
 turbostat
 txt
 typename
+tzdata
 ubuntu
 uint
 ulid
