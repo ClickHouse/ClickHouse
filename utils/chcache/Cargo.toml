@@ -1,0 +1,14 @@
+[package]
+name = "chcache-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1.5.4"
+clickhouse = { version = "0.12.2", features = ["rustls-tls"] }
+env_logger = "0.11.5"
+log = "0.4.22"
+serde = { version = "1.0.210", features = ["serde_derive"] }
+tokio = { version = "1.40.0", features = ["full"] }
+toml = "0.8.19"
+xdg = "2.5.2"
