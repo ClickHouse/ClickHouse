@@ -1005,7 +1005,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
 {
     for (auto & child : expr_list.children)
     {
-        if (auto * literal = typeid_cast<ASTLiteral *>(child.get()))
+        if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
         {
             if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
