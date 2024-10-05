@@ -177,6 +177,12 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+}
+
 namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
@@ -480,7 +486,7 @@ Pipe ReadFromMergeTree::readFromPool(
     /// Maybe it will make sense to add settings `max_block_size_bytes`
     if (block_size.max_block_size_rows && !data.canUseAdaptiveGranularity())
     {
-        size_t fixed_index_granularity = data.getSettings()->index_granularity;
+        size_t fixed_index_granularity = (*data.getSettings())[MergeTreeSetting::index_granularity];
         pool_settings.min_marks_for_concurrent_read = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
             / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
     }
@@ -767,12 +773,12 @@ struct PartRangesReadInfo
         }
 
         if (adaptive_parts > parts.size() / 2)
-            index_granularity_bytes = data_settings.index_granularity_bytes;
+            index_granularity_bytes = data_settings[MergeTreeSetting::index_granularity_bytes];
 
         max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
             settings[Setting::merge_tree_max_rows_to_use_cache],
             settings[Setting::merge_tree_max_bytes_to_use_cache],
-            data_settings.index_granularity,
+            data_settings[MergeTreeSetting::index_granularity],
             index_granularity_bytes);
 
         auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
@@ -792,7 +798,7 @@ struct PartRangesReadInfo
 
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
-            data_settings.index_granularity, index_granularity_bytes, sum_marks);
+            data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, sum_marks);
 
         use_uncompressed_cache = settings[Setting::use_uncompressed_cache];
         if (sum_marks > max_marks_to_use_cache)
@@ -970,7 +976,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     /// Let's split ranges to avoid reading much data.
     auto split_ranges
-        = [rows_granularity = data_settings->index_granularity, my_max_block_size = block_size.max_block_size_rows]
+        = [rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity], my_max_block_size = block_size.max_block_size_rows]
         (const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
