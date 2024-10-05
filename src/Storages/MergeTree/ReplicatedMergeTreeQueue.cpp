@@ -20,6 +20,14 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
+    extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
+    extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -1460,7 +1468,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
 
         const auto data_settings = data.getSettings();
-        if (data_settings->allow_remote_fs_zero_copy_replication)
+        if ((*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
         {
             auto disks = storage.getDisks();
             DiskPtr disk_with_zero_copy = nullptr;
@@ -1515,7 +1523,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         bool ignore_max_size = false;
         if (entry.type == LogEntry::MERGE_PARTS)
         {
-            ignore_max_size = max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool;
+            ignore_max_size = max_source_parts_size == (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
 
             if (isTTLMergeType(entry.merge_type))
             {
@@ -1526,11 +1534,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
                 size_t total_merges_with_ttl = data.getTotalMergesWithTTLInMergeList();
-                if (total_merges_with_ttl >= data_settings->max_number_of_merges_with_ttl_in_pool)
+                if (total_merges_with_ttl >= (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool])
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
-                              data_settings->max_number_of_merges_with_ttl_in_pool);
+                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
                     return false;
                 }
             }
@@ -2725,7 +2733,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     if (in_partition == queue.mutations_by_partition.end())
         return {};
 
-    UInt64 mutations_limit = queue.storage.getSettings()->replicated_max_mutations_in_one_entry;
+    UInt64 mutations_limit = (*queue.storage.getSettings())[MergeTreeSetting::replicated_max_mutations_in_one_entry];
     UInt64 mutations_count = 0;
 
     Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion());

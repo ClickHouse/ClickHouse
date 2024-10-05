@@ -1,7 +1,7 @@
+import importlib
 import logging
 import os
 import time
-import importlib
 
 
 # Starts simple HTTP servers written in Python.
