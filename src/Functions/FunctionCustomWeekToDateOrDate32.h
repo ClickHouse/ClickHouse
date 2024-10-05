@@ -4,6 +4,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+}
 
 namespace ErrorCodes
 {
@@ -23,7 +27,7 @@ public:
     }
 
     explicit FunctionCustomWeekToDateOrDate32(ContextPtr context)
-        : enable_extended_results_for_datetime_functions(context->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
     }
 

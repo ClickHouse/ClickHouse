@@ -24,6 +24,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -105,7 +114,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
         auto context = args.getLocalContext();
         const auto & settings = context->getSettingsRef();
-        size_t max_addresses = settings.glob_expansion_max_elements;
+        size_t max_addresses = settings[Setting::glob_expansion_max_elements];
         auto get_addresses = [&](const std::string addresses_expr)
         {
             return parseRemoteDescription(addresses_expr, 0, addresses_expr.size(), ',', max_addresses);
@@ -190,11 +199,11 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_address, max_addresses, 5432);
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
                     configuration,
-                    settings.postgresql_connection_pool_size,
-                    settings.postgresql_connection_pool_wait_timeout,
-                    settings.postgresql_connection_pool_retries,
-                    settings.postgresql_connection_pool_auto_close_connection,
-                    settings.postgresql_connection_attempt_timeout);
+                    settings[Setting::postgresql_connection_pool_size],
+                    settings[Setting::postgresql_connection_pool_wait_timeout],
+                    settings[Setting::postgresql_connection_pool_retries],
+                    settings[Setting::postgresql_connection_pool_auto_close_connection],
+                    settings[Setting::postgresql_connection_attempt_timeout]);
                 shards.insert(std::make_shared<StoragePostgreSQL>(
                     args.table_id, std::move(pool), configuration.table, args.columns, args.constraints, String{}, context));
             }

@@ -34,6 +34,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_database_ordinary;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -60,8 +66,13 @@ static void executeCreateQuery(
     const Settings & settings = context->getSettingsRef();
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
-        parser, query.data(), query.data() + query.size(), "in file " + file_name,
-        0, settings.max_parser_depth, settings.max_parser_backtracks);
+        parser,
+        query.data(),
+        query.data() + query.size(),
+        "in file " + file_name,
+        0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.setDatabase(database);
@@ -474,7 +485,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks)
 {
     /// TODO remove this check, convert system database unconditionally
-    if (context->getSettingsRef().allow_deprecated_database_ordinary)
+    if (context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
         return;
 
     maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, &system_startup_tasks);

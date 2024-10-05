@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadHelpers.h>
 

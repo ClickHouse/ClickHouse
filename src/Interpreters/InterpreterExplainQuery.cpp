@@ -36,6 +36,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_statistics_optimize;
+}
 
 namespace ErrorCodes
 {
@@ -70,7 +75,7 @@ namespace
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
             /// we need to read statistic when `allow_statistics_optimize` is enabled.
-            bool only_analyze = !data.getContext()->getSettingsRef().allow_statistics_optimize;
+            bool only_analyze = !data.getContext()->getSettingsRef()[Setting::allow_statistics_optimize];
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 
@@ -394,7 +399,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (!getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
 
@@ -453,7 +458,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                 context = interpreter.getContext();
@@ -499,7 +504,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                     context = interpreter.getContext();
@@ -558,7 +563,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context = getContext();
 
-            if (context->getSettingsRef().allow_experimental_analyzer)
+            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 context = interpreter.getContext();

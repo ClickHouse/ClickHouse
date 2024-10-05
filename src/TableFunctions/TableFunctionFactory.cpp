@@ -11,6 +11,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -76,7 +80,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
     }
 

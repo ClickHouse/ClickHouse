@@ -22,6 +22,16 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 distributed_ddl_entry_format_version;
+    extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_query_size;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -70,7 +80,7 @@ void DDLLogEntry::assertVersion() const
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
-    version = context->getSettingsRef().distributed_ddl_entry_format_version;
+    version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
     if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
@@ -157,7 +167,8 @@ void DDLLogEntry::parse(const String & data)
             ParserSetQuery parser{true};
             constexpr UInt64 max_depth = 16;
             constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth, max_backtracks);
+            ASTPtr settings_ast = parseQuery(
+                parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
@@ -198,16 +209,16 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     const char * end = begin + entry.query.size();
     const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
+    ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    query = parseQuery(parser_query, begin, end, description, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
     query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
+    query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)

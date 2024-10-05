@@ -1,11 +1,13 @@
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/array/length.h>
+#include <Functions/array/arrayResize.h>
+#include <Functions/array/emptyArrayToSingle.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ArrayJoinAction.h>
 
@@ -59,26 +61,31 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     return array_col;
 }
 
-ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, ContextPtr context)
-    : columns(array_joined_columns_)
-    , is_left(array_join_is_left)
-    , is_unaligned(context->getSettingsRef().enable_unaligned_array_join)
-    , max_block_size(context->getSettingsRef().max_block_size)
+ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_)
+    : columns(columns_.begin(), columns_.end())
+    , is_left(is_left_)
+    , is_unaligned(is_unaligned_)
+    , max_block_size(max_block_size_)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
 
     if (is_unaligned)
     {
-        function_length = FunctionFactory::instance().get("length", context);
-        function_greatest = FunctionFactory::instance().get("greatest", context);
-        function_array_resize = FunctionFactory::instance().get("arrayResize", context);
+        function_length = std::make_unique<FunctionToOverloadResolverAdaptor>(FunctionLength::createImpl());
+        function_array_resize = std::make_unique<FunctionToOverloadResolverAdaptor>(FunctionArrayResize::createImpl());
     }
     else if (is_left)
-        function_builder = FunctionFactory::instance().get("emptyArrayToSingle", context);
+        function_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(FunctionEmptyArrayToSingle::createImpl());
 }
 
-void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
+void ArrayJoinAction::prepare(const Names & columns, ColumnsWithTypeAndName & sample)
+{
+    NameSet columns_set(columns.begin(), columns.end());
+    prepare(columns_set, sample);
+}
+
+void ArrayJoinAction::prepare(const NameSet & columns, ColumnsWithTypeAndName & sample)
 {
     for (auto & current : sample)
     {
@@ -103,6 +110,35 @@ ArrayJoinResultIteratorPtr ArrayJoinAction::execute(Block block)
     return std::make_unique<ArrayJoinResultIterator>(this, std::move(block));
 }
 
+static void updateMaxLength(ColumnUInt64 & max_length, UInt64 length)
+{
+    for (auto & value : max_length.getData())
+        value = std::max(value, length);
+}
+
+static void updateMaxLength(ColumnUInt64 & max_length, const IColumn & length)
+{
+    if (const auto * length_const = typeid_cast<const ColumnConst *>(&length))
+    {
+        updateMaxLength(max_length, length_const->getUInt(0));
+        return;
+    }
+
+    const auto * length_uint64 = typeid_cast<const ColumnUInt64 *>(&length);
+    if (!length_uint64)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt64 for array length, got {}", length.getName());
+
+    auto & max_lenght_data = max_length.getData();
+    const auto & length_data = length_uint64->getData();
+    size_t num_rows = max_lenght_data.size();
+    if (num_rows != length_data.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Different columns sizes in ARRAY JOIN: {} and {}", num_rows, length_data.size());
+
+    for (size_t row = 0; row < num_rows; ++row)
+        max_lenght_data[row] = std::max(max_lenght_data[row], length_data[row]);
+}
 
 ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_)
     : array_join(array_join_), block(std::move(block_)), total_rows(block.rows()), current_row(0)
@@ -111,7 +147,6 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
     bool is_unaligned = array_join->is_unaligned;
     bool is_left = array_join->is_left;
     const auto & function_length = array_join->function_length;
-    const auto & function_greatest = array_join->function_greatest;
     const auto & function_array_resize = array_join->function_array_resize;
     const auto & function_builder = array_join->function_builder;
 
@@ -125,11 +160,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
         /// Resize all array joined columns to the longest one, (at least 1 if LEFT ARRAY JOIN), padded with default values.
         auto rows = block.rows();
         auto uint64 = std::make_shared<DataTypeUInt64>();
-        ColumnWithTypeAndName column_of_max_length{{}, uint64, {}};
-        if (is_left)
-            column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 1u), uint64, {});
-        else
-            column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 0u), uint64, {});
+        auto max_length = ColumnUInt64::create(rows, (is_left ? 1u : 0u));
 
         for (const auto & name : columns)
         {
@@ -138,11 +169,10 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
             ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
             ColumnsWithTypeAndName tmp_block{array_col}; //, {{}, uint64, {}}};
             auto len_col = function_length->build(tmp_block)->execute(tmp_block, uint64, rows);
-
-            ColumnsWithTypeAndName tmp_block2{column_of_max_length, {len_col, uint64, {}}};
-            column_of_max_length.column = function_greatest->build(tmp_block2)->execute(tmp_block2, uint64, rows);
+            updateMaxLength(*max_length, *len_col);
         }
 
+        ColumnWithTypeAndName column_of_max_length{std::move(max_length), uint64, {}};
         for (const auto & name : columns)
         {
             auto & src_col = block.getByName(name);

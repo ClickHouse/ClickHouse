@@ -15,12 +15,70 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <city.h>
 
+namespace
+{
+
+template <typename Func>
+struct TelemetryWrapper
+{
+    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_)
+        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_))
+    {
+    }
+
+    template <typename... Args>
+    auto operator()(Args &&... args)
+    {
+        DB::OpenTelemetry::SpanHolder span(span_name);
+        DB::ProfileEventTimeIncrement<DB::Time::Microseconds> increment(event);
+        return callback(std::forward<Args>(args)...);
+    }
+
+private:
+    Func callback;
+    ProfileEvents::Event event;
+    std::string span_name;
+};
+
+}
+
+namespace ProfileEvents
+{
+extern const Event ParallelReplicasAnnouncementMicroseconds;
+extern const Event ParallelReplicasReadRequestMicroseconds;
+}
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+}
+
+ParallelReadingExtension::ParallelReadingExtension(
+    MergeTreeAllRangesCallback all_callback_,
+    MergeTreeReadTaskCallback callback_,
+    size_t number_of_current_replica_,
+    size_t total_nodes_count_)
+    : number_of_current_replica(number_of_current_replica_), total_nodes_count(total_nodes_count_)
+{
+    all_callback = TelemetryWrapper<MergeTreeAllRangesCallback>{
+        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement"};
+
+    callback = TelemetryWrapper<MergeTreeReadTaskCallback>{
+        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
+}
+
+void ParallelReadingExtension::sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const
+{
+    all_callback(InitialAllRangesAnnouncement{mode, ranges.getDescriptions(), number_of_current_replica, mark_segment_size});
+}
+
+std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
+    CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const
+{
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_number_of_marks, description});
 }
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(

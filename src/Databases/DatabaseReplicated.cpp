@@ -48,6 +48,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
+    extern const SettingsBool database_replicated_always_detach_permanently;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+}
+
+
 namespace ErrorCodes
 {
     extern const int NO_ZOOKEEPER;
@@ -921,7 +932,7 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     }
 
     /// We will replace it with default arguments if the setting is 2
-    if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments != 2)
+    if (query_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] != 2)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                     "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
                     "If you really want to specify it explicitly, then you should use some macros "
@@ -1020,7 +1031,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
     if (auto * query_drop = query->as<ASTDropQuery>())
     {
-        if (query_drop->kind == ASTDropQuery::Kind::Detach && query_context->getSettingsRef().database_replicated_always_detach_permanently)
+        if (query_drop->kind == ASTDropQuery::Kind::Detach
+            && query_context->getSettingsRef()[Setting::database_replicated_always_detach_permanently])
             query_drop->permanently = true;
         if (query_drop->kind == ASTDropQuery::Kind::Detach && !query_drop->permanently)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
@@ -1033,7 +1045,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 {
     waitDatabaseStarted();
 
-    if (query_context->getCurrentTransaction() && query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    if (query_context->getCurrentTransaction() && query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed DDL queries inside transactions are not supported");
 
     if (is_readonly)
@@ -1080,9 +1092,9 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
-    auto size = context->getSettingsRef().max_query_size;
-    auto depth = context->getSettingsRef().max_parser_depth;
-    auto backtracks = context->getSettingsRef().max_parser_backtracks;
+    auto size = context->getSettingsRef()[Setting::max_query_size];
+    auto depth = context->getSettingsRef()[Setting::max_parser_depth];
+    auto backtracks = context->getSettingsRef()[Setting::max_parser_backtracks];
     ASTPtr query = parseQuery(parser, metadata, size, depth, backtracks);
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
@@ -1479,7 +1491,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 {
     ParserCreateQuery parser;
     String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
-    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
+    auto ast = parseQuery(
+        parser,
+        query,
+        description,
+        0,
+        getContext()->getSettingsRef()[Setting::max_parser_depth],
+        getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
 
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
@@ -1818,7 +1836,8 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     for (const auto & [table_name, metadata] : snapshot)
     {
         ParserCreateQuery parser;
-        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
+        auto create_table_query = parseQuery(
+            parser, metadata, 0, getContext()->getSettingsRef()[Setting::max_parser_depth], getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
 
         auto & create = create_table_query->as<ASTCreateQuery &>();
         create.attach = false;
@@ -2001,6 +2020,6 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn);
+    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true});
 }
 }

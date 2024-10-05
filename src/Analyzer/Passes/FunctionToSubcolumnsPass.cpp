@@ -25,6 +25,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool join_use_nulls;
+    extern const SettingsBool optimize_functions_to_subcolumns;
+}
 
 namespace
 {
@@ -257,7 +263,7 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_functions_to_subcolumns)
+        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
         if (auto * table_node = node->as<TableNode>())
@@ -281,14 +287,14 @@ public:
 
         if (const auto * join_node = node->as<JoinNode>())
         {
-            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().join_use_nulls;
+            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
             return;
         }
 
         if (const auto * query_node = node->as<QueryNode>())
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
-                can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().group_by_use_nulls;
+                can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
             return;
         }
     }
@@ -419,7 +425,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node) const
     {
-        if (!getSettings().optimize_functions_to_subcolumns)
+        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
         auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());

@@ -39,6 +39,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_compress_block_size;
+}
 
 namespace ErrorCodes
 {
@@ -484,7 +488,7 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
 {
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
 
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),

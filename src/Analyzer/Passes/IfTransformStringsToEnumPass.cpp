@@ -16,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+}
 
 namespace
 {
@@ -101,7 +105,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_if_transform_strings_to_enum)
+        if (!getSettings()[Setting::optimize_if_transform_strings_to_enum])
             return;
 
         auto * function_node = node->as<FunctionNode>();

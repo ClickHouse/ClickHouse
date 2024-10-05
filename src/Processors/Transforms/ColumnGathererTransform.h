@@ -115,7 +115,7 @@ public:
     ColumnGathererTransform(
         const Block & header,
         size_t num_inputs,
-        ReadBuffer & row_sources_buf_,
+        std::unique_ptr<ReadBuffer> row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
         bool is_result_sparse_);
@@ -124,6 +124,8 @@ public:
 
 protected:
     void onFinish() override;
+
+    std::unique_ptr<ReadBuffer> row_sources_buf_holder; /// Keep ownership of row_sources_buf while it's in use by ColumnGathererStream.
     LoggerPtr log;
 };
 

@@ -17,9 +17,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     {
         headers_started_sending = true;
 
-        if (response.getChunkedTransferEncoding())
-            setChunked();
-        else if (response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
+        if (!response.getChunkedTransferEncoding() && response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
         {
             /// In case there is no Content-Length we cannot use keep-alive,
             /// since there is no way to know when the server send all the
@@ -134,6 +132,8 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     , response(response_)
     , is_http_method_head(is_http_method_head_)
 {
+    if (response.getChunkedTransferEncoding())
+        setChunked();
 }
 
 

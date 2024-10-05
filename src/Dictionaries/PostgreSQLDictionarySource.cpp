@@ -9,6 +9,7 @@
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
+#include <Common/RemoteHostFilter.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
@@ -20,6 +21,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -308,11 +317,11 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             replicas_by_priority,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+            settings[Setting::postgresql_connection_pool_size],
+            settings[Setting::postgresql_connection_pool_wait_timeout],
+            settings[Setting::postgresql_connection_pool_retries],
+            settings[Setting::postgresql_connection_pool_auto_close_connection],
+            settings[Setting::postgresql_connection_attempt_timeout]);
 
 
         return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, sample_block);

@@ -32,6 +32,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -326,9 +331,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     for (size_t i = 0; i < replaced_literals.size(); ++i)
     {
         const LiteralInfo & info = replaced_literals[i];
-        if (info.literal->begin.value() < prev_end)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace literals");
-
         while (prev_end < info.literal->begin.value())
         {
             tokens.emplace_back(prev_end->begin, prev_end->size());
@@ -543,7 +545,8 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
+        IParser::Pos iterator(
+            token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;

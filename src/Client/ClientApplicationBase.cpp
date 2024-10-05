@@ -2,7 +2,6 @@
 
 #include <base/argsToConfig.h>
 #include <base/safeExit.h>
-#include <Core/BaseSettingsProgramOptions.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>

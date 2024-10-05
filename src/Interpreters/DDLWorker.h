@@ -7,11 +7,13 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
+#include <Poco/Event.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <list>
 #include <mutex>
 #include <shared_mutex>
 #include <thread>

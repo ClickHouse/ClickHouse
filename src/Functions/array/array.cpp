@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -14,6 +15,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool use_variant_as_common_type;
+}
 
 /// array(c1, c2, ...) - create an array.
 class FunctionArray : public IFunction
@@ -25,7 +31,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }

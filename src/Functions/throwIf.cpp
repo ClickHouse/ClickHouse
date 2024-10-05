@@ -12,6 +12,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_custom_error_code_in_throwif;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -31,7 +36,10 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionThrowIf>(context); }
 
-    explicit FunctionThrowIf(ContextPtr context_) : allow_custom_error_code_argument(context_->getSettingsRef().allow_custom_error_code_in_throwif) {}
+    explicit FunctionThrowIf(ContextPtr context_)
+        : allow_custom_error_code_argument(context_->getSettingsRef()[Setting::allow_custom_error_code_in_throwif])
+    {
+    }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
