@@ -60,8 +60,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_unique<LimitReadBuffer>(std::move(in), content_length,
-                                                   /* trow_exception */ true, /* exact_limit */ content_length);
+        stream = std::make_unique<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {

@@ -86,7 +86,7 @@ void Native41::authenticate(
 {
     if (!auth_response)
     {
-        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble));
         AuthSwitchResponse response;
         packet_endpoint->receivePacket(response);
         auth_response = response.value;
@@ -123,7 +123,7 @@ void Sha256Password::authenticate(
 {
     if (!auth_response)
     {
-        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble));
 
         if (packet_endpoint->in->eof())
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES,
@@ -158,7 +158,7 @@ void Sha256Password::authenticate(
         LOG_TRACE(log, "Key: {}", pem);
 
         AuthMoreData data(pem);
-        packet_endpoint->sendPacket(data, true);
+        packet_endpoint->sendPacket(data);
         sent_public_key = true;
 
         AuthSwitchResponse response;

@@ -467,4 +467,30 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
     finishStatisticsSerialization(sync);
 }
 
+void MergeTreeDataPartWriterCompact::cancel() noexcept
+{
+    for (const auto & [_, stream] : streams_by_codec)
+    {
+        stream->hashing_buf.cancel();
+        stream->compressed_buf.cancel();
+    }
+
+    plain_hashing.cancel();
+
+    plain_file->cancel();
+
+    if (marks_source_hashing)
+        marks_source_hashing->cancel();
+
+    if (marks_compressor)
+        marks_compressor->cancel();
+
+    marks_file_hashing->cancel();
+
+    marks_file->cancel();
+
+    Base::cancel();
+}
+
+
 }

@@ -194,6 +194,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             copyData(*rb, to);
             to.finalize();
         }
+
+        wb->finalize();
     }
     catch (...)
     {

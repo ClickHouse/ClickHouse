@@ -293,6 +293,7 @@ void WriteFileOperation::undo(std::unique_lock<SharedMutex> &)
     {
         auto buf = disk.writeFile(path);
         writeString(prev_data, *buf);
+        buf->finalize();
     }
 }
 

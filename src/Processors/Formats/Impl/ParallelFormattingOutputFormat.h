@@ -144,13 +144,13 @@ public:
 
     String getContentType() const override
     {
-        WriteBufferFromOwnString buffer;
+        NullWriteBuffer buffer;
         return internal_formatter_creator(buffer)->getContentType();
     }
 
     bool supportsWritingException() const override
     {
-        WriteBufferFromOwnString buffer;
+        NullWriteBuffer buffer;
         return internal_formatter_creator(buffer)->supportsWritingException();
     }
 

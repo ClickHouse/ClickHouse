@@ -124,6 +124,7 @@ public:
     bool empty() const;
 
     const StatAtomic & getStat() const { return stat; }
+    void cancel() noexcept;
 
 private:
     FileSegmentsHolderPtr createCacheFile(size_t max_file_size);
@@ -174,6 +175,7 @@ public:
 
     size_t write(const Block & block);
     void flush();
+    void cancel() noexcept;
 
     Stat finishWriting();
     Stat finishWritingAsyncSafe();

@@ -39,6 +39,7 @@ TemporaryFileStreamLegacy::Stat TemporaryFileStreamLegacy::write(const std::stri
         output.write(block);
 
     compressed_buf.finalize();
+    file_buf.finalize();
     return Stat{compressed_buf.getCompressedBytes(), compressed_buf.getUncompressedBytes()};
 }
 

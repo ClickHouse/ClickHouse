@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
@@ -34,6 +35,8 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include "Common/StackTrace.h"
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/NetException.h>
@@ -254,19 +257,7 @@ TCPHandler::TCPHandler(
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
 }
 
-TCPHandler::~TCPHandler()
-{
-    try
-    {
-        state.reset();
-        if (out)
-            out->next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
+TCPHandler::~TCPHandler() = default;
 
 void TCPHandler::runImpl()
 {
@@ -279,7 +270,7 @@ void TCPHandler::runImpl()
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocketChunked>(socket(), write_event);
+    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -376,7 +367,10 @@ void TCPHandler::runImpl()
             /// We try to send error information to the client.
             sendException(e, send_exception_with_stack_trace);
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
 
         throw;
     }
@@ -392,6 +386,8 @@ void TCPHandler::runImpl()
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
                     LOG_TRACE(log, "Closing idle connection");
+                    state.cancelOut();
+                    state.reset();
                     return;
                 }
             }
@@ -401,13 +397,16 @@ void TCPHandler::runImpl()
         if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
         {
             LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
-            break;
+            state.cancelOut();
+            state.reset();
+            return;
         }
 
         state.reset();
 
         /// Initialized later.
         std::optional<CurrentThread::QueryScope> query_scope;
+        /// This is bag prone part. The lifetime of thread_trace_context has to be longer than Spans inside `QueryState::BlockIO`
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
         /** An exception during the execution of request (it must be sent over the network to the client).
@@ -635,20 +634,24 @@ void TCPHandler::runImpl()
 
                         executor.setCancelCallback(callback, interactive_delay / 1000);
                     }
+
                     executor.execute();
                 }
 
                 finish_or_cancel();
 
-                std::lock_guard lock(out_mutex);
+                if (!state.empty() && state.cancellation_status != CancellationStatus::FULLY_CANCELLED)
+                {
+                    std::lock_guard lock(out_mutex);
 
-                /// Send final progress after calling onFinish(), since it will update the progress.
-                ///
-                /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
-                /// without breaking protocol compatibility, but it can be done
-                /// by increasing revision.
-                sendProgress();
-                sendSelectProfileEvents();
+                    /// Send final progress after calling onFinish(), since it will update the progress.
+                    ///
+                    /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
+                    /// without breaking protocol compatibility, but it can be done
+                    /// by increasing revision.
+                    sendProgress();
+                    sendSelectProfileEvents();
+                }
             }
             else
             {
@@ -660,13 +663,27 @@ void TCPHandler::runImpl()
             log_query_duration();
 
             if (state.is_connection_closed)
+            {
+                state.cancelOut();
+                state.reset();
                 break;
+            }
 
             {
                 std::lock_guard lock(out_mutex);
                 sendLogs();
                 sendEndOfStream();
             }
+
+            if (state.empty() || state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
+            {
+                state.cancelOut();
+            }
+            else
+            {
+                state.finalizeOut();
+            }
+
 
             /// QueryState should be cleared before QueryScope, since otherwise
             /// the MemoryTracker will be wrong for possible deallocations.
@@ -692,7 +709,11 @@ void TCPHandler::runImpl()
             /// is_interserver_mode is false, and we can send the exception to the client normally.
 
             if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+            {
+                state.cancelOut();
+                state.reset();
                 throw;
+            }
 
             state.io.onException();
             exception.reset(e.clone());
@@ -701,7 +722,11 @@ void TCPHandler::runImpl()
             state.timeout_setter.reset();
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
+            {
+                state.cancelOut();
+                state.reset();
                 throw;
+            }
 
             /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
             /// to break the loop, but do not throw to send the exception to
@@ -816,6 +841,8 @@ void TCPHandler::runImpl()
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
+
+        state.cancelOut();
         state.reset();
         query_scope.reset();
         thread_trace_context.reset();
@@ -870,6 +897,7 @@ bool TCPHandler::readDataNext()
             {
                 LOG_INFO(log, "Client has dropped the connection, cancel the query.");
                 state.is_connection_closed = true;
+                state.cancelOut();
                 state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
                 break;
             }
@@ -1007,7 +1035,9 @@ void TCPHandler::processInsertQuery()
             executor.push(std::move(state.block_for_insert));
 
         if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
+        {
             executor.cancel();
+        }
         else
             executor.finish();
     };
@@ -1242,6 +1272,9 @@ void TCPHandler::processTablesStatusRequest()
     }
 
 
+    if (out->isCanceled())
+        return;
+
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
 
     /// For testing hedged requests
@@ -1359,8 +1392,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 void TCPHandler::sendProfileEvents()
 {
     Stopwatch stopwatch;
-    Block block;
-    ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
+    Block block = ProfileEvents::getProfileEvents(host_name, state.profile_queue, last_sent_snapshots);
     if (block.rows() != 0)
     {
         initProfileEventsBlockOutput(block);
@@ -1427,7 +1459,7 @@ bool TCPHandler::receiveProxyHeader()
     /// Only PROXYv1 is supported.
     /// Validation of protocol is not fully performed.
 
-    LimitReadBuffer limit_in(*in, 107, /* trow_exception */ true, /* exact_limit */ {}); /// Maximum length from the specs.
+    LimitReadBuffer limit_in(*in, {.read_no_more=107, .expect_eof=true}); /// Maximum length from the specs.
 
     assertString("PROXY ", limit_in);
 
@@ -1541,6 +1573,7 @@ void TCPHandler::receiveHello()
         if (packet_type == 'G' || packet_type == 'P')
         {
             writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
+            out->next();
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
@@ -2217,6 +2250,8 @@ void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
+        state.raw_out = out;
+
         const Settings & query_settings = query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
@@ -2390,6 +2425,8 @@ void TCPHandler::sendData(const Block & block)
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         /// In case of unsuccessful write, if the buffer with written data was not flushed,
         ///  we will rollback write to avoid breaking the protocol.
         /// (otherwise the client will not be able to receive exception after unfinished data
@@ -2415,6 +2452,9 @@ void TCPHandler::sendData(const Block & block)
 void TCPHandler::sendLogData(const Block & block)
 {
     initLogsBlockOutput(block);
+
+    if (out->isCanceled())
+        return;
 
     writeVarUInt(Protocol::Server::Log, *out);
     /// Send log tag (empty tag is the default tag)
@@ -2442,6 +2482,9 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
     state.io.setAllDataSent();
 
+    if (out->isCanceled())
+        return;
+
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
 
@@ -2454,6 +2497,9 @@ void TCPHandler::sendEndOfStream()
 {
     state.sent_all_data = true;
     state.io.setAllDataSent();
+
+    if (out->isCanceled())
+        return;
 
     writeVarUInt(Protocol::Server::EndOfStream, *out);
 
@@ -2523,6 +2569,8 @@ void TCPHandler::run()
     }
     catch (Poco::Exception & e)
     {
+        state.cancelOut();
+
         /// Timeout - not an error.
         if (e.what() == "Timeout"sv)
         {

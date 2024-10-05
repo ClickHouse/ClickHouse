@@ -362,9 +362,10 @@ public:
 
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
-            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-            jsonElementToString<JSONParser>(element, buf, format_settings);
-            buf.finalize();
+            {
+                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+                jsonElementToString<JSONParser>(element, buf, format_settings);
+            }
             chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }

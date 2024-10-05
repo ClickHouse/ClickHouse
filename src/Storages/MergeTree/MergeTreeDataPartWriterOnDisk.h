@@ -69,6 +69,12 @@ public:
             size_t max_compress_block_size_,
             const WriteSettings & query_write_settings);
 
+        ~Stream()
+        {
+            plain_file.reset();
+            marks_file.reset();
+        }
+
         String escaped_column_name;
         std::string data_file_extension;
         std::string marks_file_extension;
@@ -91,6 +97,7 @@ public:
         void preFinalize();
 
         void finalize();
+        void cancel() noexcept;
 
         void sync() const;
 
@@ -121,6 +128,8 @@ public:
     {
         written_offset_columns = written_offset_columns_;
     }
+
+    void cancel() noexcept override;
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`

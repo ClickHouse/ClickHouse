@@ -600,7 +600,7 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 
     if (cache_writer)
     {
-        cache_writer->finalize();
+        cache_writer->cancel();
         cache_writer.reset();
     }
 
@@ -940,15 +940,10 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     queue_iterator = nullptr;
-    try
-    {
-        cache_writer.reset();
-        remote_file_reader.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (cache_writer)
+        cache_writer->cancel();
+    cache_writer.reset();
+    remote_file_reader.reset();
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)

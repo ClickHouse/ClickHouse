@@ -175,7 +175,7 @@ function random_str()
     tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
-function query_with_retry
+function query_with_retry()
 {
     local query="$1" && shift
 
@@ -193,4 +193,21 @@ function query_with_retry
         fi
     done
     echo "Query '$query' failed with '$result'"
+}
+
+function run_with_error()
+{
+    local cmd="$1"; shift
+
+    local stdout_tmp=""
+    stdout_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+    local stderr_tmp=""
+    stderr_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+
+    local retval=0
+    $cmd "$@" 1>${stdout_tmp} 2>${stderr_tmp} || retval="$?"
+
+    echo "${retval}" "${stdout_tmp}" "${stderr_tmp}"
+
+    return 0
 }

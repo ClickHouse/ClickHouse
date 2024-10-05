@@ -107,4 +107,9 @@ void KafkaProducer::finish()
     }
 }
 
+void KafkaProducer::cancel() noexcept
+{
+    /* no op */
+}
+
 }

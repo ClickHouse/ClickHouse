@@ -524,12 +524,14 @@ void KeeperTCPHandler::runImpl()
                 break;
             }
         }
+        finalizeWriteBuffer();
     }
     catch (const Exception & ex)
     {
         log_long_operation("Unknown operation");
         LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
+        cancelWriteBuffer();
         keeper_dispatcher->finishSession(session_id);
     }
 }
@@ -584,6 +586,20 @@ void KeeperTCPHandler::flushWriteBuffer()
     if (compressed_out)
         compressed_out->next();
     out->next();
+}
+
+void KeeperTCPHandler::finalizeWriteBuffer()
+{
+    if (compressed_out)
+        compressed_out->finalize();
+    out->finalize();
+}
+
+void KeeperTCPHandler::cancelWriteBuffer() noexcept
+{
+    if (compressed_out)
+        compressed_out->cancel();
+    out->cancel();
 }
 
 ReadBuffer & KeeperTCPHandler::getReadBuffer()
@@ -731,6 +747,7 @@ void KeeperTCPHandler::resetStats()
 
 KeeperTCPHandler::~KeeperTCPHandler()
 {
+    cancelWriteBuffer();
     KeeperTCPHandler::unregisterConnection(this);
 }
 

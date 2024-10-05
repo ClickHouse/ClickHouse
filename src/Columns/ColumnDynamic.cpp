@@ -260,10 +260,11 @@ void ColumnDynamic::insert(const Field & x)
         /// We store values in shared variant in binary form with binary encoded type.
         auto & shared_variant = getSharedVariant();
         auto & chars = shared_variant.getChars();
-        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-        encodeDataType(field_data_type, value_buf);
-        getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
-        value_buf.finalize();
+        {
+            WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+            encodeDataType(field_data_type, value_buf);
+            getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
+        }
         chars.push_back(0);
         shared_variant.getOffsets().push_back(chars.size());
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(shared_variant_discr));
@@ -697,10 +698,11 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     size_t n)
 {
     auto & chars = shared_variant.getChars();
-    WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-    encodeDataType(type, value_buf);
-    serialization->serializeBinary(src, n, value_buf, getFormatSettings());
-    value_buf.finalize();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+        encodeDataType(type, value_buf);
+        serialization->serializeBinary(src, n, value_buf, getFormatSettings());
+    }
     chars.push_back(0);
     shared_variant.getOffsets().push_back(chars.size());
 }
