@@ -957,7 +957,15 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
 {
     if (command.type == AlterCommand::MODIFY_COLUMN)
     {
-        if (!typeid_cast<const TMustHaveDataType *>(command.data_type.get()))
+        if (!command.data_type)
+        {
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Trying to modify settings for column {} ({}) ",
+                column_meta_name,
+                command.column_name);
+        }
+        else if (!typeid_cast<const TMustHaveDataType *>(command.data_type.get()))
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
