@@ -1,5 +1,5 @@
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -25,11 +25,20 @@
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Core/Settings.h>
 
 #include <openssl/ssl.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsBool stream_like_engine_allow_direct_select;
+    extern const SettingsString stream_like_engine_insert_queue;
+    extern const SettingsUInt64 output_format_avro_rows_in_file;
+}
 
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto RESCHEDULE_MS = 500;
@@ -299,7 +308,7 @@ void StorageNATS::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool
 size_t StorageNATS::getMaxBlockSize() const
 {
     return nats_settings->nats_max_block_size.changed ? nats_settings->nats_max_block_size.value
-                                                      : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+                                                      : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 
@@ -319,7 +328,7 @@ void StorageNATS::read(
     if (num_created_consumers == 0)
         return;
 
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+    if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
@@ -379,9 +388,9 @@ void StorageNATS::read(
 SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = addSettings(local_context);
-    std::string subject = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
-                          ? modified_context->getSettingsRef().stream_like_engine_insert_queue.value
-                          : "";
+    std::string subject = modified_context->getSettingsRef()[Setting::stream_like_engine_insert_queue].changed
+        ? modified_context->getSettingsRef()[Setting::stream_like_engine_insert_queue].value
+        : "";
     if (subject.empty())
     {
         if (subjects.size() > 1)
@@ -407,8 +416,8 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     auto producer = std::make_unique<NATSProducer>(configuration, subject, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
-    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
-        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
+    if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
+        max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
         metadata_snapshot->getSampleBlockNonMaterialized(), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
 
@@ -676,7 +685,7 @@ bool StorageNATS::streamToViews()
 
         Poco::Timespan max_execution_time = nats_settings->nats_flush_interval_ms.changed
             ? nats_settings->nats_flush_interval_ms
-            : getContext()->getSettingsRef().stream_flush_interval_ms;
+            : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         source->setTimeLimit(max_execution_time);
     }

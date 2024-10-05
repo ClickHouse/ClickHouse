@@ -61,7 +61,7 @@ ULIDStringToDateTime(ulid[, timezone])
 **Arguments**
 
 - `ulid` — Input ULID. [String](../data-types/string.md) or [FixedString(26)](../data-types/fixedstring.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
 **Returned value**
 

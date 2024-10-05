@@ -17,6 +17,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
+}
+
 /** Search and replace functions in strings:
   * position(haystack, needle)     - the normal search for a substring in a string, returns the position (in bytes) of the found substring starting with 1, or 0 if no substring is found.
   * positionUTF8(haystack, needle) - the same, but the position is calculated at code points, provided that the string is encoded in UTF-8.
@@ -99,7 +104,7 @@ public:
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {
-            if (context->getSettingsRef().function_locate_has_mysql_compatible_argument_order)
+            if (context->getSettingsRef()[Setting::function_locate_has_mysql_compatible_argument_order])
                 argument_order = ArgumentOrder::NeedleHaystack;
         }
     }

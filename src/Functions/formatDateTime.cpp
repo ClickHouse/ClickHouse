@@ -31,6 +31,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool formatdatetime_format_without_leading_zeros;
+    extern const SettingsBool formatdatetime_f_prints_single_zero;
+    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -783,9 +790,9 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
-        , mysql_f_prints_single_zero(context->getSettingsRef().formatdatetime_f_prints_single_zero)
-        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef().formatdatetime_format_without_leading_zeros)
+        : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
+        , mysql_f_prints_single_zero(context->getSettingsRef()[Setting::formatdatetime_f_prints_single_zero])
+        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
     {
     }
 

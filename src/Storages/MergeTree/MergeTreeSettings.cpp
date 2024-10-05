@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/SettingsChangesHistory.h>
 
 
 namespace DB
@@ -117,6 +118,31 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
+}
+
+void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_value)
+{
+    /// If setting value is empty, we don't need to change settings
+    if (compatibility_value.empty())
+        return;
+
+    ClickHouseVersion version(compatibility_value);
+    const auto & settings_changes_history = getMergeTreeSettingsChangesHistory();
+    /// Iterate through ClickHouse version in descending order and apply reversed
+    /// changes for each version that is higher that version from compatibility setting
+    for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
+    {
+        if (version >= it->first)
+            break;
+
+        /// Apply reversed changes from this version.
+        for (const auto & change : it->second)
+        {
+            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
+            auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
+            BaseSettings::set(final_name, change.previous_value);
+        }
+    }
 }
 
 bool MergeTreeSettings::isReadonlySetting(const String & name)
@@ -257,4 +283,8 @@ std::vector<String> MergeTreeSettings::getAllRegisteredNames() const
     return all_settings;
 }
 
+std::string_view MergeTreeSettings::resolveName(std::string_view name)
+{
+    return MergeTreeSettings::Traits::resolveName(name);
+}
 }

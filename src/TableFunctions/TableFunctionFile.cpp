@@ -15,6 +15,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_archive_path_syntax;
+    extern const SettingsString rename_files_after_processing;
+}
 
 namespace ErrorCodes
 {
@@ -26,7 +31,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
-        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive, context->getSettingsRef().allow_archive_path_syntax);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
         return;
     }
 
@@ -43,7 +48,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             fd = STDERR_FILENO;
         else
             StorageFile::parseFileSource(
-                std::move(filename), filename, path_to_archive, context->getSettingsRef().allow_archive_path_syntax);
+                std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -83,7 +88,7 @@ StoragePtr TableFunctionFile::getStorage(
         columns,
         ConstraintsDescription{},
         String{},
-        global_context->getSettingsRef().rename_files_after_processing,
+        global_context->getSettingsRef()[Setting::rename_files_after_processing],
         path_to_archive,
     };
 

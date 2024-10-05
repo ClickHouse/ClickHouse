@@ -816,6 +816,22 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         return;
     }
 
+    /// If it's not null we update hash with the type name and the actual value.
+
+    /// If value in this row is in shared variant, deserialize type and value and
+    /// update hash with it.
+    if (discr == getSharedVariantDiscriminator())
+    {
+        auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
+        ReadBufferFromMemory buf(value.data, value.size);
+        auto type = decodeDataType(buf);
+        hash.update(type->getName());
+        auto tmp_column = type->createColumn();
+        type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        tmp_column->updateHashWithValue(0, hash);
+        return;
+    }
+
     hash.update(variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }

@@ -18,6 +18,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
+}
 
 namespace ErrorCodes
 {
@@ -56,7 +61,7 @@ OwnedRefreshTask RefreshTask::create(
 
 void RefreshTask::initializeAndStart()
 {
-    if (view->getContext()->getSettingsRef().stop_refreshable_materialized_views_on_startup)
+    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         stop_requested = true;
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), initial_dependencies, shared_from_this());
     populateDependencies();
@@ -399,8 +404,7 @@ void RefreshTask::executeRefreshUnlocked(bool append)
             });
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
-            String query_for_logging = refresh_query->formatForLogging(
-                refresh_context->getSettingsRef().log_queries_cut_to_length);
+            String query_for_logging = refresh_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
             block_io.process_list_entry = refresh_context->getProcessList().insert(
                 query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
             pipeline.setProcessListElement(block_io.process_list_entry->getQueryStatus());

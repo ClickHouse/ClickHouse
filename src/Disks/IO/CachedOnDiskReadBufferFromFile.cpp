@@ -28,6 +28,7 @@ extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
+extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
 
@@ -644,6 +645,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
             size_t current_predownload_size = std::min(current_impl_buffer_size, bytes_to_predownload);
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, current_impl_buffer_size);
 
             std::string failure_reason;
             bool continue_predownload = file_segment.reserve(

@@ -6,7 +6,7 @@ sidebar_label: VIEW
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [live](#live-view-deprecated), and [window](#window-view-experimental) (live view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](#window-view-experimental) (refreshable materialized view and window view are experimental features).
 
 ## Normal View
 
@@ -135,15 +135,15 @@ To change SQL security for an existing view, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Examples sql security
+### Examples
 ```sql
-CREATE test_view
+CREATE VIEW test_view
 DEFINER = alice SQL SECURITY DEFINER
 AS SELECT ...
 ```
 
 ```sql
-CREATE test_view
+CREATE VIEW test_view
 SQL SECURITY INVOKER
 AS SELECT ...
 ```

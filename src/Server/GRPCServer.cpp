@@ -59,6 +59,20 @@ using GRPCObsoleteTransportCompression = clickhouse::grpc::ObsoleteTransportComp
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool calculate_text_stack_trace;
+    extern const SettingsUInt64 interactive_delay;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool throw_if_no_data_to_insert;
+}
+
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
@@ -878,13 +892,13 @@ namespace
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
-        send_exception_with_stacktrace = settings.calculate_text_stack_trace;
-        const auto client_logs_level = settings.send_logs_level;
+        send_exception_with_stacktrace = settings[Setting::calculate_text_stack_trace];
+        const auto client_logs_level = settings[Setting::send_logs_level];
         if (client_logs_level != LogsLevel::none)
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
             logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
-            logs_queue->setSourceRegexp(settings.send_logs_source_regexp);
+            logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
         }
 
@@ -897,15 +911,15 @@ namespace
             responder->setTransportCompression(*transport_compression);
 
         /// The interactive delay will be used to show progress.
-        interactive_delay = settings.interactive_delay;
+        interactive_delay = settings[Setting::interactive_delay];
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
         /// Parse the query.
         query_text = std::move(*(query_info.mutable_query()));
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
-        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
+        ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
         /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();
@@ -994,7 +1008,7 @@ namespace
             else
             {
                 const auto & settings = query_context->getSettingsRef();
-                if (settings.throw_if_no_data_to_insert)
+                if (settings[Setting::throw_if_no_data_to_insert])
                     throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
                 else
                     return;
@@ -1084,7 +1098,7 @@ namespace
 
         assert(!pipeline);
         auto source
-            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef().max_insert_block_size);
+            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef()[Setting::max_insert_block_size]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1152,7 +1166,7 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef().max_insert_block_size);
+                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef()[Setting::max_insert_block_size]);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));

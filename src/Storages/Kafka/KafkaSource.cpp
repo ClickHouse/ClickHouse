@@ -1,11 +1,12 @@
 #include <Storages/Kafka/KafkaSource.h>
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
-#include <Storages/Kafka/KafkaConsumer.h>
-#include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Storages/Kafka/KafkaConsumer.h>
+#include <Common/logger_useful.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -19,6 +20,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds kafka_max_wait_ms;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -78,7 +84,7 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)

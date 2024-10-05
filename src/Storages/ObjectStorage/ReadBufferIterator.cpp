@@ -2,11 +2,17 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsInt64 zstd_window_log_max;
+}
 
 namespace ErrorCodes
 {
@@ -148,9 +154,9 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto impl = object_storage->readObject(StoredObject(path), context->getReadSettings());
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
-    const auto zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
 
-    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window_log_max);
+    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window);
 }
 
 ReadBufferIterator::Data ReadBufferIterator::next()
@@ -174,7 +180,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         /// For default mode check cached columns for currently read keys on first iteration.
-        if (first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+        if (first && getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
         {
             if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
             {
@@ -234,7 +240,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             }
 
             /// Check new files in schema cache if schema inference mode is default.
-            if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
             {
                 auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
                 if (columns_from_cache)
@@ -249,7 +255,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             continue;
 
         /// In union mode, check cached columns only for current key.
-        if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+        if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
         {
             ObjectInfos objects{current_object_info};
             if (auto columns_from_cache = tryGetColumnsFromCache(objects.begin(), objects.end()))
@@ -283,9 +289,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             first = false;
 
             read_buf = wrapReadBufferWithCompressionMethod(
-                std::move(read_buf),
-                compression_method,
-                static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max));
+                std::move(read_buf), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]));
 
             return {std::move(read_buf), std::nullopt, format};
         }

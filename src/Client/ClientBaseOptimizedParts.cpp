@@ -83,9 +83,9 @@ private:
 void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
-        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
+        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
     else
-        addProgramOptions(cmd_settings, options_description.main_description.value());
+        cmd_settings.addToProgramOptions(options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {

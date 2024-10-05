@@ -24,6 +24,17 @@ limitations under the License. */
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_live_view;
+    extern const SettingsBool allow_experimental_window_view;
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_columns_to_read;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsOverflowMode result_overflow_mode;
+}
+
 
 namespace ErrorCodes
 {
@@ -44,9 +55,9 @@ BlockIO InterpreterWatchQuery::execute()
 
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;
-        limits.size_limits.max_rows = settings.max_result_rows;
-        limits.size_limits.max_bytes = settings.max_result_bytes;
-        limits.size_limits.overflow_mode = settings.result_overflow_mode;
+        limits.size_limits.max_rows = settings[Setting::max_result_rows];
+        limits.size_limits.max_bytes = settings[Setting::max_result_bytes];
+        limits.size_limits.overflow_mode = settings[Setting::result_overflow_mode];
 
         res.pipeline.setLimitsAndQuota(limits, getContext()->getQuota());
     }
@@ -66,12 +77,10 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist.", table_id.getNameForLogs());
 
     auto storage_name = storage->getName();
-    if (storage_name == "LiveView"
-        && !getContext()->getSettingsRef().allow_experimental_live_view)
+    if (storage_name == "LiveView" && !getContext()->getSettingsRef()[Setting::allow_experimental_live_view])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
-    else if (storage_name == "WindowView"
-        && !getContext()->getSettingsRef().allow_experimental_window_view)
+    else if (storage_name == "WindowView" && !getContext()->getSettingsRef()[Setting::allow_experimental_window_view])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 
@@ -83,11 +92,15 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     const Settings & settings = getContext()->getSettingsRef();
 
     /// Limitation on the number of columns to read.
-    if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
-        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Limit for number of columns to read exceeded. "
-            "Requested: {}, maximum: {}", required_columns.size(), settings.max_columns_to_read.toString());
+    if (settings[Setting::max_columns_to_read] && required_columns.size() > settings[Setting::max_columns_to_read])
+        throw Exception(
+            ErrorCodes::TOO_MANY_COLUMNS,
+            "Limit for number of columns to read exceeded. "
+            "Requested: {}, maximum: {}",
+            required_columns.size(),
+            settings[Setting::max_columns_to_read].toString());
 
-    size_t max_block_size = settings.max_block_size;
+    size_t max_block_size = settings[Setting::max_block_size];
     size_t max_streams = 1;
 
     /// Define query info

@@ -2,7 +2,7 @@
 #include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/ColumnString.h>
-
+#include <Formats/FormatFactory.h>
 
 namespace DB
 {
