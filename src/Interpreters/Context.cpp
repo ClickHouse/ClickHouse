@@ -5346,6 +5346,38 @@ void Context::resetZooKeeperMetadataTransaction()
     metadata_transaction = nullptr;
 }
 
+void Context::setParentTable(UUID uuid)
+{
+    chassert(!parent_table_uuid.has_value());
+    parent_table_uuid = uuid;
+}
+
+std::optional<UUID> Context::getParentTable() const
+{
+    return parent_table_uuid;
+}
+
+void Context::setDDLQueryCancellation(StopToken cancel)
+{
+    chassert(!ddl_query_cancellation.stop_possible());
+    ddl_query_cancellation = cancel;
+}
+
+StopToken Context::getDDLQueryCancellation() const
+{
+    return ddl_query_cancellation;
+}
+
+void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
+{
+    ddl_additional_checks_on_enqueue = requests;
+}
+
+Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
+{
+    return ddl_additional_checks_on_enqueue;
+}
+
 
 void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */) const
 {
