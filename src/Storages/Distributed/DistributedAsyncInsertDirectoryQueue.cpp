@@ -35,8 +35,10 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
     extern const Metric DistributedFilesToInsert;
     extern const Metric BrokenDistributedFilesToInsert;
+    extern const Metric RemoveDistributedFilesToInsert;
     extern const Metric DistributedBytesToInsert;
     extern const Metric BrokenDistributedBytesToInsert;
+    extern const Metric RemoveDistributedBytesToInsert;
 }
 
 namespace ProfileEvents
@@ -130,12 +132,15 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
     , max_sleep_time(storage.getDistributedSettingsRef().background_insert_max_sleep_time_ms.totalMilliseconds())
+    , max_retries(storage.getDistributedSettingsRef().background_insert_max_retries)
     , log(getLogger(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_bytes(CurrentMetrics::DistributedBytesToInsert, 0)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
     , metric_broken_bytes(CurrentMetrics::BrokenDistributedBytesToInsert, 0)
     , metric_broken_files(CurrentMetrics::BrokenDistributedFilesToInsert, 0)
+    , metric_remove_bytes(CurrentMetrics::RemoveDistributedBytesToInsert, 0)
+    , metric_remove_files(CurrentMetrics::RemoveDistributedFilesToInsert, 0)
 {
     fs::create_directory(broken_path);
 
@@ -374,6 +379,21 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
+
+void DistributedAsyncInsertDirectoryQueue::incrementFilesRetryNum(const std::string & file_path)
+{
+    if (max_retries != 0)
+    {
+        auto it = files_retry.find(file_path);
+        if (it != files_retry.end())
+            it->second++;
+        else
+            files_retry.insert(std::make_pair(file_path, 1));
+
+        LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
+    }
+}
+
 void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes)
 try
 {
@@ -447,10 +467,21 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(std::current_exception());
 
+        incrementFilesRetryNum(file_path);
+
         e.addMessage(fmt::format("While sending {}", file_path));
-        if (isDistributedSendBroken(e.code(), e.isRemoteException()))
+        if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
         {
-            markAsBroken(file_path);
+            if (const auto it = files_retry.find(file_path); it != files_retry.end())
+            {
+                files_retry.erase(file_path);
+                /// file might grow without a limit, need delete.
+                markAsRemove(file_path);
+                LOG_TRACE(log, "Finished retry {}, success delete {}", max_retries, file_path);
+            } else
+            {
+                markAsBroken(file_path);
+            }
             file_path.clear();
         }
         throw;
@@ -609,9 +640,20 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
             }
             catch (const Exception & e)
             {
-                if (isDistributedSendBroken(e.code(), e.isRemoteException()))
+                incrementFilesRetryNum(file_path);
+
+                if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
                 {
-                    markAsBroken(file_path);
+                    if (const auto it = files_retry.find(file_path); it != files_retry.end())
+                    {
+                        files_retry.erase(file_path);
+                        /// file might grow without a limit, need delete.
+                        markAsRemove(file_path);
+                        LOG_TRACE(log, "Finished retry {}, success delete {}", max_retries, file_path);
+                    } else
+                    {
+                        markAsBroken(file_path);
+                    }
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;
                 }
@@ -666,6 +708,21 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         if (fs::exists(current_batch_file_path))
             fs::remove(current_batch_file_path);
     }
+}
+
+void DistributedAsyncInsertDirectoryQueue::markAsRemove(const std::string & file_path)
+{
+    size_t file_size = fs::file_size(file_path);
+
+    {
+        std::lock_guard status_lock(status_mutex);
+        metric_remove_files.sub();
+        metric_remove_bytes.sub(file_size);
+        --status.files_count;
+        status.bytes_count -= file_size;
+    }
+
+    fs::remove(file_path);
 }
 
 void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file_path)

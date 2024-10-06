@@ -135,6 +135,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
             {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"},
+            {"distributed_background_insert_max_retries", 0, 0, "New setting."}
         }
     },
     {"24.7",

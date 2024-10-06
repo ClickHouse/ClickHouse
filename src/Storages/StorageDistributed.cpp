@@ -140,6 +140,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool distributed_background_insert_batch;
     extern const SettingsUInt64 distributed_background_insert_timeout;
+    extern const SettingsUInt64 distributed_background_insert_max_retries;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
     extern const SettingsBool distributed_background_insert_split_batch_on_failure;
@@ -1945,6 +1946,8 @@ void registerStorageDistributed(StorageFactory & factory)
         if (!distributed_settings.background_insert_max_sleep_time_ms.changed)
             distributed_settings.background_insert_max_sleep_time_ms
                 = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+        if (!distributed_settings.background_insert_max_retries.changed)
+            distributed_settings.background_insert_max_retries = context->getSettingsRef()[Setting::distributed_background_insert_max_retries];
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
