@@ -2118,7 +2118,7 @@ Type: UInt64
 
 Default value: 0
 
-Only in ClickHouse Cloud. A setting for testing purpuses, do not change it
+Only in ClickHouse Cloud. A setting for testing purposes, do not change it
 
 ## distributed_cache_receive_response_wait_milliseconds {#distributed_cache_receive_response_wait_milliseconds}
 

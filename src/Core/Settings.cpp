@@ -5088,7 +5088,7 @@ Only in ClickHouse Cloud. Allow to bypass distributed cache connection pool
 Only in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
     M(UInt64, distributed_cache_read_alignment, 0, R"(
-Only in ClickHouse Cloud. A setting for testing purpuses, do not change it
+Only in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
     M(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
 Only in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
