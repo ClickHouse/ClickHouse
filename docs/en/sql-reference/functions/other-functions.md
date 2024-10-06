@@ -555,6 +555,42 @@ Result:
 └───────────────┘
 ```
 
+## currentSchemas
+
+Returns a single-element array with the name of the current database.
+
+**Syntax**
+
+```sql
+currentSchemas(bool)
+```
+
+Alias: `current_schemas`.
+
+**Arguments**
+
+- `bool`: A boolean value. [Bool](../data-types/boolean.md).
+
+:::note
+The argument is actually ignored, but for compatibility's sake with the implementation of this function in other DB engines it is required.
+:::
+
+**Returned values**
+
+- Returns a single-element array with the name of the current database
+
+**Example**
+
+```sql
+SELECT currentSchemas(true);
+```
+
+Result:
+
+```response
+['default']
+```
+
 ## isConstant
 
 Returns whether the argument is a constant expression.
