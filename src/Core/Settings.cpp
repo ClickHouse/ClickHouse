@@ -8,7 +8,6 @@
 #include <Core/SettingsChangesHistory.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Core/SettingsObsoleteMacros.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
@@ -1288,10 +1287,10 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 )", 0) \
     \
     M(UInt64, optimize_min_equality_disjunction_chain_length, 3, R"(
-The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization 
+The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization
 )", 0) \
     M(UInt64, optimize_min_inequality_conjunction_chain_length, 3, R"(
-The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization 
+The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization
 )", 0) \
     \
     M(UInt64, min_bytes_to_use_direct_io, 0, R"(
