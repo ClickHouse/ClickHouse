@@ -852,14 +852,40 @@ multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub
 
 ## extract
 
-Extracts a fragment of a string using a regular expression. If `haystack` does not match the `pattern` regex, an empty string is returned.
-
-For regex without subpatterns, the function uses the fragment that matches the entire regex. Otherwise, it uses the fragment that matches the first subpattern.
+Extracts a fragment of a string using a regular expression.
+If `haystack` does not match the `pattern` regex, an empty string is returned. 
+For a regex without sub-patterns, the function uses the fragment that matches the entire regex. 
+Otherwise, it uses the fragment that matches the first subpattern.
 
 **Syntax**
 
 ```sql
 extract(haystack, pattern)
+```
+
+*Arguments**
+
+- `haystack` — Input string. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax).
+
+**Returned value**
+
+- The fragment of a string matching the provided pattern. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT extract('number: 1, number: 2, number: 3', '\\d+') AS result;
+```
+
+Result:
+
+```response
+┌─result─┐
+│ 1      │
+└────────┘
 ```
 
 ## extractAll
@@ -913,6 +939,39 @@ Result:
 ┌─extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
 │ [['abc','def','ghi'],['111','222','333']]                                                │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## extractGroups
+
+Match all groups of given input string with a given regular expression, returns an array of arrays of matches.
+
+**Syntax**
+
+``` sql
+extractGroups(haystack, pattern)
+```
+
+**Arguments**
+
+- `haystack` — Input string. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
+
+**Returned value**
+
+- Array of arrays of matches. [Array](../data-types/array.md).
+
+**Example**
+
+``` sql
+SELECT extractGroups('hello abc=111 world', '("[^"]+"|\\w+)=("[^"]+"|\\w+)') AS result;
+```
+
+Result:
+
+``` text
+┌─result────────┐
+│ ['abc','111'] │
+└───────────────┘
 ```
 
 ## extractAllGroupsVertical
