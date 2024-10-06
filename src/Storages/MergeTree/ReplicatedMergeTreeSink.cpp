@@ -844,8 +844,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        /// Save the current temporary path in case we need to revert the change to retry (ZK connection loss)
+        /// Save the current temporary path and name in case we need to revert the change to retry (ZK connection loss) or in case part is deduplicated.
         const String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
+        const String initial_part_name = part->name;
 
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
@@ -1024,6 +1025,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             transaction.rollbackPartsToTemporaryState();
             part->is_temp = true;
+            part->setName(initial_part_name);
             part->renameTo(temporary_part_relative_path, false);
 
             if constexpr (async_insert)
