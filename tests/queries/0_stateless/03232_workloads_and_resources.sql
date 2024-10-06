@@ -10,6 +10,7 @@ create workload development in all settings priority = 1, weight = 1;
 create workload another_root; -- {serverError BAD_ARGUMENTS}
 create workload self_ref in self_ref; -- {serverError BAD_ARGUMENTS}
 drop workload all; -- {serverError BAD_ARGUMENTS}
+create workload invalid in 03232_write; -- {serverError BAD_ARGUMENTS}
 create workload invalid in all settings priority = 0 for all; -- {serverError BAD_ARGUMENTS}
 create workload invalid in all settings priority = 'invalid_value'; -- {serverError BAD_GET}
 create workload invalid in all settings weight = 0; -- {serverError INVALID_SCHEDULER_NODE}
