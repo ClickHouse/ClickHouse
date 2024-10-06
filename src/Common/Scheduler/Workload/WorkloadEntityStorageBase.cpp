@@ -10,6 +10,7 @@
 #include <boost/range/algorithm/copy.hpp>
 
 #include <mutex>
+#include <queue>
 #include <unordered_set>
 
 
@@ -18,8 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int WORKLOAD_ENTITY_ALREADY_EXISTS;
-    extern const int UNKNOWN_WORKLOAD_ENTITY;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -123,7 +123,7 @@ ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
 
     auto it = entities.find(entity_name);
     if (it == entities.end())
-        throw Exception(ErrorCodes::UNKNOWN_WORKLOAD_ENTITY,
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The workload entity name '{}' is not saved",
             entity_name);
 
@@ -191,23 +191,34 @@ bool WorkloadEntityStorageBase::storeEntity(
     if (entity_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity name should not be empty.");
 
+    create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query);
     auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(create_entity_query.get());
-    if (workload)
-    {
-        if (entity_name == workload->getWorkloadParent())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Self-referencing workloads are not allowed.");
-    }
+    auto * resource = typeid_cast<ASTCreateResourceQuery *>(create_entity_query.get());
 
     std::unique_lock lock{mutex};
 
-    create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query);
-
+    ASTPtr old_entity; // entity to be REPLACED
     if (auto it = entities.find(entity_name); it != entities.end())
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::WORKLOAD_ENTITY_ALREADY_EXISTS, "Workload entity '{}' already exists", entity_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists", entity_name);
         else if (!replace_if_exists)
             return false;
+        else
+            old_entity = it->second;
+    }
+
+    // Validate CREATE OR REPLACE
+    if (old_entity)
+    {
+        auto * old_workload = typeid_cast<ASTCreateWorkloadQuery *>(old_entity.get());
+        auto * old_resource = typeid_cast<ASTCreateResourceQuery *>(old_entity.get());
+        if (workload && !old_workload)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a workload", entity_name);
+        if (resource && !old_resource)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
+        if (workload && !old_workload->hasParent() && workload->hasParent())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove root workload");
     }
 
     std::optional<String> new_root_name;
@@ -217,7 +228,7 @@ bool WorkloadEntityStorageBase::storeEntity(
     {
         if (!workload->hasParent())
         {
-            if (!root_name.empty())
+            if (!root_name.empty() && root_name != workload->getWorkloadName())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
             new_root_name = workload->getWorkloadName();
         }
@@ -232,15 +243,31 @@ bool WorkloadEntityStorageBase::storeEntity(
             if (auto it = entities.find(target); it == entities.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target);
 
-            // Validate that we could parse the settings for specific resource
-            if (type == ReferenceType::ForResource)
+            switch (type)
             {
-                if (typeid_cast<ASTCreateResourceQuery *>(entities[target].get()) == nullptr)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
+                case ReferenceType::Parent:
+                {
+                    if (typeid_cast<ASTCreateWorkloadQuery *>(entities[target].get()) == nullptr)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload parent should reference another workload, not '{}'.", target);
+                    break;
+                }
+                case ReferenceType::ForResource:
+                {
+                    if (typeid_cast<ASTCreateResourceQuery *>(entities[target].get()) == nullptr)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
 
-                SchedulingSettings validator;
-                validator.updateFromChanges(workload->changes, target);
+                    // Validate that we could parse the settings for specific resource
+                    SchedulingSettings validator;
+                    validator.updateFromChanges(workload->changes, target);
+                    break;
+                }
             }
+
+            // Detect reference cycles.
+            // The only way to create a cycle is to add an edge that will be a part of a new cycle.
+            // We are going to add an edge: `source` -> `target`, so we ensure there is no path back `target` -> `source`.
+            if (isIndirectlyReferenced(source, target))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed");
         });
 
     bool stored = storeEntityImpl(
@@ -256,12 +283,17 @@ bool WorkloadEntityStorageBase::storeEntity(
     {
         if (new_root_name)
             root_name = *new_root_name;
-        forEachReference(create_entity_query,
-            [this] (const String & target, const String & source, ReferenceType)
-            {
-                references[target].insert(source);
-            });
+
+        // Remove references of a replaced entity (only for CREATE OR REPLACE)
+        removeReferences(old_entity);
+
+        // Insert references of created entity
+        insertReferences(create_entity_query);
+
+        // Store in memory
         entities[entity_name] = create_entity_query;
+
+        // Process notifications
         onEntityAdded(entity_type, entity_name, create_entity_query);
         unlockAndNotify(lock);
     }
@@ -280,7 +312,7 @@ bool WorkloadEntityStorageBase::removeEntity(
     if (it == entities.end())
     {
         if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_WORKLOAD_ENTITY, "Workload entity '{}' doesn't exist", entity_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);
         else
             return false;
     }
@@ -303,16 +335,15 @@ bool WorkloadEntityStorageBase::removeEntity(
     {
         if (entity_name == root_name)
             root_name.clear();
-        forEachReference(it->second,
-            [this] (const String & target, const String & source, ReferenceType)
-            {
-                references[target].erase(source);
-                if (references[target].empty())
-                    references.erase(target);
-            });
-        entities.erase(it);
-        onEntityRemoved(entity_type, entity_name);
 
+        // Clean up references
+        removeReferences(it->second);
+
+        // Remove from memory
+        entities.erase(it);
+
+        // Process notifications
+        onEntityRemoved(entity_type, entity_name);
         unlockAndNotify(lock);
     }
 
@@ -407,14 +438,7 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
     chassert(entities.empty());
     entities = std::move(normalized_entities);
     for (const auto & [entity_name, entity] : entities)
-    {
-        forEachReference(entity,
-            [this] (const String & target, const String & source, ReferenceType)
-            {
-                references[target].insert(source);
-            });
-    }
-
+        insertReferences(entity);
 
     // Quick check to avoid extra work
     {
@@ -468,6 +492,56 @@ void WorkloadEntityStorageBase::removeAllEntitiesExcept(const Strings & entity_n
         if (!names_set_to_keep.contains(current->first))
             entities.erase(current);
     }
+}
+
+bool WorkloadEntityStorageBase::isIndirectlyReferenced(const String & target, const String & source)
+{
+    std::queue<String> bfs;
+    std::unordered_set<String> visited;
+    visited.insert(target);
+    bfs.push(target);
+    while (!bfs.empty())
+    {
+        String current = bfs.front();
+        bfs.pop();
+        if (current == source)
+            return true;
+        if (auto it = references.find(current); it != references.end())
+        {
+            for (const String & node : it->second)
+            {
+                if (visited.contains(node))
+                    continue;
+                visited.insert(node);
+                bfs.push(node);
+            }
+        }
+    }
+    return false;
+}
+
+void WorkloadEntityStorageBase::insertReferences(const ASTPtr & entity)
+{
+    if (!entity)
+        return;
+    forEachReference(entity,
+        [this] (const String & target, const String & source, ReferenceType)
+        {
+            references[target].insert(source);
+        });
+}
+
+void WorkloadEntityStorageBase::removeReferences(const ASTPtr & entity)
+{
+    if (!entity)
+        return;
+    forEachReference(entity,
+        [this] (const String & target, const String & source, ReferenceType)
+        {
+            references[target].erase(source);
+            if (references[target].empty())
+                references.erase(target);
+        });
 }
 
 }

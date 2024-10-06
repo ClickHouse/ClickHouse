@@ -83,6 +83,15 @@ protected:
     /// (added with previous calls onEntityAdded(), onEntityUpdated(), onEntityRemoved()).
     void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock);
 
+    /// Return true iff `references` has a path from `source` to `target`
+    bool isIndirectlyReferenced(const String & target, const String & source);
+
+    /// Adds references that are described by `entity` to `references`
+    void insertReferences(const ASTPtr & entity);
+
+    /// Removes references that are described by `entity` from `references`
+    void removeReferences(const ASTPtr & entity);
+
     struct Handlers
     {
         std::mutex mutex;
@@ -97,7 +106,7 @@ protected:
     std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query
 
     // Validation
-    std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities
+    std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Values is set of sources
     String root_name; /// current root workload name
 
     ContextPtr global_context;

@@ -41,8 +41,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
-    extern const int WORKLOAD_ENTITY_ALREADY_EXISTS;
-    extern const int UNKNOWN_WORKLOAD_ENTITY;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -215,7 +214,7 @@ bool WorkloadEntityDiskStorage::storeEntityImpl(
     if (fs::exists(file_path))
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::WORKLOAD_ENTITY_ALREADY_EXISTS, "Workload entity '{}' already exists", entity_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists", entity_name);
         else if (!replace_if_exists)
             return false;
     }
@@ -266,7 +265,7 @@ bool WorkloadEntityDiskStorage::removeEntityImpl(
     if (!existed)
     {
         if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_WORKLOAD_ENTITY, "Workload entity '{}' doesn't exist", entity_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);
         else
             return false;
     }
