@@ -218,6 +218,9 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+DECLARE_SETTING_ENUM(DistributedCacheLogMode)
+
+DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
 
 enum class CleanDeletedRows : uint8_t
 {
