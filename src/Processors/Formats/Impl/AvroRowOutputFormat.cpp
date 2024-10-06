@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Columns/ColumnArray.h>
@@ -126,7 +127,6 @@ AvroSerializer::SchemaWithSerializeFn createBigIntegerSchemaWithSerializeFn(cons
 }
 
 }
-
 AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name)
 {
     ++type_name_increment;
@@ -368,26 +368,23 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 return nested_mapping;
             }
-            else
+            avro::UnionSchema union_schema;
+            union_schema.addType(avro::NullSchema());
+            union_schema.addType(nested_mapping.schema);
+            return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                avro::UnionSchema union_schema;
-                union_schema.addType(avro::NullSchema());
-                union_schema.addType(nested_mapping.schema);
-                return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+                if (!col.isNullAt(row_num))
                 {
-                    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-                    if (!col.isNullAt(row_num))
-                    {
-                        encoder.encodeUnionIndex(1);
-                        nested_mapping.serialize(col.getNestedColumn(), row_num, encoder);
-                    }
-                    else
-                    {
-                        encoder.encodeUnionIndex(0);
-                        encoder.encodeNull();
-                    }
-                }};
-            }
+                    encoder.encodeUnionIndex(1);
+                    nested_mapping.serialize(col.getNestedColumn(), row_num, encoder);
+                }
+                else
+                {
+                    encoder.encodeUnionIndex(0);
+                    encoder.encodeNull();
+                }
+            }};
         }
         case TypeIndex::LowCardinality:
         {
@@ -401,6 +398,45 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         }
         case TypeIndex::Nothing:
             return {avro::NullSchema(), [](const IColumn &, size_t, avro::Encoder & encoder) { encoder.encodeNull(); }};
+        case TypeIndex::Variant:
+        {
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*data_type);
+
+            avro::UnionSchema union_schema;
+            const auto & nested_types = variant_type.getVariants();
+
+            std::vector<SerializeFn> nested_serializers;
+            nested_serializers.reserve(nested_types.size());
+
+            for (const auto & nested_type : nested_types)
+            {
+                const auto [schema, serialize] = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
+                union_schema.addType(schema);
+                nested_serializers.push_back(serialize);
+            }
+
+            // Since Variants have no schema-guaranteed nullability, we need to always include the null as one of the options in Avro Union.
+            // This is because Variant is considered Null in case it doesn't have any of the variants defined.
+            const auto nullUnionIndex = nested_types.size();
+            union_schema.addType(avro::NullSchema());
+
+            return {static_cast<avro::Schema>(union_schema), [serializers = std::move(nested_serializers), nullUnionIndex](const IColumn & column, const size_t row_num, avro::Encoder & encoder)
+            {
+                const auto & col = assert_cast<const ColumnVariant &>(column);
+                const auto global_discriminator = col.globalDiscriminatorAt(row_num);
+
+                if (global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    encoder.encodeUnionIndex(nullUnionIndex);
+                    encoder.encodeNull();
+                }
+                else
+                {
+                    encoder.encodeUnionIndex(global_discriminator);
+                    serializers[global_discriminator](col.getVariantByGlobalDiscriminator(global_discriminator), row_num, encoder);
+                }
+            }};
+        }
         case TypeIndex::Tuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
