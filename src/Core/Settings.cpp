@@ -1390,6 +1390,16 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
     return setting_names;
 }
 
+std::vector<std::string_view> Settings::getChangedNames() const
+{
+    std::vector<std::string_view> setting_names;
+    for (const auto & setting : impl->allChanged())
+    {
+        setting_names.emplace_back(setting.getName());
+    }
+    return setting_names;
+}
+
 void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const
 {
     MutableColumns & res_columns = params.res_columns;

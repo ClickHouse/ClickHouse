@@ -570,11 +570,11 @@ void logQueryFinish(
             query_span->addAttribute("clickhouse.user", user_name);
         }
 
-        if (settings.log_query_settings)
+        if (settings[Setting::log_query_settings])
         {
-            for (const auto & setting : settings.allChanged())
+            auto changed_settings_names = settings.getChangedNames();
+            for (const auto & name : changed_settings_names)
             {
-                auto name = setting.getName();
                 Field value = settings.get(name);
                 String value_str;
 
