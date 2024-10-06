@@ -437,7 +437,7 @@ MutationsInterpreter::MutationsInterpreter(
     if (new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         new_context->setSetting("allow_experimental_analyzer", false);
-        LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
+        LOG_TEST(logger, "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);
 
