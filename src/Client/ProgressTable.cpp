@@ -192,19 +192,16 @@ void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool show_table, bool toggle_enabled)
 {
     std::lock_guard lock{mutex};
-    if (!show_table)
+    if (!show_table && toggle_enabled)
     {
         if (written_first_block)
             message << CLEAR_TO_END_OF_SCREEN;
 
-        if (toggle_enabled)
-        {
-            message << HIDE_CURSOR;
-            message << "\n";
-            message << "Press the space key to toggle the display of the progress table.";
-            message << moveUpNLines(1);
-            message.next();
-        }
+        message << HIDE_CURSOR;
+        message << "\n";
+        message << "Press the space key to toggle the display of the progress table.";
+        message << moveUpNLines(1);
+        message.next();
         return;
     }
 
