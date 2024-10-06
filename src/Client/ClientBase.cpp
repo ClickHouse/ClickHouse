@@ -464,7 +464,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
             error_stream << "\r";
         progress_indication.writeProgress(*tty_buf);
     }
-    if (need_render_progress_table && tty_buf)
+    if (need_render_progress_table && tty_buf && !cancelled)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
@@ -1411,7 +1411,7 @@ void ClientBase::onProfileEvents(Block & block)
 
         if (need_render_progress && tty_buf)
             progress_indication.writeProgress(*tty_buf);
-        if (need_render_progress_table && tty_buf)
+        if (need_render_progress_table && tty_buf && !cancelled)
         {
             bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
             progress_table.writeTable(*tty_buf, show_progress_table.load(), toggle_enabled);
@@ -1907,6 +1907,17 @@ bool ClientBase::receiveEndOfQuery()
 void ClientBase::cancelQuery()
 {
     connection->sendCancel();
+
+    if (keystroke_interceptor)
+        try
+        {
+            keystroke_interceptor->stopIntercept();
+        }
+        catch (const DB::Exception &)
+        {
+            error_stream << getCurrentExceptionMessage(false);
+        }
+
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
     if (need_render_progress_table && tty_buf)
