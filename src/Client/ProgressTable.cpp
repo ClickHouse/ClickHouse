@@ -357,8 +357,7 @@ void ProgressTable::updateTable(const Block & block)
 
 void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message)
 {
-    message << CLEAR_TO_END_OF_SCREEN;
-    message << SHOW_CURSOR;
+    message << "\r" << CLEAR_TO_END_OF_SCREEN << SHOW_CURSOR;
     message.next();
 }
 
